@@ -472,7 +472,7 @@ export function shouldPreserveAssistantLineBreaks(text: string): boolean {
   return /^★ Insight(?:\s|─)/mu.test(text);
 }
 
-const renderedTreeProcessor = unified()
+const imageSourceProcessor = unified()
   .use(remarkParse)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS)
   .use(remarkRehype, { allowDangerousHtml: true })
@@ -512,28 +512,6 @@ export function chatMarkdownImageSources(markdown: string): Array<string> {
     }
     node.children?.forEach(visit);
   };
-  visit(renderedTreeProcessor.runSync(renderedTreeProcessor.parse(markdown)) as ImageSourceNode);
+  visit(imageSourceProcessor.runSync(imageSourceProcessor.parse(markdown)) as ImageSourceNode);
   return sources;
-}
-
-interface LinkTargetNode {
-  readonly type: string;
-  readonly properties?: { readonly href?: unknown };
-  readonly children?: ReadonlyArray<LinkTargetNode>;
-}
-
-/**
- * The link targets chat markdown renders, whatever their spelling: inline, reference, autolink,
- * entity-encoded, or raw HTML. Code and comments link nowhere, so they add none.
- */
-export function chatMarkdownLinkTargets(markdown: string): Array<string> {
-  const targets: Array<string> = [];
-  const visit = (node: LinkTargetNode) => {
-    if (node.type === "element" && typeof node.properties?.href === "string") {
-      targets.push(node.properties.href);
-    }
-    node.children?.forEach(visit);
-  };
-  visit(renderedTreeProcessor.runSync(renderedTreeProcessor.parse(markdown)) as LinkTargetNode);
-  return targets;
 }

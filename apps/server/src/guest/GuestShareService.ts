@@ -1,10 +1,12 @@
 import {
+  AssistantCitation,
   type ChatAttachment,
   ChatAttachmentId,
   CommandId,
   GUEST_MESSAGE_MAX_LENGTH,
   GUEST_SHARE_TTL_MS,
   GuestMessageId,
+  type GuestQuote,
   type MessageId,
   GuestShareCreateError,
   type GuestShareCreateInput,
@@ -22,6 +24,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { chatMarkdownImageSources } from "@t3tools/shared/markdownPipeline";
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import * as Context from "effect/Context";
@@ -62,7 +65,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
-import { guestQuotesValid, prepareGuestQuotes } from "./guestQuotes.ts";
+import { guestTextHasCitation, locateGuestQuote } from "./guestQuotes.ts";
 import {
   classifyGuestUploads,
   GUEST_UPLOAD_HEADER_BYTES,
@@ -96,6 +99,7 @@ const GUEST_ACCESS_MESSAGES = {
   unsupported_file: "This file cannot be attached. Images must be PNG, JPEG, GIF, or WebP.",
   files_busy: GUEST_FAILURE.filesBusy,
   quote_unavailable: "A quote in this message is not from this thread. Remove it and quote again.",
+  citation_in_text: "Quote the agent with Reply instead of pasting a quote link.",
   too_long: "This message is too long. Shorten it or quote less.",
 } as const;
 
@@ -117,6 +121,7 @@ export class GuestShareAccessError extends Schema.TaggedError<GuestShareAccessEr
       "unsupported_file",
       "files_busy",
       "quote_unavailable",
+      "citation_in_text",
       "too_long",
     ]),
   },
@@ -146,6 +151,8 @@ type SessionClaims = typeof SessionClaims.Type;
 const decodeSessionClaims = Schema.decodeUnknownOption(Schema.fromJsonString(SessionClaims));
 
 const inactive = new GuestShareAccessError({ reason: "inactive" });
+const quoteUnavailable = new GuestShareAccessError({ reason: "quote_unavailable" });
+const decodeCitation = Schema.decodeUnknownEffect(AssistantCitation);
 
 export class GuestShareService extends Context.Service<
   GuestShareService,
@@ -488,27 +495,30 @@ const make = Effect.gen(function* () {
     return replies;
   });
 
-  /** The guest's text with each quote checked against the shared thread. */
-  const resolveQuotes = Effect.fn("GuestShareService.resolveQuotes")(function* (
+  /** Each quote as a citation of the shared thread in the owner's environment, once checked. */
+  const buildQuotes = Effect.fn("GuestShareService.buildQuotes")(function* (
     thread: OrchestrationV2AppThread,
-    text: string,
+    quotes: ReadonlyArray<GuestQuote>,
   ) {
+    if (quotes.length === 0) return [];
     const environmentId = yield* environment.getEnvironmentId;
-    const prepared = prepareGuestQuotes(text, environmentId);
-    if (prepared.quotes.length === 0) return prepared.text;
-    const assistantMessages = yield* visibleReplies(thread, [
-      ...new Set(prepared.quotes.map((quote) => quote.messageId)),
+    const replies = yield* visibleReplies(thread, [
+      ...new Set(quotes.map((quote) => quote.messageId)),
     ]).pipe(Effect.mapError(() => new GuestShareAccessError({ reason: "rejected" })));
-    if (
-      !guestQuotesValid(prepared.quotes, { environmentId, threadId: thread.id, assistantMessages })
-    ) {
-      return yield* new GuestShareAccessError({ reason: "quote_unavailable" });
-    }
-    // The owner's environment id can be longer than the placeholder the page counted.
-    if (prepared.text.length > GUEST_MESSAGE_MAX_LENGTH) {
-      return yield* new GuestShareAccessError({ reason: "too_long" });
-    }
-    return prepared.text;
+    return yield* Effect.forEach(quotes, (quote) => {
+      const markdown = replies.get(quote.messageId);
+      const selector = markdown === undefined ? null : locateGuestQuote(quote.text, markdown);
+      return selector === null
+        ? Effect.fail(quoteUnavailable)
+        : decodeCitation({
+            version: 1,
+            environmentId,
+            threadId: thread.id,
+            messageId: quote.messageId,
+            text: quote.text,
+            ...selector,
+          }).pipe(Effect.mapError(() => quoteUnavailable));
+    });
   });
 
   const submit = Effect.fn("GuestShareService.submit")(function* (
@@ -520,10 +530,21 @@ const make = Effect.gen(function* () {
     if (request.shareId !== share.id) {
       return yield* new GuestShareAccessError({ reason: "stale_page" });
     }
-    if (request.text === "" && uploads.length === 0) {
+    const requestedQuotes = request.quotes ?? [];
+    if (request.text === "" && uploads.length === 0 && requestedQuotes.length === 0) {
       return yield* new GuestShareAccessError({ reason: "empty" });
     }
-    const text = yield* resolveQuotes(thread, request.text);
+    if (guestTextHasCitation(request.text)) {
+      return yield* new GuestShareAccessError({ reason: "citation_in_text" });
+    }
+    const quotes = yield* buildQuotes(thread, requestedQuotes);
+    // Send writes the quotes into the message as links, which count toward its length.
+    const sentLength = [...quotes.map(serializeAssistantCitation), request.text]
+      .filter((part) => part !== "")
+      .join(" ").length;
+    if (sentLength > GUEST_MESSAGE_MAX_LENGTH) {
+      return yield* new GuestShareAccessError({ reason: "too_long" });
+    }
     const attachments = yield* storeUploads(thread.id, uploads);
     yield* dispatchGuestCommand({
       type: "thread.guest-message.submit",
@@ -531,8 +552,9 @@ const make = Effect.gen(function* () {
       threadId: thread.id,
       shareId: share.id,
       guestMessageId: GuestMessageId.make(yield* random.uuidV4()),
-      text,
+      text: request.text,
       ...(attachments.length === 0 ? {} : { attachments }),
+      ...(quotes.length === 0 ? {} : { quotes }),
     }).pipe(Effect.onError(() => removeStored(attachments)));
     yield* analytics.record("feature.used", {
       feature: "guest_message.submit",

@@ -292,9 +292,9 @@ export function GuestPendingMessages({
                 onOpenImage={openImage}
                 onOpenFile={onFileOpen}
               />
-              {message.text ? (
+              {message.text || message.quotes?.length ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-                  <GuestMessageText text={message.text} />
+                  <GuestMessageText message={message} />
                 </p>
               ) : null}
             </div>

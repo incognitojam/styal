@@ -570,7 +570,7 @@ function GuestThread({
         <GuestComposer
           shareId={shareId}
           model={model}
-          // The owner's server fills in its environment when the message arrives.
+          // Only the composer's chips read it; the server builds the quotes it stores.
           threadRef={{ environmentId: GUEST_ENVIRONMENT_ID, threadId: projection.thread.id }}
           timelineElement={timelineElement}
         />
@@ -625,9 +625,9 @@ function UnplacedGuestMessage({
           onOpenImage={(attachment) => openInNewTab(url(attachment))}
           {...(served ? { fileHref: url } : {})}
         />
-        {message.text ? (
+        {message.text || message.quotes?.length ? (
           <span>
-            <GuestMessageText text={message.text} />
+            <GuestMessageText message={message} />
           </span>
         ) : null}
       </div>
@@ -682,7 +682,7 @@ function StagedImage({ file }: { readonly file: File }) {
   );
 }
 
-/** What the guest sends: their quotes as citation links, as the owner's composer writes them. */
+/** The message as Send writes it: quotes as citation links, then the guest's text. */
 function guestMessageText(quotes: ReadonlyArray<AssistantCitation>, text: string): string {
   return [...quotes.map(serializeAssistantCitation), text.trim()]
     .filter((part) => part !== "")
@@ -721,7 +721,8 @@ function GuestComposer({
     setError(problem);
     if (problem === null) setFiles(next);
   };
-  // Quotes count toward the message's length as the links they are sent as, with a space after.
+  // Quotes count toward the message's length as the links Send writes, with a space after. The
+  // owner's environment id can make the server's links a little longer.
   const citations = quotes.map((quoted) => quoted.citation);
   const quotesLength = quotes.length === 0 ? 0 : guestMessageText(citations, "").length + 1;
   const quote = (citation: AssistantCitation) => {
@@ -742,13 +743,19 @@ function GuestComposer({
     const sentQuotes = quotes;
     const form = new FormData();
     form.append("shareId", shareId);
-    form.append(
-      "text",
-      guestMessageText(
-        sentQuotes.map((quoted) => quoted.citation),
-        trimmed,
-      ),
-    );
+    form.append("text", trimmed);
+    // The server checks each quote and writes its citation link.
+    if (sentQuotes.length > 0) {
+      form.append(
+        "quotes",
+        JSON.stringify(
+          sentQuotes.map(({ citation }) => ({
+            messageId: citation.messageId,
+            text: citation.text,
+          })),
+        ),
+      );
+    }
     for (const staged of sentFiles) form.append("file", staged.file, staged.file.name);
     const failure = await postGuest(
       `messages?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,

@@ -11,7 +11,6 @@ import {
   type ThreadGuestMessage,
   type ThreadGuestShare,
 } from "@t3tools/contracts";
-import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { Atom } from "effect/reactivity";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -117,40 +116,33 @@ export function ThreadGuestShareBar(props: {
   );
 }
 
-/** A guest's text with each quote of the agent as a quoted block before the owner sends it. */
-function GuestPendingText({ text }: { readonly text: string }) {
-  const blocks: ReactNode[] = [];
-  let cursor = 0;
-  const addText = (value: string, key: number) => {
-    if (value.trim() === "") return;
-    blocks.push(
-      <Text key={`text-${key}`} selectable className="text-base text-foreground">
-        {value.trim()}
-      </Text>,
-    );
-  };
-  for (const { citation, start, end } of collectAssistantCitations(text)) {
-    addText(text.slice(cursor, start), cursor);
-    blocks.push(
-      <View
-        key={`quote-${start}`}
-        accessibilityLabel="Quoted agent text"
-        className="border-l-2 border-border pl-3"
-      >
-        <Text selectable className="text-base text-foreground-muted">
-          {citation.text}
-        </Text>
-        {citation.comment ? (
-          <Text selectable className="text-base text-foreground">
-            {citation.comment}
+/** A guest's quotes of the agent as quoted blocks, then the guest's own text. */
+function GuestPendingText({
+  message,
+}: {
+  readonly message: Pick<ThreadGuestMessage, "text" | "quotes">;
+}) {
+  return (
+    <View className="gap-2">
+      {message.quotes?.map((quote, index) => (
+        <View
+          // oxlint-disable-next-line react/no-array-index-key -- a message's quotes never change
+          key={index}
+          accessibilityLabel="Quoted agent text"
+          className="border-l-2 border-border pl-3"
+        >
+          <Text selectable className="text-base text-foreground-muted">
+            {quote.text}
           </Text>
-        ) : null}
-      </View>,
-    );
-    cursor = end;
-  }
-  addText(text.slice(cursor), cursor);
-  return <View className="gap-2">{blocks}</View>;
+        </View>
+      ))}
+      {message.text ? (
+        <Text selectable className="text-base text-foreground">
+          {message.text}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 /**
@@ -197,7 +189,7 @@ export function ThreadGuestPendingMessage(props: {
     <View className="items-end pb-5">
       <GuestMessageName name={guestName} />
       <View className={GUEST_PENDING_BUBBLE_CLASS_NAME} style={{ maxWidth: props.bubbleMaxWidth }}>
-        {message.text ? <GuestPendingText text={message.text} /> : null}
+        {message.text || message.quotes?.length ? <GuestPendingText message={message} /> : null}
         {props.renderAttachments(message.attachments ?? [])}
       </View>
       {canOperate ? (

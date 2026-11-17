@@ -13,7 +13,6 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
-import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -314,11 +313,15 @@ describe("GuestPage", () => {
     const form = fetchSpy.mock.calls.find(
       ([url]) => url === `/api/guest/messages?share=${SHARE_ID}`,
     )?.[1]?.body as FormData;
-    const text = form.get("text") as string;
-    const [quoted] = collectAssistantCitations(text);
-    expect(quoted?.citation).toMatchObject({ threadId, messageId: "reply" });
-    expect(quoted?.citation.text.trim()).toBe("All checks pass.");
-    expect(text.slice(quoted!.end)).toBe(" Which checks?");
+    // The guest's text holds no citation link; the server builds one from each quote.
+    expect(form.get("text")).toBe("Which checks?");
+    const quotes = JSON.parse(form.get("quotes") as string) as Array<{
+      messageId: string;
+      text: string;
+    }>;
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.messageId).toBe("reply");
+    expect(quotes[0]?.text.trim()).toBe("All checks pass.");
     // A sent quote leaves the composer.
     await expect.element(screen.getByRole("list", { name: "Quotes" })).not.toBeInTheDocument();
   });
