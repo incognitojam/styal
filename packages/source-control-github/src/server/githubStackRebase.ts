@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Redacted from "effect/Redacted";
@@ -52,7 +51,7 @@ export const cascadeRebaseStack = Effect.fn("cascadeRebaseStack")(function* (inp
   const { token } = yield* appAccess.credentialFor(input.host, input.repository);
   const first = input.layers[0];
   if (first === undefined) return 0;
-  const directory = yield* makeTempDirectoryScoped(fileSystem, { prefix: "t3-stack-rebase-" }).pipe(
+  const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-stack-rebase-" }).pipe(
     Effect.mapError(
       (cause) =>
         new GitHubStackRebaseGitError({

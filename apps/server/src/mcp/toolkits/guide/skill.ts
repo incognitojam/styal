@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -62,7 +61,10 @@ export const renderStyalSkillFiles = (
 export const writeStyalSkill = Effect.fn("writeStyalSkill")(function* (stateDir: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* removeDirectory(fileSystem, styalSkillPaths(path, stateDir).pluginRoot, { force: true });
+  yield* fileSystem.remove(styalSkillPaths(path, stateDir).pluginRoot, {
+    recursive: true,
+    force: true,
+  });
   for (const [file, contents] of renderStyalSkillFiles(path, stateDir)) {
     yield* fileSystem.makeDirectory(path.dirname(file), { recursive: true });
     yield* fileSystem.writeFileString(file, contents);

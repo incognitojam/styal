@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 import {
   ACP_REGISTRY_MAX_AGENTS,
   AcpRegistryOperationError,
@@ -1453,7 +1452,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       if (yield* fileSystem.exists(executablePath).pipe(Effect.orElseSucceed(() => false))) {
         return yield* assertExecutableInRoot(installRoot, executablePath);
       }
-      const temporaryRoot = yield* makeTempDirectoryScoped(fileSystem, {
+      const temporaryRoot = yield* fileSystem.makeTempDirectoryScoped({
         directory: path.dirname(installRoot),
         prefix: `.${agent.id}-install-`,
       });
@@ -1577,7 +1576,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       }
       if (platform !== "win32") yield* fileSystem.chmod(stagedExecutable, 0o755);
       yield* assertExecutableInRoot(extractionRoot, stagedExecutable);
-      yield* removeDirectory(fileSystem, installRoot, { force: true });
+      yield* fileSystem.remove(installRoot, { recursive: true, force: true });
       yield* fileSystem.rename(extractionRoot, installRoot);
       return yield* assertExecutableInRoot(installRoot, executablePath);
     }).pipe(
@@ -1975,16 +1974,17 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
                 const versionRoot = path.join(agentRoot, version);
                 for (const entry of yield* fileSystem.readDirectory(versionRoot)) {
                   if (!/^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u.test(entry)) continue;
-                  yield* removeDirectory(fileSystem, path.join(versionRoot, entry), {
+                  yield* fileSystem.remove(path.join(versionRoot, entry), {
+                    recursive: true,
                     force: true,
                   });
                   removed = true;
                 }
                 if ((yield* fileSystem.readDirectory(versionRoot)).length === 0)
-                  yield* removeDirectory(fileSystem, versionRoot);
+                  yield* fileSystem.remove(versionRoot, { recursive: true });
               }
               if ((yield* fileSystem.readDirectory(agentRoot)).length === 0)
-                yield* removeDirectory(fileSystem, agentRoot);
+                yield* fileSystem.remove(agentRoot, { recursive: true });
             }).pipe(
               Effect.mapError(
                 (cause) =>

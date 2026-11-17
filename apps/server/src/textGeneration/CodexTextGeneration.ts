@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -81,7 +80,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
 
   const removeTempFileDir = (filePath: string): Effect.Effect<void, never> =>
-    removeDirectory(fileSystem, path.dirname(filePath)).pipe(Effect.ignore);
+    fileSystem.remove(path.dirname(filePath), { recursive: true }).pipe(Effect.ignore);
 
   // Background fibers may inherit closed scopes that immediately reap temp files; write unscoped.
   const writeTempFile = (

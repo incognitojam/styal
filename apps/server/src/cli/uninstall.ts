@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 // @effect-diagnostics nodeBuiltinImport:off
 // Windows cleanup must outlive this executable to delete its directory; scoped ChildProcess kills children on exit.
 import * as NodeChildProcess from "node:child_process";
@@ -211,11 +210,13 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
       });
       yield* Console.log(`${runtimeDir} will be removed once styal exits.`);
     } else {
-      yield* removeDirectory(fs, plan.runtimeDir, { force: true }).pipe(
-        Effect.mapError(
-          () => new CliUninstallError({ reason: `Could not remove ${plan.runtimeDir}.` }),
-        ),
-      );
+      yield* fs
+        .remove(plan.runtimeDir, { recursive: true, force: true })
+        .pipe(
+          Effect.mapError(
+            () => new CliUninstallError({ reason: `Could not remove ${plan.runtimeDir}.` }),
+          ),
+        );
       yield* Console.log(`Removed ${plan.runtimeDir}.`);
     }
   }

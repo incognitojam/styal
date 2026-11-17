@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest or free-space query.
 import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
@@ -357,7 +356,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         const profileDirectory = yield* Effect.acquireRelease(
           fs.makeTempDirectory({ prefix: "t3-antigravity-validate-" }),
           (directory) =>
-            removeDirectory(fs, directory, { force: true }).pipe(
+            fs.remove(directory, { recursive: true, force: true }).pipe(
               // Windows may retain DLL handles briefly after taskkill returns.
               Effect.retry({
                 times: platform === "win32" ? 10 : 0,
@@ -449,7 +448,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const destination = path.join(versionsDirectory, asset.sha256);
       const activate = Effect.fn("AntigravityInstallation.activate")(
         function* () {
-          const pointerDirectory = yield* makeTempDirectoryScoped(fs, {
+          const pointerDirectory = yield* fs.makeTempDirectoryScoped({
             directory: managedDirectory,
             prefix: "active.json.",
           });
@@ -513,7 +512,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           `Antigravity needs at least ${Math.ceil(required / 1024 / 1024)} MiB of free space to install.`,
         );
       }
-      const staging = yield* makeTempDirectoryScoped(fs, {
+      const staging = yield* fs.makeTempDirectoryScoped({
         directory: versionsDirectory,
         prefix: ".install-",
       });
@@ -813,7 +812,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
               }
             }
           }
-          yield* removeDirectory(fs, managedDirectory, { force: true });
+          yield* fs.remove(managedDirectory, { recursive: true, force: true });
           yield* SubscriptionRef.update(
             state,
             (current) =>

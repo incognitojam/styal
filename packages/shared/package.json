@@ -629,13 +629,13 @@
       "types": "./src/speech.ts",
       "import": "./src/speech.ts"
     },
-    "./physicalFileSystem": {
-      "types": "./src/physicalFileSystem.ts",
-      "import": "./src/physicalFileSystem.ts"
+    "./PhysicalFileSystem": {
+      "types": "./src/PhysicalFileSystem.ts",
+      "import": "./src/PhysicalFileSystem.ts"
     },
-    "./removeDirectory": {
-      "types": "./src/removeDirectory.ts",
-      "import": "./src/removeDirectory.ts"
+    "./physicalFileSystemNode": {
+      "types": "./src/physicalFileSystemNode.ts",
+      "import": "./src/physicalFileSystemNode.ts"
     }
   },
   "scripts": {

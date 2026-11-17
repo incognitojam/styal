@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -298,7 +297,7 @@ const make = Effect.gen(function* () {
       },
       { concurrency: 4 },
     );
-    const directory = yield* makeTempDirectoryScoped(fileSystem, {
+    const directory = yield* fileSystem.makeTempDirectoryScoped({
       directory: config.worktreesDir,
       prefix: "review-guide-",
     });

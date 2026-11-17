@@ -1,4 +1,4 @@
-import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Schema from "effect/Schema";
@@ -9,8 +9,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { matchesRegenerableFilePattern } from "@t3tools/shared/regenerableFilePatterns";
 import { makeInspectGit } from "./gitInspection.ts";
-
-const NodeFSP = physicalFileSystem.promises;
 
 export class DeletionLimits extends Context.Reference<{
   readonly entries: number;
@@ -27,6 +25,7 @@ class WorktreeCleanupIoError extends Schema.TaggedError<WorktreeCleanupIoError>(
 const inside = (root: string, target: string) => target.startsWith(`${root}/`);
 
 export const makeDeletion = Effect.gen(function* () {
+  const NodeFSP = yield* PhysicalFileSystem.PhysicalFileSystem;
   const clock = yield* Clock.Clock;
   const now = () => limits.now?.() ?? clock.currentTimeMillisUnsafe();
   const platform = yield* HostProcess.Platform;

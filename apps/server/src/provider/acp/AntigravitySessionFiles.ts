@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -35,7 +34,10 @@ export const removeAntigravitySessionFiles = Effect.fn("removeAntigravitySession
     for (const suffix of [".db", ".db-wal", ".db-shm", ".db-journal", ".meta"]) {
       yield* fs.remove(`${base}${suffix}`, { force: true });
     }
-    yield* removeDirectory(fs, path.join(acpDirectory, "brain", input.sessionId), { force: true });
+    yield* fs.remove(path.join(acpDirectory, "brain", input.sessionId), {
+      recursive: true,
+      force: true,
+    });
   },
   Effect.catch(() => Effect.logWarning("Could not remove temporary Antigravity session files.")),
 );
@@ -57,16 +59,16 @@ export const retireAntigravityRuntimeTempDirs = Effect.fn("retireAntigravityRunt
     if (yield* fs.exists(tempDirectory)) {
       yield* fs.makeTempDirectory({ directory: parent, prefix }).pipe(
         Effect.flatMap((retired) => fs.rename(tempDirectory, path.join(retired, "runtime"))),
-        Effect.catch(() => removeDirectory(fs, tempDirectory, { force: true })),
+        Effect.catch(() => fs.remove(tempDirectory, { recursive: true, force: true })),
       );
     }
     const entries = yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []));
     return Effect.forEach(
       entries.filter((entry) => entry.startsWith(prefix)),
       (entry) =>
-        removeDirectory(fs, path.join(parent, entry), { force: true }).pipe(
-          Effect.catch(() => warnRuntimeTempLeftovers),
-        ),
+        fs
+          .remove(path.join(parent, entry), { recursive: true, force: true })
+          .pipe(Effect.catch(() => warnRuntimeTempLeftovers)),
       { discard: true },
     );
   },

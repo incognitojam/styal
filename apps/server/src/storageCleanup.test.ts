@@ -1,5 +1,6 @@
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "./nodeServices.ts";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -588,6 +589,7 @@ const runCleanupTest = <A, E>(
     A,
     E,
     | FileSystem.FileSystem
+    | PhysicalFileSystem.PhysicalFileSystem
     | ServerConfig.ServerConfig
     | GitVcsDriver.GitVcsDriver
     | Path.Path

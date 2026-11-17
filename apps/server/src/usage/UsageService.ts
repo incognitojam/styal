@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import {
   type ModelTokenUsage,
   type ProviderInstanceConfig,
@@ -205,7 +204,7 @@ export const make = Effect.gen(function* () {
           Effect.scoped(
             Effect.gen(function* () {
               yield* fileSystem.makeDirectory(config.baseDir, { recursive: true });
-              const tempDirectory = yield* makeTempDirectoryScoped(fileSystem, {
+              const tempDirectory = yield* fileSystem.makeTempDirectoryScoped({
                 directory: config.baseDir,
                 prefix: "usage-host-id.",
               });

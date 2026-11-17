@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import type { ThemeAppearance } from "@t3tools/shared/themePalettes";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -541,7 +540,7 @@ const scratchDirectory = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* Effect.acquireRelease(
     fileSystem.makeTempDirectory({ prefix: "t3-html-preview-" }),
-    (directory) => removeDirectory(fileSystem, directory).pipe(Effect.ignore),
+    (directory) => fileSystem.remove(directory, { recursive: true }).pipe(Effect.ignore),
   ).pipe(
     Effect.mapError(
       (cause) =>

@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -306,7 +305,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     return paths;
   }
   if (versionDirExists) {
-    yield* removeDirectory(fs, paths.versionDir, { force: true }).pipe(
+    yield* fs.remove(paths.versionDir, { recursive: true, force: true }).pipe(
       Effect.mapError(
         (cause) =>
           new PinnedRuntimeInstallError({
@@ -391,7 +390,9 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     );
     if (!published) yield* input.validate(paths);
     return paths;
-  }).pipe(Effect.ensuring(removeDirectory(fs, stagingDir, { force: true }).pipe(Effect.ignore)));
+  }).pipe(
+    Effect.ensuring(fs.remove(stagingDir, { recursive: true, force: true }).pipe(Effect.ignore)),
+  );
 });
 
 export const ensurePinnedRuntimeInstalled = (input: PinnedRuntimeInstallInput) =>
@@ -641,7 +642,7 @@ const selectUnusedRuntimes = Effect.fn("cloud.pinned_runtime.select_unused")(fun
     const target = path.join(versionsDir, `${PINNED_RUNTIME_PRUNED_PREFIX}${version}`);
     // Renaming first means an interrupted removal never leaves a partial tree that still carries
     // its sentinel and would pass for a complete install.
-    yield* removeDirectory(fs, target, { force: true }).pipe(
+    yield* fs.remove(target, { recursive: true, force: true }).pipe(
       Effect.andThen(fs.rename(versionDir, target)),
       Effect.andThen(Effect.sync(() => pruned.add(target))),
       Effect.catch((cause) =>
@@ -670,7 +671,7 @@ export const prunePinnedRuntimes = Effect.fn("cloud.pinned_runtime.prune")(funct
   );
   const removed: Array<string> = [];
   for (const target of pruned) {
-    yield* removeDirectory(fs, target, { force: true }).pipe(
+    yield* fs.remove(target, { recursive: true, force: true }).pipe(
       Effect.andThen(
         Effect.sync(() =>
           removed.push(path.basename(target).slice(PINNED_RUNTIME_PRUNED_PREFIX.length)),

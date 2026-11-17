@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   AntigravitySettings,
@@ -245,11 +244,13 @@ export const AntigravityDriver: ProviderDriver<
           ),
         ),
         (directory) =>
-          removeDirectory(fileSystem, directory, { force: true }).pipe(
-            Effect.catch(() =>
-              Effect.logWarning("Could not remove an Antigravity runtime temp directory."),
+          fileSystem
+            .remove(directory, { recursive: true, force: true })
+            .pipe(
+              Effect.catch(() =>
+                Effect.logWarning("Could not remove an Antigravity runtime temp directory."),
+              ),
             ),
-          ),
       );
       const runtime = yield* makeAntigravityAcpRuntime({
         ...input,
@@ -283,18 +284,18 @@ export const AntigravityDriver: ProviderDriver<
     const makeDisposableRuntime = Effect.fn("AntigravityDriver.makeDisposableRuntime")(function* (
       input: Pick<AntigravityAcpRuntimeInput, "onAuthorizationUrl">,
     ) {
-      const cwd = yield* makeTempDirectoryScoped(fileSystem, {
-        prefix: "t3-antigravity-setup-",
-      }).pipe(
-        Effect.mapError(
-          () =>
-            new ProviderSetupError({
-              instanceId,
-              operation: "start",
-              detail: "Could not create an Antigravity setup workspace.",
-            }),
-        ),
-      );
+      const cwd = yield* fileSystem
+        .makeTempDirectoryScoped({ prefix: "t3-antigravity-setup-" })
+        .pipe(
+          Effect.mapError(
+            () =>
+              new ProviderSetupError({
+                instanceId,
+                operation: "start",
+                detail: "Could not create an Antigravity setup workspace.",
+              }),
+          ),
+        );
       let sessionId: string | undefined;
       yield* Effect.addFinalizer(() =>
         removeAntigravitySessionFiles({

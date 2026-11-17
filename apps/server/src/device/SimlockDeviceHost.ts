@@ -1,4 +1,3 @@
-import { removeDirectory } from "@t3tools/shared/removeDirectory";
 /**
  * Alpha: devices leased from a Simlock gateway the user runs. Opening a device
  * takes a lease through the gateway's agent-device front, so agents drive it
@@ -371,7 +370,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   const forget = (lease: Lease) =>
     Effect.suspend(() => {
       leases.delete(lease.leaseId);
-      return removeDirectory(fs, lease.dir, { force: true }).pipe(Effect.ignore);
+      return fs.remove(lease.dir, { recursive: true, force: true }).pipe(Effect.ignore);
     });
 
   /** Ends the lease through its session, or over HTTP when the session is gone. */
@@ -503,7 +502,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
           ? Effect.void
           : agentDevice(pending, ["close"]).pipe(
               Effect.ignore,
-              Effect.andThen(removeDirectory(fs, dir, { force: true }).pipe(Effect.ignore)),
+              Effect.andThen(fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore)),
             ),
       ),
       Effect.mapError((error) =>

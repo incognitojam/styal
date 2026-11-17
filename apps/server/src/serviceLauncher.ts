@@ -1,4 +1,4 @@
-import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
+import { getPhysicalFileSystem } from "@t3tools/shared/physicalFileSystemNode";
 import { copyDatabaseFile, databaseCopyHeadroom, runCp } from "./persistence/databaseFileCopy.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 // @effect-diagnostics globalTimers:off
@@ -196,8 +196,8 @@ const filesystemBackupSpaceProbe: BackupSpaceProbe = {
 async function removeAbandonedBackupCopies(backupRoot: string): Promise<void> {
   for (const entry of await NodeFSP.readdir(backupRoot)) {
     if (!entry.endsWith(".staging")) continue;
-    await physicalFileSystem.promises
-      .rm(NodePath.join(backupRoot, entry), { recursive: true, force: true })
+    await getPhysicalFileSystem()
+      .promises.rm(NodePath.join(backupRoot, entry), { recursive: true, force: true })
       .catch(() => undefined);
   }
 }
@@ -229,7 +229,7 @@ async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate
   if (await pathExists(backupDir)) return;
 
   const stagingDir = `${backupDir}.staging`;
-  await physicalFileSystem.promises.rm(stagingDir, { recursive: true, force: true });
+  await getPhysicalFileSystem().promises.rm(stagingDir, { recursive: true, force: true });
   await NodeFSP.mkdir(stagingDir, { recursive: true, mode: 0o700 });
   try {
     for (const suffix of DB_FILE_SUFFIXES) {
@@ -242,8 +242,8 @@ async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate
     await NodeFSP.rename(stagingDir, backupDir);
     await syncDirectory(NodePath.dirname(backupDir));
   } catch (cause) {
-    await physicalFileSystem.promises
-      .rm(stagingDir, { recursive: true, force: true })
+    await getPhysicalFileSystem()
+      .promises.rm(stagingDir, { recursive: true, force: true })
       .catch(() => undefined);
     throw cause;
   }
@@ -320,7 +320,7 @@ async function restoreDatabaseBackup(
 async function discardDatabaseBackup(baseDir: string, updateId: string): Promise<void> {
   const backupDir = databaseBackupDir(baseDir, updateId);
   if (!(await pathExists(backupDir))) return;
-  await physicalFileSystem.promises.rm(backupDir, { recursive: true, force: true });
+  await getPhysicalFileSystem().promises.rm(backupDir, { recursive: true, force: true });
   await syncDirectory(NodePath.dirname(backupDir));
 }
 

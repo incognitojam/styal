@@ -4,7 +4,7 @@ import * as NodeVM from "node:vm";
 import * as NodeFSP from "node:fs/promises";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it } from "@effect/vitest";
 import {

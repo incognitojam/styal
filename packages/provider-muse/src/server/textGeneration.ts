@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped } from "@t3tools/shared/removeDirectory";
 import {
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   MUSE_DEFAULT_MODEL,
@@ -244,7 +243,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     );
     const response = yield* Effect.gen(function* () {
       // Metadata requests already include their context and do not need checkout configuration.
-      const cwd = yield* makeTempDirectoryScoped(fileSystem, { prefix: "t3code-muse-text-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-muse-text-" });
       const host = yield* Effect.acquireRelease(
         createMuseSdkHostEffect(
           {

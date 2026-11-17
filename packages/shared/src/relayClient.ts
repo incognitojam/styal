@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped, removeDirectory } from "./removeDirectory.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- FileSystem.remove cannot remove an empty directory nonrecursively.
 import * as NodeFSP from "node:fs/promises";
 import * as Cache from "effect/Cache";
@@ -420,7 +419,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     // Retain the newest older release for rollback or older servers that cannot redownload it.
     for (const version of (yield* olderManagedVersions).slice(1)) {
       // Windows cannot delete another server's running connector; retry next prune.
-      yield* removeDirectory(fileSystem, path.join(managedRoot, version)).pipe(
+      yield* fileSystem.remove(path.join(managedRoot, version), { recursive: true }).pipe(
         Effect.tap(() => Effect.logInfo("Removed an older managed relay client", { version })),
         Effect.catch((cause) =>
           Effect.logDebug("Could not remove an older managed relay client", { version, cause }),
@@ -526,7 +525,8 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     const owner = `${process.pid}-${yield* random.uuidV4()}`;
     const candidate = yield* Effect.acquireRelease(
       fileSystem.makeTempDirectory({ directory: path.dirname(lockPath), prefix: ".lock-" }),
-      (directory) => removeDirectory(fileSystem, directory, { force: true }).pipe(Effect.ignore),
+      (directory) =>
+        fileSystem.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore),
     );
     yield* fileSystem.writeFileString(path.join(candidate, owner), "");
     for (let attempt = 0; attempt < INSTALL_LOCK_RETRY_COUNT; attempt += 1) {
@@ -621,7 +621,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
       const afterLock = yield* compatibleCandidate(managedPath, "managed", CLOUDFLARED_VERSION);
       if (afterLock) return afterLock;
 
-      const tempDirectory = yield* makeTempDirectoryScoped(fileSystem, {
+      const tempDirectory = yield* fileSystem.makeTempDirectoryScoped({
         directory: managedDirectory,
         prefix: ".install-",
       });

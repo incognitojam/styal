@@ -1,4 +1,3 @@
-import { makeTempDirectoryScoped, removeDirectory } from "@t3tools/shared/removeDirectory";
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest.
 import {
   ProviderDriverKind,
@@ -472,7 +471,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       const activate = Effect.fn("CodexInstallation.activate")(
         function* () {
           const executable = yield* completedRelease(release.version);
-          const temporary = yield* makeTempDirectoryScoped(fs, {
+          const temporary = yield* fs.makeTempDirectoryScoped({
             directory: managedDirectory,
             prefix: ".active-",
           });
@@ -516,7 +515,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         yield* activate();
         return;
       }
-      const staging = yield* makeTempDirectoryScoped(fs, {
+      const staging = yield* fs.makeTempDirectoryScoped({
         directory: managedDirectory,
         prefix: ".install-",
       });
@@ -740,7 +739,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
                 );
             }
           }
-          yield* removeDirectory(fs, managedDirectory, { force: true });
+          yield* fs.remove(managedDirectory, { recursive: true, force: true });
           yield* SubscriptionRef.update(
             state,
             (current) =>
@@ -786,7 +785,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           onSome: (date) => date.getTime(),
         });
         if (now - modifiedAt < STAGING_STALE_AFTER_MS) continue;
-        yield* removeDirectory(fs, target, { force: true }).pipe(Effect.ignore);
+        yield* fs.remove(target, { recursive: true, force: true }).pipe(Effect.ignore);
       }
       // Keep the empty root to avoid racing new staging directories; unreadable roots remain removable.
       const remaining = yield* fs.readDirectory(managedDirectory).pipe(Effect.option);

@@ -1,4 +1,4 @@
-import { physicalFileSystem } from "@t3tools/shared/physicalFileSystem";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Playwright callbacks run outside the Effect runtime.
 // Screencasts ignore emulated device scale; real 2x keeps captures sharp.
 // --disable-gpu uses cheaper software compositing while preserving SwiftShader WebGL.
@@ -468,6 +468,7 @@ const CLIPBOARD_SCRIPT = `(() => {
 })();`;
 
 const make = Effect.gen(function* () {
+  const physicalFileSystem = yield* PhysicalFileSystem.PhysicalFileSystem;
   const config = yield* ServerConfig.ServerConfig;
   const host = { platform: yield* HostProcess.Platform, arch: yield* HostProcess.Architecture };
   const manager = yield* PreviewManager.PreviewManager;
@@ -501,6 +502,8 @@ const make = Effect.gen(function* () {
   let viewerResizeOrder = 0;
 
   const contexts = new ServerBrowserContexts({
+    removeDirectory: (directory) =>
+      physicalFileSystem.rm(directory, { recursive: true, force: true }),
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
     executable: () => runPromise(previewBrowser.executable),
     // An agent scope keeps Chrome out of the server's memory protection and OOM score.
@@ -755,9 +758,7 @@ const make = Effect.gen(function* () {
     else void tab.page.close().catch(constVoid);
     if (tab.isolatedContext) void tab.page.context().close().catch(constVoid);
     void tab.recording?.encoder.close().catch(constVoid);
-    void physicalFileSystem.promises
-      .rm(downloadDir(tab), { recursive: true, force: true })
-      .catch(constVoid);
+    void physicalFileSystem.rm(downloadDir(tab), { recursive: true, force: true }).catch(constVoid);
     reportLiveTabs();
     if (closeSession) {
       runFork(manager.close({ threadId: tab.threadId, tabId: tab.tabId }).pipe(Effect.ignore));
@@ -1047,7 +1048,7 @@ const make = Effect.gen(function* () {
   const downloadsRoot = NodePath.join(config.stateDir, "server-browser", "downloads");
   // Saved downloads are indexed in memory, so an earlier run's files can never be opened again.
   yield* Effect.tryPromise({
-    try: () => physicalFileSystem.promises.rm(downloadsRoot, { recursive: true, force: true }),
+    try: () => physicalFileSystem.rm(downloadsRoot, { recursive: true, force: true }),
     catch: (cause) => new ServerBrowserDownloadsCleanupError({ cause }),
   }).pipe(
     Effect.catch((cause) =>
