@@ -23,6 +23,7 @@ import * as ByteSize from "effect/ByteSize";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpRouter, HttpServerRequest, HttpServerResponse, Multipart } from "effect/http";
@@ -46,6 +47,7 @@ const FILE_HEADERS = {
 
 const decodeRedeem = Schema.decodeUnknownEffect(GuestRedeemRequest);
 const decodeSubmit = Schema.decodeUnknownEffect(GuestSubmitRequest);
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 // The owner's thread types hold DateTime values; the JSON codec writes them as strings.
 const encodeStreamEvent = Schema.encodeEffect(
   Schema.fromJsonString(Schema.toCodecJson(GuestStreamEvent)),
@@ -66,7 +68,10 @@ const errorResponse = (error: GuestShareAccessError) =>
           : error.reason === "empty" ||
               error.reason === "too_many_files" ||
               error.reason === "too_large" ||
-              error.reason === "unsupported_file"
+              error.reason === "unsupported_file" ||
+              error.reason === "quote_unavailable" ||
+              error.reason === "citation_in_text" ||
+              error.reason === "too_long"
             ? 400
             : 409,
       headers: NO_STORE,
@@ -192,9 +197,13 @@ export const readSubmission = Effect.gen(function* () {
         }),
     ),
   );
-  const fields = yield* decodeSubmit({ shareId: parts.shareId, text: parts.text ?? "" }).pipe(
-    Effect.option,
-  );
+  const quotes = parts.quotes === undefined ? Option.some(undefined) : decodeJson(parts.quotes);
+  if (Option.isNone(quotes)) return null;
+  const fields = yield* decodeSubmit({
+    shareId: parts.shareId,
+    text: parts.text ?? "",
+    ...(quotes.value === undefined ? {} : { quotes: quotes.value }),
+  }).pipe(Effect.option);
   if (fields._tag === "None") return null;
   const files = parts.file;
   const uploads: ReadonlyArray<GuestUpload> = Array.isArray(files)

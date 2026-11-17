@@ -1,9 +1,13 @@
 import {
+  AssistantCitation,
   type ChatAttachment,
   ChatAttachmentId,
   CommandId,
+  GUEST_MESSAGE_MAX_LENGTH,
   GUEST_SHARE_TTL_MS,
   GuestMessageId,
+  type GuestQuote,
+  type MessageId,
   GuestShareCreateError,
   type GuestShareCreateInput,
   type GuestShareCreateResult,
@@ -20,6 +24,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { chatMarkdownImageSources } from "@t3tools/shared/markdownPipeline";
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import * as Context from "effect/Context";
@@ -44,6 +49,7 @@ import {
   threadHtmlRenderAttachmentIds,
 } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as CommandOutputHub from "../orchestration-v2/CommandOutputHub.ts";
 import { GUEST_FAILURE } from "../orchestration-v2/GuestShareDecider.ts";
@@ -59,6 +65,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
+import { guestTextHasCitation, locateGuestQuote } from "./guestQuotes.ts";
 import {
   classifyGuestUploads,
   GUEST_UPLOAD_HEADER_BYTES,
@@ -73,6 +80,7 @@ const SHARE_ID_BYTES = 16;
 const INVITE_SIGNATURE_BYTES = 16;
 const SNAPSHOT_ROW_LIMIT = 600;
 const SNAPSHOT_USER_TURN_LIMIT = 20;
+const INHERITED_REPLY_PAGE_SIZE = 200;
 // Shares with no open guest stream whose sent image replies are still kept.
 const SHARED_THREAD_REPLIES_LIMIT = 64;
 // How soon an open read notices that its link stopped working, such as Connect no longer serving
@@ -90,6 +98,9 @@ const GUEST_ACCESS_MESSAGES = {
   too_large: "Attached files can total up to 10 MB per message.",
   unsupported_file: "This file cannot be attached. Images must be PNG, JPEG, GIF, or WebP.",
   files_busy: GUEST_FAILURE.filesBusy,
+  quote_unavailable: "A quote in this message is not from this thread. Remove it and quote again.",
+  citation_in_text: "Quote the agent with Reply instead of pasting a quote link.",
+  too_long: "This message is too long. Shorten it or quote less.",
 } as const;
 
 /** What a guest is told. The message comes from `reason`, never from a cause. */
@@ -109,6 +120,9 @@ export class GuestShareAccessError extends Schema.TaggedError<GuestShareAccessEr
       "too_large",
       "unsupported_file",
       "files_busy",
+      "quote_unavailable",
+      "citation_in_text",
+      "too_long",
     ]),
   },
 ) {
@@ -137,6 +151,8 @@ type SessionClaims = typeof SessionClaims.Type;
 const decodeSessionClaims = Schema.decodeUnknownOption(Schema.fromJsonString(SessionClaims));
 
 const inactive = new GuestShareAccessError({ reason: "inactive" });
+const quoteUnavailable = new GuestShareAccessError({ reason: "quote_unavailable" });
+const decodeCitation = Schema.decodeUnknownEffect(AssistantCitation);
 
 export class GuestShareService extends Context.Service<
   GuestShareService,
@@ -227,6 +243,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const random = yield* SecureRandom.SecureRandom;
   const analytics = yield* AnalyticsService.AnalyticsService;
+  const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const signer = yield* PayloadSigner.make(SIGNING_SECRET_NAME);
   /** A truncated HMAC keeps invite links short. 128 bits is still far beyond guessing range. */
   const inviteSignature = (shareId: string) =>
@@ -445,6 +462,65 @@ const make = Effect.gen(function* () {
     return stored;
   });
 
+  /**
+   * The text of the agent replies the shared thread shows its guest, of those named. A fork shows
+   * its source's replies up to the fork, which stay in the source thread; its timeline holds them
+   * and nothing after.
+   */
+  const visibleReplies = Effect.fn("GuestShareService.visibleReplies")(function* (
+    thread: OrchestrationV2AppThread,
+    messageIds: ReadonlyArray<MessageId>,
+  ) {
+    const replies = new Map<MessageId, string>();
+    const { messages } = yield* orchestrator.getThreadRecords(thread.id, ["messages"], {
+      messageIds,
+      messageRoles: ["assistant"],
+    });
+    for (const message of messages) replies.set(message.id, message.text);
+    const inherited = new Set(messageIds.filter((id) => !replies.has(id)));
+    let afterPosition = -1;
+    while (thread.forkedFrom !== null && inherited.size > 0) {
+      const page = yield* orchestrator.getTimelinePage(thread.id, {
+        afterPosition,
+        limit: INHERITED_REPLY_PAGE_SIZE,
+      });
+      for (const { item, position } of page.items) {
+        afterPosition = position;
+        if (item.type !== "assistant_message" || !inherited.has(item.messageId)) continue;
+        replies.set(item.messageId, item.text);
+        inherited.delete(item.messageId);
+      }
+      if (!page.hasMore) break;
+    }
+    return replies;
+  });
+
+  /** Each quote as a citation of the shared thread in the owner's environment, once checked. */
+  const buildQuotes = Effect.fn("GuestShareService.buildQuotes")(function* (
+    thread: OrchestrationV2AppThread,
+    quotes: ReadonlyArray<GuestQuote>,
+  ) {
+    if (quotes.length === 0) return [];
+    const environmentId = yield* environment.getEnvironmentId;
+    const replies = yield* visibleReplies(thread, [
+      ...new Set(quotes.map((quote) => quote.messageId)),
+    ]).pipe(Effect.mapError(() => new GuestShareAccessError({ reason: "rejected" })));
+    return yield* Effect.forEach(quotes, (quote) => {
+      const markdown = replies.get(quote.messageId);
+      const selector = markdown === undefined ? null : locateGuestQuote(quote.text, markdown);
+      return selector === null
+        ? Effect.fail(quoteUnavailable)
+        : decodeCitation({
+            version: 1,
+            environmentId,
+            threadId: thread.id,
+            messageId: quote.messageId,
+            text: quote.text,
+            ...selector,
+          }).pipe(Effect.mapError(() => quoteUnavailable));
+    });
+  });
+
   const submit = Effect.fn("GuestShareService.submit")(function* (
     session: string,
     request: GuestSubmitRequest,
@@ -454,8 +530,20 @@ const make = Effect.gen(function* () {
     if (request.shareId !== share.id) {
       return yield* new GuestShareAccessError({ reason: "stale_page" });
     }
-    if (request.text === "" && uploads.length === 0) {
+    const requestedQuotes = request.quotes ?? [];
+    if (request.text === "" && uploads.length === 0 && requestedQuotes.length === 0) {
       return yield* new GuestShareAccessError({ reason: "empty" });
+    }
+    if (guestTextHasCitation(request.text)) {
+      return yield* new GuestShareAccessError({ reason: "citation_in_text" });
+    }
+    const quotes = yield* buildQuotes(thread, requestedQuotes);
+    // Send writes the quotes into the message as links, which count toward its length.
+    const sentLength = [...quotes.map(serializeAssistantCitation), request.text]
+      .filter((part) => part !== "")
+      .join(" ").length;
+    if (sentLength > GUEST_MESSAGE_MAX_LENGTH) {
+      return yield* new GuestShareAccessError({ reason: "too_long" });
     }
     const attachments = yield* storeUploads(thread.id, uploads);
     yield* dispatchGuestCommand({
@@ -466,6 +554,7 @@ const make = Effect.gen(function* () {
       guestMessageId: GuestMessageId.make(yield* random.uuidV4()),
       text: request.text,
       ...(attachments.length === 0 ? {} : { attachments }),
+      ...(quotes.length === 0 ? {} : { quotes }),
     }).pipe(Effect.onError(() => removeStored(attachments)));
     yield* analytics.record("feature.used", {
       feature: "guest_message.submit",

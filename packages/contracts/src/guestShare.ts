@@ -1,10 +1,12 @@
 import * as Schema from "effect/Schema";
 
+import { ASSISTANT_CITATION_MAX_TEXT_LENGTH, AssistantCitation } from "./assistantCitations.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import {
   GuestMessageId,
   GuestShareId,
   IsoDateTime,
+  MessageId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -26,6 +28,8 @@ export const GUEST_MESSAGE_MAX_ATTACHMENTS = 4;
 export const GUEST_MESSAGE_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 /** Total size of the files in a share's waiting messages, so a guest cannot fill the disk. */
 export const GUEST_PENDING_ATTACHMENT_BYTES_LIMIT = 20 * 1024 * 1024;
+/** More quotes than fit in one message once the server writes them as citation links. */
+const GUEST_MESSAGE_MAX_QUOTES = 32;
 
 export const ThreadGuestMessageStatus = Schema.Literals(["pending", "sent", "dismissed"]);
 export type ThreadGuestMessageStatus = typeof ThreadGuestMessageStatus.Type;
@@ -37,6 +41,11 @@ export const ThreadGuestMessage = Schema.Struct({
   submittedAt: IsoDateTime,
   /** The thread's attachments, deleted if the message is dismissed. Absent on older messages. */
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  /**
+   * Agent replies the guest quoted, checked against the shared thread and built by the server.
+   * Send puts them before `text` as citation links; `text` itself never holds one.
+   */
+  quotes: Schema.optional(Schema.Array(AssistantCitation)),
 });
 export type ThreadGuestMessage = typeof ThreadGuestMessage.Type;
 
@@ -104,6 +113,16 @@ export const GuestRedeemRequest = Schema.Struct({
 });
 export type GuestRedeemRequest = typeof GuestRedeemRequest.Type;
 
+/** Agent text a guest quoted, as the guest page's composer chip holds it. */
+export const GuestQuote = Schema.Struct({
+  messageId: MessageId.check(Schema.isMaxLength(512)),
+  text: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(ASSISTANT_CITATION_MAX_TEXT_LENGTH),
+  ),
+});
+export type GuestQuote = typeof GuestQuote.Type;
+
 /**
  * The fields of a guest message. The page posts them as multipart form data, with each file as a
  * `file` part; text can be empty when files are attached.
@@ -113,6 +132,10 @@ export const GuestSubmitRequest = Schema.Struct({
       of reaching the new one. */
   shareId: GuestShareId,
   text: TrimmedString.check(Schema.isMaxLength(GUEST_MESSAGE_MAX_LENGTH)),
+  /** Sent as a JSON form field. The server checks each and writes the citation links. */
+  quotes: Schema.optional(
+    Schema.Array(GuestQuote).check(Schema.isMaxLength(GUEST_MESSAGE_MAX_QUOTES)),
+  ),
 });
 export type GuestSubmitRequest = typeof GuestSubmitRequest.Type;
 

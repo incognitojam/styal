@@ -10,6 +10,7 @@ import {
   type ThreadGuestMessage,
   type ThreadGuestShare,
 } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 
@@ -164,6 +165,9 @@ export function decideGuestShareCommand(input: {
             status: "pending",
             submittedAt: DateTime.formatIso(now),
             ...(attachments.length === 0 ? {} : { attachments }),
+            ...(command.quotes === undefined || command.quotes.length === 0
+              ? {}
+              : { quotes: command.quotes }),
           },
         ]),
       };
@@ -211,7 +215,12 @@ export function decideGuestMessageSend(input: {
   if (share === null) return Result.fail("This thread has no guest link.");
   const message = share.messages.find((candidate) => candidate.id === input.guestMessageId);
   const name = share.guestName ?? "Guest";
-  const guestText = message?.text ?? "";
+  const guestText =
+    message === undefined
+      ? ""
+      : [...(message.quotes ?? []).map(serializeAssistantCitation), message.text]
+          .filter((part) => part !== "")
+          .join(" ");
   return Result.map(resolveMessage(share, input.guestMessageId, "sent"), (next) => ({
     thread: { ...input.thread, guestShare: next, updatedAt: input.now },
     text: `Message from guest ${name}, sent by the owner:\n\n${guestText}`,

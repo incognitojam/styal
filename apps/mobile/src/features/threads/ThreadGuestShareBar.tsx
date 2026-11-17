@@ -116,6 +116,35 @@ export function ThreadGuestShareBar(props: {
   );
 }
 
+/** A guest's quotes of the agent as quoted blocks, then the guest's own text. */
+function GuestPendingText({
+  message,
+}: {
+  readonly message: Pick<ThreadGuestMessage, "text" | "quotes">;
+}) {
+  return (
+    <View className="gap-2">
+      {message.quotes?.map((quote, index) => (
+        <View
+          // oxlint-disable-next-line react/no-array-index-key -- a message's quotes never change
+          key={index}
+          accessibilityLabel="Quoted agent text"
+          className="border-l-2 border-border pl-3"
+        >
+          <Text selectable className="text-base text-foreground-muted">
+            {quote.text}
+          </Text>
+        </View>
+      ))}
+      {message.text ? (
+        <Text selectable className="text-base text-foreground">
+          {message.text}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 /**
  * One guest message waiting at the end of the feed until the owner sends or dismisses it. Sent
  * ones then show in the feed as user messages with the guest's name.
@@ -160,11 +189,7 @@ export function ThreadGuestPendingMessage(props: {
     <View className="items-end pb-5">
       <GuestMessageName name={guestName} />
       <View className={GUEST_PENDING_BUBBLE_CLASS_NAME} style={{ maxWidth: props.bubbleMaxWidth }}>
-        {message.text ? (
-          <Text selectable className="text-base text-foreground">
-            {message.text}
-          </Text>
-        ) : null}
+        {message.text || message.quotes?.length ? <GuestPendingText message={message} /> : null}
         {props.renderAttachments(message.attachments ?? [])}
       </View>
       {canOperate ? (

@@ -16,7 +16,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -280,6 +280,50 @@ describe("GuestPage", () => {
     expect((form.get("file") as File).name).toBe("notes.txt");
     // Sent files leave the composer.
     await expect.element(screen.getByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  it("quotes selected agent text into the message the guest sends", async () => {
+    using _page = visit(`/guest?share=${SHARE_ID}`);
+    using fetchSpy = vi
+      .spyOn(window, "fetch")
+      .mockImplementation(async () => new Response(null, { status: 204 }));
+    using _stream = vi
+      .spyOn(window, "EventSource")
+      .mockImplementation(fakeEventSource(opening([run("run-1", 1, "completed")], items)) as never);
+    const container = document.createElement("div");
+    container.style.cssText = "height: 900px; width: 900px; display: flex; flex-direction: column;";
+    await using screen = await render(<GuestPage />, { container });
+
+    await expect.element(screen.getByText("All checks pass.")).toBeVisible();
+    await userEvent.tripleClick(screen.getByText("All checks pass."));
+    // The toolbar renders over the page, outside the screen's container.
+    await userEvent.click(page.getByRole("button", { name: "Reply to selection in composer" }));
+    await expect
+      .element(screen.getByRole("list", { name: "Quotes" }).getByText("All checks pass."))
+      .toBeVisible();
+    await userEvent.type(screen.getByLabelText("Message", { exact: true }), "Which checks?");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await vi.waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `/api/guest/messages?share=${SHARE_ID}`,
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const form = fetchSpy.mock.calls.find(
+      ([url]) => url === `/api/guest/messages?share=${SHARE_ID}`,
+    )?.[1]?.body as FormData;
+    // The guest's text holds no citation link; the server builds one from each quote.
+    expect(form.get("text")).toBe("Which checks?");
+    const quotes = JSON.parse(form.get("quotes") as string) as Array<{
+      messageId: string;
+      text: string;
+    }>;
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.messageId).toBe("reply");
+    expect(quotes[0]?.text.trim()).toBe("All checks pass.");
+    // A sent quote leaves the composer.
+    await expect.element(screen.getByRole("list", { name: "Quotes" })).not.toBeInTheDocument();
   });
 
   it("follows the end as replies stream, and shows the guest's own message even after they scrolled up", async () => {

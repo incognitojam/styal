@@ -38,6 +38,7 @@ import { useAssetUrls } from "~/assets/assetUrls";
 import { type ChatFileAttachment, isImageAttachment } from "../../types";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { GuestMessageAttachments } from "./GuestMessageAttachments";
+import { GuestMessageText } from "./GuestMessageText";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { guestShareDialogThreadAtom } from "./guestShareDialogState";
 
@@ -291,9 +292,9 @@ export function GuestPendingMessages({
                 onOpenImage={openImage}
                 onOpenFile={onFileOpen}
               />
-              {message.text ? (
+              {message.text || message.quotes?.length ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-                  {message.text}
+                  <GuestMessageText message={message} />
                 </p>
               ) : null}
             </div>

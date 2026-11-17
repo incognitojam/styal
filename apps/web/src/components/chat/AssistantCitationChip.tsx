@@ -21,6 +21,7 @@ import {
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
 import { cn } from "~/lib/utils";
+import { isGuestPage } from "~/guestPage";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { ContextChipPopover } from "../contextChipParts";
 import { Button } from "../ui/button";
@@ -148,12 +149,15 @@ export function AssistantCitationChip({
       >
         <div className="flex max-h-[calc(var(--available-height)_-_1rem_-_2px)] flex-col items-start gap-3 p-1 text-sm">
           <AssistantCitationQuote citation={citation} />
-          <PopoverClose
-            render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
-          >
-            <ArrowUpRightIcon aria-hidden="true" />
-            Go to source
-          </PopoverClose>
+          {/* The source opens in the owner's app, which a guest cannot open. */}
+          {isGuestPage() ? null : (
+            <PopoverClose
+              render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
+            >
+              <ArrowUpRightIcon aria-hidden="true" />
+              Go to source
+            </PopoverClose>
+          )}
         </div>
       </ContextChipPopover>
     );
