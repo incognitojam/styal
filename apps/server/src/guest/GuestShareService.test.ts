@@ -492,6 +492,67 @@ const writeItem = (
     return TurnItemId.make(id);
   });
 
+/** An agent reply as a provider records it: the conversation message and its timeline item. */
+const writeReply = Effect.fn(function* (
+  target: { readonly threadId: ThreadId; readonly runId: RunId },
+  messageId: MessageId,
+  text: string,
+) {
+  const now = yield* DateTime.now;
+  const common = {
+    threadId: target.threadId,
+    driver: ProviderDriverKind.make("codex"),
+    providerInstanceId: instanceId,
+    occurredAt: now,
+  };
+  yield* (yield* EventSink.EventSinkV2).write({
+    events: [
+      {
+        ...common,
+        id: EventId.make(`event:message:${messageId}`),
+        type: "message.updated",
+        payload: {
+          id: messageId,
+          ...target,
+          nodeId: null,
+          role: "assistant",
+          text,
+          attachments: [],
+          streaming: false,
+          createdBy: "agent",
+          creationSource: "web",
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+      {
+        ...common,
+        id: EventId.make(`event:item:${messageId}`),
+        type: "turn-item.updated",
+        payload: {
+          id: TurnItemId.make(`item:${messageId}`),
+          ...target,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          title: null,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "assistant_message",
+          messageId,
+          text,
+          streaming: false,
+        },
+      },
+    ],
+  });
+});
+
 it.effect("gives the guest a command's detail and output, but no file diffs", () =>
   Effect.gen(function* () {
     const { guestShares, credential } = yield* shareThread;
@@ -705,34 +766,11 @@ it.effect("sends a guest's quote of the shared thread and refuses quotes of anyt
   Effect.gen(function* () {
     const { orchestrator, guestShares, session, shareId } = yield* joinedGuest;
     const replyId = MessageId.make("message:reply");
-    const runId = yield* ownerRun;
-    const now = yield* DateTime.now;
-    yield* (yield* EventSink.EventSinkV2).write({
-      events: [
-        {
-          id: EventId.make("event:reply"),
-          type: "message.updated",
-          threadId,
-          driver: ProviderDriverKind.make("codex"),
-          providerInstanceId: instanceId,
-          occurredAt: now,
-          payload: {
-            id: replyId,
-            threadId,
-            runId,
-            nodeId: null,
-            role: "assistant",
-            text: "Use **exponential backoff** for the\n\nretry loop.",
-            attachments: [],
-            streaming: false,
-            createdBy: "agent",
-            creationSource: "web",
-            createdAt: now,
-            updatedAt: now,
-          },
-        },
-      ],
-    });
+    yield* writeReply(
+      { threadId, runId: yield* ownerRun },
+      replyId,
+      "Use **exponential backoff** for the\n\nretry loop.",
+    );
     // The page does not know the owner's environment, so it quotes with a placeholder.
     const quote = (fields: Partial<AssistantCitation>) =>
       serializeAssistantCitation({
@@ -1134,6 +1172,93 @@ it.effect("gives a fork's guest the files on messages the fork shows from its so
       (yield* Effect.flip(guestShares.attachment(session, later.id))).reason,
       "unavailable",
     );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("lets a fork's guest quote the replies it shows from its source, and none after", () =>
+  Effect.gen(function* () {
+    const { orchestrator, guestShares } = yield* shareThread;
+    yield* writeReply(
+      { threadId, runId: yield* ownerRun },
+      MessageId.make("message:before-fork"),
+      "Retry with backoff.",
+    );
+    const [completed] = (yield* orchestrator.getThreadRecords(threadId, ["runs"])).runs;
+    const now = yield* DateTime.now;
+    yield* (yield* EventSink.EventSinkV2).write({
+      events: [
+        {
+          id: EventId.make("event:quote-run-done"),
+          type: "run.updated",
+          threadId,
+          runId: completed!.id,
+          providerInstanceId: instanceId,
+          occurredAt: now,
+          payload: { ...completed!, status: "completed", completedAt: now },
+        },
+      ],
+    });
+    const forkId = ThreadId.make("thread:guest-quote-fork");
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("quote-fork"),
+      sourceThreadId: threadId,
+      targetThreadId: forkId,
+      sourcePoint: { type: "run", runId: completed!.id },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    // The source goes on after the fork point.
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("owner-after-fork"),
+      threadId,
+      messageId: MessageId.make("message:owner-after-fork"),
+      text: "Keep going",
+      attachments: [],
+      dispatchMode: { type: "defer_start" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const laterRun = (yield* orchestrator.getThreadRecords(threadId, ["runs"])).runs.find(
+      (candidate) => candidate.id !== completed!.id,
+    );
+    yield* writeReply(
+      { threadId, runId: laterRun!.id },
+      MessageId.make("message:after-fork"),
+      "Then drop the cache.",
+    );
+    const { url } = yield* guestShares.create({ threadId: forkId });
+    const { token: session, shareId } = yield* guestShares.redeem({
+      credential: url.slice(url.indexOf("#") + 1),
+      name: "Sam",
+    });
+    const quote = (messageId: string, text: string) =>
+      serializeAssistantCitation({
+        version: 1,
+        environmentId: EnvironmentId.make("guest"),
+        threadId: forkId,
+        messageId: MessageId.make(messageId),
+        text,
+        start: 0,
+        end: text.length,
+        prefix: "",
+        suffix: "",
+      });
+
+    yield* guestShares.submit(
+      session,
+      { shareId, text: `${quote("message:before-fork", "Retry with backoff.")} how?` },
+      [],
+    );
+    const error = yield* Effect.flip(
+      guestShares.submit(
+        session,
+        { shareId, text: `${quote("message:after-fork", "Then drop the cache.")} how?` },
+        [],
+      ),
+    );
+    assert.equal(error.reason, "quote_unavailable");
   }).pipe(Effect.provide(layerTest)),
 );
 

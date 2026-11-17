@@ -5,6 +5,7 @@ import {
   GUEST_MESSAGE_MAX_LENGTH,
   GUEST_SHARE_TTL_MS,
   GuestMessageId,
+  type MessageId,
   GuestShareCreateError,
   type GuestShareCreateInput,
   type GuestShareCreateResult,
@@ -61,7 +62,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
-import { guestQuotedMessageIds, resolveGuestQuotes } from "./guestQuotes.ts";
+import { guestQuotesValid, prepareGuestQuotes } from "./guestQuotes.ts";
 import {
   classifyGuestUploads,
   GUEST_UPLOAD_HEADER_BYTES,
@@ -76,6 +77,7 @@ const SHARE_ID_BYTES = 16;
 const INVITE_SIGNATURE_BYTES = 16;
 const SNAPSHOT_ROW_LIMIT = 600;
 const SNAPSHOT_USER_TURN_LIMIT = 20;
+const INHERITED_REPLY_PAGE_SIZE = 200;
 // Shares with no open guest stream whose sent image replies are still kept.
 const SHARED_THREAD_REPLIES_LIMIT = 64;
 // How soon an open read notices that its link stopped working, such as Connect no longer serving
@@ -453,27 +455,60 @@ const make = Effect.gen(function* () {
     return stored;
   });
 
+  /**
+   * The text of the agent replies the shared thread shows its guest, of those named. A fork shows
+   * its source's replies up to the fork, which stay in the source thread; its timeline holds them
+   * and nothing after.
+   */
+  const visibleReplies = Effect.fn("GuestShareService.visibleReplies")(function* (
+    thread: OrchestrationV2AppThread,
+    messageIds: ReadonlyArray<MessageId>,
+  ) {
+    const replies = new Map<MessageId, string>();
+    const { messages } = yield* orchestrator.getThreadRecords(thread.id, ["messages"], {
+      messageIds,
+      messageRoles: ["assistant"],
+    });
+    for (const message of messages) replies.set(message.id, message.text);
+    const inherited = new Set(messageIds.filter((id) => !replies.has(id)));
+    let afterPosition = -1;
+    while (thread.forkedFrom !== null && inherited.size > 0) {
+      const page = yield* orchestrator.getTimelinePage(thread.id, {
+        afterPosition,
+        limit: INHERITED_REPLY_PAGE_SIZE,
+      });
+      for (const { item, position } of page.items) {
+        afterPosition = position;
+        if (item.type !== "assistant_message" || !inherited.has(item.messageId)) continue;
+        replies.set(item.messageId, item.text);
+        inherited.delete(item.messageId);
+      }
+      if (!page.hasMore) break;
+    }
+    return replies;
+  });
+
   /** The guest's text with each quote checked against the shared thread. */
   const resolveQuotes = Effect.fn("GuestShareService.resolveQuotes")(function* (
-    threadId: ThreadId,
+    thread: OrchestrationV2AppThread,
     text: string,
   ) {
-    const messageIds = guestQuotedMessageIds(text);
-    if (messageIds.length === 0) return text;
-    const { messages } = yield* orchestrator
-      .getThreadRecords(threadId, ["messages"], { messageIds, messageRoles: ["assistant"] })
-      .pipe(Effect.mapError(() => new GuestShareAccessError({ reason: "rejected" })));
-    const resolved = resolveGuestQuotes(text, {
-      environmentId: yield* environment.getEnvironmentId,
-      threadId,
-      assistantMessages: new Map(messages.map((message) => [message.id, message.text])),
-    });
-    if (resolved === null) return yield* new GuestShareAccessError({ reason: "quote_unavailable" });
+    const environmentId = yield* environment.getEnvironmentId;
+    const prepared = prepareGuestQuotes(text, environmentId);
+    if (prepared.quotes.length === 0) return prepared.text;
+    const assistantMessages = yield* visibleReplies(thread, [
+      ...new Set(prepared.quotes.map((quote) => quote.messageId)),
+    ]).pipe(Effect.mapError(() => new GuestShareAccessError({ reason: "rejected" })));
+    if (
+      !guestQuotesValid(prepared.quotes, { environmentId, threadId: thread.id, assistantMessages })
+    ) {
+      return yield* new GuestShareAccessError({ reason: "quote_unavailable" });
+    }
     // The owner's environment id can be longer than the placeholder the page counted.
-    if (resolved.length > GUEST_MESSAGE_MAX_LENGTH) {
+    if (prepared.text.length > GUEST_MESSAGE_MAX_LENGTH) {
       return yield* new GuestShareAccessError({ reason: "too_long" });
     }
-    return resolved;
+    return prepared.text;
   });
 
   const submit = Effect.fn("GuestShareService.submit")(function* (
@@ -488,7 +523,7 @@ const make = Effect.gen(function* () {
     if (request.text === "" && uploads.length === 0) {
       return yield* new GuestShareAccessError({ reason: "empty" });
     }
-    const text = yield* resolveQuotes(thread.id, request.text);
+    const text = yield* resolveQuotes(thread, request.text);
     const attachments = yield* storeUploads(thread.id, uploads);
     yield* dispatchGuestCommand({
       type: "thread.guest-message.submit",

@@ -1,62 +1,78 @@
-import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import type { AssistantCitation, EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import {
   collectAssistantCitations,
+  parseAssistantCitationHref,
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
+import { chatMarkdownLinkTargets } from "@t3tools/shared/markdownPipeline";
 import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
 
-/** The assistant messages a guest's quotes name, as the shared thread stores them. */
-export function guestQuotedMessageIds(text: string): ReadonlyArray<MessageId> {
-  return [...new Set(collectAssistantCitations(text).map(({ citation }) => citation.messageId))];
+/**
+ * A guest's text with each quote in the composer's form given the owner's environment, which the
+ * page cannot know, and every quote anything reads from it: the link form the composer writes,
+ * and any other link spelling the chat renderer turns into a citation chip.
+ */
+export function prepareGuestQuotes(
+  text: string,
+  environmentId: EnvironmentId,
+): { readonly text: string; readonly quotes: ReadonlyArray<AssistantCitation> } {
+  let resolved = "";
+  let cursor = 0;
+  for (const { citation, start, end } of collectAssistantCitations(text)) {
+    resolved += text.slice(cursor, start);
+    resolved += serializeAssistantCitation({ ...citation, environmentId });
+    cursor = end;
+  }
+  resolved += text.slice(cursor);
+  return {
+    text: resolved,
+    quotes: [
+      ...collectAssistantCitations(resolved).map(({ citation }) => citation),
+      ...chatMarkdownLinkTargets(resolved).flatMap(
+        (target) => parseAssistantCitationHref(target) ?? [],
+      ),
+    ],
+  };
 }
 
-const withoutWhitespace = (text: string) => text.replace(/\s+/g, "");
+const collapseWhitespace = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
  * Whether a guest's quote is text the message shows. The page quotes rendered text, so the check
  * runs against the rendered text and, for what renders differently from its source (such as a
- * formula), the Markdown. Whitespace is ignored, since block breaks render as line breaks.
+ * formula), the Markdown. Block breaks render as line breaks, so runs of whitespace compare equal,
+ * but a word boundary must stay one.
  */
 function quotesMessage(quote: string, markdown: string): boolean {
-  const target = withoutWhitespace(quote);
+  const target = collapseWhitespace(quote);
   const rendered = searchableMessageSegments({
     role: "assistant",
     text: markdown,
     streaming: false,
   });
   return (
-    withoutWhitespace((rendered ?? []).join("")).includes(target) ||
-    withoutWhitespace(markdown).includes(target)
+    collapseWhitespace((rendered ?? []).join(" ")).includes(target) ||
+    collapseWhitespace(markdown).includes(target)
   );
 }
 
-/**
- * A guest's message with its quotes checked against the shared thread, or null when one quotes
- * anything else. The page cannot know the owner's environment, so each quote gets it here.
- */
-export function resolveGuestQuotes(
-  text: string,
+/** Whether every quote is of an agent reply the shared thread shows its guest, in the owner's environment. */
+export function guestQuotesValid(
+  quotes: ReadonlyArray<AssistantCitation>,
   shared: {
     readonly environmentId: EnvironmentId;
     readonly threadId: ThreadId;
-    /** The Markdown of the thread's assistant messages that the quotes name. */
+    /** The Markdown of the agent replies the guest sees that the quotes name. */
     readonly assistantMessages: ReadonlyMap<MessageId, string>;
   },
-): string | null {
-  let resolved = "";
-  let cursor = 0;
-  for (const { citation, start, end } of collectAssistantCitations(text)) {
-    const markdown = shared.assistantMessages.get(citation.messageId);
-    if (
-      citation.threadId !== shared.threadId ||
-      markdown === undefined ||
-      !quotesMessage(citation.text, markdown)
-    ) {
-      return null;
-    }
-    resolved += text.slice(cursor, start);
-    resolved += serializeAssistantCitation({ ...citation, environmentId: shared.environmentId });
-    cursor = end;
-  }
-  return resolved + text.slice(cursor);
+): boolean {
+  return quotes.every((quote) => {
+    const markdown = shared.assistantMessages.get(quote.messageId);
+    return (
+      quote.environmentId === shared.environmentId &&
+      quote.threadId === shared.threadId &&
+      markdown !== undefined &&
+      quotesMessage(quote.text, markdown)
+    );
+  });
 }
