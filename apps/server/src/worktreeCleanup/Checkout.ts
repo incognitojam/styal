@@ -314,7 +314,10 @@ export const makeCheckout = Effect.gen(function* () {
     yield* step("release-finished");
     const after = yield* io(() => fs.statfs(root));
     const bytes = Math.max(0, after.bavail * after.bsize - available.bavail * available.bsize);
-    yield* save(admin, { ...before, phase: "released", bytes,
+    yield* save(admin, {
+      ...before,
+      phase: "released",
+      bytes,
       availableBefore: available.bavail * available.bsize,
       availableAfter: after.bavail * after.bsize,
     });
