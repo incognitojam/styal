@@ -6585,7 +6585,7 @@ features:
     title: Project folders are the default sidebar, chosen outside Labs
     status: maintained
     tier: keep
-    prs: []
+    prs: [1606]
     invariants:
       - On web and desktop, project folders are the sidebar's default layout. Settings → General → Sidebar → Sidebar layout chooses Project folders or Flat list for this device, with Two-line folder rows under it while folders are chosen; Labs has no folder switch. The stored key stays upstream's `boringSidebarEnabled`.
       - Each device moves to project folders once, on its first load of a build with this change, whatever layout it showed, because a stored flat list cannot be told from an untouched default. The move is recorded on the device, so later choices stay, reloads and second runs change nothing, and each other device moves on its own first load.
@@ -6668,7 +6668,7 @@ features:
     title: Project folders drag, pin and archive like the old grouped headers, and mobile groups threads by project
     status: maintained
     tier: keep
-    prs: [533, 546, 585, 745, 1586, 1592, 1595]
+    prs: [533, 546, 585, 745, 1586, 1592, 1595, 1600, 1606]
     invariants:
       - While project folders show, threads drag between the folders, Pinned and Settled, Snoozed threads drag back out, and pinned threads reorder, with the same drop rules and saved results as the flat list. Folders keep upstream's latest-message order, so a thread dropped into them lands in its own folder by its latest message and folder rows never reorder by drag. Folder headers move with the rows during a drag; a folder that stays without rows keeps its header.
       - Folders put pinned projects first in their shared pin order, with a pin icon, and the rest in the Project order setting's order. Dragging a folder header moves the project and saves the order on the device, switching Project order to Manual when the drop leaves unpinned folders out of the setting's order; dragging it across the "Pinned projects above" divider pins or unpins it and saves the pin order. Archived folders stay last and cannot be dragged. While the last row of the only folder is dragged out, the dashed Active target shows as in the flat list.
