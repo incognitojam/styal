@@ -1,4 +1,4 @@
-import { isAbsolutePath, isHostPath, isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { isAbsolutePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
 
 export const WORKSPACE_BASENAME_LOOKUP_LIMIT = 25;
 
@@ -16,6 +16,11 @@ export interface WorkspaceEntryCandidate {
   readonly kind: "file" | "directory";
 }
 
+function basenameOfPath(path: string): string {
+  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
+}
+
 export function needsWorkspaceBasenameLookup(relativePath: string): boolean {
   const trimmed = relativePath.trim();
   return (
@@ -27,35 +32,20 @@ export function needsWorkspaceBasenameLookup(relativePath: string): boolean {
   );
 }
 
-// A slashed path names a suffix of the file's workspace path, so it only
-// resolves when exactly one indexed file ends with it.
 export function pickWorkspaceBasenameMatch(
-  relativePath: string,
+  basename: string,
   entries: ReadonlyArray<WorkspaceEntryCandidate>,
 ): string | null {
-  const target = relativePath
-    .trim()
-    .replaceAll("\\", "/")
-    .replace(/^(?:\.\/)+/, "");
-  if (
-    isHostPath(target) ||
-    target.split("/").some((segment) => !segment || segment === "." || segment === "..")
-  ) {
-    return null;
-  }
+  const target = basename.trim();
+  if (!target) return null;
   const files = entries.filter((entry) => entry.kind === "file");
-  const matchesOf = (key: (path: string) => string) =>
-    files.filter((entry) => {
-      const path = key(entry.path.replaceAll("\\", "/"));
-      const suffix = key(target);
-      return path === suffix || path.endsWith(`/${suffix}`);
-    });
-  const exact = matchesOf((path) => path);
-  if (exact.length > 0) {
-    return !target.includes("/") || exact.length === 1 ? (exact[0]?.path ?? null) : null;
-  }
-  const folded = matchesOf((path) => path.toLowerCase());
-  return folded.length === 1 ? (folded[0]?.path ?? null) : null;
+  const exact = files.find((entry) => basenameOfPath(entry.path) === target);
+  if (exact) return exact.path;
+  const folded = target.toLowerCase();
+  const foldedMatches = files.filter(
+    (entry) => basenameOfPath(entry.path).toLowerCase() === folded,
+  );
+  return foldedMatches.length === 1 ? (foldedMatches[0]?.path ?? null) : null;
 }
 
 // Repository-relative paths can repeat the project's suffix in subfolder projects.
@@ -122,19 +112,4 @@ function pickStrippedWorkspaceMatch(
   };
   const files = entries.filter((entry) => entry.kind === "file");
   return files.find((entry) => key(entry.path) === key(strippedPath))?.path ?? null;
-}
-
-// The search a workspace path runs when it is missing as written, and the
-// file that search resolves it to.
-export function workspaceFileLookup(relativePath: string, cwd: string) {
-  const strippedPath = needsWorkspaceBasenameLookup(relativePath)
-    ? null
-    : stripRepeatedWorkspacePrefix(relativePath, cwd);
-  return {
-    query: strippedPath ?? relativePath,
-    pick: (entries: ReadonlyArray<WorkspaceEntryCandidate>) =>
-      strippedPath === null
-        ? pickWorkspaceBasenameMatch(relativePath, entries)
-        : pickStrippedWorkspaceMatch(strippedPath, cwd, entries),
-  };
 }

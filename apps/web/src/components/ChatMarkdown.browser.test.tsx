@@ -714,6 +714,25 @@ describe("ChatMarkdown workspace file opens", () => {
     );
   });
 
+  it("falls back to the original suffix when a repeated workspace prefix has no exact match", async () => {
+    setup();
+    workspaceSearch.mockResolvedValue(
+      AsyncResult.success({
+        entries: [{ path: "nested/project/docs/plan.md", kind: "file" }],
+        truncated: false,
+      }),
+    );
+    using openFile = vi
+      .spyOn(useRightPanelStore.getState(), "openFile")
+      .mockImplementation(() => {});
+    await using screen = await renderText("[Plan](project/docs/plan.md:12)", {
+      cwd: "/work/project",
+      threadRef,
+    });
+    await act(async () => screen.container.querySelector("a")!.click());
+    expect(openFile).toHaveBeenCalledExactlyOnceWith(threadRef, "nested/project/docs/plan.md", 12);
+  });
+
   it.each(["file", "directory"] as const)(
     "opens an existing slashed %s path without searching the workspace",
     async (kind) => {

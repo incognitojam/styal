@@ -1,7 +1,8 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   WORKSPACE_BASENAME_LOOKUP_LIMIT,
-  workspaceFileLookup,
+  workspaceLinkLookupQuery,
+  pickWorkspaceLinkMatch,
   type WorkspaceEntryCandidate,
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 
@@ -18,7 +19,7 @@ interface QueryView<A> {
 /** True only once the host and the workspace search both confirm nothing to open. */
 export function isMissingFileLink(input: {
   literal: QueryView<unknown>;
-  lookup: ReturnType<typeof workspaceFileLookup> | null;
+  lookup: { readonly relativePath: string; readonly cwd: string } | null;
   search: QueryView<{
     entries: ReadonlyArray<WorkspaceEntryCandidate>;
     truncated: boolean;
@@ -31,7 +32,9 @@ export function isMissingFileLink(input: {
   // A real suffix match ranks inside a full page of fuzzy results. A short
   // truncated page means the index is still scanning, so nothing is ruled out.
   if (result.truncated && result.entries.length < WORKSPACE_BASENAME_LOOKUP_LIMIT) return false;
-  return input.lookup.pick(result.entries) === null;
+  return (
+    pickWorkspaceLinkMatch(input.lookup.relativePath, input.lookup.cwd, result.entries) === null
+  );
 }
 
 export function useMissingFileLink(
@@ -40,9 +43,11 @@ export function useMissingFileLink(
   cwd: string | undefined,
 ): boolean {
   const literal = useFileMetadataQuery(environmentId, meta.filePath);
+  const relativePath = meta.workspaceLookupPath;
+  const query = relativePath && cwd ? workspaceLinkLookupQuery(relativePath, cwd) : null;
   const lookup =
-    literal.isSuccess && literal.data === null && meta.workspaceLookupPath && cwd
-      ? workspaceFileLookup(meta.workspaceLookupPath, cwd)
+    literal.isSuccess && literal.data === null && relativePath && cwd && query !== null
+      ? { relativePath, cwd, query }
       : null;
   const search = useEnvironmentQuery(
     environmentId && cwd && lookup

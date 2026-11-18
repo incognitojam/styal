@@ -126,11 +126,7 @@
     },
     {
       "pr": 18358,
-      "reason": "Imported provisionally as one snapshot: a chat file chip whose slashed path is missing at the workspace root resolves through the workspace index to the one file ending with that path, and a literal path that exists opens without a search. Known gap at this head: a search capped at its result limit can hide a second match, so an ambiguous suffix can open an arbitrary candidate (upstream review comment on the PR). The fork builds on it to show inline-code paths that resolve to nothing as plain code. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments (especially any handling of truncated results) and keep the fork's plain-code rule on the final lookup, rerun the ChatMarkdown file-chip browser tests and workspace lookup tests, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
-      "snapshot": {
-        "base": "210b2e7c6a8be11441b7afc94742ce3c76860111",
-        "head": "e6e967fb7d6bfa49617d3a9290c31437ff17811a"
-      }
+      "reason": "Upstream closed this PR without merging on 2026-11-12. Maintainer's decision 2026-11-18: rebuilt on upstream's lookup from #33943, replacing the provisional snapshot with workspaceLinkLookupQuery / pickWorkspaceLinkMatch shared by web and mobile. Retained fork #1217's plain-code rule on that lookup and the fork's outside-workspace and app-bundle routing. The capped-search ambiguity remains upstream's existing limitation. #35036 and #36364 remain for chronological intake; no snapshot reconciliation remains pending."
     },
     {
       "pr": 19426,
