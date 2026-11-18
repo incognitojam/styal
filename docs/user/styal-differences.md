@@ -246,6 +246,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Your attachments aren’t repeated in the image strip.** When an agent reads back an image attached to a user message in the same thread, web, desktop and mobile leave it out of the viewed-image strip. Other images the agent reads stay visible beside collapsed tool groups. Upstream repeats attachments there as of [revision 8cf97b5](https://github.com/pingdotgg/t3code/tree/8cf97b5f06f30a872ce30ab8a888f2ff012365a2), checked November 18, 2026.
+
 - **Approvals stay above the message box.** On web and desktop, a pending approval sits above the
   composer with the full command and clearly sized buttons, the same place as an agent's questions,
   so it stays in view however far the conversation scrolls. Its row in the conversation shows that

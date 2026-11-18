@@ -41,6 +41,7 @@ import {
   workEntryReadsMemoryFile,
   workEntryMemoryFileKind,
   workEntriesViewedImagePaths,
+  omitUserAttachmentImages,
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
@@ -2048,7 +2049,23 @@ export function deriveThreadFeedPresentation(
       firstEntryByRun,
     };
   }
-  return result;
+  const attachmentIds = new Set(
+    feed.flatMap((entry) =>
+      entry.type === "message" && entry.message.role === "user"
+        ? (entry.message.attachments ?? []).map((attachment) => attachment.id)
+        : [],
+    ),
+  );
+  const visibleRows = result.flatMap<ThreadFeedEntry>((row) => {
+    if (row.type !== "viewed-images") return [row];
+    const paths = omitUserAttachmentImages(row.paths, attachmentIds);
+    return paths.length === 0 ? [] : [paths === row.paths ? row : { ...row, paths }];
+  });
+  return visibleRows.map((row, index) =>
+    !row.continuesWorkLog && isWorkLogFeedRow(row) && isWorkLogFeedRow(visibleRows[index + 1])
+      ? { ...row, continuesWorkLog: true }
+      : row,
+  );
 }
 
 const continuedWorkLogRows = new WeakMap<ThreadFeedEntry, ThreadFeedEntry>();

@@ -623,6 +623,17 @@ export function workEntriesViewedImagePaths(
   return [...new Set(entries.flatMap((entry) => workEntryViewedImagePath(entry) ?? []))];
 }
 
+export function omitUserAttachmentImages(
+  paths: readonly string[],
+  attachmentIds: ReadonlySet<string>,
+): readonly string[] {
+  const retained = paths.filter((path) => {
+    const match = path.replaceAll("\\", "/").match(/(?:^|\/)attachments\/([^/]+)\.[^/.]+$/);
+    return match === null || !attachmentIds.has(match[1]!);
+  });
+  return retained.length === paths.length ? paths : retained;
+}
+
 export interface ViewedImageAsset {
   readonly resource: Extract<AssetResource, { readonly _tag: "media-file" }>;
   readonly alt: string;
