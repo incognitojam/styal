@@ -51,7 +51,8 @@ describe("countProjectThreads", () => {
       ],
       null,
     );
-    expect(counts).toEqual({ working: 2, needYou: 3 });
+    expect(counts.working).toBe(2);
+    expect(counts.needYou.map((thread) => thread.id)).toEqual(["approval", "question", "report"]);
   });
 
   it("leaves out the chat itself, subagents, side chats and archived threads", () => {
@@ -80,16 +81,21 @@ describe("countProjectThreads", () => {
       ],
       `${local}:${chatId}`,
     );
-    expect(counts).toEqual({ working: 1, needYou: 0 });
+    expect(counts.working).toBe(1);
+    expect(counts.needYou).toEqual([]);
   });
 });
 
 describe("formatProjectStatusLine", () => {
   it("names working threads, then those needing you, and is empty when neither", () => {
-    expect(formatProjectStatusLine({ working: 4, needYou: 2 })).toBe("4 working · 2 need you");
-    expect(formatProjectStatusLine({ working: 0, needYou: 1 })).toBe("1 needs you");
-    expect(formatProjectStatusLine({ working: 3, needYou: 0 })).toBe("3 working");
-    expect(formatProjectStatusLine({ working: 0, needYou: 0 })).toBeNull();
+    const needYou = (count: number) =>
+      Array.from({ length: count }, (_, index) => shell(`${index}`));
+    expect(formatProjectStatusLine({ working: 4, needYou: needYou(2) })).toBe(
+      "4 working · 2 need you",
+    );
+    expect(formatProjectStatusLine({ working: 0, needYou: needYou(1) })).toBe("1 needs you");
+    expect(formatProjectStatusLine({ working: 3, needYou: [] })).toBe("3 working");
+    expect(formatProjectStatusLine({ working: 0, needYou: [] })).toBeNull();
   });
 });
 

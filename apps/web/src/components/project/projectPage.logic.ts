@@ -69,7 +69,7 @@ export function projectPageRouteDisabled(
 export interface ProjectThreadCounts {
   readonly working: number;
   /** Waiting on an approval, a question or a report answer, as the sidebar's Approval and Input. */
-  readonly needYou: number;
+  readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
 }
 
 /** Counts a project's listed threads other than its chat; failed threads are not counted. */
@@ -78,7 +78,7 @@ export function countProjectThreads(
   chatThreadKey: string | null,
 ): ProjectThreadCounts {
   let working = 0;
-  let needYou = 0;
+  const needYou: EnvironmentThreadShell[] = [];
   for (const thread of threads) {
     if (thread.archivedAt != null || thread.deletedAt != null) continue;
     if (!isListedThreadLineage(thread.lineage)) continue;
@@ -86,7 +86,7 @@ export function countProjectThreads(
     switch (resolveSidebarThreadStatus(thread)) {
       case "approval":
       case "input":
-        needYou += 1;
+        needYou.push(thread);
         break;
       case "preparing":
       case "working":
@@ -98,9 +98,10 @@ export function countProjectThreads(
 }
 
 export function formatProjectStatusLine(counts: ProjectThreadCounts): string | null {
+  const needYou = counts.needYou.length;
   const parts = [
     ...(counts.working > 0 ? [`${counts.working} working`] : []),
-    ...(counts.needYou > 0 ? [`${counts.needYou} need${counts.needYou === 1 ? "s" : ""} you`] : []),
+    ...(needYou > 0 ? [`${needYou} need${needYou === 1 ? "s" : ""} you`] : []),
   ];
   return parts.length === 0 ? null : parts.join(" · ");
 }

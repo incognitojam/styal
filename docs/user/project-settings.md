@@ -320,6 +320,11 @@ it. **Project settings** links open the page, and its gear
 button opens the settings. A project without a coordinator shows an empty chat: the first message
 starts a thread in the project's folder, without a worktree, and makes it the coordinator.
 
+**Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
+questions and report questions, oldest first, each with its thread's name. Click one to answer it
+there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the
+page can't answer, such as a subagent's request, offers **Open thread**.
+
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
 

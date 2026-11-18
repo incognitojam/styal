@@ -4496,7 +4496,7 @@ features:
     title: Name one thread per project as its coordinator
     status: maintained
     tier: yield
-    prs: [1552, 1588]
+    prs: [1552, 1588, 1596, 1603]
     invariants:
       - Project coordinators are a Labs server setting, off by default; the coordinator is machine-local server state keyed by project, set and cleared from the project's settings or the thread's menu on web and desktop, and from the thread's menu on mobile.
       - While a project has a coordinator, threads created there report to it through thread reports, including threads a person starts, except threads that already report to their launcher, remote delegated work and imported sessions.
@@ -4507,12 +4507,14 @@ features:
       - Only the coordinator's thread receives the dispatch-only note, once when it becomes coordinator, and one note when it stops.
       - With the switch on, /projects/<key> is the project page on web and desktop, a one-line header (name, status line of working and need-you threads, machine, New thread, settings) over the coordinator's chat; a project without one gets a draft in its checkout whose first message creates the thread and stores it as the coordinator. With the switch off the route opens the project's settings, as before.
       - The palette's Open project, a thread header's project name, Project settings links, a folder's name or a grouped sidebar header (each carrying the chat's status dot and the status line, the chat having no row there; the folder chevron still toggles) and the chat's own row open the page; in the flat sidebar that row shows the project's name over the status line and stays in the list while it works, instead of folding into the Working section. The project's settings name the coordinator, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
+      - The project page's Needs you lists the approvals, questions and report questions of the threads its status line counts as needing you, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads.
     rationale: Upstream's Home (one fleet-wide full-access thread) is open and stale; this scopes the same idea, a setting that holds a thread id, to one project so Home can replace it later.
     implementation_paths:
       - apps/mobile/src/features/threads/projectCoordinator.ts
       - apps/server/src/orchestration-v2/ProjectCoordinator.ts
       - apps/server/src/orchestration-v2/ThreadReports.ts
       - apps/web/src/components/project/ProjectChatHeader.tsx
+      - apps/web/src/components/project/ProjectNeedsYou.tsx
       - apps/web/src/components/project/ProjectPage.tsx
       - apps/web/src/components/project/projectPage.logic.ts
       - apps/web/src/components/settings/ProjectCoordinatorSetting.tsx
