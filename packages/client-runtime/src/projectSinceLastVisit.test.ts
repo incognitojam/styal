@@ -129,14 +129,38 @@ describe("captureSinceLastVisit", () => {
         olderSettled: null,
       }),
     ).toBe(local);
-    const both = addSinceLastVisitEnvironment(local, {
-      environmentId: remote,
-      projectIds: harbor,
-      threads: [thread("on-remote", { environmentId: remote, latestRun: run("failed", at(1)) })],
-      chatRef: chat,
-      olderSettled: null,
-    });
-    expect(both.threadLines.map((line) => line.title)).toEqual(["on-remote", "fix-upload-test"]);
+    const both = addSinceLastVisitEnvironment(
+      addSinceLastVisitEnvironment(captured, {
+        environmentId: env,
+        projectIds: harbor,
+        threads: [
+          thread("fix-upload-test", {
+            latestRun: run("completed", at(2)),
+            pullRequests: [merged(230, at(0.5))],
+          }),
+        ],
+        chatRef: chat,
+        olderSettled: null,
+      }),
+      {
+        environmentId: remote,
+        projectIds: harbor,
+        threads: [
+          thread("on-remote", {
+            environmentId: remote,
+            latestRun: run("failed", at(1)),
+            pullRequests: [merged(230, at(0.5))],
+          }),
+        ],
+        chatRef: chat,
+        olderSettled: null,
+      },
+    );
+    expect(both.threadLines.map((line) => line.title)).toEqual([
+      "PR 230",
+      "on-remote",
+      "fix-upload-test",
+    ]);
     expect([...both.environments]).toEqual([env, remote]);
   });
 
@@ -157,8 +181,8 @@ describe("captureSinceLastVisit", () => {
         },
       }).unloadedBefore;
     expect(add(2, 4)).toBe(open - 2 * HOUR);
-    // Everything left out settled before the last visit, so nothing in it changed since.
-    expect(add(6, 4)).toBeNull();
+    // Settled before the last visit, but a pull request on one can still merge since.
+    expect(add(6, 4)).toBe(open - 6 * HOUR);
     expect(add(2, 0)).toBeNull();
   });
 

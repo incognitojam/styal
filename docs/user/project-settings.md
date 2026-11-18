@@ -336,7 +336,7 @@ chat's reports, threads that finished and you haven't opened, and pull requests 
 looked" is when you last opened the page, or the chat's last change while you had it open. Open
 questions stay in **Needs you**. Long lists fold into groups with **Show all**. If the chat's earlier
 history isn't loaded, **Load earlier** fetches it so older reports can be listed, and the list says
-when threads that settled long ago aren't loaded. Each thread counts only its latest turn. The list
+when threads that settled long ago weren't checked. Each thread counts only its latest turn. The list
 is not saved: it stays until you leave the page, and next time shows only what came after.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being

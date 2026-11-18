@@ -170,7 +170,7 @@ export function ProjectSinceLastVisit({
   const unloadedNote =
     captured.unloadedBefore === null
       ? null
-      : `Threads that settled before ${time(captured.unloadedBefore)} aren't loaded here, so some changes may be missing.`;
+      : `Threads settled before ${time(captured.unloadedBefore)} aren't checked.`;
 
   if (layout.total === 0) {
     return (
