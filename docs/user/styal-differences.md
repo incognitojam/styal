@@ -438,11 +438,6 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   Compared with [T3 Code revision 5b35402](https://github.com/pingdotgg/t3code/tree/5b35402623d7d1d88eaa472807272a6c2e78012a),
   checked October 25, 2026, whose combined update dialog shows thread counts and adds a restart countdown.
 
-- **Reopen in full screen on macOS.** If styal quits while its window is in full screen, including
-  when it restarts to update, it opens in full screen again. Compared with
-  [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
-  checked October 11, 2026, which reopens a full-screen window at its normal size.
-
 - **Install a pull request's preview build from its panel.** On an Apple Silicon Mac, **Install and
   open** downloads the build, checks its digest, installs `styal (Preview)`, and opens it, with no
   disk image to mount or quarantine to clear. A newer build replaces it and closing the pull request
