@@ -255,6 +255,14 @@
         "base": "9cd7a04797184c92a8f636ae1e918f42c139d850",
         "head": "5258d9f655bf8d17e125c2aa5cbbbe8daab3b796"
       }
+    },
+    {
+      "pr": 32437,
+      "reason": "Imported provisionally as one snapshot: with the boring sidebar on, the drag gate, the drag end guard and the empty Active drop target check whether a project folder is shown instead of whether the setting is on, so pinned, snoozed and settled rows reorder again when no folder renders; while a folder renders, rows still drag only onto the composer. Imported as the first step of porting the fork's sidebar drags onto the folder sidebar; the next fork change narrows the same gate so rows also drag into and out of Pinned, Snoozed and Settled while folders render, and builds on this snapshot's hasProjectFolders. The fork's sidebar browser test lacks upstream's session spy mock and some imports from tests it has not taken in, so the snapshot adds the ones its drag test uses; the user guide keeps the fork's neighbouring sentences on folders replacing project headers and two-line folder rows. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments with the fork's later gate changes, check in a client that a pinned row reorders in the boring sidebar with no folder, then clear the snapshot marker with that intake. If it closes without merging, check whether another upstream change replaces it, review whether to remove this change or retain it as maintained fork behavior (the fork's folder drag port depends on it), and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "e2afd2546eb34fde33ac9fb24c052e8a9d63b519",
+        "head": "07a64096873a80e9022be53678685b40fd7b2158"
+      }
     }
   ]
 }
