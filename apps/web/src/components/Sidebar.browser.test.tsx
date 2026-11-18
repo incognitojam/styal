@@ -136,23 +136,25 @@ describe("sidebar header new thread", () => {
 });
 
 describe("sidebar drag reorder", () => {
-  // Folders own the active order, so rows reorder unless one renders; then they only drag out.
   it.each([
-    { mode: "normal", folders: false, reorders: true },
-    { mode: "boring", folders: false, reorders: true },
-    { mode: "boring", folders: true, reorders: false },
+    { mode: "normal", folders: false, drag: "first", onto: "second", action: "reorder" },
+    { mode: "boring", folders: false, drag: "first", onto: "second", action: "reorder" },
+    { mode: "boring", folders: true, drag: "first", onto: "second", action: "reorder" },
+    { mode: "boring", folders: true, drag: "open", onto: "first", action: "pin" },
   ] as const)(
-    "$mode sidebar, folders=$folders: pinned rows reorder=$reorders",
+    "$mode sidebar, folders=$folders: dragging $drag onto $onto does $action",
     async (scenario) => {
       using _settings = clientSettings(scenario.mode);
       using stack = new DisposableStack();
       const originalActions = vi.mocked(useThreadActions).getMockImplementation()!;
       stack.defer(() => vi.mocked(useThreadActions).mockImplementation(originalActions));
       const reorderPinnedThread = vi.fn().mockResolvedValue({ _tag: "Success" });
+      const pinThread = vi.fn().mockResolvedValue({ _tag: "Success" });
 
       vi.mocked(useThreadActions).mockImplementation(() => ({
         ...originalActions(),
         reorderPinnedThread,
+        pinThread,
       }));
       vi.mocked(readEnvironmentScope).mockReturnValue(true);
       const alpha = project("alpha");
@@ -177,16 +179,16 @@ describe("sidebar drag reorder", () => {
       await using screen = await renderSidebar();
 
       const row = screen.container.querySelector<HTMLElement>(
-        `[data-thread-item="${environmentId}:first"]`,
+        `[data-thread-item="${environmentId}:${scenario.drag}"]`,
       );
       expect(row).not.toBeNull();
-      const second = screen.container.querySelector<HTMLElement>(
-        `[data-thread-item="${environmentId}:second"]`,
+      const target = screen.container.querySelector<HTMLElement>(
+        `[data-thread-item="${environmentId}:${scenario.onto}"]`,
       )!;
-      const firstRect = row!.getBoundingClientRect();
-      const secondRect = second.getBoundingClientRect();
-      const startY = firstRect.top + firstRect.height / 2;
-      const endY = secondRect.top + secondRect.height / 2;
+      const fromRect = row!.getBoundingClientRect();
+      const ontoRect = target.getBoundingClientRect();
+      const startY = fromRect.top + fromRect.height / 2;
+      const endY = ontoRect.top + ontoRect.height / 2;
       const pointer = (type: string, clientY: number) =>
         new PointerEvent(type, {
           bubbles: true,
@@ -195,19 +197,19 @@ describe("sidebar drag reorder", () => {
           isPrimary: true,
           button: 0,
           buttons: 1,
-          clientX: firstRect.left + firstRect.width / 2,
+          clientX: fromRect.left + fromRect.width / 2,
           clientY,
         });
       await act(() => row!.dispatchEvent(pointer("pointerdown", startY)));
       await act(() => document.dispatchEvent(pointer("pointermove", startY + 10)));
 
-      expect(row!.classList.contains("z-20")).toBe(scenario.reorders);
+      expect(row!.classList.contains("z-20")).toBe(true);
       expect(
         screen.container.querySelector('[data-testid="sidebar-active-placeholder"]') !== null,
       ).toBe(!scenario.folders);
       await act(() => document.dispatchEvent(pointer("pointermove", endY)));
       await act(() => document.dispatchEvent(pointer("pointerup", endY)));
-      if (scenario.reorders) {
+      if (scenario.action === "reorder") {
         await vi.waitFor(() =>
           expect(reorderPinnedThread).toHaveBeenCalledWith(
             { environmentId, threadId: ThreadId.make("first") },
@@ -216,7 +218,12 @@ describe("sidebar drag reorder", () => {
         );
         expect(reorderPinnedThread.mock.calls[0]![1] > "a1").toBe(true);
       } else {
-        expect(reorderPinnedThread).not.toHaveBeenCalled();
+        await vi.waitFor(() =>
+          expect(pinThread).toHaveBeenCalledWith(
+            { environmentId, threadId: ThreadId.make("open") },
+            expect.anything(),
+          ),
+        );
       }
     },
   );

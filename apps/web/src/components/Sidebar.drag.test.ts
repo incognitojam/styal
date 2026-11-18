@@ -950,6 +950,63 @@ describe("project-grouped drag projection", () => {
     const headerB = sidebarListItemId(header("B"));
     expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
   });
+  describe("with folders", () => {
+    const pin = (key: string, group: string): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section: "pinned",
+      group,
+    });
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    const headerC = sidebarListItemId(header("C"));
+
+    it("previews a pinned row in its own folder at its latest-message slot", () => {
+      const withPin = [pinnedHeader, pin("pa", "A"), divider, ...items.slice(2)];
+      const input = { items: withPin, settledOrder: [], settledExpanded: true };
+      // Hovered over B, but folders list by latest message: pa lands between a1 and a2.
+      const result = preview(
+        { ...input, keptFolders: new Set<string>(), activeOrder: ["a1", "pa", "a2", "b1", "b2"] },
+        "pa",
+        "b1",
+      );
+      expect(result.get("a1")?.y).toBe(-83);
+      expect(result.get("a2")?.y).toBe(0);
+      expect(result.get(headerB)?.y).toBe(0);
+    });
+
+    it("keeps a folder that stays without rows, and drops one its last row leaves", () => {
+      const withFolders = [
+        pinnedHeader,
+        thread("p", "pinned"),
+        divider,
+        header("A"),
+        row("a1", "A"),
+        header("B"),
+        header("C"),
+        row("c1", "C"),
+        settledHeader,
+        marker("settled-placeholder"),
+      ];
+      const result = preview(
+        {
+          items: withFolders,
+          settledOrder: [],
+          settledExpanded: true,
+          keptFolders: new Set(["B"]),
+        },
+        "a1",
+        "p",
+      );
+      expect(result.get(headerA)?.scaleY).toBe(0);
+      expect(result.get(headerB)?.scaleY).toBe(1);
+      expect(result.get(headerC)?.scaleY).toBe(1);
+      // a1 moved above p; B then C close up under the Active boundary.
+      expect(result.get(headerB)?.y).toBe(-25);
+      expect(result.get("c1")?.y).toBe(-25);
+    });
+  });
+
   describe("with a grouped Working shelf", () => {
     const workingHeader = (group: string): SidebarListItem => ({
       kind: "working-project-header",

@@ -189,6 +189,9 @@ export function createSidebarSortingStrategy(input: {
   cardHeight?: number;
   slimHeight?: number;
   boundaryLabelHeight?: number;
+  /** Set while folders render: folders that stay with no row on screen. Other
+      folders leave with their last row, and rows never reorder within one. */
+  keptFolders?: ReadonlySet<string>;
 }): SortingStrategy {
   if (input.enabled === false) return () => stationary;
   const { items } = input;
@@ -330,8 +333,25 @@ export function createSidebarSortingStrategy(input: {
       }
       return result;
     };
+    // Each folder keeps its rows in place; a row without a folder gets one once the drop lands.
+    const inFolders = (rows: readonly ThreadItem[], keptFolders: ReadonlySet<string>) => {
+      const rowsByGroup = new Map<string | undefined, ThreadItem[]>();
+      for (const row of rows)
+        rowsByGroup.set(row.group, [...(rowsByGroup.get(row.group) ?? []), row]);
+      const result: SidebarListItem[] = [];
+      for (const item of items) {
+        if (item.kind !== "project-header") continue;
+        const folderRows = rowsByGroup.get(item.group) ?? [];
+        rowsByGroup.delete(item.group);
+        if (folderRows.length > 0 || keptFolders.has(item.group)) result.push(item, ...folderRows);
+      }
+      return [...result, ...[...rowsByGroup.values()].flat()];
+    };
     const section = (name: "active" | "settled") => {
-      if (groups[name].length === 0) marker(`${name}-placeholder`);
+      // Folders draw in place of the active placeholder.
+      if (name === "active" && input.keptFolders !== undefined)
+        projected.push(...inFolders(groups.active, input.keptFolders));
+      else if (groups[name].length === 0) marker(`${name}-placeholder`);
       else if (name === "active" && target.activeGroupOrder !== undefined)
         projected.push(...withProjectHeaders(groups.active));
       else projected.push(...groups[name]);

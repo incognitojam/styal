@@ -445,23 +445,40 @@ function resolveDraggedOrders(input: {
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
+  /** Rendered folders, with the dragged thread's folder. */
+  readonly folders: {
+    readonly list: ReadonlyArray<{
+      readonly group: SidebarProjectSnapshot;
+      readonly threads: readonly EnvironmentThreadShell[];
+    }>;
+    readonly groupOf: (thread: EnvironmentThreadShell) => string;
+  } | null;
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
+  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, folders } = input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
   const others = (list: readonly EnvironmentThreadShell[]) =>
     list.filter((candidate) => threadShellKey(candidate) !== drag.activeKey);
+  const dropped = applySidebarThreadDrop(thread, "active", drag.occurredAt);
   return {
     settledOrder: sortSettledThreads([
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
-      ? sortInboxThreadsByReturn(
-          [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
-          inboxReturns.returnedAt,
-        ).map(threadShellKey)
-      : undefined,
+    activeOrder:
+      folders !== null
+        ? folders.list.flatMap((folder) =>
+            sortWorkingThreadsBySend([
+              ...others(folder.threads),
+              ...(folders.groupOf(thread) === folder.group.projectKey ? [dropped] : []),
+            ]).map(threadShellKey),
+          )
+        : workingShelfEnabled
+          ? sortInboxThreadsByReturn(
+              [...others(activeThreads), dropped],
+              inboxReturns.returnedAt,
+            ).map(threadShellKey)
+          : undefined,
   };
 }
 
@@ -1544,6 +1561,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const keepEmptyFolder = (group: SidebarProjectSnapshot) =>
+    scopedProjectGroups.length > 0 || (group.pinned && !group.archived);
   const {
     workingShelfEnabled,
     pinnedThreads,
@@ -1604,8 +1623,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
         : scopedProjectGroups
       : null,
-    keepEmptyFolders: (group) =>
-      scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
+    keepEmptyFolders: keepEmptyFolder,
   });
 
   // Ranked across environments as the palette ranks them, so one
@@ -2002,9 +2020,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   };
 
   const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
-  // Folder rows only drag out to the composer; folders own their order, so nothing drops in the list.
-  const isContextDrag =
-    hasProjectFolders || dragState?.contextDrag === true || dragState?.activeSection === "working";
+  const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
+  // Folders list threads by their latest message, so a drop in them only moves a thread to active.
+  const activeTimeOrdered = workingShelfEnabled || projectFolders !== null;
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -2209,7 +2227,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
         // Rows in every section carry their group, so a row dragged into the
         // active section lands in its project's group.
-        return groupThreadsByProject
+        return groupThreadsByProject || hasProjectFolders
           ? { kind: "thread", key, section, group: threadProjectGroup(thread) }
           : { kind: "thread", key, section };
       });
@@ -2229,8 +2247,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
+    // Folders draw in place of the placeholder, each header above its open rows.
+    for (const folder of hasProjectFolders ? projectFolders : []) {
+      items.push({ kind: "project-header", group: folder.group.projectKey });
+      items.push(...rowsOf(folder.threads, "active"));
+    }
+    const activeRows = hasProjectFolders ? [] : rowsOf(activeThreads, "active");
     let activeGroup: string | undefined;
     // Grouped projects: the divider follows the pinned projects' rows, so
     // dropping a header above it pins the project.
@@ -2397,10 +2420,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           settledThreads,
           activeThreads,
           workingShelfEnabled,
+          folders: hasProjectFolders ? { list: projectFolders, groupOf: threadProjectGroup } : null,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
+    ...(hasProjectFolders
+      ? {
+          keptFolders: new Set(
+            projectFolders.flatMap((folder) =>
+              folder.hiddenThreads.length > 0 || keepEmptyFolder(folder.group)
+                ? [folder.group.projectKey]
+                : [],
+            ),
+          ),
+        }
+      : {}),
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,
     settledOrder: draggedSettledOrder,
     ...(draggedActiveOrder === undefined ? {} : { activeOrder: draggedActiveOrder }),
@@ -2443,7 +2478,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered,
           }).kind !== "none"
         );
       },
@@ -2510,7 +2545,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   };
   const handleThreadDragEnd = (event: DragEndEvent) => {
-    if (hasProjectFolders) return;
     const activeKey = String(event.active.id);
     if (draggedProjectGroup !== null) {
       if (event.over !== null) {
@@ -2539,7 +2573,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -4031,6 +4065,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           item.kind === "project-header" ||
                           item.kind === "working-project-header"
                         ) {
+                          // Folders draw their own headers below.
+                          if (hasProjectFolders) continue;
                           // Threads whose project record has not loaded yet
                           // group under their physical key.
                           const group =
