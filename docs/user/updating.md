@@ -250,9 +250,11 @@ every enabled instance of that provider using its own configuration. Connected
 clients receive the refreshed catalogs automatically. Provider update checks
 must be enabled to download the latest styal model catalog.
 
-Provider updates do not restart running chats. An existing session can keep
-using the previous CLI until it ends. If discovery fails, check the provider
-status and refresh it again.
+Provider updates do not interrupt running chats. After a successful update,
+chats on that provider CLI use the new version from their next turn; a turn
+already running finishes on the previous one. A chat with background work
+still running, such as a long command, keeps the previous CLI until that work
+ends. If discovery fails, check the provider status and refresh it again.
 
 <a id="styal-managed-updates"></a>
 

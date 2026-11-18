@@ -61,6 +61,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
+/** Lets a retiring session's run take its turn's end before the release fails subscribers. */
+const RETIRE_AFTER_TURN_MS = 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
 export const PROVIDER_INTERRUPT_TIMEOUT_MS = 15 * 1000;
@@ -208,6 +210,13 @@ export interface ProviderSessionManagerV2Shape {
     readonly detail?: string;
   }) => Effect.Effect<boolean, ProviderSessionManagerV2Error>;
   /**
+   * For instances whose install was replaced: releases each live session that has no busy turn
+   * or background work, and releases the rest once they go idle rather than after the idle timeout.
+   */
+  readonly retireInstances: (input: {
+    readonly instanceIds: ReadonlyArray<ProviderInstanceId>;
+  }) => Effect.Effect<void>;
+  /**
    * Other threads with a run or background work on this session's shared process; empty when
    * it serves one thread.
    */
@@ -248,6 +257,7 @@ interface LiveSessionEntry {
   readonly idleFiber: Fiber.Fiber<void, never> | null;
   readonly pinnedSinceMs: number | null;
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
+  readonly retireWhenIdle: boolean;
 }
 
 interface IdleThreadUnload {
@@ -1341,7 +1351,10 @@ export const layerWithOptions = (
 
         yield* cancelIdleFiber(entry.idleFiber);
         const generation = entry.idleGeneration + 1;
-        const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
+        const delayMs = entry.retireWhenIdle
+          ? Math.min(idleTimeoutMs, RETIRE_AFTER_TURN_MS)
+          : idleTimeoutMs;
+        const idleFiber = yield* Effect.sleep(Duration.millis(delayMs)).pipe(
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
           Effect.forkIn(layerScope),
         );
@@ -2666,6 +2679,7 @@ export const layerWithOptions = (
                 idleFiber: null,
                 pinnedSinceMs: null,
                 idleThreadUnloads: new Map(),
+                retireWhenIdle: false,
               };
               yield* Ref.update(sessions, (current) => {
                 const updated = new Map(current);
@@ -2783,6 +2797,48 @@ export const layerWithOptions = (
           });
           // Identity, not presence: open can install a replacement under the same id meanwhile.
           return before !== undefined && (yield* Ref.get(sessions)).get(key) !== before;
+        }),
+        retireInstances: Effect.fn("ProviderSessionManager.retireInstances")(function* (input) {
+          const instanceIds = new Set(input.instanceIds);
+          const marked = yield* Ref.modify(sessions, (current) => {
+            const updated = new Map(current);
+            const entries: Array<LiveSessionEntry> = [];
+            for (const [key, entry] of current) {
+              if (!instanceIds.has(entry.runtime.instanceId)) continue;
+              const retiring = { ...entry, retireWhenIdle: true };
+              updated.set(key, retiring);
+              entries.push(retiring);
+            }
+            return [entries, updated] as const;
+          });
+          yield* Effect.forEach(
+            marked,
+            (entry) => {
+              const providerSessionId = entry.runtime.providerSessionId;
+              const replaced = Ref.get(sessions).pipe(
+                Effect.map(
+                  (current) =>
+                    current.get(sessionKey(providerSessionId))?.runtime !== entry.runtime,
+                ),
+              );
+              const hasPendingWork =
+                entry.runtime.hasPendingBackgroundWork?.pipe(
+                  Effect.catchCause(() => Effect.succeed(true)),
+                ) ?? Effect.succeed(false);
+              return releaseEntry({
+                providerSessionId,
+                reason: "manual_shutdown",
+                detail: "Provider updated.",
+                keepIfBusyOtherThan: [],
+                keepIf: Effect.zipWith(replaced, hasPendingWork, (a, b) => a || b),
+              }).pipe(
+                // A kept session with only background work left starts its shorter idle wait now.
+                Effect.andThen(scheduleIdleReleaseInternal(providerSessionId)),
+                logReleaseFailure(providerSessionId),
+              );
+            },
+            { concurrency: "unbounded", discard: true },
+          );
         }),
         otherWorkingThreads: Effect.fn("ProviderSessionManager.otherWorkingThreads")(
           function* (input) {

@@ -1854,6 +1854,110 @@ it.effect(
     }),
 );
 
+it.effect(
+  "ProviderSessionManagerV2 retires an updated instance's idle sessions now and busy ones after their turn",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const idleThread = ThreadId.make("thread-provider-session-manager-retire-idle");
+        const busyThread = ThreadId.make("thread-provider-session-manager-retire-busy");
+        const idleSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: idleThread,
+        });
+        const busySessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: busyThread,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: idleThread, now }),
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: busyThread, now }),
+          ],
+        });
+        yield* manager.open({
+          threadId: idleThread,
+          providerSessionId: idleSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const busyRuntime = yield* manager.open({
+          threadId: busyThread,
+          providerSessionId: busySessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId: busyThread,
+          providerSessionId: busySessionId,
+          now,
+        });
+        const runId = idAllocator.derive.run({ threadId: busyThread, ordinal: 1 });
+        yield* busyRuntime.startTurn({
+          appThread: (yield* projectionStore.getThreadProjection(busyThread)).thread,
+          threadId: busyThread,
+          runId,
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+          rootNodeId: idAllocator.derive.rootNode({ runId }),
+          providerThread,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: yield* idAllocator.allocate.message({ threadId: busyThread, ordinal: 1 }),
+            text: "turn",
+            attachments: [],
+          },
+          modelSelection,
+          runtimePolicy,
+        });
+
+        yield* manager.retireInstances({ instanceIds: [modelSelection.instanceId] });
+        assert.isFalse(yield* manager.isLive(idleSessionId));
+        assert.isTrue(yield* manager.isLive(busySessionId));
+
+        // A release fails the subscription after it delivers the turn's end.
+        const turnEnded = yield* Deferred.make<void>();
+        const subscription = yield* busyRuntime.subscribeEvents!;
+        const delivered = yield* subscription.events.pipe(
+          Stream.runForEach((event) =>
+            event.type === "turn.terminal" ? Deferred.succeed(turnEnded, undefined) : Effect.void,
+          ),
+          Effect.exit,
+          Effect.forkScoped,
+        );
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(busySessionId));
+        assert.isDefined(adapterQueue);
+        yield* Queue.offer(adapterQueue!, {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId: providerThread.id,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: CODEX_DRIVER,
+            nativeTurnId: "native-turn-retire-busy",
+          }),
+          runOrdinal: 1,
+          status: "completed",
+          failure: null,
+          threadDisposition: "reusable",
+        });
+        yield* Deferred.await(turnEnded);
+        yield* TestClock.adjust("1 second");
+
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(delivered)));
+        assert.isFalse(yield* manager.isLive(busySessionId));
+      }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60 * 60_000 })));
+    }),
+);
+
 it.effect("ProviderSessionManagerV2 stops a session still opening when its layer shuts down", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);

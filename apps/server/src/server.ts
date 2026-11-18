@@ -782,6 +782,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
+  // One runner per server, so manual and background updates share its locks. It sits above
+  // orchestration because an update restarts the sessions still running the replaced install.
+  Layer.provideMerge(ProviderMaintenanceRunner.layer),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
@@ -798,8 +801,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       traceShutdown("user-files"),
     ),
   ),
-  // One runner per server, so manual and background updates share its locks.
-  Layer.provideMerge(ProviderMaintenanceRunner.layer),
   // Shared with turn starts (runtime layer) and host activity, so installs hold
   // back turns on the same CLI and count as running work.
   Layer.provideMerge(ProviderInstallGate.layer),

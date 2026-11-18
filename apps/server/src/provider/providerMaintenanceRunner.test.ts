@@ -29,6 +29,7 @@ import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ProviderInstallGate from "./ProviderInstallGate.ts";
 import * as ProviderInstallLock from "./ProviderInstallLock.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
+import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import type { ProviderUpdateRecord } from "./ProviderUpdateJournal.ts";
@@ -259,6 +260,29 @@ const layerInstallGate = (lock: Partial<ProviderInstallLock.ProviderInstallLock[
     ),
   );
 
+interface RetiredInstances {
+  readonly instanceIds: ReadonlyArray<ProviderInstanceId>;
+  readonly whileInstalling: boolean;
+}
+
+const layerSessionsOverGate = (
+  lock: Partial<ProviderInstallLock.ProviderInstallLock["Service"]>,
+  retired: Array<RetiredInstances>,
+) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const gate = yield* ProviderInstallGate.ProviderInstallGate;
+      return Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+        retireInstances: ({ instanceIds }) =>
+          gate.installing.pipe(
+            Effect.map((whileInstalling) => {
+              retired.push({ instanceIds, whileInstalling });
+            }),
+          ),
+      });
+    }),
+  ).pipe(Layer.provideMerge(layerInstallGate(lock)));
+
 const makeTestRunner = (
   registry: ProviderRegistry.ProviderRegistry["Service"],
   manifest: ModelManifest.ModelManifestData = {
@@ -274,6 +298,7 @@ const makeTestRunner = (
   events: Array<{ readonly event: string; readonly properties: unknown }> = [],
   settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
   latestVersions: Layer.Layer<ProviderLatestVersions.ProviderLatestVersions> = ProviderLatestVersions.layer,
+  retired: Array<RetiredInstances> = [],
 ) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
@@ -290,7 +315,7 @@ const makeTestRunner = (
               remote: Effect.succeed(null),
             }),
             latestVersions,
-            layerInstallGate(lock),
+            layerSessionsOverGate(lock, retired),
             ServerSettings.layerTest(settings),
             Layer.succeed(
               AnalyticsService.AnalyticsService,
@@ -607,6 +632,61 @@ describe("providerMaintenanceRunner", () => {
             layerNonWindowsPlatform,
             layerLatestVersionHttpClient("1.0.0"),
             layerMockSpawner(() => ({ stdout: "updated" })),
+          ),
+        ),
+      );
+    },
+  );
+
+  it.effect.each([
+    { name: "succeeded", latest: "1.0.0", exitCode: 0, targetVersion: undefined, retires: true },
+    { name: "failed", latest: "1.0.0", exitCode: 1, targetVersion: undefined, retires: false },
+    { name: "rejected", latest: "1.0.0", exitCode: 0, targetVersion: "1.0.0", retires: false },
+    { name: "unchanged", latest: "9.9.9", exitCode: 0, targetVersion: undefined, retires: false },
+  ] as const)(
+    "retires sessions on the replaced install only when the update $name",
+    ({ name, latest, exitCode, targetVersion, retires }) => {
+      const retired: Array<RetiredInstances> = [];
+      const sharedInstanceId = ProviderInstanceId.make("codex-work");
+      return Effect.gen(function* () {
+        const { registry } = yield* makeRegistry(
+          [
+            baseProvider,
+            { ...baseProvider, instanceId: sharedInstanceId },
+            // Same installer lock, different package: its install is untouched.
+            baseOpenCodeProvider,
+          ],
+          { installedVersionAfterUpdate: "1.0.0" },
+        );
+        const updater = yield* makeTestRunner(
+          registry,
+          undefined,
+          {},
+          [],
+          {},
+          ProviderLatestVersions.layer,
+          retired,
+        );
+
+        const result = yield* updater.updateProvider({ provider: CODEX_DRIVER, targetVersion });
+
+        assert.strictEqual(
+          result.providers.find((provider) => provider.instanceId === CODEX_INSTANCE_ID)
+            ?.updateState?.status,
+          name === "rejected" ? "failed" : name,
+        );
+        assert.deepStrictEqual(
+          retired,
+          retires
+            ? [{ instanceIds: [CODEX_INSTANCE_ID, sharedInstanceId], whileInstalling: true }]
+            : [],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient(latest),
+            layerMockSpawner(() => ({ stdout: "updated", code: exitCode })),
           ),
         ),
       );

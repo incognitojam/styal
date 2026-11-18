@@ -299,6 +299,7 @@ it.effect(
           detach: () => Effect.void,
           otherWorkingThreads: () => Effect.succeed([]),
           releaseUnlessBusy: () => Effect.succeed(true),
+          retireInstances: () => Effect.void,
           subscribePromptSuggestion: () => Stream.empty,
         }),
       );
