@@ -815,7 +815,7 @@ jobs:
         id: web_test
         if: matrix.shard
         env:
-          DEBUG: vitest:browser:*,pw:browser,pw:api
+          DEBUG: vitest:browser:*,pw:browser
         run: |
           report_resources() {
             date --iso-8601=seconds
