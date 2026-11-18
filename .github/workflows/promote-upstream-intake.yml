@@ -317,7 +317,11 @@ jobs:
             fi
             if ((attempt < READINESS_CHECKS)); then sleep 30; fi
           done
-          echo "No approval requested: Intake ready is missing or unsuccessful on $CANDIDATE_SHA. Post readiness after review, then rerun Fork CI if this wait expired. Dry runs check once." | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "Dry run: Intake ready is missing or unsuccessful on $CANDIDATE_SHA; continuing to main's required checks without requesting approval." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "No approval requested: Intake ready is missing or unsuccessful on $CANDIDATE_SHA. Post readiness after review, then rerun this promotion if the tips are unchanged; rerun Fork CI if a fresh promotion is needed." | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
 
       # Candidates receive a successful landing hold status; PRs receive pending.

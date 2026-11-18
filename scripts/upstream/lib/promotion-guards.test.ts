@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
 import { parse } from "yaml";
+import { requiredIntakeJobs, requiredIntakeSteps } from "./promotion-evidence.ts";
 
 it("blocks moved base and candidate refs before pushing, and promotes an unchanged pair", () => {
   const env = {
@@ -180,6 +181,12 @@ it("waits for exact-SHA readiness before manual approval and bypasses it for aut
   assert.isAtLeast(job["timeout-minutes"], 190);
   assert.include(step.env.READINESS_CHECKS, "301");
   assert.include(step.env.READINESS_CHECKS, "workflow_dispatch");
+  const checks = job.steps.find(
+    (entry: { name?: string }) => entry.name === "Wait for main's required checks on the candidate",
+  );
+  assert.isBelow(job.steps.indexOf(step), job.steps.indexOf(checks));
+  assert.isUndefined(checks.if);
+  assert.equal(checks.run, "node scripts/upstream/wait-required-checks.ts");
   NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root });
   NodeFS.mkdirSync(NodePath.join(root, ".scratch"), { recursive: true });
   const directory = NodeFS.mkdtempSync(NodePath.join(root, ".scratch/intake-readiness-"));
@@ -197,12 +204,16 @@ console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '$
       { mode: 0o755 },
     );
     NodeFS.writeFileSync(NodePath.join(directory, "sleep"), "#!/bin/sh\nexit 2\n", { mode: 0o755 });
-    for (const [lane, fixture, expected] of [
-      ["manual", "missing", 1],
-      ["manual", "old", 1],
-      ["manual", "pending", 1],
-      ["manual", "ready", 0],
-      ["automatic", "missing", 0],
+    for (const [event, lane, fixture, expected] of [
+      ["workflow_run", "manual", "missing", 1],
+      ["workflow_run", "manual", "old", 1],
+      ["workflow_run", "manual", "pending", 1],
+      ["workflow_run", "manual", "ready", 0],
+      ["workflow_run", "automatic", "missing", 0],
+      ["workflow_dispatch", "manual", "missing", 0],
+      ["workflow_dispatch", "manual", "old", 0],
+      ["workflow_dispatch", "manual", "pending", 0],
+      ["workflow_dispatch", "manual", "ready", 0],
     ] as const) {
       const summary = NodePath.join(directory, "summary");
       NodeFS.writeFileSync(summary, "");
@@ -213,6 +224,7 @@ console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '$
           ...process.env,
           PATH: `${directory}${NodePath.delimiter}${process.env.PATH ?? ""}`,
           GITHUB_REPOSITORY: "incognitojam/styal",
+          GITHUB_EVENT_NAME: event,
           CANDIDATE_SHA: sha,
           PROMOTION_LANE: lane,
           READINESS_CHECKS: "1",
@@ -220,15 +232,94 @@ console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '$
           GITHUB_STEP_SUMMARY: summary,
         },
       });
-      assert.equal(result.status, expected, `${lane}/${fixture}: ${result.stderr}`);
+      assert.equal(result.status, expected, `${event}/${lane}/${fixture}: ${result.stderr}`);
       assert.include(
         NodeFS.readFileSync(summary, "utf8"),
         expected === 1
           ? "No approval requested"
           : lane === "automatic"
             ? "Automatic lane"
-            : "Coordinator ready",
+            : event === "workflow_dispatch" && fixture !== "ready"
+              ? "Dry run: Intake ready is missing or unsuccessful"
+              : "Coordinator ready",
       );
+    }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("keeps the triggering Fork CI attempt as evidence when promotion is rerun", () => {
+  const root = NodePath.resolve(import.meta.dirname, "../../..");
+  const workflow = parse(
+    NodeFS.readFileSync(
+      NodePath.join(root, ".github/workflows/promote-upstream-intake.yml"),
+      "utf8",
+    ),
+  );
+  const evidence = workflow.jobs.validate.steps.find(
+    (step: { id?: string }) => step.id === "evidence",
+  );
+  const checks = workflow.jobs.validate.steps.find(
+    (step: { name?: string }) =>
+      step.name === "Require executed Fork CI jobs from the triggering attempt",
+  );
+  assert.equal(evidence.env.CI_RUN_ATTEMPT, "${{ github.event.workflow_run.run_attempt }}");
+  assert.equal(checks.env.CI_RUN_ATTEMPT, "${{ steps.evidence.outputs.ci_run_attempt }}");
+  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root });
+  NodeFS.mkdirSync(NodePath.join(root, ".scratch"), { recursive: true });
+  const directory = NodeFS.mkdtempSync(NodePath.join(root, ".scratch/intake-readiness-retry-"));
+  const sha = "a".repeat(40);
+  try {
+    const run = {
+      id: 123,
+      run_attempt: 3,
+      head_sha: sha,
+      head_branch: "intake/fixture",
+      event: "push",
+      path: ".github/workflows/fork-ci.yml",
+      conclusion: "success",
+      html_url: "https://example.invalid/run",
+    };
+    const jobs = requiredIntakeJobs.map((name) => ({
+      name,
+      status: "completed",
+      conclusion: "success",
+      steps: requiredIntakeSteps(name).map((name) => ({ name, conclusion: "success" })),
+    }));
+    NodeFS.writeFileSync(
+      NodePath.join(directory, "gh"),
+      `#!/usr/bin/env node
+const path = process.argv.at(-1);
+const root = 'repos/incognitojam/styal/actions/runs/123/attempts/3';
+if (path === root) console.log(${JSON.stringify(JSON.stringify(run))});
+else if (path === root + '/jobs?per_page=100') console.log(${JSON.stringify(JSON.stringify([{ jobs }]))});
+else process.exit(2);
+`,
+      { mode: 0o755 },
+    );
+    for (const attempt of ["1", "2"]) {
+      const output = NodePath.join(directory, "outputs");
+      NodeFS.writeFileSync(output, "");
+      const env = {
+        ...process.env,
+        PATH: `${directory}${NodePath.delimiter}${process.env.PATH ?? ""}`,
+        GITHUB_REPOSITORY: "incognitojam/styal",
+        GITHUB_RUN_ATTEMPT: attempt,
+        CI_RUN_ID: "123",
+        CI_RUN_ATTEMPT: "3",
+        CANDIDATE_SHA: sha,
+        GITHUB_OUTPUT: output,
+      };
+      for (const step of [evidence, checks]) {
+        const result = NodeChildProcess.spawnSync("bash", ["-c", step.run], {
+          cwd: root,
+          encoding: "utf8",
+          env,
+        });
+        assert.equal(result.status, 0, result.stderr);
+      }
+      assert.include(NodeFS.readFileSync(output, "utf8"), "ci_run_attempt=3\n");
     }
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
