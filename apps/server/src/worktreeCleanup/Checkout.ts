@@ -258,70 +258,64 @@ export const makeCheckout = Effect.gen(function* () {
       Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
     );
     yield* identity(root, admin);
+    const entries = yield* command(root, ["ls-files", "--stage", "-z"]);
+    if (entries && !entries.endsWith("\0")) return yield* fail("Incomplete checkout index.");
+    const indexed = entries.split("\0").filter(Boolean);
+    if (indexed.length > limits.entries)
+      return yield* fail("Worktree checkout inspection exceeded its file limit.");
+    const checked = new Set<string>();
+    for (const entry of indexed) {
+      const name = entry.slice(entry.indexOf("\t") + 1);
+      if (
+        !/^[0-9]{6} [0-9a-f]+ 0\t/.test(entry) ||
+        path.isAbsolute(name) ||
+        name.split("/").some((part) => part === ".." || part === ".git")
+      )
+        return yield* fail("Invalid or conflicted checkout index.");
+      const parts = name.split("/");
+      for (let i = 0; i < parts.length; i++) {
+        const relative = parts.slice(0, i + 1).join("/");
+        if (checked.has(relative)) continue;
+        const stat = yield* io(() =>
+          fs.lstat(path.join(root, relative)).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return null;
+            throw error;
+          }),
+        );
+        if (stat === null) break;
+        const leaf = i === parts.length - 1;
+        if (
+          (!leaf && !stat.isDirectory()) ||
+          (leaf &&
+            !entry.startsWith("160000 ") &&
+            (stat.isDirectory() || (stat.isSymbolicLink() && !entry.startsWith("120000 "))))
+        )
+          return yield* fail(
+            `Local path "${relative}" blocks source checkout. Move it aside and retry.`,
+          );
+        checked.add(relative);
+      }
+    }
     const originals = journal.recoveryFiles ?? journal.files;
-    const current = yield* snapshot(root, Object.keys(originals));
-    const absentSources = new Set(
-      Object.entries(current.files)
-        .filter(([name, hash]) => hash === "missing" && !(name in originals))
-        .map(([name]) => name),
-    );
-    const records = current.status.split("\0");
-    const status: string[] = [];
+    const before = yield* snapshot(root, Object.keys(originals));
+    const records = before.status.split("\0");
     for (let i = 0; i < records.length - 1; i++) {
       const record = records[i]!;
-      if (record.startsWith(" D ") && absentSources.has(record.slice(3))) {
-        const parts = record.slice(3).split("/");
-        const obstructed = parts
-          .slice(0, -1)
-          .some((_, index) => current.files[parts.slice(0, index + 1).join("/")] !== undefined);
-        if (journal.phase === "released" && !obstructed)
-          return yield* fail(
-            "A tracked file was deleted while sources were absent. Stage or undo the deletion before retrying checkout.",
-          );
-        continue;
-      }
-      if (record.startsWith(" D ") && record.slice(3) in originals)
+      if (record[1] === "D")
         return yield* fail(
-          "A protected tracked file was deleted while sources were absent. Stage or undo the deletion before retrying checkout.",
+          `Tracked file "${record.slice(3)}" was deleted. Stage or undo the deletion before retrying checkout.`,
         );
-      status.push(record);
-      if (/^[RC]|^.[RC]/.test(record)) status.push(records[++i]!);
+      if (/^[RC]|^.[RC]/.test(record)) i++;
     }
-    const before = {
-      ...current,
-      status: status.length ? `${status.join("\0")}\0` : "",
-      files: Object.fromEntries(
-        Object.entries(current.files).filter(([name]) => !absentSources.has(name)),
-      ),
-    };
-    if (
-      journal.phase !== "released" &&
-      (before.index !== journal.index ||
-        Object.entries(originals).some(([name, hash]) => before.files[name] !== hash))
-    )
-      return yield* fail(
-        "Protected worktree files differ during recovery. Resolve filesystem conflicts and retry; the recovery record is retained.",
-      );
-    const recoveryFiles = Object.fromEntries(
-      Object.keys(originals).map((name) => [name, before.files[name]!]),
-    );
-    yield* save(admin, { ...before, recoveryFiles, phase: "restoring" });
+    for (const name of Object.keys(originals)) {
+      if (before.files[name] === "missing")
+        return yield* fail(
+          `Protected file "${name}" is missing. Restore it before retrying checkout.`,
+        );
+    }
+    yield* save(admin, { ...before, recoveryFiles: originals, phase: "restoring" });
     yield* step("restore-recorded");
     yield* command(root, ["sparse-checkout", "disable"]);
-    if (absentSources.size)
-      yield* command(
-        root,
-        [
-          "--literal-pathspecs",
-          "restore",
-          "--worktree",
-          "--ignore-skip-worktree-bits",
-          "--pathspec-from-file=-",
-          "--pathspec-file-nul",
-        ],
-        [0],
-        `${[...absentSources].join("\0")}\0`,
-      );
     yield* step("restore-disabled");
     yield* verify(root, before);
     const tracked = (yield* command(root, ["ls-files", "-t", "-z"])).split("\0").filter(Boolean);
@@ -446,12 +440,16 @@ export const makeCheckout = Effect.gen(function* () {
         trackedPaths
           .split("\0")
           .filter((name) => name.includes("/"))
-          .map((name) => name.split("/")[0]),
+          .map((name) => name.split("/")[0]!.normalize("NFC").toLowerCase()),
       );
       if (
         ignored
           .split("\0")
-          .some((name) => name.includes("/") && trackedDirectories.has(name.split("/")[0]))
+          .some(
+            (name) =>
+              name.includes("/") &&
+              trackedDirectories.has(name.split("/")[0]!.normalize("NFC").toLowerCase()),
+          )
       )
         return yield* fail(
           "Ignored files inside tracked source folders could be removed by Git; sources kept.",

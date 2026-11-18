@@ -203,6 +203,7 @@ it.effect.each([
     yield* f.command(f.worktree, ["add", "."]);
     yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
     yield* f.write("src/dirty", "keep");
+    yield* f.write(".scratch/note", "before stop");
     yield* Effect.gen(function* () {
       const normal = yield* makeCheckout;
       const interrupted = yield* makeCheckout.pipe(
@@ -218,9 +219,11 @@ it.effect.each([
         yield* normal.release(f.worktree, f.root);
         yield* interrupted.restore(f.worktree).pipe(Effect.exit);
       }
+      yield* f.write(".scratch/note", "edited after stop");
       yield* normal.restore(f.worktree);
       expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("original");
       expect(yield* f.fs.readFileString(`${f.worktree}/src/dirty`)).toBe("keep");
+      expect(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`)).toBe("edited after stop");
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
 );
@@ -406,7 +409,7 @@ it.effect.each(
   }).pipe(Effect.provide(nodeLayer)),
 );
 
-it.effect.each(["nested-ignored", "deleted"] as const)(
+it.effect.each(["nested-ignored", "nested-ignored-case", "deleted"] as const)(
   "refuses before Git can discard local state: %s",
   (scenario) =>
     Effect.gen(function* () {
@@ -414,7 +417,10 @@ it.effect.each(["nested-ignored", "deleted"] as const)(
       yield* f.write("src/clean", "source");
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
-      if (scenario === "nested-ignored") yield* f.write("src/cache/local", "irreplaceable");
+      const directory = scenario === "nested-ignored-case" ? "SRC" : "src";
+      if (scenario === "nested-ignored-case")
+        yield* f.fs.rename(`${f.worktree}/src`, `${f.worktree}/SRC`);
+      if (scenario !== "deleted") yield* f.write(`${directory}/cache/local`, "irreplaceable");
       else yield* f.fs.remove(`${f.worktree}/src/clean`);
       const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
       yield* Effect.gen(function* () {
@@ -422,8 +428,10 @@ it.effect.each(["nested-ignored", "deleted"] as const)(
         expect((yield* checkout.release(f.worktree, f.root).pipe(Effect.result))._tag).toBe(
           "Failure",
         );
-        if (scenario === "nested-ignored")
-          expect(yield* f.fs.readFileString(`${f.worktree}/src/cache/local`)).toBe("irreplaceable");
+        if (scenario !== "deleted")
+          expect(yield* f.fs.readFileString(`${f.worktree}/${directory}/cache/local`)).toBe(
+            "irreplaceable",
+          );
         else expect(yield* f.fs.exists(`${f.worktree}/src/clean`)).toBe(false);
         expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
           before,
@@ -433,41 +441,128 @@ it.effect.each(["nested-ignored", "deleted"] as const)(
     }).pipe(Effect.provide(nodeLayer)),
 );
 
-it.effect.each(["new-file", "obstruction"] as const)(
-  "recovery can finish after a filesystem change: %s",
-  (scenario) =>
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      yield* f.write("docs/source", "source");
-      yield* f.command(f.worktree, ["add", "."]);
-      yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
-      yield* f.write(".scratch/note", "protected");
-      yield* Effect.gen(function* () {
-        const normal = yield* makeCheckout;
-        if (scenario === "new-file") {
-          const stopped = yield* makeCheckout.pipe(
+it.effect.each([
+  "new-file",
+  "obstruction",
+  "ignored-obstruction",
+  "symlink-obstruction",
+  "recreated-source",
+] as const)("recovery can finish after a filesystem change: %s", (scenario) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.write("docs/source", "source");
+    yield* f.command(f.worktree, ["add", "."]);
+    yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
+    yield* f.write(".scratch/note", "protected");
+    yield* Effect.gen(function* () {
+      const normal = yield* makeCheckout;
+      if (scenario === "new-file") {
+        const stopped = yield* makeCheckout.pipe(
+          Effect.provideService(CheckoutLimits, {
+            entries: 100_000,
+            bytes: 1_000_000,
+            step: (step) => (step === "release-set" ? Effect.die("stop") : Effect.void),
+          }),
+        );
+        yield* stopped.release(f.worktree, f.root).pipe(Effect.exit);
+        yield* f.write("new-note", "new");
+      } else {
+        yield* normal.release(f.worktree, f.root);
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        if (scenario === "symlink-obstruction")
+          yield* Effect.promise(() => physical.symlink("absent-target", `${f.worktree}/docs`));
+        else yield* f.write("docs", "obstruction");
+        if (scenario === "ignored-obstruction") {
+          const admin = (yield* f.command(f.worktree, [
+            "rev-parse",
+            "--absolute-git-dir",
+          ])).stdout.trim();
+          yield* f.fs.writeFileString(`${admin}/../../info/exclude`, "/docs\n");
+        }
+        for (const _attempt of [1, 2, 3]) {
+          const result = yield* normal.restore(f.worktree).pipe(Effect.result);
+          expect(result._tag).toBe("Failure");
+          if (result._tag === "Failure") expect(result.failure.message).toContain("docs");
+          if (scenario === "symlink-obstruction")
+            expect(yield* Effect.promise(() => physical.readlink(`${f.worktree}/docs`))).toBe(
+              "absent-target",
+            );
+          else expect(yield* f.fs.readFileString(`${f.worktree}/docs`)).toBe("obstruction");
+        }
+        yield* f.fs.rename(`${f.worktree}/docs`, `${f.worktree}/moved-note`);
+        if (scenario === "recreated-source") {
+          const racing = yield* makeCheckout.pipe(
             Effect.provideService(CheckoutLimits, {
               entries: 100_000,
               bytes: 1_000_000,
-              step: (step) => (step === "release-set" ? Effect.die("stop") : Effect.void),
+              step: (step) =>
+                step === "restore-recorded"
+                  ? f.write("docs/source", "new edit").pipe(Effect.orDie)
+                  : Effect.void,
             }),
           );
-          yield* stopped.release(f.worktree, f.root).pipe(Effect.exit);
-          yield* f.write("new-note", "new");
-        } else {
-          yield* normal.release(f.worktree, f.root);
-          yield* f.write("docs", "obstruction");
-          expect((yield* normal.restore(f.worktree).pipe(Effect.result))._tag).toBe("Failure");
-          yield* f.fs.rename(`${f.worktree}/docs`, `${f.worktree}/moved-note`);
+          yield* racing.restore(f.worktree).pipe(Effect.result);
+          expect(yield* f.fs.readFileString(`${f.worktree}/docs/source`)).toBe("new edit");
         }
-        yield* normal.restore(f.worktree);
-        expect(yield* f.fs.readFileString(`${f.worktree}/docs/source`)).toBe("source");
-        expect(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`)).toBe("protected");
+      }
+      yield* normal.restore(f.worktree);
+      expect(yield* f.fs.readFileString(`${f.worktree}/docs/source`)).toBe(
+        scenario === "recreated-source" ? "new edit" : "source",
+      );
+      expect(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`)).toBe("protected");
+      if (scenario === "symlink-obstruction") {
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        expect(yield* Effect.promise(() => physical.readlink(`${f.worktree}/moved-note`))).toBe(
+          "absent-target",
+        );
+      } else
         expect(
           yield* f.fs.readFileString(
             `${f.worktree}/${scenario === "new-file" ? "new-note" : "moved-note"}`,
           ),
         ).toBe(scenario === "new-file" ? "new" : "obstruction");
+    }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
+  }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.effect.each(["release-recorded", "release-set", "restore-recorded", "restore-disabled"])(
+  "refuses a new deletion after a stop at %s without resurrecting it",
+  (stopped) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("src/clean", "source");
+      yield* f.command(f.worktree, ["add", "."]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      yield* Effect.gen(function* () {
+        const normal = yield* makeCheckout;
+        const interrupted = yield* makeCheckout.pipe(
+          Effect.provideService(CheckoutLimits, {
+            entries: 100_000,
+            bytes: 1_000_000,
+            step: (step) => (step === stopped ? Effect.die("stop") : Effect.void),
+          }),
+        );
+        if (stopped.startsWith("release"))
+          yield* interrupted.release(f.worktree, f.root).pipe(Effect.exit);
+        else {
+          yield* normal.release(f.worktree, f.root);
+          yield* interrupted.restore(f.worktree).pipe(Effect.exit);
+        }
+        yield* f.fs.remove(`${f.worktree}/.gitignore`);
+        const status = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
+        for (const _attempt of [1, 2]) {
+          const result = yield* normal.restore(f.worktree).pipe(Effect.result);
+          expect(result._tag).toBe("Failure");
+          if (result._tag === "Failure") expect(result.failure.message).toContain(".gitignore");
+          expect(yield* f.fs.exists(`${f.worktree}/.gitignore`)).toBe(false);
+          expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
+            status,
+          );
+        }
+        yield* f.command(f.worktree, ["add", ".gitignore"]);
+        yield* normal.restore(f.worktree);
+        expect(yield* f.fs.exists(`${f.worktree}/.gitignore`)).toBe(false);
+        expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
       }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
     }).pipe(Effect.provide(nodeLayer)),
 );
