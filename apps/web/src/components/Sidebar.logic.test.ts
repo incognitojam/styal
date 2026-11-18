@@ -40,6 +40,7 @@ import {
   filterSidebarV2VisibleThreads,
   sortLogicalProjectsForSidebar,
   groupSidebarThreadsByProject,
+  keptSidebarFolderKeys,
   orderSidebarFolderGroups,
   shouldCreateNewThreadInCurrentProject,
   resolveSidebarFolderDot,
@@ -2048,6 +2049,39 @@ describe("groupSidebarThreadsByProject", () => {
       { projectKey: "t3code", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
+    // A project's chat has no row: the folder carries it, and keeps a folder it is alone in.
+    const withChats = [...threads, thread("fleet-chat", localEnvironmentId, fleet)];
+    expect(
+      groupSidebarThreadsByProject(
+        groups,
+        withChats,
+        () => false,
+        (entry) => entry.id === "fleet-chat" || entry.id === "a",
+      ).map((folder) => ({
+        projectKey: folder.group.projectKey,
+        threads: folder.threads.map((entry) => entry.id),
+        chat: folder.chat?.id ?? null,
+      })),
+    ).toEqual([
+      { projectKey: "t3code", threads: ["b"], chat: "a" },
+      { projectKey: "fleet", threads: [], chat: "fleet-chat" },
+    ]);
+  });
+});
+
+describe("keptSidebarFolderKeys", () => {
+  it("keeps a folder through a drag while its chat, hidden rows or setting hold it", () => {
+    const folder = (projectKey: string, hidden: number, chat: boolean) => ({
+      group: { projectKey },
+      hiddenThreads: Array.from({ length: hidden }),
+      chat: chat ? {} : null,
+    });
+    expect(
+      keptSidebarFolderKeys(
+        [folder("rows-hidden", 2, false), folder("chat-only", 0, true), folder("empty", 0, false)],
+        (group) => group.projectKey === "pinned",
+      ),
+    ).toEqual(new Set(["rows-hidden", "chat-only"]));
   });
 });
 

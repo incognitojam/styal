@@ -35,6 +35,32 @@ const FOLDER_DOT_LABEL = {
 /** Unscaled height of a folder header: its top gap and its 32px row. */
 export const SIDEBAR_FOLDER_HEADER_HEIGHT = 40;
 
+/** The most urgent state among threads a header stands for, as the folder dot shows it. */
+export function useSidebarFolderDot(threads: readonly EnvironmentThreadShell[]) {
+  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  return threads.length === 0
+    ? null
+    : resolveSidebarFolderDot(
+        threads.map((thread) => ({
+          ...thread,
+          lastVisitedAt: resolveThreadLastVisitedAt(
+            thread.lastVisitedAt,
+            localLastVisitedAtById[
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+            ],
+          ),
+        })),
+      );
+}
+
+export function SidebarFolderDot(props: { dot: ReturnType<typeof useSidebarFolderDot> }) {
+  return props.dot ? (
+    <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[props.dot])}>
+      <span className="sr-only">{FOLDER_DOT_LABEL[props.dot]}</span>
+    </span>
+  ) : null;
+}
+
 /** The folder's sidebar tree row; its thread rows name it as their parent. */
 export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
@@ -49,6 +75,14 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   group: SidebarProjectSnapshot;
   collapsed: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
+  /** The project's chat, which has no row: its state joins the folder's dot. */
+  chat?: EnvironmentThreadShell | null | undefined;
+  /** Set while the project has a page: the name opens it and the chevron alone toggles. */
+  onOpen?: ((group: SidebarProjectSnapshot) => void) | undefined;
+  selected?: boolean | undefined;
+  statusLine?: string | null | undefined;
+  /** Set while the route is the chat's thread, which this header stands for. */
+  revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
   pinned: boolean;
   draggable: boolean;
   onToggle: (group: SidebarProjectSnapshot) => void;
@@ -57,26 +91,16 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
 }) {
   const { group, collapsed, hiddenThreads } = props;
   const rowId = sidebarFolderRowId(group.projectKey);
-  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   // Moves with its rows while a thread is dragged; dragging it reorders projects.
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sidebarListItemId({ kind: "project-header", group: group.projectKey }),
     disabled: { draggable: !props.draggable },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
-  const dot = collapsed
-    ? resolveSidebarFolderDot(
-        hiddenThreads.map((thread) => ({
-          ...thread,
-          lastVisitedAt: resolveThreadLastVisitedAt(
-            thread.lastVisitedAt,
-            localLastVisitedAtById[
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-            ],
-          ),
-        })),
-      )
-    : null;
+  const dot = useSidebarFolderDot([
+    ...(collapsed ? hiddenThreads : []),
+    ...(props.chat ? [props.chat] : []),
+  ]);
   return (
     <li
       ref={setNodeRef}
@@ -94,15 +118,25 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
       <button
         {...listeners}
         type="button"
+        ref={(row) =>
+          row && props.revealRef && props.chat
+            ? props.revealRef(
+                row,
+                scopedThreadKey(scopeThreadRef(props.chat.environmentId, props.chat.id)),
+              )
+            : undefined
+        }
         data-sidebar-row={rowId}
         aria-expanded={!collapsed}
-        onClick={() => props.onToggle(group)}
+        aria-current={props.selected ? "page" : undefined}
+        onClick={() => (props.onOpen ? props.onOpen(group) : props.onToggle(group))}
         onContextMenu={(event) => {
           event.preventDefault();
           props.onContextMenu(group, { x: event.clientX, y: event.clientY });
         }}
         className={cn(
           "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          props.selected && "bg-sidebar-row-active",
           isDragging && "bg-sidebar-row-hover",
         )}
       >
@@ -113,11 +147,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {group.displayName}
         </span>
-        {dot ? (
-          <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[dot])}>
-            <span className="sr-only">{FOLDER_DOT_LABEL[dot]}</span>
+        {props.statusLine ? (
+          <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+            {props.statusLine}
           </span>
         ) : null}
+        {/* The New thread action takes this place on hover, as it does the count's. */}
+        <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
+          <SidebarFolderDot dot={dot} />
+        </span>
         {collapsed && hiddenThreads.length > 0 ? (
           <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
             {hiddenThreads.length}
@@ -128,9 +166,28 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           className={cn(
             "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
             collapsed && "-rotate-90",
+            props.onOpen && "invisible",
           )}
         />
       </button>
+      {props.onOpen ? (
+        <button
+          type="button"
+          data-sidebar-toggle-for={rowId}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Open" : "Close"} the ${group.displayName} folder`}
+          onClick={() => props.onToggle(group)}
+          className="absolute right-0 bottom-0 flex h-8 w-6 cursor-pointer items-center justify-end rounded-(--control-radius) pr-(--sidebar-row-content-inset) outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
+              collapsed && "-rotate-90",
+            )}
+          />
+        </button>
+      ) : null}
       {/* Sits over the count, which hides on hover, and left of the chevron. */}
       <span className="absolute right-6 bottom-0 flex h-8 items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
         <Tooltip>

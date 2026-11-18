@@ -1268,7 +1268,8 @@ export function sidebarFolderExpansionKeys(group: {
 /**
  * Boring sidebar folders. Folders follow `groups` order and threads keep their
  * input order. A project with no threads gets a folder only when `keepEmpty` says so.
- * A thread whose project is in no group has no folder and is left out.
+ * A thread whose project is in no group has no folder and is left out. A project's chat
+ * (`isChat`) has no row: its folder carries it as `chat`, and has a folder for it alone.
  */
 export function groupSidebarThreadsByProject<
   TGroup extends {
@@ -1282,8 +1283,13 @@ export function groupSidebarThreadsByProject<
   groups: readonly TGroup[],
   threads: readonly TThread[],
   keepEmpty: (group: TGroup) => boolean,
-): Array<{ group: TGroup; threads: TThread[] }> {
-  const folders = groups.map((group) => ({ group, threads: [] as TThread[] }));
+  isChat: (thread: TThread) => boolean = () => false,
+): Array<{ group: TGroup; threads: TThread[]; chat: TThread | null }> {
+  const folders = groups.map((group) => ({
+    group,
+    threads: [] as TThread[],
+    chat: null as TThread | null,
+  }));
   const folderByProject = new Map<string, (typeof folders)[number]>();
   for (const folder of folders) {
     for (const ref of folder.group.memberProjectRefs) {
@@ -1291,9 +1297,35 @@ export function groupSidebarThreadsByProject<
     }
   }
   for (const thread of threads) {
-    folderByProject.get(`${thread.environmentId}:${thread.projectId}`)?.threads.push(thread);
+    const folder = folderByProject.get(`${thread.environmentId}:${thread.projectId}`);
+    if (folder === undefined) continue;
+    if (isChat(thread)) folder.chat = thread;
+    else folder.threads.push(thread);
   }
-  return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
+  return folders.filter(
+    (folder) => folder.threads.length > 0 || folder.chat !== null || keepEmpty(folder.group),
+  );
+}
+
+/**
+ * Folders that stay while a drag moves their last visible row away: a closed folder's hidden
+ * rows, its project chat (which has no row) or the setting that keeps an empty one hold it.
+ */
+export function keptSidebarFolderKeys<TGroup extends { readonly projectKey: string }>(
+  folders: ReadonlyArray<{
+    readonly group: TGroup;
+    readonly hiddenThreads: ReadonlyArray<unknown>;
+    readonly chat: unknown;
+  }>,
+  keepEmpty: (group: TGroup) => boolean,
+): Set<string> {
+  return new Set(
+    folders.flatMap((folder) =>
+      folder.hiddenThreads.length > 0 || folder.chat !== null || keepEmpty(folder.group)
+        ? [folder.group.projectKey]
+        : [],
+    ),
+  );
 }
 
 /** Pinned folders come first in the shared pin order; the rest keep their given order. */

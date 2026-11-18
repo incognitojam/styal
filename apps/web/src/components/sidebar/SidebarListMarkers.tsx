@@ -11,6 +11,8 @@ import {
   type SidebarListMarker,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
+import { SidebarFolderDot, useSidebarFolderDot } from "./SidebarProjectFolderHeader";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -162,8 +164,14 @@ export function SidebarProjectGroupHeader(props: {
   /** Opens the project page; `selected` while it is open. */
   onOpen?: (() => void) | undefined;
   selected?: boolean | undefined;
+  /** The project's chat, which has no row of its own here, and its status line. */
+  chat?: EnvironmentThreadShell | null | undefined;
+  statusLine?: string | null | undefined;
+  /** Set while the route is the chat's thread, which this header stands for. */
+  revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
   onContextMenu: (group: string, position: { x: number; y: number }) => void;
 }) {
+  const chatDot = useSidebarFolderDot(props.chat ? [props.chat] : []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.id,
     disabled: { draggable: !props.draggable },
@@ -189,6 +197,11 @@ export function SidebarProjectGroupHeader(props: {
       <div
         {...attributes}
         {...listeners}
+        ref={(row) =>
+          row && props.revealRef && props.chat
+            ? props.revealRef(row, `${props.chat.environmentId}:${props.chat.id}`)
+            : undefined
+        }
         data-sidebar-row={props.id}
         data-sidebar-parent={props.navigationParent}
         aria-label={props.label}
@@ -224,6 +237,10 @@ export function SidebarProjectGroupHeader(props: {
         {props.pinned ? (
           <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />
         ) : null}
+        {props.statusLine ? (
+          <span className="ml-auto shrink-0 text-sidebar-muted-foreground">{props.statusLine}</span>
+        ) : null}
+        <SidebarFolderDot dot={chatDot} />
       </div>
     </li>
   );
