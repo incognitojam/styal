@@ -3123,7 +3123,7 @@ features:
       - A slashed path in assistant inline code renders as plain code once the host reports it missing and the workspace lookup that a chip click runs resolves no single file; a path that exists, or a shortened path that resolves to one indexed file, stays a chip.
       - A path stays a chip until the host and search have answered, without read access to the environment, and while a short truncated search page shows the index is still scanning.
       - Explicit Markdown file links keep their chips whether or not the target exists.
-    rationale: Agents shorten paths in inline code, and upstream renders every path-like span as a chip whose click opens a missing file. The check reuses the metadata lookup the chip's icon already runs and adds one workspace search only for paths missing as written. A full page of fuzzy search results is treated as conclusive, because a real suffix match ranks within it; the rare miss falls back to plain code.
+    rationale: Agents shorten paths in inline code, and upstream renders every path-like span as a chip whose click opens a missing file. The check reuses the metadata lookup the chip's icon already runs and upstream's shared workspace-link matcher, adding one workspace search only for paths missing as written that permit suffix lookup. A full page of fuzzy search results is treated as conclusive, because a real suffix match ranks within it; the rare miss falls back to plain code.
     implementation_paths:
       - apps/web/src/hooks/useMissingFileLink.ts
     upstream_paths:

@@ -19,33 +19,6 @@ describe("pickWorkspaceBasenameMatch", () => {
     );
   });
 
-  it("resolves a slashed path to the one indexed file that ends with it", () => {
-    expect(pickWorkspaceBasenameMatch("components/ChatView.tsx", entries)).toBe(
-      "apps/web/src/components/ChatView.tsx",
-    );
-    expect(pickWorkspaceBasenameMatch("./web/src/components/ChatView.tsx", entries)).toBe(
-      "apps/web/src/components/ChatView.tsx",
-    );
-  });
-
-  it("falls back to a unique case-insensitive suffix for a slashed path", () => {
-    expect(pickWorkspaceBasenameMatch("Components/chatview.tsx", entries)).toBe(
-      "apps/web/src/components/ChatView.tsx",
-    );
-  });
-
-  it("does not match a slashed path on a partial segment or when it is ambiguous", () => {
-    expect(pickWorkspaceBasenameMatch("mponents/ChatView.tsx", entries)).toBeNull();
-    expect(pickWorkspaceBasenameMatch("../src/components/ChatView.tsx", entries)).toBeNull();
-    expect(pickWorkspaceBasenameMatch("~/src/components/ChatView.tsx", entries)).toBeNull();
-    expect(
-      pickWorkspaceBasenameMatch("src/foo.ts", [
-        { path: "apps/web/src/foo.ts", kind: "file" },
-        { path: "apps/desktop/src/foo.ts", kind: "file" },
-      ]),
-    ).toBeNull();
-  });
-
   // regression: #6297 a bare filename resolves to a file, never a same-named directory
   it("ignores directories", () => {
     expect(
@@ -108,11 +81,17 @@ describe("chat file links an agent shortened", () => {
     expect(pickWorkspaceLinkMatch("acme/packages/web/src/index.ts", cwd, entries)).toBe(
       "packages/web/src/index.ts",
     );
+    expect(
+      pickWorkspaceLinkMatch("acme/docs/plan.md", cwd, [
+        { path: "nested/acme/docs/plan.md", kind: "file" },
+      ]),
+    ).toBe("nested/acme/docs/plan.md");
   });
 
   it("opens nothing when the suffix names several files or splits a segment", () => {
     expect(pickWorkspaceLinkMatch("src/index.ts", cwd, entries)).toBeNull();
     expect(pickWorkspaceLinkMatch("ud/http.ts", cwd, entries)).toBeNull();
+    expect(pickWorkspaceLinkMatch("Cloud/http.ts", cwd, entries)).toBeNull();
   });
 });
 

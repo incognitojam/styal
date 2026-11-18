@@ -1,4 +1,3 @@
-import { workspaceFileLookup } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { describe, expect, it } from "vite-plus/test";
 
 import { isMissingFileLink } from "./useMissingFileLink";
@@ -9,7 +8,7 @@ const searched = (paths: readonly string[], truncated = false) => ({
   isSuccess: true,
   data: { entries: paths.map((path) => ({ path, kind: "file" as const })), truncated },
 });
-const shortened = workspaceFileLookup("ui/command.tsx", "/repo");
+const shortened = { relativePath: "ui/command.tsx", cwd: "/repo" };
 
 describe("isMissingFileLink", () => {
   it("keeps a path that exists as written", () => {
@@ -40,6 +39,13 @@ describe("isMissingFileLink", () => {
         literal: missing,
         lookup: shortened,
         search: searched(["apps/web/src/components/ui/command.tsx"]),
+      }),
+    ).toBe(false);
+    expect(
+      isMissingFileLink({
+        literal: missing,
+        lookup: { relativePath: "repo/docs/plan.md", cwd: "/repo" },
+        search: searched(["nested/repo/docs/plan.md"]),
       }),
     ).toBe(false);
   });

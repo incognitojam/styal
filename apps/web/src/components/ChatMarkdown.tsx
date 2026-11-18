@@ -192,7 +192,8 @@ import {
   claimWorkspaceBasenameLookup,
   needsWorkspaceBasenameLookup,
   WORKSPACE_BASENAME_LOOKUP_LIMIT,
-  workspaceFileLookup,
+  workspaceLinkLookupQuery,
+  pickWorkspaceLinkMatch,
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePullRequestPreviewTarget } from "@t3tools/client-runtime/change-request-links";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -802,6 +803,8 @@ function useChatMarkdownState({
     ) {
       return null;
     }
+    const query = workspaceLinkLookupQuery(workspaceRelativePath, cwd);
+    if (query === null) return null;
     const isBasename = needsWorkspaceBasenameLookup(workspaceRelativePath);
     if (!isBasename) {
       // Search can be truncated, still scanning, or skip ignored files, so it
@@ -818,18 +821,17 @@ function useChatMarkdownState({
         return null;
       }
     }
-    const lookup = workspaceFileLookup(workspaceRelativePath, cwd);
     const result = await searchProjectEntries({
       environmentId,
       input: {
         cwd,
-        query: lookup.query,
+        query,
         limit: WORKSPACE_BASENAME_LOOKUP_LIMIT,
         kind: "file",
       },
     });
     if (result._tag !== "Success") return null;
-    return lookup.pick(result.value.entries);
+    return pickWorkspaceLinkMatch(workspaceRelativePath, cwd, result.value.entries);
   };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
     if (!threadRef) return;
@@ -837,7 +839,11 @@ function useChatMarkdownState({
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const openAt = (path: string) =>
       useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
-    if (fileLinkMeta.workspaceLookupPath === null || !cwd) {
+    if (
+      fileLinkMeta.workspaceLookupPath === null ||
+      !cwd ||
+      workspaceLinkLookupQuery(panelPath, cwd) === null
+    ) {
       openAt(panelPath);
       return;
     }
