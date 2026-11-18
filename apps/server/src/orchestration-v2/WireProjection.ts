@@ -247,6 +247,15 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
         progress: truncateDetail(item.progress),
         result: item.result === null ? null : (truncateDetail(item.result) ?? null),
       };
+    case "web_search": {
+      // A fetch result's snippet is page text, up to the whole page; expanding the row loads it.
+      if (!item.results?.some((result) => result.snippet !== undefined)) return item;
+      return {
+        ...item,
+        results: item.results.map(({ snippet: _snippet, ...result }) => result),
+        outputOmitted: true,
+      };
+    }
     case "dynamic_tool": {
       const { output: rawOutput, ...projected } = item;
       const output = compactDynamicToolOutput(rawOutput);
@@ -350,6 +359,17 @@ export function projectTurnItemForDetail(item: OrchestrationV2TurnItem): Orchest
       };
     case "handoff":
       return projectTurnItemForWire(item);
+    case "web_search":
+      return item.results === undefined
+        ? item
+        : {
+            ...item,
+            results: item.results.map((result) =>
+              result.snippet === undefined
+                ? result
+                : { ...result, snippet: truncateDetail(result.snippet, MAX_ON_DEMAND_BYTES) },
+            ),
+          };
     default:
       return item;
   }

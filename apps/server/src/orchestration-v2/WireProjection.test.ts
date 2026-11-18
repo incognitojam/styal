@@ -106,6 +106,29 @@ describe("orchestration V2 wire projection", () => {
     expect(item.output.data).toBe("private-image-data");
   });
 
+  it("keeps a fetched page's URL on the wire and its text for the expanded row", () => {
+    const { toolName: _toolName, input: _input, ...rest } = base;
+    const item = {
+      ...rest,
+      type: "web_search",
+      patterns: ["https://docs.example.com/menus"],
+      fetchedUrl: "https://docs.example.com/menus",
+      results: [{ url: "https://docs.example.com/menus", snippet: "PAGE_TEXT" }],
+    } satisfies OrchestrationV2TurnItem;
+    const decoded = decodeTurnItem(
+      decodeTurnItemJson(encodeTurnItemJson(decodeTurnItem(projectTurnItemForWire(item)))),
+    );
+    expect(decoded).toMatchObject({
+      fetchedUrl: "https://docs.example.com/menus",
+      results: [{ url: "https://docs.example.com/menus" }],
+      outputOmitted: true,
+    });
+    expect(JSON.stringify(decoded)).not.toContain("PAGE_TEXT");
+    expect(projectTurnItemForDetail(item)).toMatchObject({
+      results: [{ snippet: "PAGE_TEXT" }],
+    });
+  });
+
   it("keeps transcript bodies out of shell rows", () => {
     const now = DateTime.makeUnsafe("2026-08-13T00:00:00.000Z");
     const threadId = ThreadId.make("thread-shell-budget");

@@ -1837,6 +1837,13 @@ export const OrchestrationV2WebSearchResult = Schema.Struct({
 });
 export type OrchestrationV2WebSearchResult = typeof OrchestrationV2WebSearchResult.Type;
 
+/** A PDF or office document a tool read; `pages` is the range the read named, as given. */
+export const OrchestrationV2ViewedDocument = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  pages: Schema.optional(TrimmedNonEmptyString),
+});
+export type OrchestrationV2ViewedDocument = typeof OrchestrationV2ViewedDocument.Type;
+
 export const OrchestrationV2SecretRequestStatus = Schema.Literals([
   "pending",
   "saved",
@@ -2010,6 +2017,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("web_search"),
     patterns: Schema.optional(Schema.Array(Schema.String)),
     results: Schema.optional(Schema.Array(OrchestrationV2WebSearchResult)),
+    /** Set when the item opened one page rather than searching. */
+    fetchedUrl: Schema.optional(TrimmedNonEmptyString),
+    /** Set on the wire when result snippets were withheld; fetch them with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2137,6 +2148,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("dynamic_tool"),
     toolName: Schema.NullOr(TrimmedNonEmptyString),
     viewedImagePath: Schema.optional(TrimmedNonEmptyString),
+    viewedDocument: Schema.optional(OrchestrationV2ViewedDocument),
     input: Schema.Unknown,
     output: Schema.optional(Schema.Unknown),
     /** Set on the wire when output was withheld; fetch it with getTurnItem. */
@@ -2907,6 +2919,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     type: Schema.Literal("web_search"),
     patterns: Schema.optional(Schema.Array(Schema.String)),
     results: Schema.optional(Schema.Array(OrchestrationV2WebSearchResult)),
+    /** Set when the item opened one page rather than searching. */
+    fetchedUrl: Schema.optional(TrimmedNonEmptyString),
+    /** Set on the wire when result snippets were withheld; fetch them with getTurnItem. */
+    outputOmitted: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3027,6 +3043,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     type: Schema.Literal("dynamic_tool"),
     toolName: Schema.NullOr(TrimmedNonEmptyString),
     viewedImagePath: Schema.optional(TrimmedNonEmptyString),
+    viewedDocument: Schema.optional(OrchestrationV2ViewedDocument),
     input: Schema.Unknown,
     output: Schema.optional(Schema.Unknown),
     /** Set on the wire when output was withheld; fetch it with getTurnItem. */

@@ -1495,6 +1495,85 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("marks a web search that opens a page with that page's URL", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "web-search-thread";
+      const nativeTurnId = "web-search-turn";
+      const searches = [
+        { id: "search", action: { type: "search", query: "menu guidelines" } },
+        { id: "open", action: { type: "openPage", url: "https://docs.example.com/menus" } },
+        {
+          id: "find",
+          action: { type: "findInPage", url: "https://ui.example.org/sidebar", pattern: "width" },
+        },
+      ];
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: "web-search",
+          entries: [
+            ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Read the guide." }),
+            ...searches.map(({ id, action }) => ({
+              type: "emit_inbound" as const,
+              label: `${id} completed`,
+              frame: {
+                method: "item/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  item: { type: "webSearch", id, query: "", action },
+                  completedAtMs: 2,
+                },
+              },
+            })),
+            {
+              type: "emit_inbound",
+              label: "turn completed",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("web-search-attempt"),
+          text: "Read the guide.",
+        }),
+      );
+      yield* harness.firstTerminal;
+      const fetched = new Map(
+        harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "web_search"
+            ? [[event.turnItem.nativeItemRef?.nativeId, event.turnItem.fetchedUrl ?? null]]
+            : [],
+        ),
+      );
+      assert.deepEqual(Object.fromEntries(fetched), {
+        search: null,
+        open: "https://docs.example.com/menus",
+        find: "https://ui.example.org/sidebar",
+      });
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["before", "after"] as const)(
     "rejects a previous run's native turn when it completes %s the new start response",
     (completionOrder) =>
