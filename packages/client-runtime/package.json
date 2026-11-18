@@ -375,6 +375,10 @@
       "types": "./src/state/setupScriptActivity.ts",
       "default": "./src/state/setupScriptActivity.ts"
     },
+    "./state/project-coordinators": {
+      "types": "./src/state/projectCoordinators.ts",
+      "default": "./src/state/projectCoordinators.ts"
+    },
     "./state/thread-project-groups": {
       "types": "./src/state/threadProjectGroups.ts",
       "default": "./src/state/threadProjectGroups.ts"

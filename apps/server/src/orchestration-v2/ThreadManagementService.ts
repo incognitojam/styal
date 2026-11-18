@@ -72,6 +72,7 @@ import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimi
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectCoordinator from "./ProjectCoordinator.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -119,6 +120,7 @@ function existingThreadIdsForCommand(
     case "thread.mark-unread":
     case "thread.report-target.clear":
     case "thread.report-target.set":
+    case "thread.report-target.blocked-report":
       return [];
     case "thread.fork":
       return [command.sourceThreadId];
@@ -444,6 +446,10 @@ export interface ThreadManagementServiceShape {
     Orchestrator.OrchestratorV2Error
   >;
   readonly getThreadShell: Orchestrator.OrchestratorV2["Service"]["getThreadShell"];
+  /** Who the thread's reports go to now: its launcher or its project's current coordinator. */
+  readonly reportRecipient: (
+    thread: Parameters<typeof ProjectCoordinator.reportRecipient>[1],
+  ) => Effect.Effect<ThreadId | null>;
   readonly listAppOwnedChildThreadIds: Orchestrator.OrchestratorV2["Service"]["listAppOwnedChildThreadIds"];
   readonly getThreadLinkMetadata: Orchestrator.OrchestratorV2["Service"]["getThreadLinkMetadata"];
   readonly getThreadTitles: Orchestrator.OrchestratorV2["Service"]["getThreadTitles"];
@@ -1877,6 +1883,12 @@ const make = Effect.gen(function* () {
     listOlderSettledThreads: orchestrator.listOlderSettledThreads,
     readShellSnapshot: orchestrator.readShellSnapshot,
     getThreadShell: orchestrator.getThreadShell,
+    reportRecipient: Effect.fn("ThreadManagementService.reportRecipient")(function* (thread) {
+      return yield* ProjectCoordinator.reportRecipient(
+        { settings: serverSettings.getSettings, getThreadShell: orchestrator.getThreadShell },
+        thread,
+      );
+    }),
     listAppOwnedChildThreadIds: Effect.fn("ThreadManagementService.listAppOwnedChildThreadIds")(
       function (threadId) {
         return ensureProjectionTranscript(threadId).pipe(

@@ -12,6 +12,8 @@ import {
   AuthSourceControlWriteScope,
   EnvironmentAuthorizationError,
   EnvironmentId,
+  isListedThreadLineage,
+  projectCoordinatorThreadId,
   type ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
@@ -25,7 +27,8 @@ import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../component
 import { useComposerDraftStore } from "../composerDraftStore";
 import { readEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentServerConfigsAtom } from "../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../state/server";
+import { projectCoordinatorPatch } from "@t3tools/client-runtime/state/project-coordinators";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { orchestrationEnvironment } from "../state/orchestration";
 import { projectEnvironment } from "../state/projects";
@@ -260,6 +263,22 @@ export function canTurnThreadIntoProject(threadRef: ScopedThreadRef): boolean {
   return project !== null && isScratchProject(project, config.scratchWorkspaceRoot);
 }
 
+/** Whether the thread coordinates its project; null while coordinators are off in Labs. */
+export function readProjectCoordinatorState(
+  threadRef: ScopedThreadRef,
+): { readonly isCoordinator: boolean } | null {
+  const thread = readThreadShell(threadRef);
+  const settings = appAtomRegistry
+    .get(environmentServerConfigsAtom)
+    .get(threadRef.environmentId)?.settings;
+  if (!thread || settings?.projectCoordinatorsEnabled !== true) return null;
+  // Subagents and side chats belong to their parent, not to the project.
+  if (!isListedThreadLineage(thread.lineage)) return null;
+  return {
+    isCoordinator: projectCoordinatorThreadId(settings, thread.projectId) === thread.id,
+  };
+}
+
 function threadOperationFailure(target: ScopedThreadRef) {
   return readEnvironmentScope(target.environmentId, AuthOrchestrationOperateScope)
     ? null
@@ -274,6 +293,9 @@ function threadOperationFailure(target: ScopedThreadRef) {
 }
 
 export function useThreadActions() {
+  const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
   const archiveThreadMutation = useOrchestrationCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
@@ -1003,6 +1025,17 @@ export function useThreadActions() {
     reorderActiveThread,
     markThreadUnread,
     setThreadAutoSettle,
+    /** Makes the thread its project's coordinator, or clears the project's coordinator. */
+    setProjectCoordinator: (target: ScopedThreadRef, coordinate: boolean) => {
+      const thread = readThreadShell(target);
+      if (!thread) return Promise.resolve(null);
+      return updateServerSettings({
+        environmentId: target.environmentId,
+        input: {
+          patch: projectCoordinatorPatch(thread.projectId, coordinate ? target.threadId : null),
+        },
+      });
+    },
     turnThreadIntoProject: (target: ScopedThreadRef) =>
       createProjectFromThread({
         environmentId: target.environmentId,

@@ -9,6 +9,7 @@ import {
   ProviderInstanceId,
   ProviderThreadId,
   ProviderTurnId,
+  RunId,
   RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -17,16 +18,25 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import {
+  PROJECT_COORDINATOR_ENDED_NOTE,
+  PROJECT_COORDINATOR_NOTE,
+  reportRecipient,
+} from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { checkThreadReport } from "./ThreadReports.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
@@ -42,28 +52,41 @@ const makeHelpers = (input: {
   readonly cwd: string;
   readonly events: Queue.Queue<ProviderAdapter.ProviderAdapterV2Event>;
   readonly started: ReadonlyArray<ProviderAdapter.ProviderAdapterV2TurnInput>;
+  readonly coordinator: boolean;
 }) => {
   const { name, cwd, events, started } = input;
   return Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-    const create = (threadId: ThreadId, target?: OrchestrationV2ThreadReportTarget) =>
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const projectId = ProjectId.make(`project:${name}`);
+    const setCoordinator = (threadId: ThreadId | null) =>
+      settings.updateSettings({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: threadId === null ? null : { threadId } },
+      });
+    const create = (
+      threadId: ThreadId,
+      target?: OrchestrationV2ThreadReportTarget,
+      options?: { readonly byPerson?: boolean },
+    ) =>
       orchestrator.dispatch({
         type: "thread.create",
         commandId: CommandId.make(`create:${threadId}`),
         threadId,
-        projectId: ProjectId.make(`project:${name}`),
-        title: threadId === launchedId ? "Fix the login page" : "Coordinator",
+        projectId,
+        title: threadId === launcherId ? "Coordinator" : "Fix the login page",
         modelSelection,
         runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,
         worktreePath: cwd,
-        createdBy: "agent",
-        creationSource: "mcp",
+        createdBy: options?.byPerson === true ? "user" : "agent",
+        creationSource: options?.byPerson === true ? "web" : "mcp",
         ...(target === undefined ? {} : { reportTo: target }),
       });
     yield* create(launcherId);
+    if (input.coordinator) yield* setCoordinator(launcherId);
     yield* create(launchedId, reportTo);
 
     const send = (
@@ -214,7 +237,18 @@ const makeHelpers = (input: {
         ),
       );
 
-    return { orchestrator, worker, started, send, endTurn, askQuestion, reports };
+    return {
+      orchestrator,
+      settings,
+      worker,
+      started,
+      create,
+      setCoordinator,
+      send,
+      endTurn,
+      askQuestion,
+      reports,
+    };
   });
 };
 type ReportHarness = Effect.Success<ReturnType<typeof makeHelpers>>;
@@ -222,6 +256,7 @@ type ReportHarness = Effect.Success<ReturnType<typeof makeHelpers>>;
 const harness = <A, E>(
   name: string,
   test: (helpers: ReportHarness) => Effect.Effect<A, E, Scope.Scope>,
+  options?: { readonly coordinator?: boolean },
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -310,13 +345,26 @@ const harness = <A, E>(
             };
           }),
       };
-      return yield* makeHelpers({ name, cwd, events, started }).pipe(
+      const settingsLayer = ServerSettings.layerTest({
+        responseStreamingMode: "turn",
+        coordinatorReportsEnabled: true,
+      }).pipe(Layer.orDie);
+      return yield* makeHelpers({
+        name,
+        cwd,
+        events,
+        started,
+        coordinator: options?.coordinator === true,
+      }).pipe(
         Effect.flatMap(test),
         Effect.provide(
-          ProviderReplayHarness.layerWithRegistry(
-            { name },
-            ProviderAdapterRegistry.layerSingle(adapter),
-            { runEffectWorker: false, coordinatorReportsEnabled: true },
+          Layer.merge(
+            ProviderReplayHarness.layerWithRegistry(
+              { name },
+              ProviderAdapterRegistry.layerSingle(adapter),
+              { runEffectWorker: false, serverSettingsLayer: settingsLayer },
+            ),
+            settingsLayer,
           ),
         ),
       );
@@ -600,4 +648,270 @@ it.effect(
         yield* endTurn(last, "completed");
       }),
     ),
+);
+
+const personThreadId = ThreadId.make("thread:report-person");
+
+it.effect("a thread a person starts under a coordinator reports its first result once", () =>
+  harness(
+    "coordinator-person",
+    ({ create, send, endTurn, reports }) =>
+      Effect.gen(function* () {
+        yield* create(personThreadId, undefined, { byPerson: true });
+        const first = yield* send(personThreadId, "Fix the README", { sender: "user" });
+        assert.include(first.message.text, launcherId, "the first turn names the coordinator");
+        assert.notInclude(first.message.text, PROJECT_COORDINATOR_NOTE);
+        yield* endTurn(first, "completed");
+        const delivered = yield* reports();
+        assert.equal(delivered.length, 1);
+        assert.include(delivered[0]?.text ?? "", "Thread in the project you coordinate");
+
+        // The person is in the conversation now, so their follow-ups are theirs.
+        const followUp = yield* send(personThreadId, "Also the CHANGELOG", { sender: "user" });
+        yield* endTurn(followUp, "completed");
+        assert.equal((yield* reports()).length, 1);
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect("a thread the coordinator launched with reportBack reports to it once", () =>
+  harness(
+    "coordinator-launched",
+    ({ orchestrator, send, endTurn, reports }) =>
+      Effect.gen(function* () {
+        const launched = yield* orchestrator.getThreadProjection(launchedId);
+        assert.deepEqual(launched.thread.reportTo, reportTo, "the launcher's own target is kept");
+        const turn = yield* send(launchedId, "Fix the login page");
+        yield* endTurn(turn, "completed");
+        assert.equal((yield* reports()).length, 1);
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect("clearing the coordinator stops reports and tells it once", () =>
+  harness(
+    "coordinator-cleared",
+    ({ create, setCoordinator, send, endTurn, reports }) =>
+      Effect.gen(function* () {
+        const coordinating = yield* send(launcherId, "Plan the release");
+        assert.include(coordinating.message.text, PROJECT_COORDINATOR_NOTE);
+        yield* endTurn(coordinating, "completed");
+        const again = yield* send(launcherId, "What is next?");
+        assert.notInclude(again.message.text, PROJECT_COORDINATOR_NOTE, "said once");
+        yield* endTurn(again, "completed");
+
+        yield* create(personThreadId, undefined, { byPerson: true });
+        yield* setCoordinator(null);
+        const turn = yield* send(personThreadId, "Fix the README", { sender: "user" });
+        yield* endTurn(turn, "failed");
+        assert.equal((yield* reports()).length, 0);
+
+        const ended = yield* send(launcherId, "Anything else?");
+        assert.include(ended.message.text, PROJECT_COORDINATOR_ENDED_NOTE);
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect("a coordinator that reports to its launcher does not wake it in a cycle", () =>
+  harness(
+    "coordinator-cycle",
+    ({ orchestrator, create, setCoordinator, send, endTurn, started }) =>
+      Effect.gen(function* () {
+        const oldCoordinator = ThreadId.make("thread:old-coordinator");
+        const newCoordinator = ThreadId.make("thread:new-coordinator");
+        yield* create(oldCoordinator, undefined, { byPerson: true });
+        yield* setCoordinator(oldCoordinator);
+        // The old coordinator launched this thread with reportBack, then the person promoted it.
+        yield* create(newCoordinator, { threadId: oldCoordinator });
+        yield* setCoordinator(newCoordinator);
+        const turn = yield* send(newCoordinator, "Finish the work");
+        const woken = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "provider-turn.updated" &&
+              event.threadId === oldCoordinator &&
+              event.payload.status === "running",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* endTurn(turn, "completed");
+        yield* Fiber.join(woken);
+        const oldWake = started.at(-1)!;
+        assert.equal(oldWake.threadId, oldCoordinator, "the launcher hears the result");
+        const before = started.length;
+        yield* endTurn(oldWake, "completed");
+        assert.equal(started.length, before, "answering a report does not wake the coordinator");
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect.each(["switched", "cleared"] as const)(
+  "a blocked report is withdrawn where it was delivered after the coordinator is %s",
+  (change) =>
+    harness(
+      `coordinator-withdraw-${change}`,
+      ({ orchestrator, create, setCoordinator, send, askQuestion, reports, worker }) =>
+        Effect.gen(function* () {
+          yield* send(launcherId, "Coordinate the batch");
+          yield* create(personThreadId, undefined, { byPerson: true });
+          const turn = yield* send(personThreadId, "Ship it", { sender: "user" });
+          yield* askQuestion(turn, "request:switched", "pending");
+          yield* TestClock.adjust("2 minutes");
+          yield* worker.drain();
+          const [report] = yield* reports();
+          assert.isDefined(report);
+          if (change === "switched") {
+            const replacement = ThreadId.make("thread:replacement");
+            yield* create(replacement);
+            yield* setCoordinator(replacement);
+          } else {
+            yield* setCoordinator(null);
+          }
+          yield* askQuestion(turn, "request:switched", "resolved");
+          const previous = yield* orchestrator.getThreadProjection(launcherId);
+          assert.equal(
+            previous.runs.find((run) => run.userMessageId === report!.id)?.status,
+            "cancelled",
+          );
+        }),
+      { coordinator: true },
+    ),
+);
+
+it.effect("another project's thread named as coordinator is never woken", () =>
+  harness(
+    "coordinator-cross-project",
+    ({ orchestrator, create, setCoordinator, send, endTurn, started }) =>
+      Effect.gen(function* () {
+        const foreign = ThreadId.make("thread:foreign");
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("create:foreign"),
+          threadId: foreign,
+          projectId: ProjectId.make("project:other"),
+          title: "Other project",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* setCoordinator(foreign);
+        yield* create(personThreadId, undefined, { byPerson: true });
+        const turn = yield* send(personThreadId, "Finish", { sender: "user" });
+        yield* endTurn(turn, "completed");
+        assert.isFalse(started.some((candidate) => candidate.threadId === foreign));
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect(
+  "two blocked reports checked at once both withdraw after the coordinator is cleared",
+  () =>
+    harness(
+      "coordinator-withdraw-two",
+      ({ orchestrator, settings, create, setCoordinator, send, askQuestion, reports }) =>
+        Effect.gen(function* () {
+          yield* send(launcherId, "Coordinate the batch");
+          yield* create(personThreadId, undefined, { byPerson: true });
+          const turn = yield* send(personThreadId, "Ship it", { sender: "user" });
+          yield* askQuestion(turn, "request:first", "pending");
+          yield* askQuestion(turn, "request:second", "pending");
+
+          // Both checks read the thread before either records where its report went.
+          const threads = {
+            dispatch: orchestrator.dispatch,
+            getThreadRecords: orchestrator.getThreadRecords,
+            getThreadShell: orchestrator.getThreadShell,
+            reportRecipient: (thread: Parameters<typeof reportRecipient>[1]) =>
+              reportRecipient(
+                { settings: settings.getSettings, getThreadShell: orchestrator.getThreadShell },
+                thread,
+              ),
+          };
+          const reached = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          const paused = {
+            ...threads,
+            dispatch: (command: Parameters<typeof orchestrator.dispatch>[0]) =>
+              Deferred.succeed(reached, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(orchestrator.dispatch(command)),
+              ),
+          };
+          const check = (deps: typeof threads, requestId: string) =>
+            checkThreadReport(deps, {
+              environmentId: undefined,
+              threadId: personThreadId,
+              trigger: { kind: "request", requestId: RuntimeRequestId.make(requestId) },
+            });
+          const first = yield* check(paused, "request:first").pipe(Effect.forkScoped);
+          yield* Deferred.await(reached);
+          yield* check(threads, "request:second");
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(first);
+          const delivered = yield* reports();
+          assert.equal(delivered.length, 2);
+
+          yield* setCoordinator(null);
+          yield* askQuestion(turn, "request:first", "resolved");
+          yield* askQuestion(turn, "request:second", "resolved");
+          const coordinator = yield* orchestrator.getThreadProjection(launcherId);
+          for (const report of delivered) {
+            assert.equal(
+              coordinator.runs.find((run) => run.userMessageId === report.id)?.status,
+              "cancelled",
+            );
+          }
+        }),
+      { coordinator: true },
+    ),
+);
+
+it.effect("recording a sent report keeps a blocked report recorded after its read", () =>
+  harness(
+    "coordinator-sent-keeps-blocked",
+    ({ orchestrator, create }) =>
+      Effect.gen(function* () {
+        yield* create(personThreadId, undefined, { byPerson: true });
+        const record = (requestId: string) =>
+          orchestrator.dispatch({
+            type: "thread.report-target.blocked-report",
+            commandId: CommandId.make(`record:${requestId}`),
+            threadId: personThreadId,
+            requestId: RuntimeRequestId.make(requestId),
+            recipient: launcherId,
+          });
+        const targetNow = () =>
+          orchestrator
+            .getThreadProjection(personThreadId)
+            .pipe(Effect.map((projection) => projection.thread.reportTo));
+        yield* record("request:early");
+        // An explicit report reads the target, then another blocked report lands before it saves.
+        const read = (yield* targetNow())!;
+        yield* record("request:late");
+        yield* orchestrator.dispatch({
+          type: "thread.report-target.set",
+          commandId: CommandId.make("sent-report"),
+          threadId: personThreadId,
+          reportTo: { ...read, sentInRunId: RunId.make("run:sent") },
+        });
+        const saved = yield* targetNow();
+        assert.equal(saved?.sentInRunId, "run:sent");
+        assert.deepEqual(Object.keys(saved?.blockedReportsTo ?? {}).toSorted(), [
+          "request:early",
+          "request:late",
+        ]);
+      }),
+    { coordinator: true },
+  ),
 );

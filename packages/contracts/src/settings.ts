@@ -1350,6 +1350,13 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
   "sidebarAutoSettleAfterDays",
 ]);
 
+/**
+ * The thread a project's work reports to (Labs). A struct so a later per-project Home can add
+ * fields without migrating the stored value.
+ */
+export const ProjectCoordinator = Schema.Struct({ threadId: ThreadId });
+export type ProjectCoordinator = typeof ProjectCoordinator.Type;
+
 /** Reclaimable bytes from which the offline `styal doctor` repair is worth suggesting. */
 export const DATABASE_COMPACTION_RECOMMENDED_BYTES = 1024 ** 3;
 
@@ -1549,6 +1556,13 @@ export const ServerSettings = Schema.Struct({
    */
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   coordinatorReportsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  projectCoordinatorsEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  /** Machine-local, unlike styal.json: each project's coordinator thread on this server. */
+  projectCoordinators: Schema.Record(ProjectId, ProjectCoordinator).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /**
@@ -1791,6 +1805,15 @@ export const resolveTextGenerationSelectionEnabled = (
   textGeneratorForSelection(settings, instanceId)?.enabled ??
   resolveProjectProviderInstanceEnabled(settings, projectId, instanceId);
 
+/** The project's coordinator thread, or null while project coordinators are off in Labs. */
+export const projectCoordinatorThreadId = (
+  settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">,
+  projectId: ProjectId,
+): ThreadId | null =>
+  settings.projectCoordinatorsEnabled && Object.hasOwn(settings.projectCoordinators, projectId)
+    ? settings.projectCoordinators[projectId]!.threadId
+    : null;
+
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 
 type IdleCompactionSettings = Pick<ServerSettings, "compactIdleThreads" | "idleCompaction">;
@@ -1856,6 +1879,7 @@ export const ServerSettingsOperation = Schema.Literals([
   "prepare-directory",
   "write-managed-setting",
   "use-disallowed-provider",
+  "set-project-coordinator",
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 
@@ -1881,6 +1905,9 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
   override get message(): string {
     if (this.operation === "write-managed-setting") {
       return `${this.managedSetting ?? "This setting"} is managed by ${this.managedBy ?? "your organization"} and cannot be changed.`;
+    }
+    if (this.operation === "set-project-coordinator") {
+      return "A project's coordinator must be a thread in that project.";
     }
     if (this.operation === "use-disallowed-provider") {
       return disallowedProviderMessage(
@@ -2016,6 +2043,11 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   coordinatorReportsEnabled: Schema.optionalKey(Schema.Boolean),
+  projectCoordinatorsEnabled: Schema.optionalKey(Schema.Boolean),
+  /** Per project; null clears it. */
+  projectCoordinators: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(ProjectCoordinator)),
+  ),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
   hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
   easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),

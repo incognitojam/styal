@@ -23,6 +23,7 @@ export function LabsSettingsPanel() {
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
+        <ProjectCoordinatorsRow />
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
       </SettingsSection>
@@ -184,6 +185,30 @@ function PromptSuggestionsRow() {
             updateSettings({ promptSuggestionsEnabled: Boolean(checked) })
           }
           aria-label="Suggest next prompt"
+        />
+      }
+    />
+  );
+}
+
+function ProjectCoordinatorsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      serverScoped
+      {...searchableSetting("project-coordinators")}
+      settingKeys={["projectCoordinatorsEnabled"]}
+      forkFeature="project-coordinators"
+      description="Let a project name one thread as its coordinator. It is told to hand work to other threads, and hears when threads started in the project finish or need input."
+      control={
+        <ScopedSwitch
+          settingKeys={["projectCoordinatorsEnabled"]}
+          checked={settings.projectCoordinatorsEnabled}
+          onCheckedChange={(checked) =>
+            updateSettings({ projectCoordinatorsEnabled: Boolean(checked) })
+          }
+          aria-label="Project coordinators"
         />
       }
     />

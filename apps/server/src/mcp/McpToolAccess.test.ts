@@ -407,6 +407,7 @@ it.effect.each([
       probeServer(
         Layer.mock(ThreadManagement.ThreadManagementService)({
           getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+          reportRecipient: (thread) => Effect.succeed(thread.reportTo?.threadId ?? null),
         }),
       ),
     ),
@@ -483,6 +484,7 @@ const linkedProbeServer = McpHttpServer.toolkitRegistration(
   Layer.provideMerge(
     Layer.mock(ThreadManagement.ThreadManagementService)({
       getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+      reportRecipient: (thread) => Effect.succeed(thread.reportTo?.threadId ?? null),
     }),
   ),
   // Stands in for the linked environment, answering with where the call went.
@@ -838,6 +840,7 @@ it.effect.each([
       Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
       Layer.mock(ThreadManagement.ThreadManagementService)({
         getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+        reportRecipient: (thread) => Effect.succeed(thread.reportTo?.threadId ?? null),
       }),
       Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
         sendToThread: () =>

@@ -3845,6 +3845,7 @@ describe("OrchestratorMcpService thread lookup", () => {
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: (threadId) =>
               Effect.succeed(shells.find((shell) => shell.id === threadId) ?? null),
+            reportRecipient: (thread) => Effect.succeed(thread.reportTo?.threadId ?? null),
             sendToThread: () => Ref.update(sent, (count) => count + 1).pipe(Effect.as({} as never)),
             ...overrides,
           }),

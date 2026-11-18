@@ -61,6 +61,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
+import { ProjectCoordinatorSetting } from "./ProjectCoordinatorSetting";
 import { ProjectAgentAccessSettings } from "./AgentAccessSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ProjectSimulatorMemorySettings } from "./SimulatorMemorySetting";
@@ -833,6 +834,7 @@ function ProjectDetail({
           {hasMultipleCheckouts ? null : (
             <DefaultRepositorySetting checkout={group.memberProjects[0]!} />
           )}
+          <ProjectCoordinatorSetting members={group.memberProjects} />
           {canOrganize ? (
             <>
               <SettingsRow

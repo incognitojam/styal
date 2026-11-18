@@ -40,6 +40,11 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import {
+  currentProjectCoordinator,
+  projectCoordinatorTurnNote,
+  reportRecipient,
+} from "./ProjectCoordinator.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -205,6 +210,7 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
     const readWorktreeBranchNote = Effect.fn("ProviderTurnStartService.readWorktreeBranchNote")(
       function* (input: {
@@ -1036,6 +1042,27 @@ export const layer: Layer.Layer<
       const deliveredContextIds = new Set(
         projection.providerTurns.flatMap((turn) => turn.inlineContextIds ?? []),
       );
+      const coordinatorLookup = {
+        settings: serverSettings.getSettings,
+        getThreadShell: projectionStore.getThreadShell,
+      };
+      const reportsTo =
+        projection.thread.reportTo != null && run.ordinal === 1
+          ? yield* reportRecipient(coordinatorLookup, projection.thread)
+          : null;
+      const coordinatorNote = projectCoordinatorTurnNote({
+        isCoordinator:
+          (yield* currentProjectCoordinator(coordinatorLookup, projection.thread.projectId)) ===
+          projection.thread.id,
+        deliveredContextIds: projection.providerTurns
+          .toSorted(
+            (left, right) =>
+              (left.startedAt === null ? 0 : DateTime.toEpochMillis(left.startedAt)) -
+              (right.startedAt === null ? 0 : DateTime.toEpochMillis(right.startedAt)),
+          )
+          .flatMap((turn) => turn.inlineContextIds ?? []),
+        runId: run.id,
+      });
       const nextTurnContext = [
         ...(projection.thread.pullRequests ?? [])
           .filter((link) => link.source !== "stack-dismissed")
@@ -1044,14 +1071,17 @@ export const layer: Layer.Layer<
           ? []
           : [projection.thread.branchTurnContext]),
         ...(projection.thread.reportDismissals ?? []),
+        ...(coordinatorNote === null
+          ? []
+          : [{ ...coordinatorNote, occurredAt: DateTime.formatIso(yield* DateTime.now) }]),
       ]
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
       let inlineContextIds: ReadonlyArray<string> = [];
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
-        projection.thread.reportTo != null && run.ordinal === 1
-          ? threadReportNote(projection.thread.reportTo.threadId)
+        projection.thread.reportTo != null && reportsTo !== null
+          ? threadReportNote(projection.thread.reportTo, reportsTo)
           : "",
         branchNote,
         restartCancelledWork.length === 0

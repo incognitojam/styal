@@ -179,11 +179,22 @@ export type OrchestrationV2DelegatedFrom = typeof OrchestrationV2DelegatedFrom.T
 
 /**
  * The thread this one reports to: the one that launched it and asked to hear back. Runs on the
- * same server. `sentInRunId` is the last run that already sent a report of its own.
+ * same server. `sentInRunId` is the last run that already sent a report of its own. With `source`
+ * set, the thread was started in a project with a coordinator, and reports go to whichever thread
+ * coordinates the project now.
  */
-export const OrchestrationV2ThreadReportTarget = Schema.Struct({
+const OrchestrationV2ThreadReportTargetFields = {
   threadId: ThreadId,
   sentInRunId: Schema.optional(RunId),
+  source: Schema.optional(Schema.Literal("project-coordinator")),
+};
+export const OrchestrationV2ThreadReportTarget = Schema.Struct({
+  ...OrchestrationV2ThreadReportTargetFields,
+  /**
+   * The coordinator each still-open blocked report went to, so it can be withdrawn there. Only
+   * `thread.report-target.blocked-report` changes it.
+   */
+  blockedReportsTo: Schema.optional(Schema.Record(RuntimeRequestId, ThreadId)),
 });
 export type OrchestrationV2ThreadReportTarget = typeof OrchestrationV2ThreadReportTarget.Type;
 
@@ -4104,12 +4115,26 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
   }),
-  /** Starts a thread reporting to `reportTo`, or records that this run already sent a report. */
+  /**
+   * Starts a thread reporting to `reportTo`, or records that this run already sent a report.
+   * The blocked report map is not part of it, so a stale copy cannot replace newer entries.
+   */
   Schema.Struct({
     type: Schema.Literal("thread.report-target.set"),
     commandId: CommandId,
     threadId: ThreadId,
-    reportTo: OrchestrationV2ThreadReportTarget,
+    reportTo: Schema.Struct(OrchestrationV2ThreadReportTargetFields),
+  }),
+  /**
+   * Records which coordinator got a blocked report, or forgets it with null. Merged into the
+   * thread's current target, so concurrent reports cannot overwrite each other's entries.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.report-target.blocked-report"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    requestId: RuntimeRequestId,
+    recipient: Schema.NullOr(ThreadId),
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

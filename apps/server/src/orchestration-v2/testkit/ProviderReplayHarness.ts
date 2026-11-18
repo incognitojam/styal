@@ -24,6 +24,7 @@ import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
+import * as ProjectCoordinator from "../ProjectCoordinator.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
@@ -303,6 +304,8 @@ export function layerWithRegistry<Error>(
       store: ProjectionStore.ProjectionStoreV2Shape,
     ) => ProjectionStore.ProjectionStoreV2Shape;
     readonly managedPolicy?: ManagedPolicyDocument;
+    /** Replaces the test settings; provide the same layer to the test to change settings mid-run. */
+    readonly serverSettingsLayer?: Layer.Layer<ServerSettings.ServerSettingsService>;
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -329,22 +332,24 @@ export function layerWithRegistry<Error>(
   const layerProvidedRegistry = registryLayer.pipe(
     Layer.provide(Layer.merge(layerContinuationRequests, McpProviderSessions.layer)),
   );
-  const layerServerSettings = Layer.unwrap(
-    Effect.map(ManagedPolicy.fromDocument("/test/policy.json", options.managedPolicy), (policy) =>
-      ServerSettings.layerTest(
-        {
-          responseStreamingMode: "turn",
-          ...(options.continueThreadsAfterServerUpdate === undefined
-            ? {}
-            : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
-          ...(options.coordinatorReportsEnabled === undefined
-            ? {}
-            : { coordinatorReportsEnabled: options.coordinatorReportsEnabled }),
-        },
-        policy.summary,
+  const layerServerSettings =
+    options.serverSettingsLayer ??
+    Layer.unwrap(
+      Effect.map(ManagedPolicy.fromDocument("/test/policy.json", options.managedPolicy), (policy) =>
+        ServerSettings.layerTest(
+          {
+            responseStreamingMode: "turn",
+            ...(options.continueThreadsAfterServerUpdate === undefined
+              ? {}
+              : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
+            ...(options.coordinatorReportsEnabled === undefined
+              ? {}
+              : { coordinatorReportsEnabled: options.coordinatorReportsEnabled }),
+          },
+          policy.summary,
+        ),
       ),
-    ),
-  ).pipe(Layer.orDie);
+    ).pipe(Layer.orDie);
   const wrapProjectionStore = options.wrapProjectionStore;
   const layerProjectionStore =
     wrapProjectionStore === undefined
@@ -547,17 +552,23 @@ export function layerWithRegistry<Error>(
   const layerThreadManagementProvided = Layer.unwrap(
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const settings = yield* ServerSettings.ServerSettingsService;
       return Layer.mock(ThreadManagementService.ThreadManagementService)({
         dispatch: orchestrator.dispatch,
         getThreadRecords: orchestrator.getThreadRecords,
         getThreadShell: orchestrator.getThreadShell,
+        reportRecipient: (thread) =>
+          ProjectCoordinator.reportRecipient(
+            { settings: settings.getSettings, getThreadShell: orchestrator.getThreadShell },
+            thread,
+          ),
         getThreadProjection: orchestrator.getThreadProjection,
         recoverDelegatedTask: orchestrator.recoverDelegatedTask,
         cancelDelegatedTask: orchestrator.cancelDelegatedTask,
         delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
       });
     }),
-  ).pipe(Layer.provide(layerOrchestratorProvided));
+  ).pipe(Layer.provide(Layer.merge(layerOrchestratorProvided, layerServerSettings)));
   const layerContinuationWorkerProvided =
     options.runContinuationWorker === true
       ? ProviderContinuationService.layer.pipe(

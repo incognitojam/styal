@@ -63,6 +63,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { reportRecipientId } from "@t3tools/client-runtime/state/project-coordinators";
 import { useThreadShell } from "../../state/entities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
@@ -538,7 +539,10 @@ function ThreadRouteContent(
       : scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
   // The title it had at delegation, until this client sees the parent itself.
   const delegatedFromThread = useThreadShell(delegatedFromRef);
-  const reportsToId = selectedThread?.reportTo?.threadId ?? null;
+  const reportsToId =
+    selectedThread === null
+      ? null
+      : reportRecipientId(selectedThread, routeEnvironmentRuntime?.serverConfig?.settings);
   const reportsToThread = useThreadShell(
     selectedThread === null || reportsToId === null
       ? null

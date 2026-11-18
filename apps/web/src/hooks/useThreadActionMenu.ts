@@ -47,7 +47,19 @@ import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
-import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import {
+  canTurnThreadIntoProject,
+  readProjectCoordinatorState,
+  useThreadActions,
+} from "./useThreadActions";
+
+export async function reportProjectCoordinatorFailure(
+  result: AtomCommandResult<unknown, unknown> | null,
+) {
+  if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+    failureToast("Could not change the project coordinator", squashAtomCommandFailure(result));
+  }
+}
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -87,6 +99,7 @@ export function useThreadActionMenu(input: {
     archiveThread,
     deleteThread,
     markThreadUnread,
+    setProjectCoordinator,
     turnThreadIntoProject,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -154,6 +167,7 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        projectCoordinator: readProjectCoordinatorState(threadRef),
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -269,6 +283,12 @@ export function useThreadActionMenu(input: {
           return;
         case "share-guest":
           openGuestShareDialog(threadRef);
+          return;
+        case "make-coordinator":
+        case "stop-coordinator":
+          await reportProjectCoordinatorFailure(
+            await setProjectCoordinator(threadRef, action === "make-coordinator"),
+          );
           return;
         case "turn-into-project": {
           const result = await turnThreadIntoProject(threadRef);

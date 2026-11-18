@@ -73,6 +73,7 @@ import {
   ProviderInteractionMode,
   isRuntimeModeAbove,
   resolveProviderInstanceEnabled,
+  projectCoordinatorThreadId,
   resolveProjectProviderInstanceEnabled,
   type ProviderSessionId,
   RunId,
@@ -650,6 +651,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.mark-unread":
     case "thread.report-target.clear":
     case "thread.report-target.set":
+    case "thread.report-target.blocked-report":
     case "thread.metadata.update":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":
@@ -3665,6 +3667,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
+    // Work started in a project with a coordinator reports to it, unless it already reports to
+    // its launcher or belongs to a remote parent.
+    const coordinatorId =
+      command.reportTo === undefined &&
+      command.linkOrigin === undefined &&
+      command.importedNativeThread === undefined
+        ? projectCoordinatorThreadId(
+            yield* serverSettings.getSettings.pipe(Effect.orDie),
+            command.projectId,
+          )
+        : null;
+    const reportTo =
+      coordinatorId === null || coordinatorId === command.threadId
+        ? command.reportTo
+        : { threadId: coordinatorId, source: "project-coordinator" as const };
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
     const thread: OrchestrationV2AppThread = {
@@ -3686,7 +3703,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
-      ...(command.reportTo === undefined ? {} : { reportTo: command.reportTo }),
+      ...(reportTo === undefined ? {} : { reportTo }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -4127,6 +4144,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.mark-unread"
           | "thread.report-target.clear"
           | "thread.report-target.set"
+          | "thread.report-target.blocked-report"
           | "thread.metadata.update"
           | "thread.pull-request.link"
           | "thread.pull-request.unlink"
@@ -4773,8 +4791,40 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
         case "thread.report-target.clear":
           return { ...thread, reportTo: null, updatedAt: now };
-        case "thread.report-target.set":
-          return { ...thread, reportTo: command.reportTo, updatedAt: now };
+        case "thread.report-target.set": {
+          // The map comes only from blocked-report commands; a caller's copy may be stale.
+          const { threadId, sentInRunId, source } = command.reportTo;
+          const blockedReportsTo =
+            source === "project-coordinator" && thread.reportTo?.source === "project-coordinator"
+              ? thread.reportTo.blockedReportsTo
+              : undefined;
+          return {
+            ...thread,
+            reportTo: {
+              threadId,
+              ...(sentInRunId === undefined ? {} : { sentInRunId }),
+              ...(source === undefined ? {} : { source }),
+              ...(blockedReportsTo === undefined ? {} : { blockedReportsTo }),
+            },
+            updatedAt: now,
+          };
+        }
+        case "thread.report-target.blocked-report": {
+          if (thread.reportTo == null) return thread;
+          const { [command.requestId]: _previous, ...others } =
+            thread.reportTo.blockedReportsTo ?? {};
+          return {
+            ...thread,
+            reportTo: {
+              ...thread.reportTo,
+              blockedReportsTo:
+                command.recipient === null
+                  ? others
+                  : { ...others, [command.requestId]: command.recipient },
+            },
+            updatedAt: now,
+          };
+        }
         case "thread.metadata.update": {
           const previousRecovery =
             thread.limitRecovery?.runId === command.limitRecovery?.runId &&
@@ -5280,6 +5330,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return "thread.pull-request-synced" as const;
         case "thread.report-target.clear":
         case "thread.report-target.set":
+        case "thread.report-target.blocked-report":
           return "thread.metadata-updated" as const;
         case "thread.runtime-mode.set":
           return "thread.runtime-mode-updated" as const;
@@ -15331,6 +15382,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.tag.set":
       case "thread.report-target.clear":
       case "thread.report-target.set":
+      case "thread.report-target.blocked-report":
       case "thread.mark-unread":
       case "thread.metadata.update":
       case "thread.pull-request.link":
