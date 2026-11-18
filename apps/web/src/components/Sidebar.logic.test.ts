@@ -40,6 +40,7 @@ import {
   filterSidebarV2VisibleThreads,
   sortLogicalProjectsForSidebar,
   groupSidebarThreadsByProject,
+  orderSidebarFolderGroups,
   shouldCreateNewThreadInCurrentProject,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
@@ -2037,6 +2038,23 @@ describe("groupSidebarThreadsByProject", () => {
       { projectKey: "t3code", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
+  });
+});
+
+describe("orderSidebarFolderGroups", () => {
+  // Folders follow the grouped sidebar's project order, so a dragged folder stays where it was dropped.
+  it.each([
+    { pinned: [], saved: [], order: ["a", "b", "c", "d"] },
+    { pinned: ["c", "a"], saved: [], order: ["c", "a", "b", "d"] },
+    { pinned: [], saved: ["d", "b"], order: ["a", "c", "d", "b"] },
+    { pinned: ["b"], saved: ["d", "b", "a"], order: ["b", "c", "d", "a"] },
+    // A pinned project without a folder takes no place.
+    { pinned: ["x", "c"], saved: ["y", "a"], order: ["c", "b", "d", "a"] },
+  ])("pinned $pinned, saved $saved", ({ pinned, saved, order }) => {
+    const groups = ["a", "b", "c", "d"].map((projectKey) => ({ projectKey }));
+    expect(
+      orderSidebarFolderGroups(groups, pinned, saved).map((group) => group.projectKey),
+    ).toEqual(order);
   });
 });
 

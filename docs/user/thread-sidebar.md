@@ -212,7 +212,9 @@ which path to copy. **Show all projects** clears an active project filter.
 ### Project folders (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. Pinned projects come first. A project with no active
+threads in a folder for each project. Pinned projects come first, marked with a pin. Drag a
+folder by its header to move the project, or across the **Pinned projects above** line to pin or
+unpin it, as with project headers; folders then keep that order. A project with no active
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
 project's folder comes last and shows only while it has active threads. Click a folder to open or
 close it. A closed folder shows how many threads it holds, and a dot when one of them

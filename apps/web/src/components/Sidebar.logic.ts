@@ -1288,6 +1288,28 @@ export function groupSidebarThreadsByProject<
   return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
 }
 
+/** Folders take the grouped sidebar's project order: pinned projects in pin order, then
+    projects without a saved position in their given order, then the saved order. */
+export function orderSidebarFolderGroups<T extends { readonly projectKey: string }>(
+  groups: readonly T[],
+  pinnedKeys: readonly string[],
+  savedKeys: readonly string[],
+): T[] {
+  const byKey = new Map(groups.map((group) => [group.projectKey, group] as const));
+  const pinned = new Set(pinnedKeys);
+  const saved = new Set(savedKeys);
+  const placed = (keys: readonly string[]) =>
+    keys.flatMap((key) => {
+      const group = byKey.get(key);
+      return group === undefined ? [] : [group];
+    });
+  return [
+    ...placed(pinnedKeys),
+    ...groups.filter((group) => !pinned.has(group.projectKey) && !saved.has(group.projectKey)),
+    ...placed(savedKeys.filter((key) => !pinned.has(key))),
+  ];
+}
+
 export type SidebarV2TopStatusKind =
   | "approval"
   | "done"

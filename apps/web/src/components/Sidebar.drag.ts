@@ -31,17 +31,18 @@ export function restrictBelowSidebarLabel(
 
 /** A lifted header's rows collapse, so rest rects no longer match what is drawn: compare its
  * center with the other projects' drawn midpoints. The pinned divider takes its own slot and its
- * label pushes later projects down. `labelHeight` is unscaled; headers are 32px unscaled. */
+ * label pushes later projects down. `labelHeight` and `headerHeight` are unscaled. */
 export function createSidebarProjectCollisionDetection(
   items: readonly SidebarListItem[],
   activeGroup: string,
   labelHeight = 0,
+  headerHeight = 32,
 ): CollisionDetection {
   return (args) => {
     const liftedRect = args.droppableRects.get(
       sidebarListItemId({ kind: "project-header", group: activeGroup }),
     );
-    const scaledLabel = labelHeight * ((liftedRect?.height ?? 32) / 32);
+    const scaledLabel = labelHeight * ((liftedRect?.height ?? headerHeight) / headerHeight);
     const blocks: { id: string; group?: string; top: number; bottom: number }[] = [];
     let belowDivider = false;
     for (const item of items) {
@@ -189,6 +190,8 @@ export function createSidebarSortingStrategy(input: {
   cardHeight?: number;
   slimHeight?: number;
   boundaryLabelHeight?: number;
+  /** Unscaled height of a project header; 32px unless folders render. */
+  projectHeaderHeight?: number;
   /** Set while folders render. Rows never reorder within a folder; a folder
       leaves with its last row unless it is kept. */
   folders?: {
@@ -237,9 +240,11 @@ export function createSidebarSortingStrategy(input: {
       ...after,
     ];
     // The divider is zero height at rest; its label opens while dragging,
-    // scaled like the 32px header.
+    // scaled like the lifted header.
+    const headerHeight = input.projectHeaderHeight ?? 32;
     const labelHeight =
-      (input.boundaryLabelHeight ?? 0) * ((rects[activeIndex]?.height ?? 32) / 32);
+      (input.boundaryLabelHeight ?? 0) *
+      ((rects[activeIndex]?.height ?? headerHeight) / headerHeight);
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const item of projected) {

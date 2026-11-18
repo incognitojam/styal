@@ -33,6 +33,7 @@ function layout(
   over: string,
   scale = 1,
   cardHeight = 82,
+  headerHeight = 24,
 ) {
   let top = 100;
   const rects = items.map((item) => {
@@ -40,7 +41,7 @@ function layout(
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
         : item.kind === "project-header" || item.kind === "working-project-header"
-          ? 24 * scale
+          ? headerHeight * scale
           : item.marker === "pinned-header" ||
               item.marker === "pinned-divider" ||
               item.marker === "pinned-projects-divider"
@@ -375,6 +376,60 @@ describe("project header collision detection", () => {
         sidebarMarkerId("pinned-projects-divider"),
       );
       expect(pinnedTarget("B", dividerTop + 12 + 3)).toBe(id("B"));
+    });
+
+    it("scales the divider label from a folder header's height", () => {
+      // Folder headers are 40px and their rows 36px.
+      const rects = layout(pinnedItems, "a1", "a1", 1, 36, 40).rects;
+      const droppableRects = new Map(
+        pinnedItems.map((item, index) => [sidebarListItemId(item), rects[index]!]),
+      );
+      const top = rects[pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"))]!;
+      const folderTarget = (centerY: number) =>
+        createSidebarProjectCollisionDetection(
+          pinnedItems,
+          "B",
+          24,
+          40,
+        )({
+          active: { id: id("B") },
+          collisionRect: { ...top, top: centerY - 20, bottom: centerY + 20 },
+          droppableRects,
+          droppableContainers: [],
+          pointerCoordinates: null,
+        } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+      const folderDividerTop =
+        rects[
+          pinnedItems.findIndex(
+            (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+          )
+        ]!.top;
+      expect(folderTarget(folderDividerTop + 12 - 3)).toBe(
+        sidebarMarkerId("pinned-projects-divider"),
+      );
+      expect(folderTarget(folderDividerTop + 12 + 3)).toBe(id("B"));
+
+      // C lifted onto the divider: A, then C's slot, then the 24px label above B.
+      const strategy = createSidebarSortingStrategy({
+        items: pinnedItems,
+        settledOrder: [],
+        settledExpanded: true,
+        boundaryLabelHeight: 24,
+        projectHeaderHeight: 40,
+      });
+      const cIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("C"));
+      const dividerIndex = pinnedItems.findIndex(
+        (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+      );
+      const bIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"));
+      const args = {
+        activeIndex: cIndex,
+        overIndex: dividerIndex,
+        activeNodeRect: rects[cIndex]!,
+        rects,
+        index: bIndex,
+      } satisfies Parameters<SortingStrategy>[0];
+      expect(strategy(args)?.y).toBe(65);
     });
 
     it("places a project among the pinned projects by their midpoints", () => {
