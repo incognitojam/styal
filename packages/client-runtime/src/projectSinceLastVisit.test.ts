@@ -35,6 +35,8 @@ function thread(
     lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
     archivedAt: null,
     deletedAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
     latestRun: null,
     runtime: null,
     lastVisitedAt: null,
@@ -216,6 +218,16 @@ describe("sinceLastVisitThreadLines", () => {
           },
         } as Partial<SinceLastVisitThreadShell>),
         thread("thread-chat", { latestRun: run("completed", at(1)) }),
+        // Needs you lists these.
+        thread("asks-a-question", {
+          latestRun: run("completed", at(2)),
+          openReportQuestionCount: 1,
+        }),
+        thread("awaits-approval", { latestRun: run("failed", at(2)), hasPendingApprovals: true }),
+        thread("subagent-asks", {
+          latestRun: run("completed", at(2)),
+          pendingSubagentRequest: "user_input",
+        } as Partial<SinceLastVisitThreadShell>),
         thread("old-pr", { pullRequests: [merged(100, at(7)), merged(101, null)] }),
       ],
       chat,

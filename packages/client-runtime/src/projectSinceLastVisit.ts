@@ -40,7 +40,18 @@ export type SinceLastVisitThreadShell = Pick<
   | "runtime"
   | "lastVisitedAt"
   | "pullRequests"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "openReportQuestionCount"
+  | "pendingSubagentRequest"
 >;
+
+/** Waiting on an approval or a question: the project page's Needs you lists it instead. */
+const needsYou = (thread: SinceLastVisitThreadShell) =>
+  thread.hasPendingApprovals ||
+  thread.hasPendingUserInput ||
+  (thread.openReportQuestionCount ?? 0) > 0 ||
+  thread.pendingSubagentRequest != null;
 
 interface ThreadRef {
   readonly environmentId: EnvironmentId;
@@ -111,7 +122,7 @@ export function sinceLastVisitThreadLines(
     const completedAt = parse(run?.completedAt);
     // Opening the thread after it ended is seeing it; archiving it is putting it away.
     const seen = parse(thread.lastVisitedAt) >= completedAt || thread.archivedAt !== null;
-    if (run && completedAt > since && !seen) {
+    if (run && completedAt > since && !seen && !needsYou(thread)) {
       const base = { ...ref, id: `thread:${thread.environmentId}:${thread.id}` };
       const line = { ...base, title: thread.title, at: completedAt };
       if (run.status === "failed") {
