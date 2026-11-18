@@ -247,6 +247,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Documents and web pages the agent read show beside its images.** Under a collapsed tool group, a row of chips names the PDFs and office documents the agent read and the web pages it fetched, so you can open them without expanding the group. A document opens in the Files panel and a page opens as a chat link does. It covers Claude and Codex; pages the reply already links and your own attachments are left out. Upstream shows only images there as of [revision 75cae42](https://github.com/pingdotgg/t3code/tree/75cae42febdbedc2bd39430a1d6f017e38f6bfe0), checked November 18, 2026.
+
 - **Your attachments aren’t repeated in the image strip.** When an agent reads back an image attached to a user message in the same thread, web, desktop and mobile leave it out of the viewed-image strip. Other images the agent reads stay visible beside collapsed tool groups. Upstream repeats attachments there as of [revision 8cf97b5](https://github.com/pingdotgg/t3code/tree/8cf97b5f06f30a872ce30ab8a888f2ff012365a2), checked November 18, 2026.
 
 - **Approvals stay above the message box.** On web and desktop, a pending approval sits above the

@@ -3153,7 +3153,7 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
-  it("shows images the agent viewed outside their collapsed tool group", () => {
+  it("shows images, documents and pages the agent viewed outside their collapsed tool group", () => {
     const threadId = ThreadId.make("viewed-images-thread");
     const runId = RunId.make("viewed-images-run");
     const at = (second: number) =>
@@ -3178,9 +3178,16 @@ describe("deriveMessagesTimelineRows", () => {
       ...base(id, ordinal),
       type: "dynamic_tool" as const,
       toolName: "Read",
-      // The Claude adapter tags reads of image files.
+      // The Claude adapter tags reads of image files and documents.
       ...(filePath.endsWith(".png") ? { viewedImagePath: filePath } : {}),
+      ...(filePath.endsWith(".pdf") ? { viewedDocument: { path: filePath } } : {}),
       input: { file_path: filePath },
+    });
+    const fetch = (id: string, ordinal: number, url: string) => ({
+      ...base(id, ordinal),
+      type: "web_search" as const,
+      patterns: [url],
+      fetchedUrl: url,
     });
     const items = (settled: boolean) =>
       [
@@ -3198,16 +3205,19 @@ describe("deriveMessagesTimelineRows", () => {
         read("read-notes", 2, "/repo/docs/notes.md"),
         read("read-sidebar-again", 3, "/repo/docs/sidebar.png"),
         read("read-topbar", 4, "/repo/docs/topbar.png"),
+        read("read-spec", 5, "/repo/docs/spec.pdf"),
+        fetch("fetch-menus", 6, "https://docs.example.com/menus"),
+        fetch("fetch-sidebar", 7, "https://ui.example.org/sidebar"),
         settled
           ? {
-              ...base("answer", 5),
+              ...base("answer", 8),
               type: "assistant_message" as const,
               messageId: MessageId.make("answer"),
-              text: "Here are both layouts",
+              text: "Here are both layouts, following https://ui.example.org/sidebar",
               streaming: false,
             }
           : {
-              ...base("ask-again", 5),
+              ...base("ask-again", 8),
               status: "waiting" as const,
               completedAt: null,
               type: "user_input_request" as const,
@@ -3231,7 +3241,7 @@ describe("deriveMessagesTimelineRows", () => {
           runId,
           status: settled ? "completed" : "running",
           startedAt: DateTime.formatIso(at(0)),
-          completedAt: settled ? DateTime.formatIso(at(5)) : null,
+          completedAt: settled ? DateTime.formatIso(at(8)) : null,
         },
         runningRunId: settled ? null : runId,
         isWorking: !settled,
@@ -3241,15 +3251,25 @@ describe("deriveMessagesTimelineRows", () => {
         supportsConversationRollback: false,
       });
       return rows.flatMap((row, index) =>
-        row.kind === "viewed-images" ? [{ after: rows[index - 1]?.kind, paths: row.paths }] : [],
+        row.kind === "viewed-images"
+          ? [{ after: rows[index - 1]?.kind, paths: row.paths, sources: row.sources }]
+          : [],
       );
     };
     const paths = ["/repo/docs/sidebar.png", "/repo/docs/topbar.png"];
+    const spec = { kind: "document", path: "/repo/docs/spec.pdf" };
+    const menus = { kind: "page", url: "https://docs.example.com/menus" };
+    const sidebar = { kind: "page", url: "https://ui.example.org/sidebar" };
 
-    expect(viewedImages(false)).toEqual([{ after: "work-live", paths }]);
+    expect(viewedImages(false)).toEqual([
+      { after: "work-live", paths, sources: [spec, menus, sidebar] },
+    ]);
     // A settled turn's fold keeps hiding its work, images included, until it is opened.
     expect(viewedImages(true)).toEqual([]);
-    expect(viewedImages(true, new Set([runId]))).toEqual([{ after: "work-toggle", paths }]);
+    // The reply links the sidebar page, so the strip leaves it out.
+    expect(viewedImages(true, new Set([runId]))).toEqual([
+      { after: "work-toggle", paths, sources: [spec, menus] },
+    ]);
   });
 
   it("keeps imported V1 turns folded once the thread's first V2 run starts", () => {

@@ -35,7 +35,7 @@ import {
   parseClaudeWorkflowRunHandles,
 } from "./claudeWorkflowProgress.ts";
 
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { isViewedDocumentPath, isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
 import {
   addClaudeLedgerUsage,
   claudeLedgerDelta,
@@ -3829,6 +3829,14 @@ function claudeWakeBufferDetail(messages: ReadonlyArray<SDKMessage>): string | n
 
 const WEB_FETCH_SNIPPET_MAX_CHARS = 8_000;
 
+/** Claude Code's Read takes `pages` ("3", "4-6") for PDFs. */
+function readPagesFromClaudeTool(toolInput: ClaudeNativeToolInput): { readonly pages?: string } {
+  const pages = inputRecordValue(toolInput, "pages");
+  const text =
+    typeof pages === "number" ? String(pages) : typeof pages === "string" ? pages.trim() : "";
+  return text.length > 0 && text.length <= 64 ? { pages: text } : {};
+}
+
 function webSearchPatternsFromClaudeTool(input: {
   readonly toolInput: ClaudeNativeToolInput;
   readonly output: ClaudeNativeToolOutput;
@@ -6817,6 +6825,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             isWorkspaceImagePreviewPath(readPath)
               ? readPath
               : undefined;
+          const viewedDocument =
+            readPath &&
+            readPath.length <= 4096 &&
+            !/[\r\n]/.test(readPath) &&
+            isViewedDocumentPath(readPath)
+              ? {
+                  path: readPath,
+                  ...readPagesFromClaudeTool(input.toolInput),
+                }
+              : undefined;
           const itemType = input.classification.itemType;
           const webSearchPatterns = webSearchPatternsFromClaudeTool({
             toolInput: input.toolInput,
@@ -6853,6 +6871,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       ...(webSearchPatterns.length === 0
                         ? {}
                         : { patterns: [...webSearchPatterns] }),
+                      ...(input.classification.normalizedName === "webfetch" && webFetchUrl
+                        ? { fetchedUrl: webFetchUrl }
+                        : {}),
                       ...(webSearchResults.length > 0
                         ? { results: [...webSearchResults] }
                         : input.classification.normalizedName === "webfetch" &&
@@ -6878,6 +6899,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         : { toolSource: input.presentation.toolSource }),
                       toolName: input.toolName,
                       ...(viewedImagePath === undefined ? {} : { viewedImagePath }),
+                      ...(viewedDocument === undefined ? {} : { viewedDocument }),
                       input: claudeNativeToolInputValue(input.toolInput),
                       ...(outputValue === undefined ? {} : { output: outputValue }),
                     };

@@ -623,15 +623,248 @@ export function workEntriesViewedImagePaths(
   return [...new Set(entries.flatMap((entry) => workEntryViewedImagePath(entry) ?? []))];
 }
 
+function isUserAttachmentPath(path: string, attachmentIds: ReadonlySet<string>): boolean {
+  const match = path.replaceAll("\\", "/").match(/(?:^|\/)attachments\/([^/]+)\.[^/.]+$/);
+  return match !== null && attachmentIds.has(match[1]!);
+}
+
 export function omitUserAttachmentImages(
   paths: readonly string[],
   attachmentIds: ReadonlySet<string>,
 ): readonly string[] {
-  const retained = paths.filter((path) => {
-    const match = path.replaceAll("\\", "/").match(/(?:^|\/)attachments\/([^/]+)\.[^/.]+$/);
-    return match === null || !attachmentIds.has(match[1]!);
-  });
+  const retained = paths.filter((path) => !isUserAttachmentPath(path, attachmentIds));
   return retained.length === paths.length ? paths : retained;
+}
+
+/** A document the agent read or a web page it fetched, shown beside a tool group's images. */
+export type ViewedSource =
+  | { readonly kind: "document"; readonly path: string; readonly pages?: string }
+  | { readonly kind: "page"; readonly url: string };
+
+function workEntryViewedSource(entry: WorkLogPresentationEntry): ViewedSource | null {
+  const item = entry.structuredPayload;
+  if (
+    item === undefined ||
+    item.status === "failed" ||
+    item.status === "cancelled" ||
+    item.toolNonExecutionKind !== undefined
+  ) {
+    return null;
+  }
+  if (item.type === "dynamic_tool" && item.viewedDocument !== undefined) {
+    const { path, pages } = item.viewedDocument;
+    return { kind: "document", path, ...(pages === undefined ? {} : { pages }) };
+  }
+  if (item.type === "web_search" && item.fetchedUrl !== undefined) {
+    return viewedSourceUrlKey(item.fetchedUrl) === null
+      ? null
+      : { kind: "page", url: item.fetchedUrl };
+  }
+  return null;
+}
+
+/** Documents, then pages, each once and in reading order. */
+export function workEntriesViewedSources(
+  entries: ReadonlyArray<WorkLogPresentationEntry>,
+): ViewedSource[] {
+  const documents = new Map<string, ViewedSource>();
+  const pages = new Map<string, ViewedSource>();
+  for (const entry of entries) {
+    const source = workEntryViewedSource(entry);
+    if (source?.kind === "document") {
+      const seen = documents.get(source.path);
+      if (seen === undefined) documents.set(source.path, source);
+      // Reads of different ranges of one document show the document without a range.
+      else if (seen.kind === "document" && seen.pages !== source.pages) {
+        documents.set(source.path, { kind: "document", path: source.path });
+      }
+    } else if (source?.kind === "page") {
+      const key = viewedSourceUrlKey(source.url)!;
+      if (!pages.has(key)) pages.set(key, source);
+    }
+  }
+  return [...documents.values(), ...pages.values()];
+}
+
+/** `text` without any of `characters` at its end; a backward scan, linear in a long run. */
+function withoutTrailing(text: string, characters: string): string {
+  let end = text.length;
+  while (end > 0 && characters.includes(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
+}
+
+/** Host, path and query of an http(s) URL; the scheme, fragment and trailing slash do not count. */
+function viewedSourceUrlKey(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return `${parsed.host}${withoutTrailing(parsed.pathname, "/")}${parsed.search}`;
+}
+
+/** Message text without fenced code blocks and code spans, which show URLs as text. */
+/** A line's leading fence delimiter (up to three spaces, then a backtick or tilde run) and the rest. */
+function fenceDelimiter(line: string) {
+  let start = 0;
+  while (start < 3 && line[start] === " ") start += 1;
+  const char = line[start];
+  if (char !== "`" && char !== "~") return null;
+  let end = start;
+  while (line[end] === char) end += 1;
+  return { char, length: end - start, rest: line.slice(end) };
+}
+
+function withoutCode(text: string): string {
+  const prose: string[] = [];
+  let fence: { readonly char: string; readonly length: number } | null = null;
+  for (const line of text.split("\n")) {
+    const delimiter = fenceDelimiter(line);
+    if (fence !== null) {
+      if (
+        delimiter !== null &&
+        delimiter.char === fence.char &&
+        delimiter.length >= fence.length &&
+        delimiter.rest.trim() === ""
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    // A backtick fence's info string cannot contain a backtick; such a line is inline code.
+    if (
+      delimiter !== null &&
+      delimiter.length >= 3 &&
+      !(delimiter.char === "`" && delimiter.rest.includes("`"))
+    ) {
+      fence = { char: delimiter.char, length: delimiter.length };
+      continue;
+    }
+    prose.push(line);
+  }
+  const joined = prose.join("\n");
+  const runs = [...joined.matchAll(/`+/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  // A span closes at the next backtick run of the same length; otherwise the run is text.
+  const closingRun = new Array<number>(runs.length).fill(-1);
+  const laterRunByLength = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const length = runs[index]!.end - runs[index]!.start;
+    closingRun[index] = laterRunByLength.get(length) ?? -1;
+    laterRunByLength.set(length, index);
+  }
+  let result = "";
+  let textStart = 0;
+  for (let index = 0; index < runs.length; index += 1) {
+    const close = closingRun[index]!;
+    if (close < 0) continue;
+    result += `${joined.slice(textStart, runs[index]!.start)} `;
+    textStart = runs[close]!.end;
+    index = close;
+  }
+  return result + joined.slice(textStart);
+}
+
+/** Keys of the http(s) URLs a message shows as links, bare or in Markdown, outside code. */
+function linkedUrlKeys(text: string): Set<string> {
+  const keys = new Set<string>();
+  const prose = withoutCode(text);
+  let scannedTo = 0;
+  for (const match of prose.matchAll(/https?:\/\//gi)) {
+    if (match.index < scannedTo) continue;
+    // Balanced parentheses stay in the URL; an unbalanced ")" closes a Markdown link.
+    let end = match.index;
+    let depth = 0;
+    for (; end < prose.length; end += 1) {
+      const character = prose[end]!;
+      if (/[\s<>[\]{}"'`]/.test(character)) break;
+      if (character === "(") depth += 1;
+      else if (character === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+      }
+    }
+    scannedTo = end;
+    const key = viewedSourceUrlKey(withoutTrailing(prose.slice(match.index, end), ".,;:!?*_~"));
+    if (key !== null) keys.add(key);
+  }
+  return keys;
+}
+
+/**
+ * URL keys each run's assistant messages link, for the runs whose strip shows a page. Other
+ * messages are not scanned.
+ */
+export function assistantLinkedUrlKeysByRunId(
+  messages: Iterable<{
+    readonly role: string;
+    readonly runId?: string | null | undefined;
+    readonly text: string;
+  }>,
+  runIds: ReadonlySet<string>,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const keysByRunId = new Map<string, Set<string>>();
+  if (runIds.size === 0) return keysByRunId;
+  for (const message of messages) {
+    if (message.role !== "assistant" || message.runId == null || !runIds.has(message.runId)) {
+      continue;
+    }
+    const keys = keysByRunId.get(message.runId) ?? new Set<string>();
+    for (const key of linkedUrlKeys(message.text)) keys.add(key);
+    keysByRunId.set(message.runId, keys);
+  }
+  return keysByRunId;
+}
+
+/** Leaves out the user's own attachments and pages the turn's reply already links. */
+export function omitViewedSources(
+  sources: readonly ViewedSource[],
+  input: {
+    readonly attachmentIds: ReadonlySet<string>;
+    readonly linkedUrlKeys: ReadonlySet<string>;
+  },
+): readonly ViewedSource[] {
+  const retained = sources.filter((source) =>
+    source.kind === "document"
+      ? !isUserAttachmentPath(source.path, input.attachmentIds)
+      : !input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!),
+  );
+  return retained.length === sources.length ? sources : retained;
+}
+
+export function foldViewedSources<Source>(
+  sources: readonly Source[],
+  limit: number,
+  expanded: boolean,
+): { readonly visible: readonly Source[]; readonly hiddenCount: number } {
+  return expanded || sources.length <= limit
+    ? { visible: sources, hiddenCount: 0 }
+    : { visible: sources.slice(0, limit), hiddenCount: sources.length - limit };
+}
+
+/** "settings-spec.pdf"; "docs.example.com/guides/menus", middle-shortened past 48 characters. */
+export function viewedSourceLabel(source: ViewedSource): string {
+  if (source.kind === "document") {
+    return source.path.split(/[\\/]/).at(-1) || source.path;
+  }
+  const parsed = new URL(source.url);
+  const host = parsed.host.replace(/^www\./, "");
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const full = [host, ...segments].join("/");
+  if (full.length <= 48 || segments.length < 2) return full;
+  return `${host}/…/${segments.at(-1)}`;
+}
+
+/** "p. 3" or "pp. 4–6" from a read's page range; null without one. */
+export function viewedDocumentPagesLabel(pages: string | undefined): string | null {
+  if (pages === undefined) return null;
+  if (/^\d+$/.test(pages)) return `p. ${pages}`;
+  const range = /^(\d+)\s*-\s*(\d+)$/.exec(pages);
+  return range ? `pp. ${range[1]}–${range[2]}` : `pp. ${pages}`;
 }
 
 export interface ViewedImageAsset {

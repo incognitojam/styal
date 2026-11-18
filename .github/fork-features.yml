@@ -7424,6 +7424,43 @@ features:
       tracking: []
       retire_when: Upstream sizes loaded videos to their own aspect ratio instead of a fixed 16:9 box.
 
+  - id: viewed-source-chips
+    title: Show documents and web pages the agent read beside the viewed-image strip
+    status: maintained
+    tier: yield
+    prs: [1597]
+    invariants:
+      - Claude Read of a PDF or office document sets viewedDocument (with the page range when given), and Claude WebFetch and Codex openPage or findInPage set fetchedUrl on the web_search item.
+      - Settled turns keep those items inline, so web, desktop and mobile show the chips under a folded tool group after a reload.
+      - Web search result snippets stay off the wire until the row is expanded.
+      - The chip row lists documents, then pages, each once, folds after 4 on web and 3 on mobile, and leaves out the user's attachments and pages the same run's reply links.
+    rationale: Agents read PDFs and web pages the user may want to open; the image strip showed only images.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ViewedSourceChips.tsx
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/WireProjection.ts
+      - apps/web/src/components/chat/ViewedSourceChips.tsx
+      - packages/client-runtime/src/work-log/presentation.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/WireProjection.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.test.ts
+      - apps/server/src/orchestration-v2/WireProjection.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/30473
+      retire_when: Upstream shows documents and web pages an agent read outside the collapsed tool group.
+
   - id: web-build-update-notice
     title: Offer a refresh when a new web build is deployed
     status: maintained

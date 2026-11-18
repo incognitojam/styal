@@ -3837,6 +3837,52 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             item.deferredWork === undefined,
         ),
       );
+      // The strip under a folded settled turn shows documents read and pages fetched.
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_set(payload_json, '$.toolName', 'Read',
+          '$.viewedDocument', json('{"path":"/repo/spec.pdf"}'))
+        WHERE thread_id = ${threadId} AND ordinal = 900`;
+      const documentWindow = yield* projectionStore.getThreadSnapshotWindow(threadId, {
+        rowLimit: sqlPageLimit,
+        userTurnLimit: 10,
+        deferWork: true,
+      });
+      assert.isTrue(
+        documentWindow.projection.visibleTurnItems.some(
+          ({ item }) =>
+            item.type === "dynamic_tool" &&
+            item.viewedDocument?.path === "/repo/spec.pdf" &&
+            item.deferredWork === undefined,
+        ),
+      );
+      const webSearchWindow = (fetchedUrl: string | null) =>
+        Effect.gen(function* () {
+          yield* sql`UPDATE orchestration_v2_projection_turn_items
+            SET type = 'web_search', payload_json = json_set(
+              json_remove(payload_json, '$.toolName', '$.input', '$.viewedDocument', '$.fetchedUrl'),
+              '$.type', 'web_search',
+              '$.results', json('[{"url":"https://docs.example.com/menus","snippet":"PAGE_TEXT"}]'))
+            WHERE thread_id = ${threadId} AND ordinal = 900`;
+          if (fetchedUrl !== null) {
+            yield* sql`UPDATE orchestration_v2_projection_turn_items
+              SET payload_json = json_set(payload_json, '$.fetchedUrl', ${fetchedUrl})
+              WHERE thread_id = ${threadId} AND ordinal = 900`;
+          }
+          const window = yield* projectionStore.getThreadSnapshotWindow(threadId, {
+            rowLimit: sqlPageLimit,
+            userTurnLimit: 10,
+            deferWork: true,
+          });
+          return window.projection.visibleTurnItems.flatMap(({ item }) =>
+            item.type === "web_search" && item.deferredWork === undefined ? [item] : [],
+          );
+        });
+      const [fetch] = yield* webSearchWindow("https://docs.example.com/menus");
+      assert.strictEqual(fetch?.fetchedUrl, "https://docs.example.com/menus");
+      assert.lengthOf(yield* webSearchWindow(null), 0);
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_remove(payload_json, '$.results')
+        WHERE thread_id = ${threadId} AND ordinal = 900`;
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET type = 'command_execution', payload_json = json_set(payload_json, '$.type', 'command_execution', '$.input', 'echo ok')
         WHERE thread_id = ${threadId} AND ordinal = 900`;

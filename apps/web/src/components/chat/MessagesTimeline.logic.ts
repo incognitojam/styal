@@ -35,6 +35,10 @@ import {
   contextCompactionTokenCounts,
   workEntriesViewedImagePaths,
   omitUserAttachmentImages,
+  omitViewedSources,
+  assistantLinkedUrlKeysByRunId,
+  workEntriesViewedSources,
+  type ViewedSource,
   type ToolGroupSummaryKind,
   liveThoughtLine,
   workEntryHiddenByToolCallVisibility,
@@ -599,11 +603,16 @@ type MessagesTimelineRowContent =
       exitCode?: number;
     }
   | {
-      /** Images the agent opened in the tool group above, kept visible while the group is collapsed. */
+      /**
+       * Images, documents and pages the agent opened in the tool group above, kept visible while
+       * the group is collapsed.
+       */
       kind: "viewed-images";
       id: string;
       createdAt: string;
+      runId: string | null;
       paths: ReadonlyArray<string>;
+      sources: ReadonlyArray<ViewedSource>;
     }
   | {
       kind: "turn-fold";
@@ -720,15 +729,39 @@ function expandedWorkGroupRow(
   };
 }
 
+const NO_URL_KEYS: ReadonlySet<string> = new Set();
+
+function viewedPageRunIds(rows: ReadonlyArray<MessagesTimelineRow>): ReadonlySet<string> {
+  return new Set(
+    rows.flatMap((row) =>
+      row.kind === "viewed-images" &&
+      row.runId !== null &&
+      row.sources.some((source) => source.kind === "page")
+        ? [row.runId]
+        : [],
+    ),
+  );
+}
+
 function viewedImagesRows(
   groupId: string,
   createdAt: string,
   groupedEntries: ReadonlyArray<WorkLogEntry>,
 ): Array<Extract<MessagesTimelineRow, { kind: "viewed-images" }>> {
   const paths = workEntriesViewedImagePaths(groupedEntries);
-  return paths.length === 0
+  const sources = workEntriesViewedSources(groupedEntries);
+  return paths.length === 0 && sources.length === 0
     ? []
-    : [{ kind: "viewed-images", id: `${groupId}:viewed-images`, createdAt, paths }];
+    : [
+        {
+          kind: "viewed-images",
+          id: `${groupId}:viewed-images`,
+          createdAt,
+          runId: groupedEntries[0]?.runId ?? null,
+          paths,
+          sources,
+        },
+      ];
 }
 
 export function resolveAssistantMessageCopyState({
@@ -2628,10 +2661,20 @@ export function deriveMessagesTimelineRows(input: {
         : [],
     ),
   );
+  const linkedUrlKeysByRunId = assistantLinkedUrlKeysByRunId(
+    input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+    viewedPageRunIds(result),
+  );
   const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
-    return paths.length === 0 ? [] : [paths === row.paths ? row : { ...row, paths }];
+    const sources = omitViewedSources(row.sources, {
+      attachmentIds,
+      linkedUrlKeys:
+        (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
+    });
+    if (paths.length === 0 && sources.length === 0) return [];
+    return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
   });
   return visibleRows.map((row, index) => {
     if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(visibleRows[index + 1])) {
@@ -2962,7 +3005,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.createdAt === bv.createdAt &&
         a.paths.length === bv.paths.length &&
-        a.paths.every((path, index) => path === bv.paths[index])
+        a.paths.every((path, index) => path === bv.paths[index]) &&
+        a.sources.length === bv.sources.length &&
+        a.sources.every((source, index) => {
+          const other = bv.sources[index]!;
+          return source.kind === "document"
+            ? other.kind === "document" &&
+                source.path === other.path &&
+                source.pages === other.pages
+            : other.kind === "page" && source.url === other.url;
+        })
       );
     }
 

@@ -120,6 +120,27 @@ export function isWorkspaceImagePreviewPath(path: string): boolean {
   return WORKSPACE_IMAGE_PREVIEW_EXTENSIONS.some((extension) => literalPath.endsWith(extension));
 }
 
+// PDF and office formats; plain text, data and source files are excluded on purpose.
+const VIEWED_DOCUMENT_EXTENSIONS = [
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".odt",
+  ".rtf",
+  ".xls",
+  ".xlsx",
+  ".ods",
+  ".ppt",
+  ".pptx",
+  ".odp",
+  ".epub",
+] as const;
+
+export function isViewedDocumentPath(path: string): boolean {
+  const literalPath = path.toLowerCase();
+  return VIEWED_DOCUMENT_EXTENSIONS.some((extension) => literalPath.endsWith(extension));
+}
+
 export function isWorkspaceAudioPreviewPath(path: string): boolean {
   const extensionIndex = path.lastIndexOf(".");
   return extensionIndex >= 0 && audioMimeTypeFromExtension(path.slice(extensionIndex)) !== null;

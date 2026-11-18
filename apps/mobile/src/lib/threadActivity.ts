@@ -42,6 +42,10 @@ import {
   workEntryMemoryFileKind,
   workEntriesViewedImagePaths,
   omitUserAttachmentImages,
+  omitViewedSources,
+  assistantLinkedUrlKeysByRunId,
+  workEntriesViewedSources,
+  type ViewedSource,
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
@@ -294,12 +298,16 @@ type ThreadFeedEntryContent =
       readonly thought?: string;
     }
   | {
-      /** Images the agent opened in the tool group above, kept visible while the group is collapsed. */
+      /**
+       * Images, documents and pages the agent opened in the tool group above, kept visible while
+       * the group is collapsed.
+       */
       readonly type: "viewed-images";
       readonly id: string;
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly paths: ReadonlyArray<string>;
+      readonly sources: ReadonlyArray<ViewedSource>;
     }
   | {
       readonly type: "run-fold";
@@ -2056,15 +2064,39 @@ export function deriveThreadFeedPresentation(
         : [],
     ),
   );
+  const linkedUrlKeysByRunId = assistantLinkedUrlKeysByRunId(
+    feed.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
+    viewedPageRunIds(result),
+  );
   const visibleRows = result.flatMap<ThreadFeedEntry>((row) => {
     if (row.type !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
-    return paths.length === 0 ? [] : [paths === row.paths ? row : { ...row, paths }];
+    const sources = omitViewedSources(row.sources, {
+      attachmentIds,
+      linkedUrlKeys:
+        (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
+    });
+    if (paths.length === 0 && sources.length === 0) return [];
+    return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
   });
   return visibleRows.map((row, index) =>
     !row.continuesWorkLog && isWorkLogFeedRow(row) && isWorkLogFeedRow(visibleRows[index + 1])
       ? { ...row, continuesWorkLog: true }
       : row,
+  );
+}
+
+const NO_URL_KEYS: ReadonlySet<string> = new Set();
+
+function viewedPageRunIds(rows: ReadonlyArray<ThreadFeedEntry>): ReadonlySet<string> {
+  return new Set(
+    rows.flatMap((row) =>
+      row.type === "viewed-images" &&
+      row.runId !== null &&
+      row.sources.some((source) => source.kind === "page")
+        ? [row.runId]
+        : [],
+    ),
   );
 }
 
@@ -2205,14 +2237,17 @@ function appendActivityGroupRows(
       isWorking,
       activeTail && isTrailingRun,
     );
-    const paths = workEntriesViewedImagePaths(groupableRun.map((activity) => activity.workEntry));
-    if (paths.length > 0) {
+    const workEntries = groupableRun.map((activity) => activity.workEntry);
+    const paths = workEntriesViewedImagePaths(workEntries);
+    const sources = workEntriesViewedSources(workEntries);
+    if (paths.length > 0 || sources.length > 0) {
       result.push({
         type: "viewed-images",
         id: `${groupId}:viewed-images`,
         createdAt: groupableRun[0]!.createdAt,
         runId: groupableRun[0]!.runId,
         paths,
+        sources,
       });
     }
     groupableRun = [];

@@ -40,6 +40,7 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
+import { ViewedSourceChips } from "./ViewedSourceChips";
 import { runtimeModeConfig } from "./runtimeModeConfig";
 import {
   CheckIcon,
@@ -281,7 +282,7 @@ export function ViewedImagesTimelineRow({
 }) {
   const { threadRef, workspaceRoot, onImageExpand } = use(TimelineRowCtx);
   if (!threadRef) return null;
-  return (
+  const images = (
     <div className="flex flex-wrap items-start gap-2 px-0.5" data-image-gallery>
       {row.paths.map((path) => {
         const image = resolveViewedImageAsset(path, {
@@ -301,6 +302,13 @@ export function ViewedImagesTimelineRow({
           />
         ) : null;
       })}
+    </div>
+  );
+  if (row.sources.length === 0) return images;
+  return (
+    <div className="flex flex-col gap-2">
+      {row.paths.length > 0 ? images : null}
+      <ViewedSourceChips sources={row.sources} />
     </div>
   );
 }

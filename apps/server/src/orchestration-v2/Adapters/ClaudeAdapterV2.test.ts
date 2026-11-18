@@ -11531,6 +11531,113 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     output: { success, taskId: input.taskId, updatedFields: ["status"] },
   });
 
+  it.effect("marks Read of a document with its pages, and WebFetch with its URL", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const tools = [
+          {
+            id: "tool-read-pdf",
+            name: "Read",
+            input: { file_path: "/repo/docs/settings-spec.pdf", pages: "4-6" },
+          },
+          { id: "tool-read-notes", name: "Read", input: { file_path: "/repo/docs/notes.md" } },
+          {
+            id: "tool-fetch",
+            name: "WebFetch",
+            input: { url: "https://docs.example.com/guides/menus", prompt: "Summarize" },
+          },
+        ];
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-viewed-sources"),
+            text: "Read the spec and the guide.",
+            attachments: [],
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              model: "claude-sonnet-4-6",
+              id: "msg_viewed_sources",
+              type: "message",
+              role: "assistant",
+              content: tools.map((tool) => ({ type: "tool_use", ...tool })),
+              stop_reason: "tool_use",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000601",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: tools.map((tool) => ({
+                type: "tool_result",
+                tool_use_id: tool.id,
+                content: "# Navigation menus",
+              })),
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000602",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000603", result: "Read." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+
+        const items = new Map(
+          harness.events.flatMap((event) =>
+            event.type === "turn_item.updated"
+              ? [[String(event.turnItem.nativeItemRef?.nativeId), event.turnItem]]
+              : [],
+          ),
+        );
+        const pdf = items.get("tool-read-pdf");
+        assert.equal(pdf?.status, "completed");
+        assert.deepEqual(pdf?.type === "dynamic_tool" ? pdf.viewedDocument : undefined, {
+          path: "/repo/docs/settings-spec.pdf",
+          pages: "4-6",
+        });
+        const notes = items.get("tool-read-notes");
+        assert.isUndefined(notes?.type === "dynamic_tool" ? notes.viewedDocument : "not a read");
+        const fetch = items.get("tool-fetch");
+        assert.equal(
+          fetch?.type === "web_search" ? fetch.fetchedUrl : undefined,
+          "https://docs.example.com/guides/menus",
+        );
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("persists a todo_list from inline Claude task-tool frames", () =>
     Effect.gen(function* () {
       let sequence = 700;
