@@ -1,7 +1,4 @@
-import {
-  nextProjectPinOrderKey,
-  planProjectPinReorder,
-} from "@t3tools/client-runtime/state/project-organization";
+import { planProjectPinReorder } from "@t3tools/client-runtime/state/project-organization";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
@@ -9,6 +6,7 @@ import * as Cause from "effect/Cause";
 import { toastManager } from "../components/ui/toast";
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import {
+  issuePinOrderKey,
   reportProjectFailure,
   useProjectGroupUpdate,
   type ProjectGroupUpdate,
@@ -19,20 +17,6 @@ type OrganizedGroup = Pick<
   "projectKey" | "displayName" | "memberProjects" | "pinnedAt" | "pinOrderKey"
 >;
 type GroupResult = AtomCommandResult<void, unknown>;
-
-// The newest pin slot handed out. Pins made faster than the list updates
-// still land in click order instead of sharing one slot.
-let lastIssuedPinOrderKey: string | null = null;
-
-function issuePinOrderKey(groups: ReadonlyArray<OrganizedGroup>): string | null {
-  const key = nextProjectPinOrderKey(
-    lastIssuedPinOrderKey === null
-      ? groups
-      : [...groups, { pinnedAt: "issued", pinOrderKey: lastIssuedPinOrderKey }],
-  );
-  if (key !== null) lastIssuedPinOrderKey = key;
-  return key;
-}
 
 /** Writes behind the grouped sidebar's project headers, which keep a shared order for pins. */
 export function useProjectPinOrder() {

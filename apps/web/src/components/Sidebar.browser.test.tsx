@@ -21,12 +21,13 @@ import { useUiStateStore } from "../uiStateStore";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
-import { useConnectedEnvironmentIds } from "../state/environments";
+import { readEnvironment, useConnectedEnvironmentIds } from "../state/environments";
 import {
   readEnvironmentScope,
   useEnvironmentScope,
   useEnvironmentsWithScope,
 } from "../state/session";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
@@ -49,6 +50,7 @@ vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./sidebar/SidebarThreadRow", { spy: true });
 vi.mock("../state/session", { spy: true });
 vi.mock("../localApi", { spy: true });
+vi.mock("../state/use-orchestration-command", { spy: true });
 vi.mock(import("../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
   const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
@@ -290,7 +292,7 @@ describe("sidebar drag reorder", () => {
       reorderPinnedProjects,
     }));
     vi.mocked(readEnvironmentScope).mockReturnValue(true);
-    const alpha = { ...project("alpha"), pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "a0" };
+    const alpha = { ...project("alpha"), pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "m" };
     const beta = project("beta");
     const gamma = project("gamma");
     mockNewThread([alpha, beta, gamma]);
@@ -368,6 +370,8 @@ describe("sidebar folder menu", () => {
     // Archived projects cannot be a filter, so their folder does not offer one.
     { choose: null, archived: true, result: "an archived folder offers no filter" },
     { choose: "copy-path:1", archived: false, result: "the second checkout's path is copied" },
+    { choose: "new-thread", archived: false, result: "the thread starts on the open checkout" },
+    { choose: "pin", archived: false, result: "the project is pinned after the pinned ones" },
   ] as const)("choosing $choose: $result", async (scenario) => {
     using _settings = clientSettings("boring");
     using stack = new DisposableStack();
@@ -401,8 +405,25 @@ describe("sidebar folder menu", () => {
       workspaceRoot: "/srv/alpha",
       repositoryIdentity: identity,
     };
-    const beta = project("beta");
-    mockNewThread([local, remote, beta]);
+    const beta = { ...project("beta"), pinnedAt: "2026-01-02T00:00:00.000Z", pinOrderKey: "m" };
+    const { startThread } = mockNewThread([local, remote, beta]);
+    // The open thread is on the remote checkout.
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      ...vi.mocked(useHandleNewThread)(),
+      activeThread: makeThreadFixture({
+        id: ThreadId.make("remote-alpha-thread"),
+        environmentId: remoteEnvironmentId,
+        projectId: remote.id,
+      }),
+    });
+    const updateProject = vi.fn().mockResolvedValue({ _tag: "Success", value: undefined });
+    vi.mocked(useOrchestrationCommand).mockReturnValue(updateProject);
+    stack.defer(() => vi.mocked(useOrchestrationCommand).mockRestore());
+    vi.mocked(readEnvironment).mockReturnValue({
+      connection: { phase: "connected" },
+      serverConfig: {},
+    } as never);
+    stack.defer(() => vi.mocked(readEnvironment).mockRestore());
     vi.mocked(useQuietThreadShells).mockReturnValue(
       [local, beta].map((owner) =>
         makeThreadFixture({
@@ -493,6 +514,20 @@ describe("sidebar folder menu", () => {
       expect(archiveProject).not.toHaveBeenCalled();
     } else if (scenario.choose === "copy-path:1") {
       await vi.waitFor(() => expect(copy).toHaveBeenCalledWith("/srv/alpha"));
+    } else if (scenario.choose === "new-thread") {
+      await vi.waitFor(() =>
+        expect(startThread).toHaveBeenCalledExactlyOnceWith({
+          environmentId: remoteEnvironmentId,
+          projectId: remote.id,
+        }),
+      );
+    } else if (scenario.choose === "pin") {
+      // Both checkouts take one slot after beta's, as a pin from the grouped header does.
+      await vi.waitFor(() => expect(updateProject).toHaveBeenCalledTimes(2));
+      const inputs = updateProject.mock.calls.map(([command]) => command.input);
+      expect(inputs.map((input) => input.pinned)).toEqual([true, true]);
+      expect(inputs[0].pinOrderKey > "m").toBe(true);
+      expect(inputs[1].pinOrderKey).toBe(inputs[0].pinOrderKey);
     }
   });
 });
