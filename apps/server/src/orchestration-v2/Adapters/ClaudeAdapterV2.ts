@@ -10961,7 +10961,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               !interrupted &&
               context.pendingSteers.size > 0 &&
               claudeEchoedPromptUuids(message).length > 0 &&
-              terminalStatusFromResult(message) === "completed"
+              terminalStatusFromResult(message, context.authenticationFailureMessage) ===
+                "completed"
             ) {
               context.steeredSegmentUsage.push(message.usage);
               context.steeredLedgerUsage = addClaudeLedgerUsage(

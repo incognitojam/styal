@@ -6029,6 +6029,72 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("fails a turn on an expired login even while a steer is unread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const attemptId = RunAttemptId.make("attempt-steer-auth-failure");
+      const input = makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId,
+        text: "Run the slow build.",
+        attachments: [],
+      });
+      yield* harness.runtime.startTurn(input);
+      yield* harness.runtime.steerTurn({
+        threadId: harness.threadId,
+        runId: input.runId,
+        providerThread: harness.providerThread,
+        providerTurnId: idAllocator.derive.providerTurn({
+          driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+          nativeTurnId: `turn:${attemptId}`,
+        }),
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          messageId: MessageId.make("message-steer-unread"),
+          text: "Steer while signed out",
+          attachments: [],
+        },
+      });
+      yield* harness.offerAndWait(
+        makeAssistantErrorFrame({
+          uuid: "00000000-0000-4000-8000-000000002399",
+          error: "authentication_failed",
+        }),
+      );
+      // The CLI can report the failure as a success envelope with is_error and no terminal reason.
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          ...makeResultFrame({
+            uuid: "00000000-0000-4000-8000-00000000239a",
+            result: "API Error: 401 Credentials expired.",
+            isError: true,
+            terminalReason: null,
+          }),
+          user_message_uuid: harness.promptUuid(0),
+        }),
+      );
+      // Before the fix this result was taken as the steer's continuation and the turn never ended.
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "failed");
+      if (terminal.status !== "failed") return;
+      assert.equal(terminal.failure.code, "provider_auth_required");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   // Claude can answer a steer while its offer is still being logged.
   it.effect("settles a turn whose result echoes only a steer before the offer returns", () =>
     Effect.gen(function* () {
