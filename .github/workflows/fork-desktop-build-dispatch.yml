@@ -1,8 +1,22 @@
-name: Fork Desktop Build (manual)
+name: Fork Desktop Packaging
 
-run-name: Build ${{ inputs.target }} from ${{ github.ref_name }}
+run-name: Check desktop packaging from ${{ github.ref_name }}
 
 on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "apps/desktop/package.json"
+      - "apps/desktop/vite.config.ts"
+      - "scripts/build-desktop-artifact*"
+      - "scripts/lib/*external-packages*"
+      - "scripts/prepare-server-compile-cache.cjs"
+      - "scripts/linux-after-pack.ts"
+      - "scripts/verify-desktop-startup.mjs"
+      - ".github/workflows/fork-desktop-build*.yml"
+      - ".github/workflows/fork-js-bundle.yml"
   workflow_dispatch:
     inputs:
       target:
@@ -14,6 +28,11 @@ on:
           - macos-arm64
           - linux-x64
           - windows-x64
+          - all
+      windows_release:
+        description: Instead of building, check startup of an existing Windows release tag
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +45,7 @@ concurrency:
 jobs:
   bundle:
     name: Build JS bundle
+    if: inputs.windows_release == ''
     uses: ./.github/workflows/fork-js-bundle.yml
     with:
       ref: ${{ github.sha }}
@@ -38,8 +58,39 @@ jobs:
     with:
       ref: ${{ github.sha }}
       version: 0.0.0-build.${{ github.run_number }}
-      target: ${{ inputs.target }}
+      target: ${{ inputs.target || 'all' }}
       # These artifacts are the deliverable; manual builds do not publish a release.
       retention_days: 90
       sign_macos: false
       check_notarization: false
+
+  verify_windows_release:
+    name: Check released Windows startup
+    if: inputs.windows_release != ''
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download and unpack installer without installing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.windows_release }}
+        run: |
+          New-Item -ItemType Directory -Force .scratch/released-desktop | Out-Null
+          gh release download $env:RELEASE_TAG --repo incognitojam/styal --pattern '*x64.exe' --dir .scratch/released-desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installer = (Get-ChildItem .scratch/released-desktop/*.exe).FullName
+          7z x $installer '-o.scratch/released-desktop/app' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $payload = (Get-ChildItem .scratch/released-desktop/app -Recurse -Filter 'app-64.7z').FullName
+          7z x $payload '-o.scratch/released-desktop/app' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Load packaged main process
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.windows_release }}
+        run: |
+          $app = (Get-ChildItem '.scratch/released-desktop/app/styal*.exe').FullName
+          node scripts/verify-desktop-startup.mjs $app ($env:RELEASE_TAG.TrimStart('v'))
+          exit $LASTEXITCODE

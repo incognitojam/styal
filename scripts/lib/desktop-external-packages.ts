@@ -1,9 +1,5 @@
 /** Keep bundler externals aligned with the staged production dependency list. */
 const DESKTOP_RUNTIME_EXTERNAL_PREFIXES = [
-  "sharp",
-  "detect-libc",
-  "semver",
-  "@img/",
   "@napi-rs/keyring",
   "@crowecawcaw/xa11y",
   "@clerk/electron-passkeys",

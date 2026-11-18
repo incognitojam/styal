@@ -40,10 +40,33 @@ it.each([
     arch: 1,
     resources: "Fixture.app/Contents/Resources",
     executable: "Fixture.app/Contents/MacOS/Fixture",
+    startup: "loaded",
   },
-  { platform: "linux", hostArch: "x64", arch: 1, resources: "resources", executable: "fixture" },
-  { platform: "linux", hostArch: "arm64", arch: 3, resources: "resources", executable: "fixture" },
-])("prepares $platform/$hostArch cache", async ({ platform, hostArch, arch, ...layout }) => {
+  {
+    platform: "linux",
+    hostArch: "x64",
+    arch: 1,
+    resources: "resources",
+    executable: "fixture",
+    startup: "loaded",
+  },
+  {
+    platform: "linux",
+    hostArch: "arm64",
+    arch: 3,
+    resources: "resources",
+    executable: "fixture",
+    startup: "loaded",
+  },
+  {
+    platform: "linux",
+    hostArch: "x64",
+    arch: 1,
+    resources: "resources",
+    executable: "fixture",
+    startup: "missing module",
+  },
+])("$platform/$hostArch: $startup", async ({ platform, hostArch, arch, startup, ...layout }) => {
   const { spawnSync } = await import("node:child_process");
   const root = NodeFS.realpathSync(
     NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-hook-cache-")),
@@ -61,6 +84,13 @@ it.each([
       helper,
       `module.exports = require(${JSON.stringify(NodeURL.fileURLToPath(new URL("./server-compile-cache.ts", import.meta.url)))});`,
     );
+    const main = NodePath.join(root, "main.cjs");
+    NodeFS.writeFileSync(
+      main,
+      startup === "loaded"
+        ? 'console.log("1.2.3");'
+        : 'require("styal-synthetic-missing-startup-module");',
+    );
     const hook = NodeURL.fileURLToPath(
       new URL("../prepare-server-compile-cache.cjs", import.meta.url),
     );
@@ -73,20 +103,35 @@ it.each([
       const childProcess = require("node:child_process");
       const spawn = childProcess.spawnSync;
       childProcess.spawnSync = (executable, args, options) => {
-        require("node:assert/strict").equal(executable, ${JSON.stringify(NodePath.join(root, layout.executable))});
+        const command = executable === "xvfb-run" ? args[1] : executable;
+        require("node:assert/strict").equal(command, ${JSON.stringify(NodePath.join(root, layout.executable))});
+        if (args.includes("--version")) {
+          require("node:assert/strict").equal(options.env.ELECTRON_RUN_AS_NODE, undefined);
+          require("node:assert/strict").equal(options.env.TMPDIR, options.cwd);
+          return spawn(process.execPath, [${JSON.stringify(main)}], options);
+        }
         return spawn(process.execPath, args, options);
       };
       Object.defineProperty(process, "platform", { value: ${JSON.stringify(platform)} });
       Object.defineProperty(process, "arch", { value: ${JSON.stringify(hostArch)} });
       require(${JSON.stringify(hook)})({
         appOutDir: ${JSON.stringify(root)}, electronPlatformName: ${JSON.stringify(platform)}, arch: ${arch},
-        packager: { appInfo: { productFilename: "Fixture" }, executableName: "fixture" }
+        packager: { appInfo: { productFilename: "Fixture", version: "1.2.3" }, executableName: "fixture" }
       }).catch(error => { console.error(error); process.exitCode = 1; });
     `,
       ],
       { encoding: "utf8" },
     );
+    if (startup === "missing module") {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(
+        "Cannot find module 'styal-synthetic-missing-startup-module'",
+      );
+      expect(NodeFS.existsSync(NodePath.join(resources, "server-compile-cache"))).toBe(false);
+      return;
+    }
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Packaged desktop startup passed: 1.2.3");
     const manifest = JSON.parse(
       NodeFS.readFileSync(NodePath.join(resources, "server-compile-cache/manifest.json"), "utf8"),
     );
