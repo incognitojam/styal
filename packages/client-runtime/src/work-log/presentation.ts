@@ -698,19 +698,78 @@ function viewedSourceUrlKey(url: string): string | null {
   return `${parsed.host}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
 }
 
-/**
- * Keys of the http(s) URLs a message shows as links, bare or in Markdown. URLs inside code render
- * as text, not links, so code spans and fenced blocks are skipped.
- */
+/** Message text without fenced code blocks and code spans, which show URLs as text. */
+function withoutCode(text: string): string {
+  const prose: string[] = [];
+  let fence: { readonly char: string; readonly length: number } | null = null;
+  for (const line of text.split("\n")) {
+    if (fence !== null) {
+      const close = /^ {0,3}(`+|~+)[ \t]*$/.exec(line)?.[1];
+      if (close !== undefined && close[0] === fence.char && close.length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    // A backtick fence's info string cannot contain a backtick; such a line is inline code.
+    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
+      fence = { char: open[1]![0]!, length: open[1]!.length };
+      continue;
+    }
+    prose.push(line);
+  }
+  const joined = prose.join("\n");
+  let result = "";
+  let index = 0;
+  while (index < joined.length) {
+    const open = joined.indexOf("`", index);
+    if (open < 0) return result + joined.slice(index);
+    let openEnd = open;
+    while (joined[openEnd] === "`") openEnd += 1;
+    result += joined.slice(index, open);
+    // A span closes at the next backtick run of the same length; otherwise the run is text.
+    let close = -1;
+    for (let next = joined.indexOf("`", openEnd); next >= 0;) {
+      let nextEnd = next;
+      while (joined[nextEnd] === "`") nextEnd += 1;
+      if (nextEnd - next === openEnd - open) {
+        close = nextEnd;
+        break;
+      }
+      next = joined.indexOf("`", nextEnd);
+    }
+    if (close < 0) {
+      result += joined.slice(open, openEnd);
+      index = openEnd;
+    } else {
+      result += " ";
+      index = close;
+    }
+  }
+  return result;
+}
+
+/** Keys of the http(s) URLs a message shows as links, bare or in Markdown, outside code. */
 function linkedUrlKeys(text: string): Set<string> {
   const keys = new Set<string>();
-  const prose = text
-    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm, "")
-    .replace(/(`+)[^`]*?\1/g, "");
-  // Balanced parentheses stay in the URL (Foo_(bar)); an unbalanced ")" closes a Markdown link.
-  const urls = /https?:\/\/(?:[^\s<>()[\]{}"'`]|\([^\s<>()[\]{}"'`]*\))+/gi;
-  for (const match of prose.matchAll(urls)) {
-    const key = viewedSourceUrlKey(match[0].replace(/[.,;:!?*_~]+$/, ""));
+  const prose = withoutCode(text);
+  let scannedTo = 0;
+  for (const match of prose.matchAll(/https?:\/\//gi)) {
+    if (match.index < scannedTo) continue;
+    // Balanced parentheses stay in the URL; an unbalanced ")" closes a Markdown link.
+    let end = match.index;
+    let depth = 0;
+    for (; end < prose.length; end += 1) {
+      const character = prose[end]!;
+      if (/[\s<>[\]{}"'`]/.test(character)) break;
+      if (character === "(") depth += 1;
+      else if (character === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+      }
+    }
+    scannedTo = end;
+    const key = viewedSourceUrlKey(prose.slice(match.index, end).replace(/[.,;:!?*_~]+$/, ""));
     if (key !== null) keys.add(key);
   }
   return keys;

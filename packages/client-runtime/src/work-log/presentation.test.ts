@@ -800,8 +800,9 @@ describe("viewed sources", () => {
       { kind: "page", url: "https://docs.example.com/menus" },
       { kind: "page", url: "https://ui.example.org/sidebar" },
       { kind: "page", url: "https://help.example.io/export" },
-      { kind: "page", url: "https://wiki.example.org/Retention_(policy)" },
+      { kind: "page", url: "https://wiki.example.org/Retention_(policy_(2026))" },
       { kind: "page", url: "https://wiki.example.org/Retention_" },
+      { kind: "page", url: "https://docs.example.com/after-inline" },
     ] as const;
     const linked = assistantLinkedUrlKeysByRunId(
       [
@@ -814,7 +815,15 @@ describe("viewed sources", () => {
           role: "assistant",
           runId: "run-1",
           // Code shows a URL as text, so its page keeps its chip.
-          text: "Run `curl https://help.example.io/export`:\n\n```sh\ncurl https://help.example.io/export\n```\nSee https://wiki.example.org/Retention_(policy).",
+          text: [
+            "Run ``curl `-s` https://help.example.io/export``:",
+            "```sh",
+            "```not-a-close",
+            "curl https://help.example.io/export",
+            "```",
+            "See [the policy](https://wiki.example.org/Retention_(policy_(2026))).",
+            "```inline``` code, then https://docs.example.com/after-inline",
+          ].join("\n"),
         },
         { role: "assistant", runId: "run-2", text: "https://help.example.io/export" },
         { role: "user", runId: "run-1", text: "https://help.example.io/export" },
