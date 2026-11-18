@@ -172,7 +172,7 @@ export const makeCheckout = Effect.gen(function* () {
         continue;
       }
       if (!stat.isFile() && !stat.isSymbolicLink())
-        return yield* fail("Worktree contains a special file or nested repository.");
+        return yield* fail(`Worktree file "${name}" is a special file or nested repository.`);
       bytes += stat.size;
       if (bytes > limits.bytes || stat.size > 64 * 1024 * 1024)
         return yield* fail("Worktree checkout inspection exceeded its byte limit.");
@@ -303,6 +303,7 @@ export const makeCheckout = Effect.gen(function* () {
     const stagedDeletions = new Set<string>();
     for (let i = 0; i < records.length - 1; i++) {
       const record = records[i]!;
+      if (/^(DD|AU|UD|UA|DU|AA|UU) /.test(record)) continue;
       if (record[1] === "D")
         return yield* fail(
           `Tracked file "${record.slice(3)}" was deleted. Stage or undo the deletion before retrying checkout.`,

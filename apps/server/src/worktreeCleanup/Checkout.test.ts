@@ -147,6 +147,7 @@ it.effect.each([
   "detached",
   "symlink",
   "unmerged",
+  "unmerged-delete",
 ] as const)("preserves changes across release and restore: %s", (scenario) =>
   Effect.gen(function* () {
     const f = yield* fixture;
@@ -163,8 +164,9 @@ it.effect.each([
       yield* f.fs.remove(`${f.worktree}/src/clean`);
       yield* f.fs.symlink("../.gitignore", `${f.worktree}/src/clean`);
     }
-    if (scenario === "unmerged") {
-      yield* f.write("src/clean", "stashed");
+    if (scenario === "unmerged" || scenario === "unmerged-delete") {
+      if (scenario === "unmerged-delete") yield* f.command(f.worktree, ["rm", "src/clean"]);
+      else yield* f.write("src/clean", "stashed");
       yield* f.command(f.worktree, ["stash"]);
       yield* f.write("src/clean", "conflict");
       yield* f.command(f.worktree, ["commit", "-am", "fixture: conflicting change"]);
