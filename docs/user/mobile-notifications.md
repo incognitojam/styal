@@ -4,6 +4,8 @@ Sign in to styal Link, add your machines, and enable **Device Notifications** (*
 
 Use the switches under **Notify me when an agent** to choose which of those alerts reach this device, for example only approvals and input requests. Each device keeps its own choice.
 
+Completed turns that report back to another agent do not send Done alerts or appear as finished results in ongoing activity. If you send a message to that thread yourself, its completed turn alerts normally. Approval, input, and failure alerts remain enabled for reporting threads.
+
 For activity without ordinary alerts on Android 8 or newer, leave **Ongoing agent activity** enabled and turn off **Agent alerts** in Android's notification settings for styal. Activity updates continue, and the same card shows the finished result without a separate alert. On Android 16 and newer, the finished result remains a Live Update until dismissed or expired. Keep app-wide notification permission and **Live updates** enabled so Android can display it.
 
 On iOS you can also add the **Agent Activity** widget to your Home Screen or Lock Screen. It shows the same agents as the Live Activity, using your styal Link sign-in. The widget refreshes when you open styal and shows unfinished work as out of date after 10 minutes.

@@ -23,6 +23,9 @@ describe("projectThreadAwarenessV2", () => {
     overrides: Partial<
       Pick<
         OrchestrationV2ThreadShell,
+        | "latestRunStartedByAgent"
+        | "reportTo"
+        | "delegatedFrom"
         | "activityRunStatus"
         | "latestRunBackgroundWake"
         | "latestRunStopRequested"
@@ -103,29 +106,106 @@ describe("projectThreadAwarenessV2", () => {
     ).toBe(phase);
   });
 
-  it.each([
-    ["running", "subagent"],
-    ["completed", "subagent"],
-    ["failed", "subagent"],
-    ["running", "side chat"],
-  ] as const)("does not publish %s %s activity", (status, kind) => {
-    expect(
-      projectThreadAwarenessV2({
-        environmentId: "env-1" as EnvironmentId,
-        project,
-        thread: v2Thread({
-          status,
-          lineage: {
-            rootThreadId: "parent" as ThreadId,
-            parentThreadId: "parent" as ThreadId,
-            ...(kind === "subagent"
-              ? { relationshipToParent: "subagent" }
-              : { relationshipToParent: "fork", sideChat: true }),
-          },
-        }),
-      }),
-    ).toBeNull();
-  });
+  it.each(
+    [
+      { name: "provider subagent", child: true, creationSource: "provider" },
+      { name: "local delegated child", child: true, creationSource: "mcp" },
+      { name: "side chat", sideChat: true },
+      { name: "local reportBack launch", reportTo: { threadId: "coordinator" as ThreadId } },
+      {
+        name: "remote delegate",
+        delegatedFrom: {
+          environmentId: "other" as EnvironmentId,
+          threadId: "coordinator" as ThreadId,
+          title: "Coordinator",
+        },
+      },
+      { name: "agent follow-up", reportTo: { threadId: "coordinator" as ThreadId } },
+      { name: "agent wake", reportTo: { threadId: "coordinator" as ThreadId } },
+      {
+        name: "user message to a reporting launch",
+        reportTo: { threadId: "coordinator" as ThreadId },
+        person: true,
+      },
+      {
+        name: "user message to a remote delegate",
+        delegatedFrom: {
+          environmentId: "other" as EnvironmentId,
+          threadId: "coordinator" as ThreadId,
+          title: "Coordinator",
+        },
+        person: true,
+      },
+      {
+        name: "hand-started coordinator project thread",
+        reportTo: { threadId: "coordinator" as ThreadId, source: "project-coordinator" as const },
+        person: true,
+      },
+      {
+        name: "human server-origin answer to a reporting launch",
+        reportTo: { threadId: "coordinator" as ThreadId },
+        person: true,
+      },
+      { name: "agent run without a report target" },
+      {
+        name: "older server without run authorship",
+        reportTo: { threadId: "coordinator" as ThreadId },
+        person: undefined,
+      },
+    ].map((entry) => ({
+      person: false,
+      child: false,
+      sideChat: false,
+      reportTo: undefined,
+      delegatedFrom: undefined,
+      ...entry,
+    })),
+  )(
+    "publishes only user-facing activity for $name",
+    ({ child, sideChat, reportTo, delegatedFrom, person }) => {
+      for (const phase of ["running", "completed", "failed", "user_input", "command"] as const) {
+        const state = projectThreadAwarenessV2({
+          environmentId: "env-1" as EnvironmentId,
+          project,
+          thread: v2Thread({
+            status: phase === "user_input" || phase === "command" ? "completed" : phase,
+            latestRunStartedByAgent: person === undefined ? undefined : !person,
+            reportTo,
+            delegatedFrom,
+            lineage: {
+              rootThreadId: "parent" as ThreadId,
+              parentThreadId: child || sideChat ? ("parent" as ThreadId) : null,
+              relationshipToParent: child ? "subagent" : null,
+              sideChat,
+            },
+            pendingRuntimeRequest:
+              phase === "user_input" || phase === "command"
+                ? {
+                    id: RuntimeRequestId.make("request"),
+                    kind: phase,
+                    createdAt: updatedAt,
+                  }
+                : null,
+          }),
+        });
+        const hidden =
+          child ||
+          sideChat ||
+          (phase === "completed" &&
+            person === false &&
+            (reportTo != null || delegatedFrom != null));
+        expect(state?.phase ?? null).toBe(
+          hidden
+            ? null
+            : phase === "user_input"
+              ? "waiting_for_input"
+              : phase === "command"
+                ? "waiting_for_approval"
+                : phase,
+        );
+      }
+    },
+  );
 
   it("keeps an older activity run visible over a newer cancelled run", () => {
     expect(
