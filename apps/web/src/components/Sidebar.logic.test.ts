@@ -40,6 +40,7 @@ import {
   filterSidebarV2VisibleThreads,
   sortLogicalProjectsForSidebar,
   groupSidebarThreadsByProject,
+  orderSidebarFolderGroups,
   shouldCreateNewThreadInCurrentProject,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
@@ -1225,6 +1226,16 @@ describe("resolveSidebarProjectDrop", () => {
     expect(drop("B", sidebarMarkerId("pinned-divider"))).toEqual(["B", "A", "C"]);
   });
 
+  it("keeps trailing projects last, so a drop among them lands before them", () => {
+    // C is archived: it stays below every project that can move.
+    const trailing = new Set(["C"]);
+    const dropBefore = (group: string, overId: string) =>
+      resolveSidebarProjectDrop(items, group, overId, trailing)?.order ?? null;
+    expect(dropBefore("A", sidebarListItemId(header("C")))).toEqual(["B", "A"]);
+    expect(dropBefore("A", "c1")).toEqual(["B", "A"]);
+    expect(dropBefore("B", sidebarListItemId(header("A")))).toEqual(["B", "A"]);
+  });
+
   it("rejects drops outside the grouped active rows", () => {
     expect(drop("A", "p1")).toBeNull();
     expect(drop("A", "s1")).toBeNull();
@@ -2037,6 +2048,21 @@ describe("groupSidebarThreadsByProject", () => {
       { projectKey: "t3code", threads: ["a", "b"] },
       { projectKey: "fleet", threads: [] },
     ]);
+  });
+});
+
+describe("orderSidebarFolderGroups", () => {
+  // Pinned folders follow the pin order; the rest keep the project sort order they come in.
+  it.each([
+    { pinned: [], order: ["a", "b", "c", "d"] },
+    { pinned: ["c", "a"], order: ["c", "a", "b", "d"] },
+    // A pinned project without a folder takes no place.
+    { pinned: ["x", "d"], order: ["d", "a", "b", "c"] },
+  ])("pinned $pinned", ({ pinned, order }) => {
+    const groups = ["a", "b", "c", "d"].map((projectKey) => ({ projectKey }));
+    expect(orderSidebarFolderGroups(groups, pinned).map((group) => group.projectKey)).toEqual(
+      order,
+    );
   });
 });
 

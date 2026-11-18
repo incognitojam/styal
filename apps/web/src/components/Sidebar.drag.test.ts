@@ -33,6 +33,7 @@ function layout(
   over: string,
   scale = 1,
   cardHeight = 82,
+  headerHeight = 24,
 ) {
   let top = 100;
   const rects = items.map((item) => {
@@ -40,7 +41,7 @@ function layout(
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
         : item.kind === "project-header" || item.kind === "working-project-header"
-          ? 24 * scale
+          ? headerHeight * scale
           : item.marker === "pinned-header" ||
               item.marker === "pinned-divider" ||
               item.marker === "pinned-projects-divider"
@@ -375,6 +376,60 @@ describe("project header collision detection", () => {
         sidebarMarkerId("pinned-projects-divider"),
       );
       expect(pinnedTarget("B", dividerTop + 12 + 3)).toBe(id("B"));
+    });
+
+    it("scales the divider label from a folder header's height", () => {
+      // Folder headers are 40px and their rows 36px.
+      const rects = layout(pinnedItems, "a1", "a1", 1, 36, 40).rects;
+      const droppableRects = new Map(
+        pinnedItems.map((item, index) => [sidebarListItemId(item), rects[index]!]),
+      );
+      const top = rects[pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"))]!;
+      const folderTarget = (centerY: number) =>
+        createSidebarProjectCollisionDetection(
+          pinnedItems,
+          "B",
+          24,
+          40,
+        )({
+          active: { id: id("B") },
+          collisionRect: { ...top, top: centerY - 20, bottom: centerY + 20 },
+          droppableRects,
+          droppableContainers: [],
+          pointerCoordinates: null,
+        } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+      const folderDividerTop =
+        rects[
+          pinnedItems.findIndex(
+            (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+          )
+        ]!.top;
+      expect(folderTarget(folderDividerTop + 12 - 3)).toBe(
+        sidebarMarkerId("pinned-projects-divider"),
+      );
+      expect(folderTarget(folderDividerTop + 12 + 3)).toBe(id("B"));
+
+      // C lifted onto the divider: A, then C's slot, then the 24px label above B.
+      const strategy = createSidebarSortingStrategy({
+        items: pinnedItems,
+        settledOrder: [],
+        settledExpanded: true,
+        boundaryLabelHeight: 24,
+        projectHeaderHeight: 40,
+      });
+      const cIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("C"));
+      const dividerIndex = pinnedItems.findIndex(
+        (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+      );
+      const bIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"));
+      const args = {
+        activeIndex: cIndex,
+        overIndex: dividerIndex,
+        activeNodeRect: rects[cIndex]!,
+        rects,
+        index: bIndex,
+      } satisfies Parameters<SortingStrategy>[0];
+      expect(strategy(args)?.y).toBe(65);
     });
 
     it("places a project among the pinned projects by their midpoints", () => {
@@ -943,6 +998,26 @@ describe("project-grouped drag projection", () => {
     expect(result.get("a1")?.scaleY).toBe(0);
     // Header B moves up into A's old place.
     expect(tops.get(headerB)!.top + result.get(headerB)!.y).toBe(tops.get(headerA)!.top);
+  });
+
+  it("keeps trailing projects last when a project is lifted over them", () => {
+    // Z is archived: A dropped on it lands after B, above Z.
+    const withTrailing = [...items.slice(0, -2), header("Z"), row("z1", "Z"), ...items.slice(-2)];
+    const headerA = sidebarListItemId(header("A"));
+    const headerZ = sidebarListItemId(header("Z"));
+    const result = preview(
+      {
+        items: withTrailing,
+        settledOrder: [],
+        settledExpanded: true,
+        trailingProjectGroups: new Set(["Z"]),
+      },
+      headerA,
+      headerZ,
+    );
+    // A's two rows collapse: B and its rows move up, then A's slot, then Z below it.
+    expect(result.get(headerZ)?.y).toBe(-166);
+    expect(result.get("z1")?.y).toBe(-166);
   });
 
   it("keeps a row hovered over another project in its own project", () => {
