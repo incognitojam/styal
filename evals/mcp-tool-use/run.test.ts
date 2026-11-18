@@ -70,7 +70,7 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
       {
         calls: [
           { tool: "Bash", args: { command: "~sleep" } },
-          { tool: "Bash", args: { command: "re:^sleep \\d+$" } },
+          { tool: "Bash", args: { command: "re:^SLEEP \\d+$" } },
           { tool: "Bash", args: { command: "re:^60" } },
         ],
         notCalls: ["Agent"],
