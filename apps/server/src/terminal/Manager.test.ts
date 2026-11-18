@@ -1,6 +1,11 @@
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as Digest from "effect/crypto/Digest";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+import { fixture } from "../worktreeCleanup/fixtures.testkit.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
@@ -219,6 +224,7 @@ const historyLogPath = (logsDir: string, threadId = "thread-1") =>
   );
 
 interface CreateManagerOptions {
+  gitDriver?: GitVcsDriver.GitVcsDriver["Service"];
   resolveProviderInstanceEnvironment?: NonNullable<
     Parameters<typeof TerminalManager.makeWithOptions>[0]["resolveProviderInstanceEnvironment"]
   >;
@@ -266,7 +272,12 @@ const createManager = (
 ): Effect.Effect<
   ManagerFixture,
   PlatformError.PlatformError,
-  FileSystem.FileSystem | Path.Path | Scope.Scope | ProcessRunner.ProcessRunner
+  | FileSystem.FileSystem
+  | Path.Path
+  | Scope.Scope
+  | ProcessRunner.ProcessRunner
+  | Digest.Digest
+  | PhysicalFileSystem.PhysicalFileSystem
 > =>
   Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
     Effect.gen(function* () {
@@ -316,7 +327,12 @@ const createManager = (
               managedBinaryCacheDir: options.managedBinaryCacheDir,
               managedBinaryToolsDir: options.managedBinaryToolsDir,
             }),
-      });
+      }).pipe(
+        Effect.provideService(
+          GitVcsDriver.GitVcsDriver,
+          options.gitDriver ?? ({} as GitVcsDriver.GitVcsDriver["Service"]),
+        ),
+      );
       const eventsRef = yield* Ref.make<ReadonlyArray<TerminalEvent>>([]);
       const unsubscribe = yield* manager.subscribe((event) =>
         Ref.update(eventsRef, (events) => [...events, event]),
@@ -430,6 +446,61 @@ it.layer(
   ),
   { excludeTestServices: true },
 )("TerminalManager", (it) => {
+  it.effect.each([
+    { mode: "shell", location: "root" },
+    { mode: "command", location: "root" },
+    { mode: "shell", location: "nested" },
+    { mode: "command", location: "nested" },
+    { mode: "shell", location: "missing-nested" },
+    { mode: "shell", location: "aliased-nested" },
+  ])("restores source before opening a $mode terminal from $location", ({ mode, location }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      if (location === "nested" || location === "aliased-nested")
+        yield* f.write("src/keep.txt", "untracked note");
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
+      class CheckoutPty extends FakePtyAdapter {
+        override spawn(input: PtyAdapter.PtySpawnInput) {
+          return f.fs.readFileString(`${f.worktree}/src/main.txt`).pipe(
+            Effect.tap((text) => Effect.sync(() => assert.equal(text, "tracked source"))),
+            Effect.orDie,
+            Effect.andThen(super.spawn(input)),
+          );
+        }
+      }
+      const { manager } = yield* createManager(5, {
+        gitDriver: f.git,
+        ptyAdapter: new CheckoutPty(),
+      });
+      const alias = `${f.base}/terminal-alias`;
+      if (location === "aliased-nested") {
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        yield* Effect.promise(() => physical.symlink(f.worktree, alias));
+      }
+      const cwd =
+        location === "root"
+          ? f.worktree
+          : `${location === "aliased-nested" ? alias : f.worktree}/src`;
+      const input = openInput({
+        cwd,
+        ...(location === "root" ? { worktreePath: f.worktree } : {}),
+      });
+      const terminal =
+        mode === "shell"
+          ? yield* manager.open(input)
+          : yield* manager.openCommand({ ...input, command: "synthetic" });
+      assert.equal(terminal.cwd, cwd);
+      yield* manager.close({ threadId: input.threadId, terminalId: input.terminalId });
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("spawns lazily and reuses running terminal per thread", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
@@ -2606,82 +2677,83 @@ it.layer(
     }).pipe(Effect.scoped),
   );
 
-  it.effect("resyncs bounded history and follows close/reopen across a stalled stream", () =>
-    Effect.gen(function* () {
-      const ptyAdapter = new GatedPtyAdapter();
-      const historyByteLimit = 64 * 1024;
-      const fs = yield* FileSystem.FileSystem;
-      const { manager } = yield* createManager(5, { ptyAdapter, historyByteLimit }).pipe(
-        // Keep path resolution synchronous to control the thread-lock queue independently of filesystem timing.
-        Effect.provideService(FileSystem.FileSystem, { ...fs, realPath: Effect.succeed }),
-      );
-      const input = openInput();
-      const pull = yield* Stream.toPull(
-        terminalOutputStream(
-          (listener, registerCleanup) => manager.attachStream(input, listener, registerCleanup),
-          (listener, registerCleanup) => manager.resyncStream(input, listener, registerCleanup),
-        ),
-      );
-      expect(yield* pull).toMatchObject([{ type: "snapshot", snapshot: { history: "" } }]);
-      const process = ptyAdapter.processes[0]!;
-      yield* publishPastOutputBudget(manager, process);
+  it.effect.each([false, true])(
+    "resyncs bounded history and follows close/reopen across a stalled stream (observed close: %s)",
+    (observeClosed) =>
+      Effect.gen(function* () {
+        const ptyAdapter = new GatedPtyAdapter();
+        const historyByteLimit = 64 * 1024;
+        const { manager, baseDir } = yield* createManager(5, { ptyAdapter, historyByteLimit });
+        const input = openInput({ cwd: baseDir });
+        const pull = yield* Stream.toPull(
+          terminalOutputStream(
+            (listener, registerCleanup) => manager.attachStream(input, listener, registerCleanup),
+            (listener, registerCleanup) => manager.resyncStream(input, listener, registerCleanup),
+          ),
+        );
+        expect(yield* pull).toMatchObject([{ type: "snapshot", snapshot: { history: "" } }]);
+        const process = ptyAdapter.processes[0]!;
+        yield* publishPastOutputBudget(manager, process);
 
-      const resumed = yield* pull;
-      expect(resumed).toHaveLength(1);
-      expect(resumed[0]?.type).toBe("snapshot");
-      if (resumed[0]?.type !== "snapshot") throw new Error("Expected a recovery snapshot");
-      expect(Buffer.byteLength(resumed[0].snapshot.history)).toBeLessThanOrEqual(historyByteLimit);
-      expect(resumed[0].snapshot.history.endsWith("last\n")).toBe(true);
-      process.emitData("after recovery\n");
-      expect(yield* pull).toMatchObject([{ type: "output", data: "after recovery\n" }]);
-      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+        const resumed = yield* pull;
+        expect(resumed).toHaveLength(1);
+        expect(resumed[0]?.type).toBe("snapshot");
+        if (resumed[0]?.type !== "snapshot") throw new Error("Expected a recovery snapshot");
+        expect(Buffer.byteLength(resumed[0].snapshot.history)).toBeLessThanOrEqual(
+          historyByteLimit,
+        );
+        expect(resumed[0].snapshot.history.endsWith("last\n")).toBe(true);
+        process.emitData("after recovery\n");
+        expect(yield* pull).toMatchObject([{ type: "output", data: "after recovery\n" }]);
+        expect(ptyAdapter.spawnInputs).toHaveLength(1);
 
-      yield* publishPastOutputBudget(manager, process);
-      yield* manager.close(input);
-      expect(yield* pull).toEqual([
-        { type: "closed", threadId: input.threadId, terminalId: input.terminalId },
-      ]);
-      expect(ptyAdapter.spawnInputs).toHaveLength(1);
-      yield* manager.open(input);
-      expect(yield* pull).toMatchObject([
-        { type: "snapshot", snapshot: { status: "running", pid: ptyAdapter.processes[1]!.pid } },
-      ]);
-      const reopenedProcess = ptyAdapter.processes[1]!;
-      reopenedProcess.emitData("after reopen\n");
-      expect(yield* pull).toMatchObject([{ type: "output", data: "after reopen\n" }]);
+        yield* publishPastOutputBudget(manager, process);
+        yield* manager.close(input);
+        expect(yield* pull).toEqual([
+          { type: "closed", threadId: input.threadId, terminalId: input.terminalId },
+        ]);
+        expect(ptyAdapter.spawnInputs).toHaveLength(1);
+        yield* manager.open(input);
+        expect(yield* pull).toMatchObject([
+          { type: "snapshot", snapshot: { status: "running", pid: ptyAdapter.processes[1]!.pid } },
+        ]);
+        const reopenedProcess = ptyAdapter.processes[1]!;
+        reopenedProcess.emitData("after reopen\n");
+        expect(yield* pull).toMatchObject([{ type: "output", data: "after reopen\n" }]);
 
-      yield* publishPastOutputBudget(manager, reopenedProcess);
-      // Queue close/reopen ahead of recovery while another spawn owns the thread lock.
-      const gate = {
-        spawning: yield* Deferred.make<void>(),
-        release: yield* Deferred.make<void>(),
-      };
-      ptyAdapter.gate = gate;
-      const holder = yield* manager
-        .open(openInput({ terminalId: "other" }))
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      yield* Deferred.await(gate.spawning);
-      const closed = yield* manager.close(input).pipe(Effect.forkChild({ startImmediately: true }));
-      const reopened = yield* manager
-        .open(input)
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      const recovery = yield* pull.pipe(Effect.forkChild({ startImmediately: true }));
-      reopenedProcess.emitData("old session\n");
-      yield* Deferred.succeed(gate.release, undefined);
-      yield* Fiber.join(holder);
-      yield* Fiber.join(closed);
-      yield* Fiber.join(reopened);
-
-      const batch = yield* Fiber.join(recovery);
-      expect(batch).toHaveLength(1);
-      expect(batch[0]).toMatchObject({
-        type: "snapshot",
-        snapshot: { status: "running", pid: ptyAdapter.processes.at(-1)!.pid },
-      });
-      ptyAdapter.processes.at(-1)!.emitData("new session only\n");
-      expect(yield* pull).toMatchObject([{ type: "output", data: "new session only\n" }]);
-      expect(ptyAdapter.spawnInputs).toHaveLength(4);
-    }).pipe(Effect.scoped),
+        yield* publishPastOutputBudget(manager, reopenedProcess);
+        const gate = {
+          spawning: yield* Deferred.make<void>(),
+          release: yield* Deferred.make<void>(),
+        };
+        ptyAdapter.gate = gate;
+        const holder = yield* manager
+          .open(openInput({ ...input, terminalId: "other" }))
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(gate.spawning);
+        const closed = yield* manager
+          .close(input)
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        reopenedProcess.emitData("old session\n");
+        yield* Deferred.succeed(gate.release, undefined);
+        yield* Fiber.join(holder);
+        yield* Fiber.join(closed);
+        if (observeClosed) {
+          expect(yield* pull).toEqual([
+            { type: "closed", threadId: input.threadId, terminalId: input.terminalId },
+          ]);
+        }
+        yield* manager.open(input);
+        const batch = yield* pull;
+        expect(batch).toHaveLength(1);
+        expect(batch[0]).toMatchObject({
+          type: "snapshot",
+          snapshot: { status: "running", pid: ptyAdapter.processes.at(-1)!.pid },
+        });
+        ptyAdapter.processes.at(-1)!.emitData("new session only\n");
+        expect(yield* pull).toMatchObject([{ type: "output", data: "new session only\n" }]);
+        expect(ptyAdapter.spawnInputs).toHaveLength(4);
+      }).pipe(Effect.scoped),
   );
 
   it.effect.each([

@@ -1,7 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
@@ -35,6 +34,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -180,23 +180,50 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
-  const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
+  const checkout = yield* makeCheckout;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
-    fileSystem.realPath(rootPath).pipe(
-      Effect.orElseSucceed(() => rootPath),
-      Effect.flatMap((cwd) => withWorkspaceLease(cwd, effect)),
+    checkout.root(rootPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation: "GitWorkflowService.restoreCheckout",
+            command: "rev-parse --show-toplevel",
+            cwd: rootPath,
+            detail: "Could not identify the checkout. The Git action was not started.",
+            cause,
+          }),
+      ),
+      Effect.flatMap((cwd) =>
+        withWorkspaceLease(
+          cwd,
+          checkout.restore(cwd).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitCommandError({
+                  operation: "GitWorkflowService.restoreCheckout",
+                  command: "sparse-checkout disable",
+                  cwd,
+                  detail: "Could not check out the workspace. The Git action was not started.",
+                  cause,
+                }),
+            ),
+            Effect.andThen(effect),
+          ),
+        ),
+      ),
     );
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* registry.resolve({ cwd }).pipe(
+    const handle = yield* checkout.root(cwd).pipe(
+      Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
           new GitManagerError({
@@ -214,7 +241,8 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* registry.resolve({ cwd }).pipe(
+    const handle = yield* checkout.root(cwd).pipe(
+      Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
           new GitCommandError({
@@ -393,7 +421,9 @@ export const make = Effect.gen(function* () {
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
-        Effect.andThen(git.pullCurrentBranch(cwd)),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(handle.repository.rootPath, git.pullCurrentBranch(cwd)),
+        ),
       );
     }),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {

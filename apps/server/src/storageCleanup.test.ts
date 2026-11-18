@@ -1,3 +1,4 @@
+import type * as Digest from "effect/crypto/Digest";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "./nodeServices.ts";
@@ -598,6 +599,7 @@ const runCleanupTest = <A, E>(
   effect: Effect.Effect<
     A,
     E,
+    | Digest.Digest
     | FileSystem.FileSystem
     | PhysicalFileSystem.PhysicalFileSystem
     | ServerConfig.ServerConfig

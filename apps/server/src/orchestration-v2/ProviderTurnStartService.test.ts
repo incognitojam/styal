@@ -2,12 +2,14 @@ import {
   fixture as cleanupFixture,
   nodeLayer as cleanupNodeLayer,
 } from "../worktreeCleanup/fixtures.testkit.ts";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as CleanupStripped from "../worktreeCleanup/Stripped.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import cleanupMigration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import { expect, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
@@ -87,7 +89,7 @@ const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
   );
 
 function startWithMissingWorktree(
-  worktreePath: string,
+  worktreePath: string | null,
   realPaths: Record<string, string> = {
     [managedWorktreesDir]: managedWorktreesDir,
     [`${managedWorktreesDir}/project`]: `${managedWorktreesDir}/project`,
@@ -98,6 +100,8 @@ function startWithMissingWorktree(
   worktreesDir = managedWorktreesDir,
   isStripped: (root: string) => Effect.Effect<boolean> = () => Effect.succeed(false),
   onSetup: Effect.Effect<void> = Effect.void,
+  checkoutGit: GitVcsDriver.GitVcsDriver["Service"] = {} as GitVcsDriver.GitVcsDriver["Service"],
+  projectWorkspaceRoot = "/tmp/provider-turn-start-project",
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -162,6 +166,7 @@ function startWithMissingWorktree(
   );
   const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(Layer.mergeAll(PhysicalFileSystem.layer, NodeCrypto.layer)),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
@@ -188,15 +193,14 @@ function startWithMissingWorktree(
           createWorktree,
           listLocalBranchNames,
         }),
-        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.succeed(GitVcsDriver.GitVcsDriver, checkoutGit),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped,
           isStripped,
           runForThread: runSetup,
         }),
         Layer.mock(ProjectService.ProjectService)({
-          getById: () =>
-            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
+          getById: () => Effect.succeedSome({ workspaceRoot: projectWorkspaceRoot } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => {
@@ -235,17 +239,20 @@ function startWithMissingWorktree(
     ),
   );
 
-  const callStart = Effect.gen(function* () {
-    return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
-      .start({ threadId, runId, willRetry: true })
-      .pipe(Effect.exit);
-  });
+  const callStartWithRetry = (willRetry: boolean) =>
+    Effect.gen(function* () {
+      return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
+        .start({ threadId, runId, willRetry })
+        .pipe(Effect.exit);
+    });
+  const callStart = callStartWithRetry(true);
   const startEffect = callStart.pipe(Effect.provide(layer));
   return {
     layer,
     callStart,
     start: startEffect,
     retry: startEffect,
+    startNoRetry: callStartWithRetry(false).pipe(Effect.provide(layer)),
     pruneWorktrees,
     createWorktree,
     runSetup,
@@ -1043,6 +1050,7 @@ function makeLocalCommandHarness(input: {
     }),
   );
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(Layer.mergeAll(PhysicalFileSystem.layer, NodeCrypto.layer)),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
@@ -2053,6 +2061,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
     const awaited: Array<string> = [];
     const reads: Array<string> = [];
     const layer = ProviderTurnStart.layer.pipe(
+      Layer.provide(Layer.mergeAll(PhysicalFileSystem.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mergeAll(
           Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
@@ -2067,7 +2076,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
             consumeStripped: () => Effect.succeed(false),
             isStripped: () => Effect.succeed(false),
           }),
-          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThreadRecords: () =>
               Effect.succeed({
@@ -2108,6 +2117,108 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
     yield* Fiber.join(fiber);
     expect(reads).toEqual(["context"]);
   }),
+);
+
+effectIt.effect(
+  "reports checkout recovery failure on the thread without starting setup or the provider",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* cleanupFixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      const admin = yield* f.command(f.worktree, ["rev-parse", "--absolute-git-dir"]);
+      yield* f.fs.writeFileString(
+        `${admin.stdout.trim()}/styal-checkout.json`,
+        "invalid recovery record",
+      );
+      const harness = startWithMissingWorktree(
+        f.worktree,
+        { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
+        true,
+        { status: "no-script" },
+        () => Effect.succeed(false),
+        f.config.worktreesDir,
+        () => Effect.succeed(false),
+        Effect.void,
+        f.git,
+      );
+      yield* harness.startNoRetry;
+      expect(harness.runSetup).not.toHaveBeenCalled();
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.writeIfRunCurrent).toHaveBeenCalledOnce();
+      const events = harness.writeIfRunCurrent.mock.calls[0]![0].events;
+      expect(
+        events.some((event) => event.type === "run.updated" && event.payload.status === "failed"),
+      ).toBe(true);
+      expect(yield* f.fs.exists(`${f.worktree}/src/main.txt`)).toBe(false);
+    }).pipe(Effect.provide(cleanupNodeLayer), Effect.scoped),
+);
+
+effectIt.effect.each(["project-root", "nested-project-root", "unmanaged-thread"] as const)(
+  "restores the effective execution checkout for %s",
+  (location) =>
+    Effect.gen(function* () {
+      const f = yield* cleanupFixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      const projectRoot = location === "nested-project-root" ? `${f.worktree}/src` : f.worktree;
+      const harness = startWithMissingWorktree(
+        location === "unmanaged-thread" ? f.worktree : null,
+        { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
+        true,
+        { status: "no-script" },
+        () => Effect.succeed(false),
+        `${f.base}/another-managed-folder`,
+        () => Effect.succeed(false),
+        Effect.void,
+        f.git,
+        projectRoot,
+      );
+      yield* harness.start;
+      expect(yield* f.fs.readFileString(`${f.worktree}/src/main.txt`)).toBe("tracked source");
+    }).pipe(Effect.provide(cleanupNodeLayer), Effect.scoped),
+);
+
+effectIt.effect("checks out source files before stripped setup starts", () =>
+  Effect.gen(function* () {
+    const f = yield* cleanupFixture;
+    yield* f.write("src/main.txt", "tracked source");
+    yield* f.command(f.worktree, ["add", "src/main.txt"]);
+    yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+    const checkout = yield* makeCheckout.pipe(
+      Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+    );
+    yield* checkout.release(f.worktree, f.root);
+    expect(yield* f.fs.exists(`${f.worktree}/src/main.txt`)).toBe(false);
+    const harness = startWithMissingWorktree(
+      f.worktree,
+      { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
+      true,
+      { status: "no-script" },
+      () => Effect.succeed(true),
+      f.config.worktreesDir,
+      () => Effect.succeed(true),
+      f.fs.readFileString(`${f.worktree}/src/main.txt`).pipe(
+        Effect.tap((text) => Effect.sync(() => expect(text).toBe("tracked source"))),
+        Effect.asVoid,
+        Effect.orDie,
+      ),
+      f.git,
+    );
+    yield* harness.start;
+    expect(harness.runSetup).toHaveBeenCalledOnce();
+    expect(yield* f.fs.readFileString(`${f.worktree}/src/main.txt`)).toBe("tracked source");
+  }).pipe(Effect.provide(cleanupNodeLayer), Effect.scoped),
 );
 
 effectIt.effect.each(["retained", "failed-setup", "missing", "detached"] as const)(

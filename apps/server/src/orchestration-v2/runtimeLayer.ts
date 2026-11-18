@@ -196,6 +196,7 @@ const layerRuntimeRequestServiceProvided = RuntimeRequestService.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStore.layer, layerProviderSessionManagerProvided)),
 );
 const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.pipe(
+  Layer.provide(GitVcsDriver.layer),
   Layer.provide(
     Layer.mergeAll(
       ProjectStore.layer,

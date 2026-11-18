@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -16,6 +16,8 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import { layerMemory } from "../persistence/Sqlite.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
+import { fixture } from "../worktreeCleanup/fixtures.testkit.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 
 function layer(input: {
   readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
@@ -53,6 +55,65 @@ const realGitLayer = (prefix: string) =>
   );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowService", (it) => {
+  it.effect.each([{ location: "root" }, { location: "nested" }, { location: "missing-nested" }])(
+    "restores source before committing from $location",
+    ({ location }) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.write("src/main.txt", "tracked source");
+        yield* f.command(f.worktree, ["add", "src/main.txt"]);
+        yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+        yield* f.write("notes.txt", "untracked change");
+        if (location === "nested") yield* f.write("src/keep.txt", "untracked note");
+        const checkout = yield* makeCheckout.pipe(
+          Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+        );
+        yield* checkout.release(f.worktree, f.root);
+        assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
+        const workflow = yield* GitWorkflowService.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(GitVcsDriver.GitVcsDriver, f.git),
+              Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)({}),
+              Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+                resolve: ({ cwd }) =>
+                  f.command(cwd, ["rev-parse", "--show-toplevel"]).pipe(
+                    Effect.orDie,
+                    Effect.map(
+                      (result) =>
+                        ({
+                          kind: "git",
+                          repository: { rootPath: result.stdout.trim() },
+                        }) as VcsDriverRegistry.VcsDriverHandle,
+                    ),
+                  ),
+              }),
+              Layer.mock(GitManager.GitManager)({
+                runStackedAction: () =>
+                  Effect.gen(function* () {
+                    assert.equal(
+                      yield* f.fs.readFileString(`${f.worktree}/src/main.txt`).pipe(Effect.orDie),
+                      "tracked source",
+                    );
+                    yield* f.command(f.worktree, ["add", "notes.txt"]);
+                    yield* f.command(f.worktree, ["commit", "-m", "fixture: note"]);
+                    return {} as never;
+                  }),
+              }),
+            ),
+          ),
+        );
+        yield* workflow.runStackedAction({
+          actionId: "fixture",
+          cwd: location === "root" ? f.worktree : `${f.worktree}/src`,
+          action: "commit",
+          commitMessage: "fixture: note",
+        });
+        const committed = yield* f.command(f.worktree, ["show", "HEAD:notes.txt"]);
+        assert.equal(committed.stdout.trim(), "untracked change");
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("returns an empty local status when no VCS repository is detected", () =>
     Effect.gen(function* () {
       const workflow = yield* GitWorkflowService.GitWorkflowService;

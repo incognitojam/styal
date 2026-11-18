@@ -337,7 +337,7 @@ function CleanupResults({
                     entry.kind !== "worktree" && entry.files !== null
                       ? `${entry.files.toLocaleString()} ${entry.files === 1 ? "file" : "files"}`
                       : null,
-                    entry.bytes !== null ? formatBytes(entry.bytes) : null,
+                    entry.bytes !== null ? `${formatBytes(entry.bytes)} estimated` : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -407,7 +407,8 @@ function CleanupSection() {
       enabled(resolveWorktreeCleanup(settings, null)) ||
       Object.values(settings.projectSettingsOverrides).some(
         (override) =>
-          override.worktreeCleanup?.mode === "custom" && enabled(override.worktreeCleanup.rules),
+          override.releaseWorktreeSources === true ||
+          (override.worktreeCleanup?.mode === "custom" && enabled(override.worktreeCleanup.rules)),
       )
     );
   });
@@ -423,7 +424,7 @@ function CleanupSection() {
         ? `${report.counts.removed} removed, ${report.counts.kept} kept${report.counts.failed > 0 ? `, ${report.counts.failed} failed` : ""}`
         : "",
       description: report
-        ? `Last run ${formatRelativeTimeLabel(report.finishedAt, nowMs)}. ${formatBytes(report.bytesFreed)} recovered.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
+        ? `Last run ${formatRelativeTimeLabel(report.finishedAt, nowMs)}. Estimated space released: ${formatBytes(report.bytesFreed)}.${report.counts.failed > 0 ? ` ${report.counts.failed} ${report.counts.failed === 1 ? "item" : "items"} couldn't be removed.` : ""}`
         : query?.failed
           ? "Could not load the last run."
           : query?.loading

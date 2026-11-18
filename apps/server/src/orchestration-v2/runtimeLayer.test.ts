@@ -6,7 +6,7 @@ import { createOrchestrationV2TurnItemVisibility } from "@t3tools/shared/orchest
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {

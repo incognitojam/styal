@@ -4,6 +4,7 @@ import { mergePathValues } from "@t3tools/shared/shell";
 import * as NodeCrypto from "node:crypto";
 
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import {
   DEFAULT_TERMINAL_ID,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
@@ -19,6 +20,7 @@ import {
   TerminalResizeError,
   TerminalSessionLookupError,
   TerminalWriteError,
+  TerminalWorkspaceRestoreError,
   type HostActivity,
   type TerminalAttachInput,
   type TerminalAttachStreamEvent,
@@ -1615,6 +1617,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
+  const checkout = yield* makeCheckout;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
@@ -3126,6 +3129,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
   ) {
+    const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
+    yield* checkout.root(workspace).pipe(
+      Effect.flatMap(checkout.restore),
+      Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
+    );
     const terminalId = requestedInput.terminalId;
     const launchCommand = "command" in requestedInput ? requestedInput.command : null;
     const displayLabel = ("label" in requestedInput ? (requestedInput.label ?? "") : "").trim();
@@ -3274,15 +3282,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const existing = yield* getSession(input.threadId, input.terminalId);
     const session = Option.getOrUndefined(existing);
     const workspace = input.worktreePath ?? session?.worktreePath ?? input.cwd ?? session?.cwd;
-    return yield* workspace === undefined
-      ? effect
-      : withWorkspaceLease(path.resolve(workspace), effect);
+    if (workspace === undefined) return yield* effect;
+    const root = yield* checkout
+      .root(workspace)
+      .pipe(
+        Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
+      );
+    return yield* withWorkspaceLease(root, effect);
   });
 
   const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
-    withWorkspaceLease(
-      path.resolve(input.worktreePath ?? input.cwd),
-      withThreadLock(input.threadId, openWithWorkspaceLease(input)),
+    checkout.root(input.worktreePath ?? input.cwd).pipe(
+      Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: input.cwd, cause })),
+      Effect.flatMap((root) =>
+        withWorkspaceLease(root, withThreadLock(input.threadId, openWithWorkspaceLease(input))),
+      ),
     );
 
   const open: TerminalManager["Service"]["open"] = (input) =>

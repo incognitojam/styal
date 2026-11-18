@@ -1200,7 +1200,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setProjectGroupPinned,
     toggleProjectGroupPin,
   } = useProjectPin();
-  const { setProjectPinned, reorderPinnedProjects, archiveProject } = useProjectPinOrder();
+  const { setProjectPinned, reorderPinnedProjects, archiveProject, unarchiveProject } =
+    useProjectPinOrder();
   // Pinned projects lead the grouped list in their pin order. A pin change
   // dropped in the list shows at once and holds until the projects match it.
   const [pendingPinnedProjectKeys, setPendingPinnedProjectKeys] = useState<
@@ -1582,17 +1583,43 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
       const api = readLocalApi();
       if (!api) return;
+      const isFiltered = projectScopeKeys.includes(group.projectKey);
+      const members = group.memberProjects;
       void (async () => {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
               { id: "new-thread", label: "New thread" },
-              { id: "copy-path", label: "Copy path" },
+              // Archived projects cannot be a filter.
+              ...(group.archived
+                ? []
+                : [
+                    {
+                      id: "filter-project",
+                      label: isFiltered ? "Show all projects" : `Filter by ${group.displayName}`,
+                    },
+                  ]),
+              {
+                id: "copy-path",
+                label: "Copy path",
+                // A project on several machines copies the path on the one picked.
+                ...(members.length > 1
+                  ? {
+                      children: members.map((member, index) => ({
+                        id: `copy-path:${index}`,
+                        label: `${member.environmentLabel ?? "Environment"}: ${member.workspaceRoot}`,
+                      })),
+                    }
+                  : {}),
+              },
               ...(canPinProject(group)
                 ? [
                     group.pinned
                       ? { id: "unpin", label: "Unpin project", icon: "pin-off" }
                       : { id: "pin", label: "Pin project", icon: "pin" },
+                    group.archived
+                      ? { id: "unarchive-project", label: "Unarchive project", icon: "archive" }
+                      : { id: "archive-project", label: "Archive project", icon: "archive" },
                   ]
                 : []),
               { id: "project-settings", label: "Project settings", icon: "settings" },
@@ -1601,12 +1628,28 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ),
         );
         if (clicked._tag === "Failure") return;
+        const member = clicked.value?.startsWith("copy-path:")
+          ? members[Number(clicked.value.slice("copy-path:".length))]
+          : undefined;
+        if (member) {
+          copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
+          return;
+        }
         switch (clicked.value) {
           case "new-thread":
             startThreadInProjectFolder(group);
             return;
           case "copy-path":
             copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
+            return;
+          case "filter-project":
+            setProjectScopeKeys(isFiltered ? [] : [group.projectKey]);
+            return;
+          case "archive-project":
+            void archiveProject(group);
+            return;
+          case "unarchive-project":
+            void unarchiveProject(group);
             return;
           case "pin":
           case "unpin":
