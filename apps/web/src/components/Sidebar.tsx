@@ -1570,10 +1570,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           api.contextMenu.show(
             [
               { id: "new-thread", label: "New thread" },
-              {
-                id: "filter-project",
-                label: isFiltered ? "Show all projects" : `Filter by ${group.displayName}`,
-              },
+              // Archived projects cannot be a filter.
+              ...(group.archived
+                ? []
+                : [
+                    {
+                      id: "filter-project",
+                      label: isFiltered ? "Show all projects" : `Filter by ${group.displayName}`,
+                    },
+                  ]),
               {
                 id: "copy-path",
                 label: "Copy path",

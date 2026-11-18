@@ -365,6 +365,8 @@ describe("sidebar folder menu", () => {
     { choose: "filter-project", archived: false, result: "the sidebar filters to the project" },
     { choose: "archive-project", archived: false, result: "the project is archived" },
     { choose: "unarchive-project", archived: true, result: "an archived project comes back" },
+    // Archived projects cannot be a filter, so their folder does not offer one.
+    { choose: null, archived: true, result: "an archived folder offers no filter" },
     { choose: "copy-path:1", archived: false, result: "the second checkout's path is copied" },
   ] as const)("choosing $choose: $result", async (scenario) => {
     using _settings = clientSettings("boring");
@@ -399,15 +401,18 @@ describe("sidebar folder menu", () => {
       workspaceRoot: "/srv/alpha",
       repositoryIdentity: identity,
     };
-    mockNewThread([local, remote]);
-    vi.mocked(useQuietThreadShells).mockReturnValue([
-      makeThreadFixture({
-        id: ThreadId.make("alpha-thread"),
-        environmentId,
-        projectId: local.id,
-        title: "alpha thread",
-      }),
-    ]);
+    const beta = project("beta");
+    mockNewThread([local, remote, beta]);
+    vi.mocked(useQuietThreadShells).mockReturnValue(
+      [local, beta].map((owner) =>
+        makeThreadFixture({
+          id: ThreadId.make(`${owner.title}-thread`),
+          environmentId,
+          projectId: owner.id,
+          title: `${owner.title} thread`,
+        }),
+      ),
+    );
     // Both machines can pin and archive projects.
     const organizing = { environment: { capabilities: { projectOrganization: true } } } as never;
     vi.mocked(useServerConfigs).mockReturnValue(
@@ -424,9 +429,15 @@ describe("sidebar folder menu", () => {
     vi.mocked(useEnvironmentScope).mockReturnValue(true);
     await using screen = await renderSidebar();
 
-    const folder = screen.container.querySelector<HTMLElement>(
-      '[data-testid="sidebar-project-folder"] button[aria-expanded]',
-    )!;
+    const folderNames = () =>
+      [...screen.container.querySelectorAll('[data-testid="sidebar-project-folder"]')].map(
+        (folder) => folder.textContent,
+      );
+    const folder = [
+      ...screen.container.querySelectorAll<HTMLElement>(
+        '[data-testid="sidebar-project-folder"] button[aria-expanded]',
+      ),
+    ].find((button) => button.textContent?.includes("alpha"))!;
     await act(() =>
       folder.dispatchEvent(
         new MouseEvent("contextmenu", {
@@ -442,18 +453,37 @@ describe("sidebar folder menu", () => {
       show.mock.calls[0]![0];
     expect(items.map((item) => item.id)).toEqual(
       expect.arrayContaining([
-        "filter-project",
         scenario.archived ? "unarchive-project" : "archive-project",
         "copy-path",
       ]),
     );
+    expect(items.some((item) => item.id === "filter-project")).toBe(!scenario.archived);
     expect(
       items.find((item) => item.id === "copy-path")?.children?.map((child) => child.id),
     ).toEqual(["copy-path:0", "copy-path:1"]);
 
     if (scenario.choose === "filter-project") {
+      // Beta's folder leaves; choosing Show all projects from the same menu brings it back.
       await vi.waitFor(() =>
-        expect(useUiStateStore.getState().sidebarProjectScopeKeys).toHaveLength(1),
+        expect(folderNames().some((name) => name?.includes("beta"))).toBe(false),
+      );
+      show.mockResolvedValue("filter-project");
+      await act(() =>
+        folder.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 20,
+            clientY: 20,
+          }),
+        ),
+      );
+      await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
+      expect(
+        show.mock.calls[1]![0].find((item: { id: string }) => item.id === "filter-project").label,
+      ).toBe("Show all projects");
+      await vi.waitFor(() =>
+        expect(folderNames().some((name) => name?.includes("beta"))).toBe(true),
       );
     } else if (scenario.choose === "archive-project") {
       await vi.waitFor(() => expect(archiveProject).toHaveBeenCalledOnce());
@@ -461,7 +491,7 @@ describe("sidebar folder menu", () => {
     } else if (scenario.choose === "unarchive-project") {
       await vi.waitFor(() => expect(unarchiveProject).toHaveBeenCalledOnce());
       expect(archiveProject).not.toHaveBeenCalled();
-    } else {
+    } else if (scenario.choose === "copy-path:1") {
       await vi.waitFor(() => expect(copy).toHaveBeenCalledWith("/srv/alpha"));
     }
   });
