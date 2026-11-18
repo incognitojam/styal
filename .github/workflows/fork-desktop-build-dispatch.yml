@@ -15,6 +15,8 @@ on:
       - "scripts/prepare-server-compile-cache.cjs"
       - "scripts/linux-after-pack.ts"
       - "scripts/verify-desktop-startup.mjs"
+      - "scripts/smoke-desktop-app.ts"
+      - "scripts/fixtures/desktop-launch/**"
       - ".github/workflows/fork-desktop-build*.yml"
       - ".github/workflows/fork-js-bundle.yml"
   workflow_dispatch:
@@ -71,6 +73,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @t3tools/scripts...
       - name: Download and unpack installer without installing
         shell: pwsh
         env:
@@ -78,6 +85,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.windows_release }}
         run: |
           New-Item -ItemType Directory -Force .scratch/released-desktop | Out-Null
+          $env:GH_REPO = "incognitojam/styal"
           gh release download $env:RELEASE_TAG --repo incognitojam/styal --pattern '*x64.exe' --dir .scratch/released-desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installer = (Get-ChildItem .scratch/released-desktop/*.exe).FullName
@@ -86,11 +94,19 @@ jobs:
           $payload = (Get-ChildItem .scratch/released-desktop/app -Recurse -Filter 'app-64.7z').FullName
           7z x $payload '-o.scratch/released-desktop/app' -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Load packaged main process
+      - name: Launch check (Windows)
         shell: pwsh
-        env:
-          RELEASE_TAG: ${{ inputs.windows_release }}
         run: |
-          $app = (Get-ChildItem '.scratch/released-desktop/app/styal*.exe').FullName
-          node scripts/verify-desktop-startup.mjs $app ($env:RELEASE_TAG.TrimStart('v'))
+          $output = "$env:RUNNER_TEMP/desktop-launch-check"
+          New-Item -ItemType Directory -Force $output | Out-Null
+          $apps = @(Get-ChildItem '.scratch/released-desktop/app/styal*.exe')
+          if ($apps.Count -ne 1) { throw "Expected one packaged styal executable, found $($apps.Count)" }
+          node scripts/smoke-desktop-app.ts --executable $apps[0].FullName --artifacts-dir $output 2>&1 | Tee-Object "$output/launch.log"
           exit $LASTEXITCODE
+      - name: Upload launch check output
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-launch-check-released-windows
+          path: ${{ runner.temp }}/desktop-launch-check
+          if-no-files-found: ignore
