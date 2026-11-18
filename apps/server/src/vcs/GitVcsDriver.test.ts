@@ -677,7 +677,21 @@ it.effect.each(
               (input.args.includes("index.sparse=true") || input.args.includes("-u"))
             )
               freshReadTrees++;
-            return liveProcess.run(input);
+            return liveProcess.run(input).pipe(
+              Effect.tap(() =>
+                Effect.gen(function* () {
+                  if (indexState !== "non-cone-flags" || !input.args.includes("-u")) return;
+                  const temporary = input.env?.GIT_WORK_TREE;
+                  assert.isDefined(temporary);
+                  const stat = yield* fs.stat(path.join(temporary!, "scope/in/edit"));
+                  assert.isTrue(Option.isSome(stat.mtime));
+                  if (Option.isNone(stat.mtime)) return;
+                  const real = path.join(cwd, "scope/in/edit");
+                  yield* fs.writeFileString(real, "modified\n");
+                  yield* fs.utimes(real, stat.mtime.value, stat.mtime.value);
+                }),
+              ),
+            );
           },
         }),
       );
@@ -714,8 +728,11 @@ it.effect.each(
         yield* git(["update-index", "--assume-unchanged", "scope/in/delete"]);
       if (indexState === "manual-skip" || indexState === "non-cone-manual-skip")
         yield* git(["update-index", "--skip-worktree", "scope/in/delete"]);
-      if (indexState === "non-cone-flags")
+      if (indexState === "non-cone-flags") {
         yield* git(["update-index", "--assume-unchanged", "scope/out/deep/absent"]);
+        yield* git(["config", "core.checkStat", "minimal"]);
+        yield* git(["config", "core.trustctime", "false"]);
+      }
       yield* git(["config", "sparse.expectFilesOutsideOfPatterns", "true"]);
       yield* write("scope/in/edit", "working\n");
       yield* write("scope/out/present", "modified skipped\n");
@@ -741,7 +758,10 @@ it.effect.each(
         for (const [name, content] of [
           ["scope/out/deep/absent", "original\n"],
           ["scope/out/present", "modified skipped\n"],
-          ["scope/in/edit", turn === 1 ? "working\n" : "second\n"],
+          [
+            "scope/in/edit",
+            indexState === "non-cone-flags" ? "modified\n" : turn === 1 ? "working\n" : "second\n",
+          ],
           ["elsewhere/file", nested ? "original\n" : "working outside\n"],
           [
             turn === 1 ? "scope/out/new file" : "scope/out/second",

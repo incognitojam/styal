@@ -1194,8 +1194,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                   ],
                   env: { ...commitEnv, GIT_WORK_TREE: temporaryTree },
                 });
-                // The private tree's stat cache must never hide different bytes in the real tree.
-                yield* fileSystem.utimes(tempIndexPath, 0, 0);
+                // Git disables racy-stat checks at zero; a nonzero old time invalidates the private cache.
+                yield* fileSystem.utimes(tempIndexPath, 1, 1);
               }).pipe(
                 Effect.scoped,
                 Effect.catchTags({
