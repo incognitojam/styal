@@ -61,8 +61,12 @@ upstream changes across all clients, followed by a comparison link between the f
 The desktop updater uses these same notes.
 
 Release eligibility considers changes to shipped code: files under `apps/web`, `apps/desktop`,
-`apps/mobile`, `apps/server`, `packages/`, or `patches/`, other than tests, fixtures, scripts, and
-Markdown, plus `pnpm-lock.yaml` and `pnpm-workspace.yaml`, which pin dependency versions. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
+`apps/mobile`, `apps/server`, `packages/`, or `patches/`, other than tests, fixtures, repository tooling, and
+Markdown. It also includes the explicit artifact build inputs in
+[`list_shipped_paths`](../../.github/scripts/release-changelog.sh): release builders and their helpers,
+in-package build generators, native helpers, release branding and license inputs, root package metadata,
+the release version, and the dependency lockfile and workspace catalog. Pure verification, intake,
+and development scripts remain excluded. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
 that changes desktop code still qualifies. Release notes additionally omit commits whose shipped edits
 only change version values in existing package manifests or the mobile app configuration. A version bump
 that also changes dependencies, other configuration, or runtime code stays listed.
