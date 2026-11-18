@@ -955,9 +955,11 @@ function makeLocalCommandHarness(input: {
     input.sideChat !== undefined
       ? runInput.session.startTurn(runInput as never).pipe(Effect.orDie)
       : input.failReadsAfterRunning === true || input.previousTurn !== undefined
-        ? Effect.suspend(() =>
-            providerBusy ? Effect.die("The previous provider turn is still running.") : Effect.void,
-          )
+        ? Effect.suspend(() => {
+            if (providerBusy) return Effect.die("The previous provider turn is still running.");
+            sessionHolds.push("provider turn ran");
+            return Effect.void;
+          })
         : Effect.die("A local command must not start a native turn."),
   );
   const failReadIfRunning = Effect.suspend(() =>
@@ -1111,7 +1113,7 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           open,
-          holdForTurnStart: () =>
+          holdSession: () =>
             Effect.acquireRelease(
               Effect.sync(() => sessionHolds.push(`held after ${open.mock.calls.length} opens`)),
               () =>
@@ -1510,7 +1512,11 @@ effectIt.effect.each([
     expect(harness.interruptTurn).not.toHaveBeenCalled();
     expect(harness.projection().runs.at(-1)?.status).toBe("running");
     // Retirement keeps the session from before it opens until the provider accepts the turn.
-    expect(harness.sessionHolds).toEqual(["held after 0 opens", "released after 1 starts"]);
+    expect(harness.sessionHolds).toEqual([
+      "held after 0 opens",
+      "provider turn ran",
+      "released after 1 starts",
+    ]);
   }),
 );
 

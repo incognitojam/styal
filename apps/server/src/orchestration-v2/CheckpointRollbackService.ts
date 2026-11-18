@@ -258,6 +258,8 @@ export const layer: Layer.Layer<
         modelSelection,
       });
       const existingSession = context.providerSession;
+      // Released by the caller's scope once the rollback is done with the session.
+      yield* sessions.holdSession(providerThread.providerSessionId);
       const session = yield* sessions.open({
         threadId: input.threadId,
         providerSessionId: providerThread.providerSessionId,
@@ -375,9 +377,11 @@ export const layer: Layer.Layer<
         function* (input) {
           // Storage cleanup removes worktrees under the same lease.
           const thread = yield* projections.getThread(input.threadId);
-          yield* thread.worktreePath === null
-            ? execute(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), execute(input));
+          yield* Effect.scoped(
+            thread.worktreePath === null
+              ? execute(input)
+              : withWorkspaceLease(path.resolve(thread.worktreePath), execute(input)),
+          );
         },
         (effect, input) =>
           effect.pipe(

@@ -281,6 +281,11 @@ it.effect.each([
               }),
           }),
           Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+            holdSession: () =>
+              Effect.acquireRelease(
+                Effect.sync(() => calls.push("hold")),
+                () => Effect.sync(() => calls.push("release")),
+              ).pipe(Effect.asVoid),
             open: (input) =>
               Effect.gen(function* () {
                 assert.equal(input.runtimePolicy.cwd, worktreePath);
@@ -334,14 +339,15 @@ it.effect.each([
       if (unmanaged) {
         const error = yield* Fiber.join(rollback).pipe(Effect.flip);
         assert.equal(error._tag, "CheckpointRollbackExecutionError");
-        assert.deepEqual(calls, ["cleanup"]);
+        assert.deepEqual(calls, ["cleanup", "hold", "release"]);
         return;
       }
       yield* Fiber.join(rollback);
       if (laterCleanup !== undefined) yield* Fiber.join(laterCleanup);
+      // The session cannot retire under the rollback that opened it.
       const rollbackCalls = restoreFiles
-        ? ["session", "files", "projection"]
-        : ["session", "projection"];
+        ? ["hold", "session", "files", "projection", "release"]
+        : ["hold", "session", "projection", "release"];
       assert.deepEqual(
         calls,
         order === "cleanup-first"
@@ -599,6 +605,7 @@ const seedRollbackHistory = Effect.gen(function* () {
             ),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+          holdSession: () => Effect.void,
           open: () =>
             Effect.succeed({
               rollbackThread: (input: ProviderAdapter.ProviderAdapterV2RollbackThreadInput) =>

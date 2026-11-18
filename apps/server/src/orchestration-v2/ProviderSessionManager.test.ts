@@ -22,6 +22,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -1950,7 +1951,7 @@ it.effect.each(["startTurn", "compactThread"] as const)(
         yield* busyRuntime[startWith]!(yield* turnInput(1));
         // A turn start holds its session from before it opens it.
         const heldScope = yield* Scope.make();
-        yield* manager.holdForTurnStart(held.providerSessionId).pipe(Scope.provide(heldScope));
+        yield* manager.holdSession(held.providerSessionId).pipe(Scope.provide(heldScope));
         const heldRuntime = yield* open(held);
         const heldEvents = yield* subscribe(heldRuntime);
         const busyEvents = yield* subscribe(busyRuntime);
@@ -1974,7 +1975,7 @@ it.effect.each(["startTurn", "compactThread"] as const)(
         yield* Queue.take(busyEvents.terminals);
         yield* Effect.scoped(
           Effect.gen(function* () {
-            yield* manager.holdForTurnStart(busy.providerSessionId);
+            yield* manager.holdSession(busy.providerSessionId);
             const reopened = yield* open(busy);
             yield* TestClock.adjust("1100 millis");
             yield* reopened.startTurn(yield* turnInput(2));
@@ -1991,9 +1992,14 @@ it.effect.each(["startTurn", "compactThread"] as const)(
     }),
 );
 
-it.effect.each(["background work", "a recent question"] as const)(
-  "ProviderSessionManagerV2 keeps a retiring session until %s ends, checking each minute",
-  (kept) =>
+it.effect.each([
+  { kept: "background work", idleTimeout: "1 hour", releasedAfter: "1 minute" },
+  { kept: "a recent question", idleTimeout: "2 hours", releasedAfter: "1 hour" },
+  // Never longer than the session would have lived without the update.
+  { kept: "a recent question", idleTimeout: "30 minutes", releasedAfter: "30 minutes" },
+] as const)(
+  "ProviderSessionManagerV2 keeps a retiring session for $kept with an idle timeout of $idleTimeout",
+  ({ kept, idleTimeout, releasedAfter }) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const pendingWork = yield* Ref.make(kept === "background work");
@@ -2037,9 +2043,60 @@ it.effect.each(["background work", "a recent question"] as const)(
         yield* TestClock.adjust("1 second");
         assert.isTrue(yield* manager.isLive(providerSessionId));
 
-        // Background work ends without an event; a question stops counting once it is an hour old.
+        // Background work ends without an event, checked each minute. A question stops counting
+        // once it is an hour old or the idle timeout has passed, whichever comes first.
         yield* Ref.set(pendingWork, false);
-        yield* TestClock.adjust(kept === "background work" ? "1 minute" : "1 hour");
+        yield* TestClock.adjust(releasedAfter);
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(released)));
+        assert.isFalse(yield* manager.isLive(providerSessionId));
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: Duration.toMillis(idleTimeout),
+            hasPendingBackgroundWork: Ref.get(pendingWork),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 retires a session that was still opening during the update",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const openStarted = yield* Deferred.make<void>();
+      const finishOpen = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-retire-opening");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const opening = yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(openStarted);
+
+        yield* manager.retireInstances({ instanceIds: [modelSelection.instanceId] });
+        yield* Deferred.succeed(finishOpen, undefined);
+        const runtime = yield* Fiber.join(opening);
+        const subscription = yield* runtime.subscribeEvents!;
+        const released = yield* subscription.events.pipe(
+          Stream.runDrain,
+          Effect.exit,
+          Effect.forkScoped,
+        );
+
+        yield* TestClock.adjust("1 second");
         assert.isTrue(Exit.isFailure(yield* Fiber.join(released)));
         assert.isFalse(yield* manager.isLive(providerSessionId));
       }).pipe(
@@ -2047,7 +2104,10 @@ it.effect.each(["background work", "a recent question"] as const)(
           layerTest({
             state,
             idleTimeoutMs: 60 * 60_000,
-            hasPendingBackgroundWork: Ref.get(pendingWork),
+            beforeOpen: () =>
+              Deferred.succeed(openStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(finishOpen)),
+              ),
           }),
         ),
       );

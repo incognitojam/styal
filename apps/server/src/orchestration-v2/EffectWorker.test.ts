@@ -116,7 +116,7 @@ function layerExecutorFor(input: {
         otherWorkingThreads: () => Effect.succeed([]),
         releaseUnlessBusy: () => Effect.succeed(true),
         retireInstances: () => Effect.void,
-        holdForTurnStart: () => Effect.void,
+        holdSession: () => Effect.void,
         subscribePromptSuggestion: () => Stream.empty,
       }),
     ),

@@ -912,7 +912,7 @@ export const layer: Layer.Layer<
         if (!repaired.committed) return;
       }
       // Released by the caller's scope once the provider accepts or refuses the start.
-      yield* providerSessions.holdForTurnStart(providerSessionId);
+      yield* providerSessions.holdSession(providerSessionId);
       const sessionResult = yield* Effect.result(
         providerSessions.open({
           threadId: projection.thread.id,

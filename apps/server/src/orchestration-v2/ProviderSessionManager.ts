@@ -225,10 +225,10 @@ export interface ProviderSessionManagerV2Shape {
     readonly instanceIds: ReadonlyArray<ProviderInstanceId>;
   }) => Effect.Effect<void>;
   /**
-   * Keeps the session from retiring until the scope closes. A turn holds it from before it
-   * opens the session until the provider accepts or refuses the start.
+   * Keeps the session from retiring until the scope closes. A turn start or a rollback holds it
+   * from before it opens the session until it is done with it.
    */
-  readonly holdForTurnStart: (
+  readonly holdSession: (
     providerSessionId: ProviderSessionId,
   ) => Effect.Effect<void, never, Scope.Scope>;
   /**
@@ -273,6 +273,8 @@ interface LiveSessionEntry {
   readonly pinnedSinceMs: number | null;
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
   readonly retireWhenIdle: boolean;
+  /** When the current idle wait began: the last activity, as the idle timeout counts it. */
+  readonly idleSinceMs: number;
 }
 
 interface IdleThreadUnload {
@@ -499,6 +501,8 @@ export const layerWithOptions = (
       const sessions = yield* Ref.make(new Map<string, LiveSessionEntry>());
       // Plain counts, so a removal reads them inside its own atomic update.
       const heldSessions = new Map<string, number>();
+      // Counts retirements per instance, so a session whose open spans one starts out retiring.
+      const instanceRetirements = new Map<ProviderInstanceId, number>();
       // Retry per released entry; reusing ids must not lose cleanup for earlier threads.
       const releaseRecordRetries = yield* FiberSet.make();
       const nextSubscriberId = yield* Ref.make(0);
@@ -1349,9 +1353,12 @@ export const layerWithOptions = (
               pinnedForMs: now - pinnedSinceMs,
             });
           }
-          // The question ages out, so the recheck ends; activity meanwhile bumps the generation.
-          if (entry.retireWhenIdle && (yield* hasRecentQuestion(entry))) {
-            yield* Effect.sleep(Duration.millis(recheckMs));
+          // A question keeps a retiring session no longer than the idle timeout would have.
+          const untilIdleTimeoutMs =
+            entry.idleSinceMs + idleTimeoutMs - (yield* Clock.currentTimeMillis);
+          const questionKeeps = entry.retireWhenIdle && untilIdleTimeoutMs > 0;
+          if (questionKeeps && (yield* hasRecentQuestion(entry))) {
+            yield* Effect.sleep(Duration.millis(Math.min(recheckMs, untilIdleTimeoutMs)));
             return yield* releaseIfStillIdle(input);
           }
           // Adapter probes yield; guard busyTurns and idleGeneration atomically when removing the entry.
@@ -1361,7 +1368,8 @@ export const layerWithOptions = (
             reason: "idle_timeout",
             cancelIdleFiber: false,
             onlyIfIdleGeneration: input.generation,
-            ...(entry.retireWhenIdle ? { keepIfHeld: true, keepIf: hasRecentQuestion(entry) } : {}),
+            ...(entry.retireWhenIdle ? { keepIfHeld: true } : {}),
+            ...(questionKeeps ? { keepIf: hasRecentQuestion(entry) } : {}),
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("orchestration-v2.driver-session.idle-release-failed", {
@@ -1405,6 +1413,7 @@ export const layerWithOptions = (
 
         yield* cancelIdleFiber(entry.idleFiber);
         const generation = entry.idleGeneration + 1;
+        const idleSinceMs = yield* Clock.currentTimeMillis;
         const delayMs = entry.retireWhenIdle
           ? Math.min(idleTimeoutMs, RETIRE_AFTER_TURN_MS)
           : idleTimeoutMs;
@@ -1422,6 +1431,7 @@ export const layerWithOptions = (
             ...latestEntry,
             idleGeneration: generation,
             idleFiber,
+            idleSinceMs,
             ...(options?.providerActivity === true ? { pinnedSinceMs: null } : {}),
           });
           return updated;
@@ -2642,6 +2652,8 @@ export const layerWithOptions = (
                 return existing.exposedRuntime;
               }
 
+              const retirementsAtOpen =
+                instanceRetirements.get(input.modelSelection.instanceId) ?? 0;
               const adapter = yield* registry.get(input.modelSelection.instanceId).pipe(
                 Effect.mapError(
                   (cause) =>
@@ -2746,7 +2758,11 @@ export const layerWithOptions = (
                 idleFiber: null,
                 pinnedSinceMs: null,
                 idleThreadUnloads: new Map(),
-                retireWhenIdle: false,
+                // Retired while opening: the process may have started from the replaced install.
+                retireWhenIdle:
+                  (instanceRetirements.get(input.modelSelection.instanceId) ?? 0) !==
+                  retirementsAtOpen,
+                idleSinceMs: 0,
               };
               yield* Ref.update(sessions, (current) => {
                 const updated = new Map(current);
@@ -2867,6 +2883,9 @@ export const layerWithOptions = (
         }),
         retireInstances: Effect.fn("ProviderSessionManager.retireInstances")(function* (input) {
           const instanceIds = new Set(input.instanceIds);
+          for (const instanceId of instanceIds) {
+            instanceRetirements.set(instanceId, (instanceRetirements.get(instanceId) ?? 0) + 1);
+          }
           const marked = yield* Ref.modify(sessions, (current) => {
             const updated = new Map(current);
             const entries: Array<LiveSessionEntry> = [];
@@ -2913,7 +2932,7 @@ export const layerWithOptions = (
             { concurrency: "unbounded", discard: true },
           );
         }),
-        holdForTurnStart: (providerSessionId) => {
+        holdSession: (providerSessionId) => {
           const key = sessionKey(providerSessionId);
           return Effect.acquireRelease(
             Effect.sync(() => {
