@@ -6634,7 +6634,7 @@ features:
     title: Group active sidebar threads under project headers
     status: maintained
     tier: keep
-    prs: [533, 546, 585, 745, 1586, 1592]
+    prs: [533, 546, 585, 745, 1586, 1592, 1595]
     invariants:
       - Settings → General → Sidebar → Group threads by project is off by default; when off, active threads stay one flat list.
       - With the boring sidebar (Settings → Labs) on, its project folders take the place of these headers on web and desktop; the setting keeps its value and applies again when the boring sidebar is off.
