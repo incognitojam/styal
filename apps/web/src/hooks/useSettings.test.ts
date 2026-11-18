@@ -227,13 +227,24 @@ describe("client settings hydration", () => {
       boringSidebarEnabled: false,
     });
     persistenceMocks.setClientSettings.mockRejectedValueOnce(new Error("disk full"));
+    const flushWrites = () =>
+      persistClientSettingsUpdate(
+        (current) => current,
+        async () => {},
+      );
     await ensureClientSettingsHydrated();
-    await persistClientSettingsUpdate(
-      (current) => current,
-      async () => {},
-    );
-
+    await flushWrites();
     expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(null);
+
+    __resetClientSettingsPersistenceForTests();
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    expect(persistenceMocks.setClientSettings.mock.lastCall?.[0].boringSidebarEnabled).toBe(true);
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(true);
   });
 
   it("keeps a layout chosen while the first load is still pending", async () => {
