@@ -42,6 +42,8 @@ module.exports = async ({ appOutDir, electronPlatformName, arch, packager }) => 
     "app.asar",
     "apps/desktop/dist-electron/serverCompileCache.cjs",
   );
+  const { verifyDesktopStartup } = await import("./verify-desktop-startup.mjs");
+  verifyDesktopStartup(executable, packager.appInfo.version);
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
   for (const name of Object.keys(env)) {
     if (name.startsWith("NODE_") || name.startsWith("T3CODE_") || name.startsWith("STYAL_"))
