@@ -36,6 +36,14 @@ import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-im
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
+import {
+  mergeViewedSources,
+  turnItemViewedSources,
+  viewedSourceKey,
+  viewedSourceUrlKey,
+  withoutTrailing,
+  type ViewedSource,
+} from "@t3tools/shared/viewedSources";
 import { formatTokens } from "@t3tools/shared/usageFormat";
 import {
   orchestrationV2RunRecordedWorkEndMs,
@@ -636,127 +644,17 @@ export function omitUserAttachmentImages(
   return retained.length === paths.length ? paths : retained;
 }
 
-/** A document the agent read or a web page it fetched, shown beside a tool group's images. */
-export type ViewedSource =
-  | { readonly kind: "document"; readonly path: string; readonly pages?: string }
-  | { readonly kind: "page"; readonly url: string }
-  | {
-      readonly kind: "search";
-      readonly query: string;
-      /** The http(s) results the provider reported; empty when it reported none (Codex). */
-      readonly results: ReadonlyArray<ViewedSearchResult>;
-    };
+export type { ViewedSearchResult, ViewedSource } from "@t3tools/shared/viewedSources";
 
-export interface ViewedSearchResult {
-  readonly url: string;
-  readonly title?: string;
-}
-
-function workEntryViewedSources(entry: WorkLogPresentationEntry): ReadonlyArray<ViewedSource> {
-  const item = entry.structuredPayload;
-  if (
-    item === undefined ||
-    item.status === "failed" ||
-    item.status === "cancelled" ||
-    item.toolNonExecutionKind !== undefined
-  ) {
-    return [];
-  }
-  if (item.type === "dynamic_tool" && item.viewedDocument !== undefined) {
-    const { path, pages } = item.viewedDocument;
-    return [{ kind: "document", path, ...(pages === undefined ? {} : { pages }) }];
-  }
-  if (item.type === "web_search" && item.fetchedUrl !== undefined) {
-    return viewedSourceUrlKey(item.fetchedUrl) === null
-      ? []
-      : [{ kind: "page", url: item.fetchedUrl }];
-  }
-  if (item.type !== "web_search") return [];
-  // Codex batches several queries in one item; each is a chip. A lone URL is a fetch the adapter
-  // did not mark with fetchedUrl, not a search.
-  const queries = (item.patterns ?? [])
-    .map((pattern) => pattern.replace(/\s+/g, " ").trim())
-    .filter((query) => query.length > 0 && viewedSourceUrlKey(query) === null);
-  const results = (item.results ?? []).flatMap((result) => {
-    const title = result.title?.trim();
-    return result.url !== undefined && viewedSourceUrlKey(result.url) !== null
-      ? [{ url: result.url, ...(title ? { title } : {}) }]
-      : [];
-  });
-  // Results are reported per item, not per query, so they stay with the first query.
-  return queries.map((query, index) => ({
-    kind: "search",
-    query,
-    results: index === 0 ? results : [],
-  }));
-}
-
-/** Same query regardless of case and spacing. */
-export function viewedSearchKey(query: string): string {
-  return query.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** Documents, then pages, then searches, each once and in reading order. */
+/** Documents, then pages, then searches, each once and in the order they were first used. */
 export function workEntriesViewedSources(
   entries: ReadonlyArray<WorkLogPresentationEntry>,
 ): ViewedSource[] {
-  const documents = new Map<string, ViewedSource>();
-  const pages = new Map<string, ViewedSource>();
-  const searches = new Map<
-    string,
-    { readonly query: string; readonly results: ViewedSearchResult[]; readonly urls: Set<string> }
-  >();
-  for (const source of entries.flatMap(workEntryViewedSources)) {
-    if (source.kind === "document") {
-      const seen = documents.get(source.path);
-      if (seen === undefined) documents.set(source.path, source);
-      // Reads of different ranges of one document show the document without a range.
-      else if (seen.kind === "document" && seen.pages !== source.pages) {
-        documents.set(source.path, { kind: "document", path: source.path });
-      }
-    } else if (source.kind === "page") {
-      const key = viewedSourceUrlKey(source.url)!;
-      if (!pages.has(key)) pages.set(key, source);
-    } else {
-      const key = viewedSearchKey(source.query);
-      const search = searches.get(key) ?? { query: source.query, results: [], urls: new Set() };
-      searches.set(key, search);
-      for (const result of source.results) {
-        const url = viewedSourceUrlKey(result.url)!;
-        if (search.urls.has(url)) continue;
-        search.urls.add(url);
-        search.results.push(result);
-      }
-    }
-  }
-  return [
-    ...documents.values(),
-    ...pages.values(),
-    ...[...searches.values()].map(({ query, results }) => ({
-      kind: "search" as const,
-      query,
-      results,
-    })),
-  ];
-}
-
-/** `text` without any of `characters` at its end; a backward scan, linear in a long run. */
-function withoutTrailing(text: string, characters: string): string {
-  let end = text.length;
-  while (end > 0 && characters.includes(text[end - 1]!)) end -= 1;
-  return text.slice(0, end);
-}
-
-/** Host, path and query of an http(s) URL; the scheme, fragment and trailing slash do not count. */
-function viewedSourceUrlKey(url: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url.trim());
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  return `${parsed.host}${withoutTrailing(parsed.pathname, "/")}${parsed.search}`;
+  return mergeViewedSources(
+    entries.flatMap((entry) =>
+      entry.structuredPayload === undefined ? [] : turnItemViewedSources(entry.structuredPayload),
+    ),
+  );
 }
 
 /** A line's leading fence delimiter (up to three spaces, then a backtick or tilde run) and the rest. */
@@ -875,23 +773,27 @@ export function assistantLinkedUrlKeysByRunId(
 }
 
 /**
- * Leaves out the user's own attachments, pages the turn's reply already links, and searches an
- * earlier strip of the same run already shows; `shownSearchKeys` collects the run's searches.
+ * Leaves out the user's own attachments, pages the turn's reply already links, and anything an
+ * earlier strip of the same run already shows; `shownSourceKeys` collects the run's sources.
  */
 export function omitViewedSources(
   sources: readonly ViewedSource[],
   input: {
     readonly attachmentIds: ReadonlySet<string>;
     readonly linkedUrlKeys: ReadonlySet<string>;
-    readonly shownSearchKeys: Set<string>;
+    readonly shownSourceKeys: Set<string>;
   },
 ): readonly ViewedSource[] {
   const retained = sources.filter((source) => {
-    if (source.kind === "document") return !isUserAttachmentPath(source.path, input.attachmentIds);
-    if (source.kind === "page") return !input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!);
-    const key = viewedSearchKey(source.query);
-    if (input.shownSearchKeys.has(key)) return false;
-    input.shownSearchKeys.add(key);
+    if (source.kind === "document" && isUserAttachmentPath(source.path, input.attachmentIds)) {
+      return false;
+    }
+    if (source.kind === "page" && input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!)) {
+      return false;
+    }
+    const key = viewedSourceKey(source);
+    if (input.shownSourceKeys.has(key)) return false;
+    input.shownSourceKeys.add(key);
     return true;
   });
   return retained.length === sources.length ? sources : retained;

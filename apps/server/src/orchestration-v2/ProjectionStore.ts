@@ -75,6 +75,9 @@ import {
   OrchestrationV2RuntimeRequestJson as OrchestrationV2RuntimeRequestJsonSchema,
   OrchestrationV2SubagentJson as OrchestrationV2SubagentJsonSchema,
   OrchestrationV2TurnItemJson as OrchestrationV2TurnItemJsonSchema,
+  OrchestrationV2TurnItemStatus,
+  OrchestrationV2ViewedDocument,
+  OrchestrationV2ViewedSource,
   orchestrationV2RunWorkStartedAt,
   RunId,
   RunAttemptId,
@@ -103,6 +106,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { subagentViewedSourceSummary, type ViewedSourceItem } from "@t3tools/shared/viewedSources";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 
@@ -547,6 +551,12 @@ export interface ProjectionStoreV2Shape {
     readonly threadId: ThreadId;
     readonly itemId: TurnItemId;
   }) => Effect.Effect<OrchestrationV2TurnItem | null, ProjectionStoreV2Error>;
+  /** The capped summary of what a subagent's thread read, fetched and searched. */
+  readonly getViewedSourceSummary: (input: {
+    readonly threadId: ThreadId;
+    /** Only this run's items; a native subagent's thread is all its own. */
+    readonly runId?: RunId;
+  }) => Effect.Effect<ReadonlyArray<OrchestrationV2ViewedSource>, ProjectionStoreV2Error>;
   readonly getMessagesById: (
     threadId: ThreadId,
     messageIds: ReadonlyArray<MessageId>,
@@ -2292,6 +2302,58 @@ function shellFromState(input: {
     limitRecovery: input.state.thread.limitRecovery ?? null,
     authRecovery: input.state.thread.authRecovery ?? null,
     deletedAt: input.state.thread.deletedAt,
+  };
+}
+
+const ViewedSourceRow = Schema.Struct({
+  type: Schema.Literals(["dynamic_tool", "web_search", "subagent"]),
+  status: OrchestrationV2TurnItemStatus,
+  toolNonExecutionKind: Schema.NullOr(Schema.String),
+  viewedDocument: Schema.NullOr(OrchestrationV2ViewedDocument),
+  fetchedUrl: Schema.NullOr(Schema.String),
+  patterns: Schema.NullOr(Schema.Array(Schema.String)),
+  results: Schema.NullOr(
+    Schema.Array(
+      Schema.Struct({ url: Schema.NullOr(Schema.String), title: Schema.NullOr(Schema.String) }),
+    ),
+  ),
+  viewedSources: Schema.NullOr(Schema.Array(OrchestrationV2ViewedSource)),
+});
+// A row that does not decode is left out of the summary rather than failing the read.
+const decodeViewedSourceRow = Schema.decodeUnknownOption(Schema.fromJsonString(ViewedSourceRow));
+
+function viewedSourceItemFromRow(row: typeof ViewedSourceRow.Type): ViewedSourceItem {
+  const nonExecution =
+    row.toolNonExecutionKind === null ? {} : { toolNonExecutionKind: row.toolNonExecutionKind };
+  if (row.type === "subagent") {
+    return {
+      type: "subagent",
+      status: row.status,
+      ...(row.viewedSources === null ? {} : { viewedSources: row.viewedSources }),
+    };
+  }
+  if (row.type === "dynamic_tool") {
+    return {
+      type: "dynamic_tool",
+      status: row.status,
+      ...nonExecution,
+      ...(row.viewedDocument === null ? {} : { viewedDocument: row.viewedDocument }),
+    };
+  }
+  return {
+    type: "web_search",
+    status: row.status,
+    ...nonExecution,
+    ...(row.fetchedUrl === null ? {} : { fetchedUrl: row.fetchedUrl }),
+    ...(row.patterns === null ? {} : { patterns: row.patterns }),
+    ...(row.results === null
+      ? {}
+      : {
+          results: row.results.map((result) => ({
+            ...(result.url === null ? {} : { url: result.url }),
+            ...(result.title === null ? {} : { title: result.title }),
+          })),
+        }),
   };
 }
 
@@ -6390,6 +6452,42 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError(controlReadError(threadId)),
       );
 
+    // Only the fields a source needs, so page text and tool output stay out of the read.
+    const getViewedSourceSummary: ProjectionStoreV2Shape["getViewedSourceSummary"] = ({
+      threadId,
+      runId,
+    }) =>
+      sql<{ source_json: string }>`SELECT json_object(
+          'type', item.type,
+          'status', item.status,
+          'toolNonExecutionKind', json_extract(item.payload_json, '$.toolNonExecutionKind'),
+          'viewedDocument', item.payload_json -> '$.viewedDocument',
+          'fetchedUrl', json_extract(item.payload_json, '$.fetchedUrl'),
+          'patterns', item.payload_json -> '$.patterns',
+          'results', json((
+            SELECT json_group_array(json_object(
+              'url', json_extract(result.value, '$.url'),
+              'title', json_extract(result.value, '$.title')))
+            FROM json_each(item.payload_json, '$.results') AS result)),
+          'viewedSources', item.payload_json -> '$.viewedSources'
+        ) AS source_json
+        FROM orchestration_v2_projection_turn_items AS item
+        WHERE item.thread_id = ${threadId}
+          ${runId === undefined ? sql`` : sql`AND item.run_id = ${runId}`}
+          AND (item.type = 'web_search'
+            OR (item.type = 'dynamic_tool' AND item.payload_json LIKE '%"viewedDocument"%')
+            OR (item.type = 'subagent' AND item.payload_json LIKE '%"viewedSources"%'))
+        ORDER BY item.ordinal`.pipe(
+        Effect.map((rows) =>
+          subagentViewedSourceSummary(
+            rows.flatMap(({ source_json }) =>
+              Option.toArray(decodeViewedSourceRow(source_json)).map(viewedSourceItemFromRow),
+            ),
+          ),
+        ),
+        Effect.mapError(controlReadError(threadId)),
+      );
+
     // A live run fork shows its source's history through the fork run without copying it.
     const shownByLiveFork = (threadId: ThreadId, runIdColumn: string) => sql`
       EXISTS (
@@ -8785,6 +8883,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       hasPendingDelegatedCompletion: readOnReader(hasPendingDelegatedCompletion),
       getNextTurnItemOrdinal: readOnReader(getNextTurnItemOrdinal),
       getTurnItem: readOnReader(getTurnItem),
+      getViewedSourceSummary: readOnReader(getViewedSourceSummary),
       getMessagesById: readOnReader(getMessagesById),
       getThreadRecords: (threadId, fields, filter) =>
         getThreadRecords(threadId, fields, filter).pipe(NodeSqliteClient.readOnly),

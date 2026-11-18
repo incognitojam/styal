@@ -43,6 +43,7 @@ import {
   liveThoughtLine,
   workEntryHiddenByToolCallVisibility,
 } from "@t3tools/client-runtime/work-log/presentation";
+import { mergeViewedSources } from "@t3tools/shared/viewedSources";
 import { answerBeforeSaveNoteEntryId } from "@t3tools/client-runtime/work-log/answer-before-save-note";
 import {
   deriveRevertTurnCountByUserMessageId,
@@ -747,6 +748,31 @@ function expandedWorkGroupRow(
 }
 
 const NO_URL_KEYS: ReadonlySet<string> = new Set();
+
+/** The sources a subagent row's subagents used, shown under that row. */
+function subagentViewedSourcesRows(
+  row: MessagesTimelineRow,
+): Array<Extract<MessagesTimelineRow, { kind: "viewed-images" }>> {
+  if (row.kind !== "event" || row.projectedItem.item.type !== "subagent") return [];
+  const sources = mergeViewedSources(
+    (row.subagents ?? [row.projectedItem]).flatMap(({ item }) =>
+      item.type === "subagent" ? (item.viewedSources ?? []) : [],
+    ),
+  );
+  return sources.length === 0
+    ? []
+    : [
+        {
+          kind: "viewed-images",
+          id: `${row.id}:viewed-sources`,
+          createdAt: row.createdAt,
+          runId: row.projectedItem.item.runId,
+          paths: [],
+          sources,
+          collapsedGroupId: null,
+        },
+      ];
+}
 
 function viewedPageRunIds(rows: ReadonlyArray<MessagesTimelineRow>): ReadonlySet<string> {
   return new Set(
@@ -2697,7 +2723,7 @@ export function deriveMessagesTimelineRows(input: {
           }
         : null,
     ),
-  );
+  ).flatMap((row) => [row, ...subagentViewedSourcesRows(row)]);
   const attachmentIds = new Set(
     input.timelineEntries.flatMap((entry) =>
       entry.kind === "message" && entry.message.role === "user"
@@ -2709,17 +2735,17 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
     viewedPageRunIds(result),
   );
-  const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
+  const shownSourceKeysByRunId = new Map<string | null, Set<string>>();
   const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
-    const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();
-    shownSearchKeysByRunId.set(row.runId, shownSearchKeys);
+    const shownSourceKeys = shownSourceKeysByRunId.get(row.runId) ?? new Set<string>();
+    shownSourceKeysByRunId.set(row.runId, shownSourceKeys);
     const sources = omitViewedSources(row.sources, {
       attachmentIds,
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
-      shownSearchKeys,
+      shownSourceKeys,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];

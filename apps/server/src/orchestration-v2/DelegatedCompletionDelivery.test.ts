@@ -13,6 +13,7 @@ import {
   type ModelSelection,
   NodeId,
   type OrchestrationV2Run,
+  type OrchestrationV2TurnItem,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -4203,6 +4204,111 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
           task.result!,
         );
       }),
+  );
+
+  it.effect("gives a finished task's row a summary of what its run read", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:sources-parent");
+      const projectId = ProjectId.make("project:sources-parent");
+      const runId = RunId.make("run:sources-parent");
+      const rootNodeId = NodeId.make("node:sources-parent-root");
+      yield* seedParentWithTerminalTask({
+        threadId,
+        projectId,
+        runId,
+        rootNodeId,
+        taskId: NodeId.make("node:sources-parent-settled"),
+        deliveryState: "delivered",
+        now,
+      });
+      const child = yield* seedRestartCancelledChild({
+        parentThreadId: threadId,
+        projectId,
+        parentRunId: runId,
+        rootNodeId,
+        name: "sources-child",
+        completionWake: "always",
+        continuationPending: false,
+        runStatus: "completed",
+        now,
+      });
+      const base = (id: string, itemThreadId: ThreadId, itemRunId: RunId, ordinal: number) => ({
+        id: TurnItemId.make(id),
+        threadId: itemThreadId,
+        runId: itemRunId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "completed" as const,
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      });
+      const item = (turnItem: OrchestrationV2TurnItem) => ({
+        id: EventId.make(`event:${turnItem.id}`),
+        type: "turn-item.updated" as const,
+        threadId: turnItem.threadId,
+        ...(turnItem.runId === null ? {} : { runId: turnItem.runId }),
+        occurredAt: now,
+        payload: turnItem,
+      });
+      yield* eventSink.write({
+        events: [
+          item({
+            ...base("turn-item:sources-child:fetch", child.childThreadId, child.childRunId, 1),
+            type: "web_search",
+            patterns: ["https://docs.example.com/retention"],
+            fetchedUrl: "https://docs.example.com/retention",
+            results: [{ url: "https://docs.example.com/retention", snippet: "PAGE_TEXT" }],
+          }),
+          // An earlier task on the same child thread read this; it is not this run's.
+          item({
+            ...base(
+              "turn-item:sources-child:earlier",
+              child.childThreadId,
+              RunId.make("run:sources-child:0"),
+              0,
+            ),
+            type: "web_search",
+            patterns: ["https://legal.example.net/old"],
+            fetchedUrl: "https://legal.example.net/old",
+          }),
+          item({
+            ...base("turn-item:sources-parent:task", threadId, runId, 5),
+            status: "running",
+            completedAt: null,
+            type: "subagent",
+            subagentId: child.taskId,
+            origin: "app_owned",
+            driver,
+            providerInstanceId: modelSelection.instanceId,
+            childThreadId: child.childThreadId,
+            prompt: "Run sources-child.",
+            result: null,
+          }),
+        ],
+      });
+
+      yield* orchestrator.recoverDelegatedTask(child.childThreadId, {
+        sourceRunId: child.childRunId,
+      });
+
+      const row = (yield* orchestrator.getThreadProjection(threadId)).turnItems.find(
+        (turnItem) => turnItem.type === "subagent" && turnItem.subagentId === child.taskId,
+      );
+      assert.equal(row?.status, "completed");
+      assert.deepEqual(row?.type === "subagent" ? row.viewedSources : undefined, [
+        { kind: "page", url: "https://docs.example.com/retention" },
+      ]);
+      assert.notInclude(JSON.stringify(row), "PAGE_TEXT");
+    }),
   );
 
   it.effect("holds a restart-cancelled child for its continuation's result", () =>

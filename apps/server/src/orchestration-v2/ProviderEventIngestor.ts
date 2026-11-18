@@ -5,6 +5,7 @@ import {
   OrchestrationV2StoredEvent,
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
+  type OrchestrationV2TurnItem,
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
@@ -189,6 +190,13 @@ function withPlanStepDurations(
     }),
   };
 }
+
+const SUBAGENT_TERMINAL_STATUSES = new Set<OrchestrationV2TurnItem["status"]>([
+  "completed",
+  "failed",
+  "interrupted",
+  "cancelled",
+]);
 
 const CONVERSATION_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
   "completed",
@@ -441,6 +449,25 @@ export const layer: Layer.Layer<
           }),
         );
       });
+
+    // A native subagent's own thread holds what it read; the parent's row carries a summary once
+    // it ends. Earlier provider events are already committed, so its items are all there.
+    const withSubagentViewedSources = Effect.fn("ProviderEventIngestor.withSubagentViewedSources")(
+      function* (turnItem: OrchestrationV2TurnItem) {
+        if (
+          turnItem.type !== "subagent" ||
+          turnItem.origin !== "provider_native" ||
+          turnItem.childThreadId === null ||
+          !SUBAGENT_TERMINAL_STATUSES.has(turnItem.status)
+        ) {
+          return turnItem;
+        }
+        const viewedSources = yield* projections.getViewedSourceSummary({
+          threadId: turnItem.childThreadId,
+        });
+        return viewedSources.length === 0 ? turnItem : { ...turnItem, viewedSources };
+      },
+    );
 
     const dismissNativeUserInputs = Effect.fn("ProviderEventIngestor.dismissNativeUserInputs")(
       function* (
@@ -731,13 +758,12 @@ export const layer: Layer.Layer<
                 }),
               ];
             case "turn_item.updated": {
+              const turnItem = yield* withSubagentViewedSources(input.event.turnItem);
               return [
                 yield* makeDomainEvent(input, {
                   type: "turn-item.updated",
-                  threadId: input.event.turnItem.threadId,
-                  payload: boundFileChangeForStorage(
-                    stripUnservedToolOutputImageBytes(input.event.turnItem),
-                  ),
+                  threadId: turnItem.threadId,
+                  payload: boundFileChangeForStorage(stripUnservedToolOutputImageBytes(turnItem)),
                   runId: input.event.turnItem.runId,
                   nodeId: input.event.turnItem.nodeId,
                 }),

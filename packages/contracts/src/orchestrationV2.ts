@@ -1846,6 +1846,27 @@ export const OrchestrationV2ViewedDocument = Schema.Struct({
 });
 export type OrchestrationV2ViewedDocument = typeof OrchestrationV2ViewedDocument.Type;
 
+/**
+ * A document, page or web search a subagent used, summarized onto its turn item in the parent
+ * thread. Results carry addresses and titles only; page text stays in the child thread.
+ */
+export const OrchestrationV2ViewedSource = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("document"),
+    path: TrimmedNonEmptyString,
+    pages: Schema.optional(TrimmedNonEmptyString),
+  }),
+  Schema.Struct({ kind: Schema.Literal("page"), url: TrimmedNonEmptyString }),
+  Schema.Struct({
+    kind: Schema.Literal("search"),
+    query: TrimmedNonEmptyString,
+    results: Schema.Array(
+      Schema.Struct({ url: TrimmedNonEmptyString, title: Schema.optional(Schema.String) }),
+    ),
+  }),
+]);
+export type OrchestrationV2ViewedSource = typeof OrchestrationV2ViewedSource.Type;
+
 export const OrchestrationV2SecretRequestStatus = Schema.Literals([
   "pending",
   "saved",
@@ -2141,6 +2162,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    /** What the subagent and the subagents it started read, set when it ends. */
+    viewedSources: Schema.optional(Schema.Array(OrchestrationV2ViewedSource)),
     /** Same as the prompt and result of subagent `subagentId`. */
     promptOmitted: DedupedBodyMarker,
     resultOmitted: DedupedBodyMarker,
@@ -3039,6 +3062,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    /** What the subagent and the subagents it started read, set when it ends. */
+    viewedSources: Schema.optional(Schema.Array(OrchestrationV2ViewedSource)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

@@ -381,6 +381,10 @@
       "types": "./src/mediaPreview.ts",
       "import": "./src/mediaPreview.ts"
     },
+    "./viewedSources": {
+      "types": "./src/viewedSources.ts",
+      "import": "./src/viewedSources.ts"
+    },
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"

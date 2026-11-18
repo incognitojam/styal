@@ -7471,7 +7471,7 @@ features:
       retire_when: Upstream sizes loaded videos to their own aspect ratio instead of a fixed 16:9 box.
 
   - id: viewed-source-chips
-    title: Show documents, web pages and web searches the agent used beside the viewed-image strip
+    title: Show documents, web pages and web searches the agent and its subagents used beside the viewed-image strip
     status: maintained
     tier: yield
     prs: [1597, 1601]
@@ -7481,27 +7481,36 @@ features:
       - Web search result snippets stay off the wire until the row is expanded.
       - The chip row lists documents, then pages, each once, folds after 4 on web and 3 on mobile, and leaves out the user's attachments and pages the same run's reply links.
       - Web searches follow as one chip per query, after documents and pages and inside the same fold; repeated queries in a run show once. A chip with results lists them (title and site, opening as chat links); a chip without results opens its collapsed tool group.
+      - When a native subagent or a delegated task ends, its row in the parent carries a capped summary of the documents, pages and searches its thread used, including those of the subagents it started, without page text; the parent shows them as chips under that row, each source once per run.
     rationale: Agents read PDFs and web pages the user may want to open; the image strip showed only images.
     implementation_paths:
       - apps/mobile/src/features/threads/ViewedSourceChips.tsx
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/ViewedSourceChips.tsx
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/shared/src/viewedSources.ts
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
+      - apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - apps/server/src/orchestration-v2/WireProjection.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
+      - packages/shared/src/viewedSources.test.ts
     upstream:
       status: partial
       tracking:

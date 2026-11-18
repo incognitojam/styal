@@ -15081,6 +15081,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const parentTurnItem = parentProjection.turnItems.find(
         (candidate) => candidate.type === "subagent" && candidate.subagentId === task.id,
       );
+      // The parent's row lists what this run of the task read; a reused child thread's earlier
+      // runs belong to earlier tasks.
+      const viewedSources =
+        parentTurnItem === undefined
+          ? []
+          : yield* projectionStore.getViewedSourceSummary({
+              threadId: childThreadId,
+              runId: childRun.id,
+            });
       const updatedTask: OrchestrationV2Subagent = {
         ...task,
         providerThreadId: childRun.providerThreadId,
@@ -15191,6 +15200,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   ...parentTurnItem,
                   status: terminalStatus,
                   result: result.text,
+                  ...(viewedSources.length === 0 ? {} : { viewedSources }),
                   completedAt: now,
                   updatedAt: now,
                 },

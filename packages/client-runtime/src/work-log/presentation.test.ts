@@ -843,6 +843,7 @@ describe("viewed sources", () => {
       { kind: "page", url: "https://wiki.example.org/Retention_(policy_(2026))" },
       { kind: "page", url: "https://wiki.example.org/Retention_" },
       { kind: "page", url: "https://docs.example.com/after-inline" },
+      { kind: "page", url: "https://status.example.org/uptime/" },
       { kind: "search", query: "Menu guidelines", results: [] },
       { kind: "search", query: "sidebar width", results: [] },
     ] as const;
@@ -876,8 +877,8 @@ describe("viewed sources", () => {
       omitViewedSources(sources, {
         attachmentIds: new Set(["own"]),
         linkedUrlKeys: linked.get("run-1") ?? new Set(),
-        // An earlier strip of the run already shows this search.
-        shownSearchKeys: new Set(["menu guidelines"]),
+        // An earlier strip of the run already shows this search and this page.
+        shownSourceKeys: new Set(["search:menu guidelines", "page:status.example.org/uptime"]),
       }),
     ).toEqual([
       { kind: "document", path: "/repo/spec.pdf" },

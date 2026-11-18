@@ -10,6 +10,7 @@ import {
   RuntimeRequestId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2ViewedSource,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import {
@@ -3287,6 +3288,97 @@ describe("deriveMessagesTimelineRows", () => {
     // The reply links the sidebar page, so the strip leaves it out.
     expect(viewedImages(true, new Set([runId]))).toEqual([
       { after: "work-toggle", paths, sources: [spec, menus, query], opensGroup: true },
+    ]);
+  });
+
+  it("shows each subagent row's sources once per turn", () => {
+    const threadId = ThreadId.make("subagent-sources-thread");
+    const runId = RunId.make("subagent-sources-run");
+    const at = (second: number) =>
+      DateTime.makeUnsafe(new Date(Date.UTC(2026, 10, 4, 12, 0, second)).toISOString());
+    const base = (id: string, ordinal: number) => ({
+      id: TurnItemId.make(id),
+      threadId,
+      runId,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal,
+      status: "completed" as const,
+      title: null,
+      startedAt: at(ordinal),
+      completedAt: at(ordinal),
+      updatedAt: at(ordinal),
+    });
+    const subagent = (
+      id: string,
+      ordinal: number,
+      providerTurnId: string,
+      viewedSources: ReadonlyArray<OrchestrationV2ViewedSource>,
+    ) => ({
+      ...base(id, ordinal),
+      providerTurnId: ProviderTurnId.make(providerTurnId),
+      type: "subagent" as const,
+      subagentId: NodeId.make(`node:${id}`),
+      origin: "provider_native" as const,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      childThreadId: ThreadId.make(`child:${id}`),
+      prompt: "Research",
+      result: "Done",
+      viewedSources,
+    });
+    const retention = { kind: "page" as const, url: "https://docs.example.com/retention" };
+    const terms = { kind: "page" as const, url: "https://legal.example.net/terms" };
+    const query = { kind: "search" as const, query: "retention policy", results: [] };
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          {
+            ...base("prompt", 0),
+            type: "user_message" as const,
+            messageId: MessageId.make("prompt"),
+            text: "Research retention",
+            attachments: [],
+            inputIntent: "turn_start" as const,
+            createdBy: "user" as const,
+            creationSource: "web" as const,
+          },
+          subagent("first", 1, "provider-turn-1", [retention, query]),
+          subagent("second", 2, "provider-turn-2", [retention, terms]),
+        ].map((item, position) => ({
+          position,
+          visibility: "local" as const,
+          sourceThreadId: threadId,
+          sourceItemId: item.id,
+          item,
+        })),
+        optimisticMessages: [],
+      }),
+      latestRun: {
+        runId,
+        status: "running",
+        startedAt: DateTime.formatIso(at(0)),
+        completedAt: null,
+      },
+      runningRunId: runId,
+      isWorking: true,
+      activeTurnStartedAt: DateTime.formatIso(at(0)),
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(
+      rows.flatMap((row, index) =>
+        row.kind === "viewed-images"
+          ? [{ after: rows[index - 1]?.kind, sources: row.sources }]
+          : [],
+      ),
+    ).toEqual([
+      { after: "event", sources: [retention, query] },
+      // The second subagent opened the same retention page; it shows once in the turn.
+      { after: "event", sources: [terms] },
     ]);
   });
 

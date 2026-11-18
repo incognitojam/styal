@@ -3855,6 +3855,9 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             item.deferredWork === undefined,
         ),
       );
+      assert.deepEqual(yield* projectionStore.getViewedSourceSummary({ threadId }), [
+        { kind: "document", path: "/repo/spec.pdf" },
+      ]);
       const webSearchWindow = (fetchedUrl: string | null) =>
         Effect.gen(function* () {
           yield* sql`UPDATE orchestration_v2_projection_turn_items
@@ -3879,10 +3882,35 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         });
       const [fetch] = yield* webSearchWindow("https://docs.example.com/menus");
       assert.strictEqual(fetch?.fetchedUrl, "https://docs.example.com/menus");
+      // A subagent's summary reads only the source fields: the address, never the page text.
+      assert.deepEqual(
+        yield* projectionStore.getViewedSourceSummary({
+          threadId,
+          runId: RunId.make("run:bounded-sql-history:1"),
+        }),
+        [{ kind: "page", url: "https://docs.example.com/menus" }],
+      );
+      assert.deepEqual(
+        yield* projectionStore.getViewedSourceSummary({
+          threadId,
+          runId: RunId.make("run:bounded-sql-history:other"),
+        }),
+        [],
+      );
       // A search keeps its query and result list for the strip as well.
       assert.lengthOf(yield* webSearchWindow(null), 1);
       yield* sql`UPDATE orchestration_v2_projection_turn_items
-        SET payload_json = json_remove(payload_json, '$.results')
+        SET payload_json = json_set(payload_json, '$.patterns', json('["menu guidelines"]'))
+        WHERE thread_id = ${threadId} AND ordinal = 900`;
+      assert.deepEqual(yield* projectionStore.getViewedSourceSummary({ threadId }), [
+        {
+          kind: "search",
+          query: "menu guidelines",
+          results: [{ url: "https://docs.example.com/menus" }],
+        },
+      ]);
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_remove(payload_json, '$.results', '$.patterns')
         WHERE thread_id = ${threadId} AND ordinal = 900`;
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET type = 'command_execution', payload_json = json_set(payload_json, '$.type', 'command_execution', '$.input', 'echo ok')

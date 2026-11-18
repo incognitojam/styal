@@ -2,6 +2,7 @@ import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 import { answerBeforeSaveNoteEntryId } from "@t3tools/client-runtime/work-log/answer-before-save-note";
 import { workEntryReviewFindings } from "@t3tools/client-runtime/work-log/presentation";
+import { mergeViewedSources } from "@t3tools/shared/viewedSources";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import {
   setupScriptActivityLabel,
@@ -2066,21 +2067,22 @@ export function deriveThreadFeedPresentation(
         : [],
     ),
   );
+  const rows = result.flatMap((row) => [row, ...subagentViewedSourcesRows(row)]);
   const linkedUrlKeysByRunId = assistantLinkedUrlKeysByRunId(
     feed.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
-    viewedPageRunIds(result),
+    viewedPageRunIds(rows),
   );
-  const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
-  const visibleRows = result.flatMap<ThreadFeedEntry>((row) => {
+  const shownSourceKeysByRunId = new Map<string | null, Set<string>>();
+  const visibleRows = rows.flatMap<ThreadFeedEntry>((row) => {
     if (row.type !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
-    const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();
-    shownSearchKeysByRunId.set(row.runId, shownSearchKeys);
+    const shownSourceKeys = shownSourceKeysByRunId.get(row.runId) ?? new Set<string>();
+    shownSourceKeysByRunId.set(row.runId, shownSourceKeys);
     const sources = omitViewedSources(row.sources, {
       attachmentIds,
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
-      shownSearchKeys,
+      shownSourceKeys,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
@@ -2093,6 +2095,31 @@ export function deriveThreadFeedPresentation(
 }
 
 const NO_URL_KEYS: ReadonlySet<string> = new Set();
+
+/** The sources a subagent group's subagents used, shown under that group. */
+function subagentViewedSourcesRows(row: ThreadFeedEntry): ThreadFeedEntry[] {
+  if (row.type !== "activity-group" || row.activities[0]?.projectedItem.item.type !== "subagent") {
+    return [];
+  }
+  const sources = mergeViewedSources(
+    row.activities.flatMap(({ projectedItem: { item } }) =>
+      item.type === "subagent" ? (item.viewedSources ?? []) : [],
+    ),
+  );
+  return sources.length === 0
+    ? []
+    : [
+        {
+          type: "viewed-images",
+          id: `${row.id}:viewed-sources`,
+          createdAt: row.createdAt,
+          runId: row.runId,
+          paths: [],
+          sources,
+          collapsedGroupId: null,
+        },
+      ];
+}
 
 function viewedPageRunIds(rows: ReadonlyArray<ThreadFeedEntry>): ReadonlySet<string> {
   return new Set(

@@ -1801,6 +1801,121 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
+  it.effect("gives an ended native subagent's row a summary of what its thread read", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const rootEvent = yield* threadCreatedEvent(now);
+      if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
+      yield* eventSink.write({ events: [rootEvent] });
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId: rootEvent.threadId,
+      });
+      const ingest = (event: ProviderEventIngestor.ProviderEventIngestInput["event"]) =>
+        ingestor.ingestNormalized({
+          providerSessionId,
+          providerInstanceId: modelSelection.instanceId,
+          threadId: rootEvent.threadId,
+          event,
+        });
+      const childThreadId = idAllocator.derive.threadFromProviderThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: "native-research-subagent",
+      });
+      yield* ingest({
+        type: "app_thread.created",
+        driver: CODEX_DRIVER,
+        appThread: {
+          ...rootEvent.payload,
+          id: childThreadId,
+          lineage: {
+            parentThreadId: rootEvent.threadId,
+            rootThreadId: rootEvent.threadId,
+            relationshipToParent: "subagent",
+          },
+        },
+      });
+      const base = (id: string, threadId: typeof childThreadId, ordinal: number) => ({
+        id: TurnItemId.make(id),
+        threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "completed" as const,
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      });
+      for (const turnItem of [
+        {
+          ...base("turn-item:child-fetch", childThreadId, 1),
+          type: "web_search",
+          patterns: ["https://docs.example.com/retention"],
+          fetchedUrl: "https://docs.example.com/retention",
+          results: [{ url: "https://docs.example.com/retention", snippet: "PAGE_TEXT" }],
+        },
+        {
+          ...base("turn-item:child-search", childThreadId, 2),
+          type: "web_search",
+          patterns: ["retention policy"],
+          results: [{ url: "https://legal.example.net/terms", title: "Terms" }],
+        },
+      ] satisfies ReadonlyArray<OrchestrationV2TurnItem>) {
+        yield* ingest({ type: "turn_item.updated", driver: CODEX_DRIVER, turnItem });
+      }
+      const subagent = (status: OrchestrationV2TurnItem["status"]): OrchestrationV2TurnItem => ({
+        ...base("turn-item:parent-subagent", rootEvent.threadId, 1),
+        status,
+        type: "subagent",
+        subagentId: NodeId.make("node:research-subagent"),
+        origin: "provider_native",
+        driver: CODEX_DRIVER,
+        providerInstanceId: modelSelection.instanceId,
+        childThreadId,
+        prompt: "Research retention terms",
+        result: status === "completed" ? "Done" : null,
+      });
+      const stored = () =>
+        projectionStore.getTurnItem({
+          threadId: rootEvent.threadId,
+          itemId: TurnItemId.make("turn-item:parent-subagent"),
+        });
+
+      yield* ingest({
+        type: "turn_item.updated",
+        driver: CODEX_DRIVER,
+        turnItem: subagent("running"),
+      });
+      const running = yield* stored();
+      assert.isUndefined(running?.type === "subagent" ? running.viewedSources : "not a subagent");
+
+      yield* ingest({
+        type: "turn_item.updated",
+        driver: CODEX_DRIVER,
+        turnItem: subagent("completed"),
+      });
+      const completed = yield* stored();
+      assert.deepEqual(completed?.type === "subagent" ? completed.viewedSources : undefined, [
+        { kind: "page", url: "https://docs.example.com/retention" },
+        {
+          kind: "search",
+          query: "retention policy",
+          results: [{ url: "https://legal.example.net/terms", title: "Terms" }],
+        },
+      ]);
+      assert.notInclude(JSON.stringify(completed), "PAGE_TEXT");
+    }),
+  );
+
   it.effect("keeps a steered message pending until the provider reports it read", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;

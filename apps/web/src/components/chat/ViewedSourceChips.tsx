@@ -1,11 +1,11 @@
 import {
   foldViewedSources,
   viewedDocumentPagesLabel,
-  viewedSearchKey,
   viewedSearchResultSite,
   viewedSourceLabel,
   type ViewedSource,
 } from "@t3tools/client-runtime/work-log/presentation";
+import { viewedSearchKey } from "@t3tools/shared/viewedSources";
 import { workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { SearchIcon } from "lucide-react";
 import { use, useState, type ReactNode } from "react";

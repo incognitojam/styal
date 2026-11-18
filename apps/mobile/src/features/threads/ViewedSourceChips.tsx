@@ -1,11 +1,11 @@
 import {
   foldViewedSources,
   viewedDocumentPagesLabel,
-  viewedSearchKey,
   viewedSearchResultSite,
   viewedSourceLabel,
   type ViewedSource,
 } from "@t3tools/client-runtime/work-log/presentation";
+import { viewedSearchKey } from "@t3tools/shared/viewedSources";
 import { useState } from "react";
 import { Pressable, View, type ColorValue } from "react-native";
 
