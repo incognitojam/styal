@@ -8,6 +8,7 @@ import {
   type App,
   addEnvironment,
   allowOrigin,
+  newThreadInProjectButton,
   openApp,
   runPaletteItem,
 } from "../../support/browser.ts";
@@ -67,7 +68,7 @@ describe("update a busy server from the sidebar", () => {
     await palette.getByText("Local folder").click();
     await palette.locator("input:focus").fill(`${projectPath}/`);
     await page.getByRole("button", { name: "Add (Enter)" }).click();
-    await page.getByRole("button", { name: "New thread in busy-project" }).waitFor();
+    await newThreadInProjectButton(page, "busy-project").waitFor();
     await palette.waitFor({ state: "detached" });
     await app.composer.waitFor();
 

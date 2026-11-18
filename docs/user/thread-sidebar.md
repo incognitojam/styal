@@ -111,8 +111,9 @@ edge to pin a thread. Section labels stay readable for the whole drag, and the s
 thread is over takes the accent color. Section labels also
 identify empty sections and a collapsed settled shelf.
 
-Drag within the pinned or active section to change its order. Other rows slide aside to show the
-spot where the thread will land. Drops into either section keep the position you choose. On
+Drag within the pinned section, or the active section of the flat list, to change its order. Other
+rows slide aside to show the spot where the thread will land. Drops into either section keep the
+position you choose. On
 mobile, open a thread's menu and choose **Arrange threads**. Drag a handle within or between
 **Pinned** and **Active** to reorder, pin, or unpin. Drop onto the **Settled** divider to
 settle a thread. The dragged card shows the action before you release it. Expand **Snoozed**
@@ -204,7 +205,8 @@ a project spans several), and **Project settings**.
 
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread into
 Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay ordered
-by their latest message, so a thread dropped there joins its own project's folder.
+by their latest message, so a thread dropped there joins its own project's folder, and folders
+have no Working section; the flat list keeps both your own order and the Working section.
 **Two-line folder rows**, under **Settings → General → Sidebar layout**, adds the branch, pull
 request, and agent under each title.
 

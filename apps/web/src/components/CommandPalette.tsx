@@ -574,7 +574,6 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
-  const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1603,10 +1602,10 @@ function OpenCommandPaletteDialog(props: {
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       currentProject?.title ??
       null;
-    // Mirrors the chat route: outside boring mode and with several projects chat.new opens this
-    // picker, so it labels the submenu and chat.newLocal labels the named item. Otherwise chat.new
-    // creates directly and labels the named item.
-    const picksProject = !boringSidebarEnabled && projectGroups.length > 1;
+    // Mirrors the chat route: with several projects chat.new opens this picker, so it labels the
+    // submenu and chat.newLocal labels the named item. Otherwise chat.new creates directly and
+    // labels the named item.
+    const picksProject = projectGroups.length > 1;
 
     if (activeProjectTitle) {
       actionItems.push({

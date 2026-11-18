@@ -2,7 +2,11 @@ import { ClientSettingsSchema } from "@t3tools/contracts";
 import { Schema } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
-import { FOLDER_SIDEBAR_MOVED_KEY, takeFolderSidebarMove } from "./folderSidebarMove";
+import {
+  FOLDER_SIDEBAR_MOVED_KEY,
+  folderSidebarMovePatch,
+  markFolderSidebarMoved,
+} from "./folderSidebarMove";
 import { removeLocalStorageItem } from "./useLocalStorage";
 
 const decodeStoredSettings = Schema.decodeSync(ClientSettingsSchema);
@@ -14,7 +18,7 @@ const olderBuildDefaults = {
   sidebarProjectSortOrder: "updated_at",
 } as const;
 
-describe("takeFolderSidebarMove", () => {
+describe("folderSidebarMovePatch", () => {
   it.each([
     {
       state: "nothing stored yet (fresh install)",
@@ -62,14 +66,22 @@ describe("takeFolderSidebarMove", () => {
       savedOrder: ["project-a"],
       result: { folders: true, sortOrder: "updated_at" },
     },
+    {
+      // Saved before the folder setting existed, so it reads as folders already on.
+      state: "grouped headers stored without the folder setting",
+      stored: { sidebarThreadGrouping: "project" },
+      savedOrder: ["project-a"],
+      result: { folders: true, sortOrder: "updated_at" },
+    },
   ] as const)("$state", ({ stored, savedOrder, result }) => {
     removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
     const settings = decodeStoredSettings(stored);
-    const moved = { ...settings, ...takeFolderSidebarMove(settings, savedOrder) };
+    const moved = { ...settings, ...folderSidebarMovePatch(settings, savedOrder) };
 
     expect(moved.boringSidebarEnabled).toBe(result.folders);
     expect(moved.sidebarProjectSortOrder).toBe(result.sortOrder);
     // Moved once, even if an older build has since rewritten the settings.
-    expect(takeFolderSidebarMove(settings, savedOrder)).toBe(null);
+    markFolderSidebarMoved();
+    expect(folderSidebarMovePatch(settings, savedOrder)).toBe(null);
   });
 });

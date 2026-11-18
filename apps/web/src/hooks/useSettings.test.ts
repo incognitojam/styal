@@ -26,7 +26,11 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { useUiStateStore } from "~/uiStateStore";
 import * as Schema from "effect/Schema";
 import { FOLDER_SIDEBAR_MOVED_KEY } from "./folderSidebarMove";
-import { removeLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from "./useLocalStorage";
 
 beforeEach(() => {
   persistenceMocks.getClientSettings.mockReset().mockResolvedValue(null);
@@ -201,6 +205,7 @@ describe("client settings hydration", () => {
     };
     expect(getClientSettings()).toEqual(moved);
     expect(persistenceMocks.setClientSettings).toHaveBeenCalledExactlyOnceWith(moved);
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(true);
 
     // The next load keeps the flat list the user then picked.
     __resetClientSettingsPersistenceForTests();
@@ -212,6 +217,23 @@ describe("client settings hydration", () => {
     await flushWrites();
     expect(getClientSettings().boringSidebarEnabled).toBe(false);
     expect(persistenceMocks.setClientSettings).toHaveBeenCalledOnce();
+  });
+
+  it("moves again on the next load when saving the move fails", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+    });
+    persistenceMocks.setClientSettings.mockRejectedValueOnce(new Error("disk full"));
+    await ensureClientSettingsHydrated();
+    await persistClientSettingsUpdate(
+      (current) => current,
+      async () => {},
+    );
+
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(null);
   });
 
   it("keeps a layout chosen while the first load is still pending", async () => {

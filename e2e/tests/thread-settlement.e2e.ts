@@ -1,7 +1,14 @@
 import type { Locator } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { sidebarThread, type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import {
+  sidebarThread,
+  type App,
+  addProject,
+  newThreadInProjectButton,
+  openApp,
+  sendMessage,
+} from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
 
 /** Whether `row` sits above `header` in the sidebar, which puts it outside the shelf. */
@@ -45,7 +52,7 @@ describe("settle a thread", () => {
     await settledThread.hover();
     await settledThread.getByRole("button", { name: "Settle thread" }).click();
     // Settling the open thread moves on to the next one and leaves the shelf collapsed.
-    await page.getByRole("button", { name: "New thread in demo-app" }).waitFor();
+    await newThreadInProjectButton(page, "demo-app").waitFor();
     await collapsedShelf.waitFor();
     await settledThread.waitFor({ state: "hidden" });
 
@@ -59,7 +66,7 @@ describe("settle a thread", () => {
     // settled-shelf-auto-collapse: opening a settled thread keeps the shelf open, and
     // opening a thread outside it closes the shelf.
     await settledThread.click();
-    await page.getByRole("button", { name: "New thread in second-app" }).waitFor();
+    await newThreadInProjectButton(page, "second-app").waitFor();
     await expandedShelf.waitFor();
     await otherThread.click();
     await collapsedShelf.waitFor();

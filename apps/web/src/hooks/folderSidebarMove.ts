@@ -10,14 +10,14 @@ export const FOLDER_SIDEBAR_MOVED_KEY = "styal:folder-sidebar-moved:v1";
  * Moves this device to project folders once. A stored flat list cannot be told
  * from an untouched default, so every device moves; later choices stay. Grouped
  * headers kept a saved project order, which folders follow only under Manual.
+ * Null once `markFolderSidebarMoved` has recorded the move.
  */
-export function takeFolderSidebarMove(
+export function folderSidebarMovePatch(
   settings: ClientSettings,
   savedProjectOrder: readonly string[],
 ): ClientSettingsPatch | null {
   try {
     if (getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)) return null;
-    setLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, true, Schema.Boolean);
   } catch {
     return null;
   }
@@ -29,4 +29,9 @@ export function takeFolderSidebarMove(
     boringSidebarEnabled: true,
     ...(keepsGroupedOrder ? { sidebarProjectSortOrder: "manual" } : {}),
   };
+}
+
+/** Records the move, once the moved settings are saved. */
+export function markFolderSidebarMoved(): void {
+  setLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, true, Schema.Boolean);
 }
