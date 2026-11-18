@@ -628,6 +628,31 @@ it.effect(
           creationSource: "web",
         });
         yield* count(0);
+        const queued = (yield* orchestrator.getThreadProjection(launcherId)).runs.find(
+          (run) => run.userMessageId === "answer:other",
+        )!;
+        assert.equal(queued.status, "queued");
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "answer:other",
+          )?.reportAnswer,
+          reportAnswer,
+        );
+        yield* orchestrator.dispatch({
+          type: "queued-run.edit",
+          commandId: CommandId.make("edit:answer"),
+          threadId: launcherId,
+          runId: queued.id,
+          text: "[Release, version 1] Wait",
+        });
+        yield* count(0);
+        yield* orchestrator.dispatch({
+          type: "queued-run.cancel",
+          commandId: CommandId.make("cancel:answer"),
+          threadId: launcherId,
+          runId: queued.id,
+        });
+        yield* count(1);
         const window = yield* orchestrator.getThreadSnapshotWindow(launcherId, {
           rowLimit: 1,
           userTurnLimit: 1,
@@ -642,7 +667,7 @@ it.effect(
         const answered = yield* orchestrator.getThreadProjection(launcherId);
         assert.deepEqual(
           answered.messages.find((message) => message.id === "answer:other")?.reportAnswer,
-          reportAnswer,
+          undefined,
         );
 
         yield* endTurn(last, "completed");

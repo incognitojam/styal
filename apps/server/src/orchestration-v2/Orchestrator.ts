@@ -12122,6 +12122,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     yield* emitQueuedRunCancellation({ command, events, projection, run: queuedRun, now });
     const emitEvent = emit(events, command);
+    if (queuedMessage?.reportAnswer !== undefined) {
+      const { reportAnswer: _reportAnswer, ...message } = queuedMessage;
+      yield* emitEvent({
+        type: "message.updated",
+        threadId: command.threadId,
+        runId: queuedRun.id,
+        providerInstanceId: queuedRun.providerInstanceId,
+        occurredAt: now,
+        payload: { ...message, updatedAt: now },
+      });
+    }
     const guest = queuedMessage?.context?.guest;
     if (guest !== undefined) {
       const thread = guestShareAfterCancelledSend(projection.thread, guest, now);
