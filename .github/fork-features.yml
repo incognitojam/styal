@@ -7929,7 +7929,7 @@ features:
     title: Free settled worktree sources in place and restore before use
     status: maintained
     tier: keep
-    prs: [1584]
+    prs: [1584, 1605]
     invariants:
       - Source cleanup is per project and machine, off by default, and waits seven days after settlement with delegated children following their parent chain.
       - Only canonical managed linked worktrees recorded on live threads may be un-checked-out under the workspace lease; local changes, untracked and ignored files remain intact.
@@ -7951,8 +7951,13 @@ features:
       - apps/server/src/storageCleanup.ts
       - apps/server/src/terminal/Manager.ts
     tests:
+      - apps/server/src/git/GitWorkflowService.test.ts
+      - apps/server/src/mcp/WorktreeMcpService.test.ts
+      - apps/server/src/vcs/VcsStatusBroadcaster.test.ts
       - apps/server/src/worktreeCleanup/Checkout.test.ts
       - apps/server/src/worktreeCleanup/CheckoutSweep.test.ts
+      - packages/client-runtime/src/state/commandPermissions.test.ts
+      - packages/shared/src/git.test.ts
     upstream:
       status: tracking
       tracking:
