@@ -219,7 +219,9 @@ ones sets **Project order** to **Manual**, so it stays where you put it. A proje
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
 project's folder comes last and shows only while it has active threads. Click a folder to open or
 close it. A closed folder shows how many threads it holds, and a dot when one of them
-needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
+needs you. Use the pen button on a folder to start a thread in that project. Right-click a folder
+for **New thread**, project filtering, **Pin project**, **Archive project**, **Copy path** (choose
+the checkout when a project spans several), and **Project settings**.
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread
 into Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay
 ordered by their latest message, so a thread dropped there joins its own project's folder. The
