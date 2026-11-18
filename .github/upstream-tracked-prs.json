@@ -174,7 +174,7 @@
     },
     {
       "pr": 23392,
-      "reason": "Brings back a desktop startup splash while the local backend boots. Upstream #22222 reverted #19706 (\"Starting styal…\" splash) because it had never run on a real desktop build; the fork wants a splash again. Take it at intake, or import it early if the maintainer asks; #23637 (splash when the backend never becomes ready) is related."
+      "reason": "Brings back a desktop startup splash while the local backend boots. Upstream #22222 reverted #19706 (\"Starting styal\u2026\" splash) because it had never run on a real desktop build; the fork wants a splash again. Take it at intake, or import it early if the maintainer asks; #23637 (splash when the backend never becomes ready) is related."
     },
     {
       "pr": 29146,
@@ -214,7 +214,7 @@
     },
     {
       "pr": 28492,
-      "reason": "Adds Settings → Skills with bundled skills installed into Codex and Claude provider homes, including a worktree setup skill that still teaches t3.json. The fork gives sessions a `styal-guides` skill without touching provider homes and keeps `read_styal_guide` for providers it does not cover (ledger agent-guides). The retirement path for `read_styal_guide` is that skill reaching every provider, not this PR. When it merges, keep the fork's per-session skill, leave Settings → Skills out unless the maintainer asks for it, and check its worktree setup skill does not teach t3.json."
+      "reason": "Adds Settings \u2192 Skills with bundled skills installed into Codex and Claude provider homes, including a worktree setup skill that still teaches t3.json. The fork gives sessions a `styal-guides` skill without touching provider homes and keeps `read_styal_guide` for providers it does not cover (ledger agent-guides). The retirement path for `read_styal_guide` is that skill reaching every provider, not this PR. When it merges, keep the fork's per-session skill, leave Settings \u2192 Skills out unless the maintainer asks for it, and check its worktree setup skill does not teach t3.json."
     },
     {
       "pr": 26958,
@@ -267,6 +267,14 @@
     {
       "pr": 34729,
       "reason": "Adds opt-in project folders to the mobile chat lists. Web and desktop moved to upstream's project folders and dropped the fork's grouped headers in fork #1606, but mobile keeps the fork's own Group threads by project until this arrives. When it lands through intake, retire the fork's mobile grouping the same way (move mobile users with grouping on to folders, keep their project order) and update the sidebar-project-thread-groups ledger entry."
+    },
+    {
+      "pr": 30207,
+      "reason": "Imported provisionally as one snapshot: a compaction interrupted by server restart runs again and releases only queue holds that restart added. The fork retains its shared Stop and restart-activity eligibility filter, parent Stop propagation and styal notification wording. Separate fork safeguards limit recovered automatic compactions and reject newer user activity; promotion must be sequenced with their dependent fork PR. At chronological intake compare this frozen base-to-head diff with the merged change, reconcile amendments and the safeguards, verify shutdown/startup and held queues, then remove this marker. If closed unmerged, review whether to retain or remove the snapshot before clearing it.",
+      "snapshot": {
+        "base": "ac5dd1ff47d3d9d3807b9641d1b4b1cdf761c04f",
+        "head": "1bee2e2224c9188ef50308acab92415eb1b79ed8"
+      }
     }
   ]
 }
