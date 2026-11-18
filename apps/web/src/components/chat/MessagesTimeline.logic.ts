@@ -3043,7 +3043,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
             other.kind === "search" &&
             source.query === other.query &&
             source.results.length === other.results.length &&
-            source.results.every((result, at) => result.url === other.results[at]?.url)
+            source.results.every(
+              (result, at) =>
+                result.url === other.results[at]?.url && result.title === other.results[at]?.title,
+            )
           );
         })
       );

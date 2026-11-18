@@ -802,7 +802,8 @@ describe("viewed sources", () => {
           { url: "https://ui.example.org/sidebar" },
         ],
       }),
-      entry("search-codex", { patterns: ["sidebar width"] }),
+      // Codex batches queries; each one gets a chip.
+      entry("search-codex", { patterns: ["sidebar width", "menu guidelines", "nested menus"] }),
       // An unmarked fetch from an older adapter is neither a page nor a search.
       entry("unmarked-fetch", { patterns: ["https://help.example.io/export"] }),
       entry("failed-search", { patterns: ["retention"] }, "failed"),
@@ -828,6 +829,7 @@ describe("viewed sources", () => {
         ],
       },
       { kind: "search", query: "sidebar width", results: [] },
+      { kind: "search", query: "nested menus", results: [] },
     ]);
   });
 

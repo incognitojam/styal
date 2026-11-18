@@ -652,7 +652,7 @@ export interface ViewedSearchResult {
   readonly title?: string;
 }
 
-function workEntryViewedSource(entry: WorkLogPresentationEntry): ViewedSource | null {
+function workEntryViewedSources(entry: WorkLogPresentationEntry): ReadonlyArray<ViewedSource> {
   const item = entry.structuredPayload;
   if (
     item === undefined ||
@@ -660,33 +660,35 @@ function workEntryViewedSource(entry: WorkLogPresentationEntry): ViewedSource | 
     item.status === "cancelled" ||
     item.toolNonExecutionKind !== undefined
   ) {
-    return null;
+    return [];
   }
   if (item.type === "dynamic_tool" && item.viewedDocument !== undefined) {
     const { path, pages } = item.viewedDocument;
-    return { kind: "document", path, ...(pages === undefined ? {} : { pages }) };
+    return [{ kind: "document", path, ...(pages === undefined ? {} : { pages }) }];
   }
   if (item.type === "web_search" && item.fetchedUrl !== undefined) {
     return viewedSourceUrlKey(item.fetchedUrl) === null
-      ? null
-      : { kind: "page", url: item.fetchedUrl };
+      ? []
+      : [{ kind: "page", url: item.fetchedUrl }];
   }
-  if (item.type === "web_search") {
-    const query = item.patterns?.[0]?.replace(/\s+/g, " ").trim();
-    // A lone URL is a fetch the adapter did not mark with fetchedUrl, not a search.
-    if (!query || viewedSourceUrlKey(query) !== null) return null;
-    return {
-      kind: "search",
-      query,
-      results: (item.results ?? []).flatMap((result) => {
-        const title = result.title?.trim();
-        return result.url !== undefined && viewedSourceUrlKey(result.url) !== null
-          ? [{ url: result.url, ...(title ? { title } : {}) }]
-          : [];
-      }),
-    };
-  }
-  return null;
+  if (item.type !== "web_search") return [];
+  // Codex batches several queries in one item; each is a chip. A lone URL is a fetch the adapter
+  // did not mark with fetchedUrl, not a search.
+  const queries = (item.patterns ?? [])
+    .map((pattern) => pattern.replace(/\s+/g, " ").trim())
+    .filter((query) => query.length > 0 && viewedSourceUrlKey(query) === null);
+  const results = (item.results ?? []).flatMap((result) => {
+    const title = result.title?.trim();
+    return result.url !== undefined && viewedSourceUrlKey(result.url) !== null
+      ? [{ url: result.url, ...(title ? { title } : {}) }]
+      : [];
+  });
+  // Results are reported per item, not per query, so they stay with the first query.
+  return queries.map((query, index) => ({
+    kind: "search",
+    query,
+    results: index === 0 ? results : [],
+  }));
 }
 
 /** Same query regardless of case and spacing. */
@@ -701,19 +703,18 @@ export function workEntriesViewedSources(
   const documents = new Map<string, ViewedSource>();
   const pages = new Map<string, ViewedSource>();
   const searches = new Map<string, Extract<ViewedSource, { kind: "search" }>>();
-  for (const entry of entries) {
-    const source = workEntryViewedSource(entry);
-    if (source?.kind === "document") {
+  for (const source of entries.flatMap(workEntryViewedSources)) {
+    if (source.kind === "document") {
       const seen = documents.get(source.path);
       if (seen === undefined) documents.set(source.path, source);
       // Reads of different ranges of one document show the document without a range.
       else if (seen.kind === "document" && seen.pages !== source.pages) {
         documents.set(source.path, { kind: "document", path: source.path });
       }
-    } else if (source?.kind === "page") {
+    } else if (source.kind === "page") {
       const key = viewedSourceUrlKey(source.url)!;
       if (!pages.has(key)) pages.set(key, source);
-    } else if (source?.kind === "search") {
+    } else {
       const key = viewedSearchKey(source.query);
       const seen = searches.get(key);
       if (seen === undefined) {

@@ -3290,6 +3290,27 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("replaces a viewed-source row when a search result gains its title", () => {
+    const row = (title?: string): MessagesTimelineRow => ({
+      kind: "viewed-images",
+      id: "group:viewed-images",
+      createdAt: "2026-11-04T12:00:00.000Z",
+      runId: null,
+      paths: [],
+      sources: [
+        {
+          kind: "search",
+          query: "menu guidelines",
+          results: [{ url: "https://docs.example.com/menus", ...(title ? { title } : {}) }],
+        },
+      ],
+      collapsedGroupId: null,
+    });
+    const stable = computeStableMessagesTimelineRows([row()], { result: [], byId: new Map() });
+    const titled = row("Navigation menus");
+    expect(computeStableMessagesTimelineRows([titled], stable).result[0]).toBe(titled);
+  });
+
   it("keeps imported V1 turns folded once the thread's first V2 run starts", () => {
     const at = (second: number) => `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`;
     const message = (
