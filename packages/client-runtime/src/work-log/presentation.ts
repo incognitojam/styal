@@ -719,34 +719,28 @@ function withoutCode(text: string): string {
     prose.push(line);
   }
   const joined = prose.join("\n");
-  let result = "";
-  let index = 0;
-  while (index < joined.length) {
-    const open = joined.indexOf("`", index);
-    if (open < 0) return result + joined.slice(index);
-    let openEnd = open;
-    while (joined[openEnd] === "`") openEnd += 1;
-    result += joined.slice(index, open);
-    // A span closes at the next backtick run of the same length; otherwise the run is text.
-    let close = -1;
-    for (let next = joined.indexOf("`", openEnd); next >= 0;) {
-      let nextEnd = next;
-      while (joined[nextEnd] === "`") nextEnd += 1;
-      if (nextEnd - next === openEnd - open) {
-        close = nextEnd;
-        break;
-      }
-      next = joined.indexOf("`", nextEnd);
-    }
-    if (close < 0) {
-      result += joined.slice(open, openEnd);
-      index = openEnd;
-    } else {
-      result += " ";
-      index = close;
-    }
+  const runs = [...joined.matchAll(/`+/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+  // A span closes at the next backtick run of the same length; otherwise the run is text.
+  const closingRun = new Array<number>(runs.length).fill(-1);
+  const laterRunByLength = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const length = runs[index]!.end - runs[index]!.start;
+    closingRun[index] = laterRunByLength.get(length) ?? -1;
+    laterRunByLength.set(length, index);
   }
-  return result;
+  let result = "";
+  let textStart = 0;
+  for (let index = 0; index < runs.length; index += 1) {
+    const close = closingRun[index]!;
+    if (close < 0) continue;
+    result += `${joined.slice(textStart, runs[index]!.start)} `;
+    textStart = runs[close]!.end;
+    index = close;
+  }
+  return result + joined.slice(textStart);
 }
 
 /** Keys of the http(s) URLs a message shows as links, bare or in Markdown, outside code. */
