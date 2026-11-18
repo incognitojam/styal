@@ -23,6 +23,7 @@ import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Digest from "effect/crypto/Digest";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -37,6 +38,8 @@ import {
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
 } from "./Adapters/ClaudeAdapterV2.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -184,6 +187,8 @@ export const layer: Layer.Layer<
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
+  | PhysicalFileSystem.PhysicalFileSystem
+  | Digest.Digest
   | Path.Path
   | ServerConfig.ServerConfig
   | ServerSettings.ServerSettingsService
@@ -208,6 +213,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const withWorkspaceLease = yield* makeWorkspaceLease;
+    const checkout = yield* makeCheckout;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
@@ -725,6 +731,17 @@ export const layer: Layer.Layer<
       }
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && (yield* isManagedWorktreePath(worktreePath))) {
+        const restored = yield* checkout.restore(path.resolve(worktreePath)).pipe(Effect.result);
+        if (restored._tag === "Failure") {
+          if (input.willRetry === true) return yield* restored.failure;
+          yield* settleStartFailure({
+            signal: "worktree-restore-failure",
+            title: "Couldn't check out thread workspace",
+            error: restored.failure,
+            message: restored.failure.message,
+          });
+          return;
+        }
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));

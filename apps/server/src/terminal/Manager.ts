@@ -4,6 +4,7 @@ import { mergePathValues } from "@t3tools/shared/shell";
 import * as NodeCrypto from "node:crypto";
 
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import {
   DEFAULT_TERMINAL_ID,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
@@ -19,6 +20,7 @@ import {
   TerminalResizeError,
   TerminalSessionLookupError,
   TerminalWriteError,
+  TerminalWorkspaceRestoreError,
   type HostActivity,
   type TerminalAttachInput,
   type TerminalAttachStreamEvent,
@@ -1615,6 +1617,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
+  const checkout = yield* makeCheckout;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
@@ -3126,6 +3129,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
   ) {
+    const workspace = path.resolve(requestedInput.worktreePath ?? requestedInput.cwd);
+    yield* checkout
+      .restore(workspace)
+      .pipe(
+        Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
+      );
     const terminalId = requestedInput.terminalId;
     const launchCommand = "command" in requestedInput ? requestedInput.command : null;
     const displayLabel = ("label" in requestedInput ? (requestedInput.label ?? "") : "").trim();

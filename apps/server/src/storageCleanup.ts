@@ -1,3 +1,4 @@
+import { makeCheckoutSweep } from "./worktreeCleanup/CheckoutSweep.ts";
 import { makeSweep } from "./worktreeCleanup/Sweep.ts";
 import {
   GitCommandError,
@@ -128,7 +129,9 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
         right.projectSettingsOverrides[projectId as ProjectId]?.worktreeCleanup,
       ) &&
       left.projectSettingsOverrides[projectId as ProjectId]?.cleanRegenerableFiles ===
-        right.projectSettingsOverrides[projectId as ProjectId]?.cleanRegenerableFiles,
+        right.projectSettingsOverrides[projectId as ProjectId]?.cleanRegenerableFiles &&
+      left.projectSettingsOverrides[projectId as ProjectId]?.releaseWorktreeSources ===
+        right.projectSettingsOverrides[projectId as ProjectId]?.releaseWorktreeSources,
   );
 }
 
@@ -237,7 +240,7 @@ function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineag
   return owner;
 }
 
-function worktreeSettlementChain(
+export function worktreeSettlementChain(
   thread: OrchestrationV2ThreadShell,
   byId: ReadonlyMap<ThreadId, OrchestrationV2ThreadShell>,
   now: number,
@@ -314,6 +317,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
   const stripWorktrees = yield* makeSweep;
+  const releaseWorktrees = yield* makeCheckoutSweep;
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
   const orphanSizes = new Map<string, number | null>();
   const noteTerminal = (terminal: TerminalSummary) => {
@@ -1443,6 +1447,9 @@ const make = Effect.gen(function* () {
     );
     yield* stripWorktrees(hasTerminal, entries).pipe(
       Effect.catch(() => Effect.logWarning("Regenerable file sweep failed")),
+    );
+    yield* releaseWorktrees(hasTerminal, entries).pipe(
+      Effect.catch(() => Effect.logWarning("Source checkout sweep failed")),
     );
     deletedWorktreeWaits = deletedWorktrees.waiting;
     keptDeletedWorktrees = deletedWorktrees.kept;

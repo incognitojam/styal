@@ -21,6 +21,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/intake/') }}
 
 jobs:
+  worktree_checkout:
+    name: Fork Worktree Checkout Safety (macOS)
+    if: github.repository == 'incognitojam/styal'
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-deps
+      - run: echo '.scratch/' >> .git/info/exclude
+      - run: vp test run apps/server/src/worktreeCleanup/Checkout.test.ts apps/server/src/worktreeCleanup/CheckoutSweep.test.ts apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts apps/server/src/terminal/Manager.test.ts apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts apps/server/src/git/GitWorkflowService.test.ts
+
   preview_calibration:
     name: Fork Browser Calibration (macOS)
     needs: changes

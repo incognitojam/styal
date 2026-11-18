@@ -35,6 +35,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -183,13 +184,31 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
+  const checkout = yield* makeCheckout;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
     fileSystem.realPath(rootPath).pipe(
       Effect.orElseSucceed(() => rootPath),
-      Effect.flatMap((cwd) => withWorkspaceLease(cwd, effect)),
+      Effect.flatMap((cwd) =>
+        withWorkspaceLease(
+          cwd,
+          checkout.restore(cwd).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitCommandError({
+                  operation: "GitWorkflowService.restoreCheckout",
+                  command: "sparse-checkout disable",
+                  cwd,
+                  detail: "Could not check out the workspace. The Git action was not started.",
+                  cause,
+                }),
+            ),
+            Effect.andThen(effect),
+          ),
+        ),
+      ),
     );
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
@@ -393,7 +412,9 @@ export const make = Effect.gen(function* () {
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
-        Effect.andThen(git.pullCurrentBranch(cwd)),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(handle.repository.rootPath, git.pullCurrentBranch(cwd)),
+        ),
       );
     }),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {

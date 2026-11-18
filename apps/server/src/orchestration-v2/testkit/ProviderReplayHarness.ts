@@ -2,7 +2,7 @@ import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunne
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../../nodeServices.ts";
 import type {
   ManagedPolicyDocument,
   ProviderDriverKind,
@@ -491,6 +491,9 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerStores, layerProviderSessionManagerProvided)),
   );
   const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.pipe(
+    Layer.provide(
+      GitVcsDriver.layer.pipe(Layer.provide(layerServerConfig), Layer.provide(NodeServices.layer)),
+    ),
     Layer.provide(
       Layer.mergeAll(
         layerCheckpointServiceProvided,

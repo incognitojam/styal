@@ -1,4 +1,8 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import { fixture } from "../worktreeCleanup/fixtures.testkit.ts";
+import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as NodeServices from "../nodeServices.ts";
 import { assert, it, vi } from "@effect/vitest";
 import {
   CheckpointId,
@@ -50,6 +54,8 @@ const unrelatedProject = Option.some({
   workspaceRoot: "/nonexistent/t3-rollback-project",
 } as never);
 const layerCheckpointRollbackService = CheckpointRollbackService.layer.pipe(
+  Layer.provide(NodeCrypto.layer),
+  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
   Layer.provide(
     Layer.mergeAll(
       NodeServices.layer,
@@ -176,19 +182,35 @@ it.effect.each(["initial", "waiting"])(
 it.effect.each([
   { order: "cleanup-first", restoreFiles: true },
   { order: "rollback-first", restoreFiles: true },
+  { order: "rollback-first", restoreFiles: true, sparse: true },
   { order: "cleanup-first", restoreFiles: false, unmanaged: true },
-])("locks rollback with %s", ({ order, restoreFiles, unmanaged = false }) =>
+])("locks rollback with %s", ({ order, restoreFiles, unmanaged = false, sparse = false }) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const workspaceRoot = yield* fileSystem.realPath(
-      yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-rollback-" }),
-    );
-    const worktreesDir = path.join(workspaceRoot, "worktrees");
-    const worktreePath = unmanaged
-      ? path.join(workspaceRoot, "elsewhere", "feature")
-      : path.join(worktreesDir, "repo", "feature");
+    const real = sparse ? yield* fixture : undefined;
+    const workspaceRoot =
+      real?.root ??
+      (yield* fileSystem.realPath(
+        yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-rollback-" }),
+      ));
+    const worktreesDir = real?.config.worktreesDir ?? path.join(workspaceRoot, "worktrees");
+    const worktreePath =
+      real?.worktree ??
+      (unmanaged
+        ? path.join(workspaceRoot, "elsewhere", "feature")
+        : path.join(worktreesDir, "repo", "feature"));
     yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+    if (real) {
+      yield* real.write("src/main.txt", "tracked source");
+      yield* real.command(worktreePath, ["add", "src/main.txt"]);
+      yield* real.command(worktreePath, ["commit", "-m", "fixture: source"]);
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, real.git),
+      );
+      yield* checkout.release(worktreePath, workspaceRoot);
+      assert.isFalse(yield* fileSystem.exists(`${worktreePath}/src/main.txt`));
+    }
     const threadId = ThreadId.make("rollback-worktree");
     const projectId = ProjectId.make("rollback-worktree-project");
     const providerThreadId = ProviderThreadId.make("rollback-worktree-provider-thread");
@@ -224,10 +246,15 @@ it.effect.each([
       providerTurns: [],
     } as unknown as ProjectionStore.ProjectionCheckpointRollbackContext;
     const testLayer = CheckpointRollbackService.layer.pipe(
+      Layer.provide(NodeCrypto.layer),
       Layer.provide(
         Layer.mergeAll(
           ThreadCommandExecutor.layer,
           NodeServices.layer,
+          Layer.succeed(
+            GitVcsDriver.GitVcsDriver,
+            real?.git ?? ({} as GitVcsDriver.GitVcsDriver["Service"]),
+          ),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -288,12 +315,19 @@ it.effect.each([
               ).pipe(Effect.asVoid),
             open: (input) =>
               Effect.gen(function* () {
+                yield* Deferred.succeed(openEntered, undefined);
+                if (sparse)
+                  assert.equal(
+                    yield* fileSystem
+                      .readFileString(`${worktreePath}/src/main.txt`)
+                      .pipe(Effect.orDie),
+                    "tracked source",
+                  );
                 assert.equal(input.runtimePolicy.cwd, worktreePath);
                 if (!(yield* fileSystem.exists(worktreePath).pipe(Effect.orDie))) {
                   return yield* new ProviderWorkspaceMissingError({ threadId, cwd: worktreePath });
                 }
                 calls.push("session");
-                yield* Deferred.succeed(openEntered, undefined);
                 if (order === "rollback-first") yield* Deferred.await(release);
                 return {} as never;
               }),
@@ -355,7 +389,7 @@ it.effect.each([
           : [...rollbackCalls, "cleanup"],
       );
     }).pipe(Effect.provide(testLayer));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 const seedRollbackHistory = Effect.gen(function* () {

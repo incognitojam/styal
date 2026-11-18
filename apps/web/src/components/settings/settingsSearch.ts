@@ -237,6 +237,14 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
 
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "worktree-release-sources",
+    targetId: "worktree-cleanup-patterns",
+    title: "Free source files in settled worktrees",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: ["worktree source checkout sparse storage seven days cleanup"],
+  },
+  {
     id: "worktree-clean-regenerable-files",
     targetId: "worktree-cleanup-patterns",
     title: "Clean up regenerable files",

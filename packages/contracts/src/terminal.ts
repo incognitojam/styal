@@ -377,7 +377,17 @@ export class TerminalResizeError extends Schema.TaggedError<TerminalResizeError>
   }
 }
 
+export class TerminalWorkspaceRestoreError extends Schema.TaggedError<TerminalWorkspaceRestoreError>()(
+  "TerminalWorkspaceRestoreError",
+  { cwd: Schema.String, cause: Schema.Defect() },
+) {
+  override get message() {
+    return `Could not check out the terminal workspace at ${this.cwd}. The terminal was not started.`;
+  }
+}
+
 export const TerminalError = Schema.Union([
+  TerminalWorkspaceRestoreError,
   TerminalCwdError,
   TerminalHistoryError,
   TerminalSessionLookupError,

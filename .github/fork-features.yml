@@ -7791,6 +7791,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/27001
       retire_when: Upstream provides declared, per-project switchable in-place cleanup with equivalent deletion and reopen safety.
 
+  - id: worktree-source-checkout
+    title: Free settled worktree sources in place and restore before use
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - Source cleanup is per project and machine, off by default, and waits seven days after settlement with delegated children following their parent chain.
+      - Only canonical managed linked worktrees recorded on live threads may be un-checked-out under the workspace lease; local changes, untracked and ignored files remain intact.
+      - Git cone-mode sparse checkout removes unchanged sources. User sparse checkouts, populated submodules, LFS, active sessions and terminals, pending work, locks and unfinished Git operations prevent cleanup.
+      - Turns, terminals, checkpoint rollback and Git mutations restore sources under the same lease or fail loudly. Durable recovery records protect interrupted operations.
+      - Storage reports the volume available-byte difference. Windows does not un-check-out sources. No agent context is added.
+    implementation_paths:
+      - apps/server/src/worktreeCleanup/Checkout.ts
+      - apps/server/src/worktreeCleanup/CheckoutSweep.ts
+      - apps/web/src/components/settings/RegenerableFiles.tsx
+    upstream_paths:
+      - apps/server/src/git/GitWorkflowService.ts
+      - apps/server/src/orchestration-v2/CheckpointRollbackService.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/server/src/storageCleanup.ts
+      - apps/server/src/terminal/Manager.ts
+    tests:
+      - apps/server/src/worktreeCleanup/Checkout.test.ts
+      - apps/server/src/worktreeCleanup/CheckoutSweep.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/8cf97b5f06f30a872ce30ab8a888f2ff012365a2
+      retire_when: Upstream frees settled source files in place without losing local files and restores them before workspace use.
+
   - id: your-machines-wording
     title: Name pairs of machines "your machines", and link only styal Link
     status: maintained

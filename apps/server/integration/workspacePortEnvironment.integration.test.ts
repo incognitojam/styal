@@ -1,4 +1,6 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as GitVcsDriver from "../src/vcs/GitVcsDriver.ts";
+import * as NodeServices from "../src/nodeServices.ts";
 import { assert, it } from "@effect/vitest";
 import type { TerminalEvent } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -20,6 +22,8 @@ import * as WorkspacePortAllocator from "../src/workspace/WorkspacePortAllocator
 const integrationLayer = it.layer(
   Layer.mergeAll(
     NodeServices.layer,
+    NodeCrypto.layer,
+    Layer.mock(GitVcsDriver.GitVcsDriver)({}),
     layerMemory,
     ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer)),
   ),

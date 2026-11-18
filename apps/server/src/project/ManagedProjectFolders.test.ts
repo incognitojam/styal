@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import { CommandId, ProjectId, ThreadId, VcsProcessSpawnError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
@@ -93,7 +93,7 @@ const withScratch = <A, E>(
     E,
     | ManagedProjectFolders.ManagedProjectFolders
     | ProjectService.ProjectService
-    | NodeServices.NodeServices
+    | Layer.Success<typeof NodeServices.layer>
     | Scope.Scope
   >,
   options?: HarnessOptions,
