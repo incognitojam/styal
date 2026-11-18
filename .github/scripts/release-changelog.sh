@@ -7,6 +7,9 @@ list_shipped_paths() {
     case "$path" in
       *.md|*.test.*|*.spec.*|*/__tests__/*|*/test/*|*/tests/*|*/testing/*|*/testUtils/*|*/testFixtures/*|*/fixtures/*|*/integration/*) continue ;;
     esac
+    case "$path" in
+      native/browser-secret/test.c|native/*/src/*_tests.rs) continue ;;
+    esac
     # Keep script exceptions explicit: these build or become part of release artifacts.
     case "$path" in
       scripts/build-desktop-artifact.ts|scripts/build-cli-archive.ts|scripts/build-npm-launcher.ts|scripts/update-release-package-versions.ts|scripts/apply-web-brand-assets.ts|scripts/prepare-server-compile-cache.cjs|scripts/linux-after-pack.ts|scripts/sign-macos.ts) ;;
@@ -16,7 +19,7 @@ list_shipped_paths() {
       */scripts/*|scripts/*) continue ;;
       apps/web/*|apps/desktop/*|apps/mobile/*|apps/server/*|packages/*/*|patches/*) ;;
       native/browser-secret/*|native/resource-monitor/*|native/kde-snap-shot/*|native/hyprland-snap-shot/*|native/libghostty-vt/*) ;;
-      assets/prod/*|assets/nightly/*|third-party-licenses/spdx/*) ;;
+      assets/prod/*|assets/nightly/*|third-party-licenses/spdx/*|third-party-licenses.config.json) ;;
       package.json|pnpm-lock.yaml|pnpm-workspace.yaml|styal-version.json|LICENSE) ;;
       *) continue ;;
     esac
