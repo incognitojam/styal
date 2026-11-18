@@ -159,6 +159,9 @@ export function SidebarProjectGroupHeader(props: {
   label: string;
   pinned: boolean;
   draggable: boolean;
+  /** Opens the project page; `selected` while it is open. */
+  onOpen?: (() => void) | undefined;
+  selected?: boolean | undefined;
   onContextMenu: (group: string, position: { x: number; y: number }) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -189,7 +192,14 @@ export function SidebarProjectGroupHeader(props: {
         data-sidebar-row={props.id}
         data-sidebar-parent={props.navigationParent}
         aria-label={props.label}
+        aria-current={props.selected ? "page" : undefined}
+        onClick={props.onOpen}
         onKeyDown={(event) => {
+          if (props.onOpen && event.key === "Enter") {
+            event.preventDefault();
+            props.onOpen();
+            return;
+          }
           if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
             event.preventDefault();
             event.stopPropagation();
@@ -202,6 +212,8 @@ export function SidebarProjectGroupHeader(props: {
         className={cn(
           "group/sidebar-project-header flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-normal outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.draggable && "cursor-grab",
+          props.onOpen && "cursor-pointer hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+          props.selected && "bg-sidebar-row-active text-sidebar-foreground",
           isDragging && "cursor-grabbing bg-sidebar-row-hover",
         )}
       >

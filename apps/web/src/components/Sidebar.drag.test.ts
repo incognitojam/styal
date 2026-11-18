@@ -33,6 +33,7 @@ function layout(
   over: string,
   scale = 1,
   cardHeight = 82,
+  headerHeight = 24,
 ) {
   let top = 100;
   const rects = items.map((item) => {
@@ -40,7 +41,7 @@ function layout(
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
         : item.kind === "project-header" || item.kind === "working-project-header"
-          ? 24 * scale
+          ? headerHeight * scale
           : item.marker === "pinned-header" ||
               item.marker === "pinned-divider" ||
               item.marker === "pinned-projects-divider"
@@ -375,6 +376,60 @@ describe("project header collision detection", () => {
         sidebarMarkerId("pinned-projects-divider"),
       );
       expect(pinnedTarget("B", dividerTop + 12 + 3)).toBe(id("B"));
+    });
+
+    it("scales the divider label from a folder header's height", () => {
+      // Folder headers are 40px and their rows 36px.
+      const rects = layout(pinnedItems, "a1", "a1", 1, 36, 40).rects;
+      const droppableRects = new Map(
+        pinnedItems.map((item, index) => [sidebarListItemId(item), rects[index]!]),
+      );
+      const top = rects[pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"))]!;
+      const folderTarget = (centerY: number) =>
+        createSidebarProjectCollisionDetection(
+          pinnedItems,
+          "B",
+          24,
+          40,
+        )({
+          active: { id: id("B") },
+          collisionRect: { ...top, top: centerY - 20, bottom: centerY + 20 },
+          droppableRects,
+          droppableContainers: [],
+          pointerCoordinates: null,
+        } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+      const folderDividerTop =
+        rects[
+          pinnedItems.findIndex(
+            (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+          )
+        ]!.top;
+      expect(folderTarget(folderDividerTop + 12 - 3)).toBe(
+        sidebarMarkerId("pinned-projects-divider"),
+      );
+      expect(folderTarget(folderDividerTop + 12 + 3)).toBe(id("B"));
+
+      // C lifted onto the divider: A, then C's slot, then the 24px label above B.
+      const strategy = createSidebarSortingStrategy({
+        items: pinnedItems,
+        settledOrder: [],
+        settledExpanded: true,
+        boundaryLabelHeight: 24,
+        projectHeaderHeight: 40,
+      });
+      const cIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("C"));
+      const dividerIndex = pinnedItems.findIndex(
+        (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+      );
+      const bIndex = pinnedItems.findIndex((item) => sidebarListItemId(item) === id("B"));
+      const args = {
+        activeIndex: cIndex,
+        overIndex: dividerIndex,
+        activeNodeRect: rects[cIndex]!,
+        rects,
+        index: bIndex,
+      } satisfies Parameters<SortingStrategy>[0];
+      expect(strategy(args)?.y).toBe(65);
     });
 
     it("places a project among the pinned projects by their midpoints", () => {
@@ -945,11 +1000,188 @@ describe("project-grouped drag projection", () => {
     expect(tops.get(headerB)!.top + result.get(headerB)!.y).toBe(tops.get(headerA)!.top);
   });
 
+  it("keeps trailing projects last when a project is lifted over them", () => {
+    // Z is archived: A dropped on it lands after B, above Z.
+    const withTrailing = [...items.slice(0, -2), header("Z"), row("z1", "Z"), ...items.slice(-2)];
+    const headerA = sidebarListItemId(header("A"));
+    const headerZ = sidebarListItemId(header("Z"));
+    const result = preview(
+      {
+        items: withTrailing,
+        settledOrder: [],
+        settledExpanded: true,
+        trailingProjectGroups: new Set(["Z"]),
+      },
+      headerA,
+      headerZ,
+    );
+    // A's two rows collapse: B and its rows move up, then A's slot, then Z below it.
+    expect(result.get(headerZ)?.y).toBe(-166);
+    expect(result.get("z1")?.y).toBe(-166);
+  });
+
   it("keeps a row hovered over another project in its own project", () => {
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));
     expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
   });
+  describe("with folders", () => {
+    const pin = (key: string, group: string): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section: "pinned",
+      group,
+    });
+    const folders = (order: string[], kept: string[] = [], collapsed: string[] = []) => ({
+      order,
+      kept: new Set(kept),
+      collapsed: new Set(collapsed),
+    });
+    const headerA = sidebarListItemId(header("A"));
+    const headerB = sidebarListItemId(header("B"));
+    const headerC = sidebarListItemId(header("C"));
+    const tail = [settledHeader, marker("settled-placeholder")];
+
+    it("previews a pinned row in its own folder at its latest-message slot", () => {
+      const withPin = [pinnedHeader, pin("pa", "A"), divider, ...items.slice(2)];
+      // Hovered over B, but folders list by latest message: pa lands between a1 and a2.
+      const result = preview(
+        {
+          items: withPin,
+          settledOrder: [],
+          settledExpanded: true,
+          folders: folders(["A", "B"]),
+          activeOrder: ["a1", "pa", "a2", "b1", "b2"],
+        },
+        "pa",
+        "b1",
+      );
+      expect(result.get("a1")?.y).toBe(-83);
+      expect(result.get("a2")?.y).toBe(0);
+      expect(result.get(headerB)?.y).toBe(0);
+    });
+
+    it("keeps a folder that stays without rows, and drops one its last row leaves", () => {
+      const withFolders = [
+        pinnedHeader,
+        thread("p", "pinned"),
+        divider,
+        header("A"),
+        row("a1", "A"),
+        header("B"),
+        header("C"),
+        row("c1", "C"),
+        ...tail,
+      ];
+      const result = preview(
+        {
+          items: withFolders,
+          settledOrder: [],
+          settledExpanded: true,
+          folders: folders(["A", "B", "C"], ["B"]),
+        },
+        "a1",
+        "p",
+      );
+      expect(result.get(headerA)?.scaleY).toBe(0);
+      expect(result.get(headerB)?.scaleY).toBe(1);
+      expect(result.get(headerC)?.scaleY).toBe(1);
+      // a1 moved above p; B then C close up under the Active boundary.
+      expect(result.get(headerB)?.y).toBe(-25);
+      expect(result.get("c1")?.y).toBe(-25);
+    });
+
+    it.each([
+      { route: null, shift: -83 },
+      { route: "pb", shift: 0 },
+    ])(
+      "a row dropped into a collapsed folder opens a slot only as the open thread ($route)",
+      ({ route, shift }) => {
+        const withCollapsed = [
+          pinnedHeader,
+          pin("pb", "B"),
+          divider,
+          header("A"),
+          row("a1", "A"),
+          header("B"),
+          header("C"),
+          row("c1", "C"),
+          ...tail,
+        ];
+        const result = preview(
+          {
+            items: withCollapsed,
+            settledOrder: [],
+            settledExpanded: true,
+            routeThreadKey: route,
+            folders: folders(["A", "B", "C"], ["B"], ["B"]),
+          },
+          "pb",
+          "c1",
+        );
+        expect(result.get(headerB)?.y).toBe(-83);
+        expect(result.get(headerC)?.y).toBe(shift);
+      },
+    );
+
+    it.each([
+      // Hovering Pinned leaves no folder, so the empty Active target opens as in the flat list.
+      { over: "pinned", placeholder: 1, settled: 36 },
+      // Dropping into Active opens A's folder: a header and a one-line row.
+      { over: "active", placeholder: 0, settled: -10 },
+    ])("with no folder showing, a drag over $over", ({ over, placeholder, settled }) => {
+      const noFolders = [
+        pinnedHeader,
+        pin("pa", "A"),
+        divider,
+        marker("active-placeholder"),
+        ...tail,
+      ];
+      const result = preview(
+        { items: noFolders, settledOrder: [], settledExpanded: true, folders: folders(["A"]) },
+        "pa",
+        over === "pinned"
+          ? sidebarMarkerId("pinned-header")
+          : sidebarMarkerId("active-placeholder"),
+      );
+      expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(placeholder);
+      expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(settled);
+    });
+
+    it.each([
+      // A's folder opens above B, with a header-sized gap above the row.
+      { order: ["A", "B"], collapsed: [], shift: 25 },
+      // A's folder was left collapsed, so it opens closed: only its header.
+      { order: ["A", "B"], collapsed: ["A"], shift: -58 },
+      // A project with no folder takes no row.
+      { order: ["B"], collapsed: [], shift: -83 },
+    ])(
+      "a row whose folder is not showing previews where it lands ($order, collapsed $collapsed)",
+      ({ order, collapsed, shift }) => {
+        const withPin = [
+          pinnedHeader,
+          pin("pa", "A"),
+          divider,
+          header("B"),
+          row("b1", "B"),
+          ...tail,
+        ];
+        const result = preview(
+          {
+            items: withPin,
+            settledOrder: [],
+            settledExpanded: true,
+            folders: folders(order, [], collapsed),
+          },
+          "pa",
+          "b1",
+        );
+        expect(result.get(headerB)?.y).toBe(shift);
+        expect(result.get("b1")?.y).toBe(shift);
+      },
+    );
+  });
+
   describe("with a grouped Working shelf", () => {
     const workingHeader = (group: string): SidebarListItem => ({
       kind: "working-project-header",

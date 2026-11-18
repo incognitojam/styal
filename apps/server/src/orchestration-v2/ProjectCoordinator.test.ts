@@ -70,4 +70,23 @@ describe("assertProjectCoordinatorsBelong", () => {
       assert.equal(refused.operation, "set-project-coordinator");
     }),
   );
+
+  it.effect("accepts a thread that does not exist yet, so its first turn is told", () =>
+    Effect.gen(function* () {
+      const { getThreadShell } = lookup(null);
+      yield* assertProjectCoordinatorsBelong(getThreadShell, {
+        projectCoordinators: { [app]: { threadId: ThreadId.make("thread:not-created-yet") } },
+      });
+    }),
+  );
+
+  it.effect("refuses when the thread cannot be looked up", () =>
+    Effect.gen(function* () {
+      const refused = yield* assertProjectCoordinatorsBelong(
+        () => Effect.fail("projection unavailable"),
+        { projectCoordinators: { [app]: { threadId: elsewhere } } },
+      ).pipe(Effect.flip);
+      assert.equal(refused.operation, "set-project-coordinator");
+    }),
+  );
 });

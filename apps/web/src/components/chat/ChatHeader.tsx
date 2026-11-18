@@ -55,6 +55,8 @@ interface ChatHeaderProps {
   onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
+  /** Set while the project has a page: its name opens the page instead of a new thread. */
+  onOpenProject?: (() => void) | undefined;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
 }
@@ -80,6 +82,7 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenThread,
   rightPanelOpen,
   onNewThreadInProject,
+  onOpenProject,
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
@@ -266,8 +269,12 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <button
                       type="button"
-                      aria-label={`New thread in ${activeProjectName}`}
-                      onClick={onNewThreadInProject}
+                      aria-label={
+                        onOpenProject
+                          ? `Open ${activeProjectName}`
+                          : `New thread in ${activeProjectName}`
+                      }
+                      onClick={onOpenProject ?? onNewThreadInProject}
                       className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     />
                   }
@@ -277,7 +284,9 @@ export const ChatHeader = memo(function ChatHeader({
                     {activeProjectName}
                   </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
-                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+                <TooltipPopup side="top">
+                  {onOpenProject ? "Open" : "New thread in"} {activeProjectName}
+                </TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>

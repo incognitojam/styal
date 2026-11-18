@@ -334,15 +334,19 @@ export type SidebarProjectDrop = {
 const PINNED_PROJECTS_DIVIDER = sidebarMarkerId("pinned-projects-divider");
 
 /** Null when the drop is outside the grouped active rows. The pointer's slot picks the neighbor,
-    like arrayMove; the pinned projects divider takes a slot too, so dropping on it crosses it. */
+    like arrayMove; the pinned projects divider takes a slot too, so dropping on it crosses it.
+    `trailingGroups` stay below every other project, so a drop on one lands before them. */
 export function resolveSidebarProjectDrop(
   items: readonly SidebarListItem[],
   activeGroup: string,
   overId: string,
+  trailingGroups?: ReadonlySet<string>,
 ): SidebarProjectDrop | null {
   const sequence = items.flatMap((item) =>
     item.kind === "project-header"
-      ? [item.group]
+      ? trailingGroups?.has(item.group)
+        ? []
+        : [item.group]
       : item.kind === "marker" && item.marker === "pinned-projects-divider"
         ? [PINNED_PROJECTS_DIVIDER]
         : [],
@@ -352,9 +356,13 @@ export function resolveSidebarProjectDrop(
   const over = items[overIndex];
   if (from === -1 || over === undefined) return null;
   let to: number;
-  if (over.kind === "project-header") to = sequence.indexOf(over.group);
-  else if (over.kind === "thread" && over.section === "active" && over.group !== undefined)
-    to = sequence.indexOf(over.group);
+  const overGroup =
+    over.kind === "project-header" ||
+    (over.kind === "thread" && over.section === "active" && over.group !== undefined)
+      ? over.group
+      : undefined;
+  if (overGroup !== undefined)
+    to = trailingGroups?.has(overGroup) ? sequence.length - 1 : sequence.indexOf(overGroup);
   else if (over.kind === "marker" && over.marker === "pinned-projects-divider")
     to = sequence.indexOf(PINNED_PROJECTS_DIVIDER);
   else if (
@@ -1286,6 +1294,22 @@ export function groupSidebarThreadsByProject<
     folderByProject.get(`${thread.environmentId}:${thread.projectId}`)?.threads.push(thread);
   }
   return folders.filter((folder) => folder.threads.length > 0 || keepEmpty(folder.group));
+}
+
+/** Pinned folders come first in the shared pin order; the rest keep their given order. */
+export function orderSidebarFolderGroups<T extends { readonly projectKey: string }>(
+  groups: readonly T[],
+  pinnedKeys: readonly string[],
+): T[] {
+  const byKey = new Map(groups.map((group) => [group.projectKey, group] as const));
+  const pinned = new Set(pinnedKeys);
+  return [
+    ...pinnedKeys.flatMap((key) => {
+      const group = byKey.get(key);
+      return group === undefined ? [] : [group];
+    }),
+    ...groups.filter((group) => !pinned.has(group.projectKey)),
+  ];
 }
 
 export type SidebarV2TopStatusKind =

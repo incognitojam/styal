@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
 
-# Lists changed files that ship in the server, web,
-# desktop, or mobile builds, including dependency patches, the lockfile, and
-# the workspace catalog. Docs, CI, repository tooling, the separately deployed
-# relay, tests, and their fixtures do not count, whatever the commit subject
-# says.
+# Artifact inputs include build-time code; checks and repository tooling do not.
 list_shipped_paths() {
-  git diff-tree --no-commit-id --name-only -r --root "$1" \
-    | grep -E '^((apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/|pnpm-(lock|workspace)\.yaml$)' \
-    | grep -vE '\.md$|\.(test|spec)\.[cm]?[jt]sx?$|/(__tests__|tests?|testing|testUtils|testFixtures|fixtures|integration|scripts)/' \
-    || true
+  local path
+  while IFS= read -r path; do
+    case "$path" in
+      *.md|*.test.*|*.spec.*|*/__tests__/*|*/test/*|*/tests/*|*/testing/*|*/testUtils/*|*/testFixtures/*|*/fixtures/*|*/integration/*) continue ;;
+    esac
+    case "$path" in
+      native/browser-secret/test.c|native/*/src/*_tests.rs) continue ;;
+    esac
+    # Keep script exceptions explicit: these build or become part of release artifacts.
+    case "$path" in
+      scripts/build-desktop-artifact.ts|scripts/build-cli-archive.ts|scripts/build-npm-launcher.ts|scripts/update-release-package-versions.ts|scripts/apply-web-brand-assets.ts|scripts/prepare-server-compile-cache.cjs|scripts/linux-after-pack.ts|scripts/sign-macos.ts) ;;
+      scripts/lib/brand-assets.ts|scripts/lib/build-target-arch.ts|scripts/lib/cli-executable-imports.ts|scripts/lib/cli-external-packages.ts|scripts/lib/desktop-external-packages.ts|scripts/lib/linux-arm64-sea.ts|scripts/lib/public-config.ts|scripts/lib/resolve-catalog.ts|scripts/lib/server-compile-cache.ts|scripts/lib/third-party-licenses.ts|scripts/lib/windows-jsign.ts|scripts/lib/windows-tar.ts) ;;
+      scripts/npm-launcher/*|scripts/licenses/*) ;;
+      apps/desktop/scripts/build-browser-secret.mjs|apps/desktop/scripts/build-preview-annotation-css.mjs|apps/server/scripts/cli.ts|apps/server/scripts/cliErrors.ts|apps/server/scripts/posthogSourcemaps.ts|apps/web/scripts/build-libghostty-wasm.sh) ;;
+      */scripts/*|scripts/*) continue ;;
+      apps/web/*|apps/desktop/*|apps/mobile/*|apps/server/*|packages/*/*|patches/*) ;;
+      native/browser-secret/*|native/resource-monitor/*|native/kde-snap-shot/*|native/hyprland-snap-shot/*|native/libghostty-vt/*) ;;
+      assets/prod/*|assets/nightly/*|third-party-licenses/spdx/*|third-party-licenses/*.NOTICE|third-party-licenses.config.json) ;;
+      package.json|pnpm-lock.yaml|pnpm-workspace.yaml|styal-version.json|LICENSE) ;;
+      *) continue ;;
+    esac
+    printf '%s\n' "$path"
+  done < <(git diff-tree --no-commit-id --name-only -r --root "$1")
 }
 
 changes_shipped_code() {

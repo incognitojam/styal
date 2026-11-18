@@ -212,13 +212,17 @@ which path to copy. **Show all projects** clears an active project filter.
 ### Project folders (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. Pinned projects come first. A project with no active
+threads in a folder for each project. Pinned projects come first, marked with a pin, and the rest
+follow **Settings → General → Project order**. Drag a folder by its header to move the project, or
+across the **Pinned projects above** line to pin or unpin it. Moving a folder among the unpinned
+ones sets **Project order** to **Manual**, so it stays where you put it. A project with no active
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
 project's folder comes last and shows only while it has active threads. Click a folder to open or
 close it. A closed folder shows how many threads it holds, and a dot when one of them
 needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
-Pinned threads stay above the folders, and Snoozed and Settled stay below them. You can drag a
-thread onto the composer to mention it, but not within the sidebar while a folder is shown. The
+Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread
+into Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay
+ordered by their latest message, so a thread dropped there joins its own project's folder. The
 Working section is off in this mode. Folders take the place of project headers while this is on.
 **Two-line folder rows** in the same section adds the branch, pull request, and agent under each
 title. Each device keeps its own choice.

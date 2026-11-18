@@ -381,6 +381,8 @@ export interface ChatComposerProps {
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
+  /** Replaces the default placeholder, as the project chat's invitation. */
+  idlePlaceholder?: string | undefined;
 
   phase: SessionPhase;
   canInterrupt: boolean;
@@ -542,6 +544,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptHistoryEntries,
     forceExpandedOnMobile,
     projectSelectionRequired,
+    idlePlaceholder,
     phase,
     canInterrupt,
     isSendBusy,
@@ -3552,7 +3555,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : showProviderUnavailable ? (
                     "Enable a provider in Settings"
                   ) : (
-                    "Ask anything..."
+                    (idlePlaceholder ?? "Ask anything...")
                   )}
                 </button>
                 {collapsedComposerImagePreviews}
@@ -3718,7 +3721,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Choose a project above to start a thread"
                             : showProviderUnavailable
                               ? "Enable a provider in Settings to send a message"
-                              : (offeredPromptSuggestion ?? DEFAULT_COMPOSER_PLACEHOLDER)
+                              : (offeredPromptSuggestion ??
+                                idlePlaceholder ??
+                                DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (

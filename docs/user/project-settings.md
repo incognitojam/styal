@@ -311,9 +311,15 @@ coordinator, so threads can't keep waking each other. The coordinator must be a 
 project. Clearing the coordinator, or turning the Labs switch off, stops new reports. The
 coordinator is kept on each machine, not in `styal.json`, and agents cannot set it yet.
 
-The coordinator's row looks like any other thread. The project's settings name it under
-**Coordinator**, its menu offers **Stop being coordinator**, and the details of a thread that reports
-to it show **Reports to** with its title.
+With the switch on, each project has a page with its coordinator as the project's chat. Open it with
+**Open project** in the command palette, the project's name in a thread's header, a project header
+when threads are grouped by project, or the chat's own row, which shows the project's name and how
+many of its threads are working or need you. **Project settings** links open the page, and its gear
+button opens the settings. A project without a coordinator shows an empty chat: the first message
+starts a thread in the project's folder, without a worktree, and makes it the coordinator.
+
+The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
+coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
 
 ## Keep the default branch current
 
