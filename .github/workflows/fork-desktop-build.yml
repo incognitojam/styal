@@ -481,7 +481,7 @@ jobs:
 
       # A build can package fine and still not open (a missing module in the
       # backend or the bundle). This launches the app from the shipped
-      # AppImage or DMG. Older release candidates predate the script.
+      # AppImage, DMG, or extracted Windows installer. Older release candidates predate the script.
       - name: Launch check
         if: matrix.platform != 'win' && hashFiles('scripts/smoke-desktop-app.ts') != ''
         shell: bash
@@ -503,8 +503,26 @@ jobs:
             xvfb-run -a "${check[@]}" --executable "$RUNNER_TEMP/squashfs-root/styal"
           fi
 
+      - name: Launch check (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $output = "$env:RUNNER_TEMP/desktop-launch-check"
+          New-Item -ItemType Directory -Force $output | Out-Null
+          $unpacked = "$env:RUNNER_TEMP/desktop-launch-app"
+          $installer = (Get-ChildItem release/*x64.exe).FullName
+          7z x $installer "-o$unpacked/installer" -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $payload = (Get-ChildItem "$unpacked/installer" -Recurse -Filter 'app-64.7z').FullName
+          7z x $payload "-o$unpacked/app" -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $apps = @(Get-ChildItem "$unpacked/app/styal*.exe")
+          if ($apps.Count -ne 1) { throw "Expected one packaged styal executable, found $($apps.Count)" }
+          node scripts/smoke-desktop-app.ts --executable $apps[0].FullName --artifacts-dir $output 2>&1 | Tee-Object "$output/launch.log"
+          exit $LASTEXITCODE
+
       - name: Upload launch check output
-        if: failure() && matrix.platform != 'win'
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: desktop-launch-check-${{ matrix.id }}
