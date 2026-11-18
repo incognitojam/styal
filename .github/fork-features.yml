@@ -377,6 +377,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15818
       retire_when: Upstream offers an equivalent Reply action above the full assistant text selection, with fallback placement near the top edge.
 
+  - id: attachment-read-strip-deduplication
+    title: Do not repeat user attachments in the viewed-image strip
+    status: maintained
+    tier: yield
+    prs: [1589]
+    invariants:
+      - Web, desktop and mobile omit images from the viewed-image strip only when the attachment-directory filename matches an attachment ID on the thread's user messages.
+      - Other viewed images remain visible beside collapsed tool groups, and user attachments and expanded tool images remain available.
+    rationale: Reading back images the user just attached should not duplicate them in the conversation.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+      - packages/client-runtime/src/work-log/presentation.ts
+    tests:
+      - packages/client-runtime/src/work-log/presentation.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/30473
+      retire_when: Upstream omits the thread's user attachments from the viewed-image strip while retaining other viewed images.
+
   - id: auto-environment-tools
     title: Allow bounded environment operations from Auto threads
     status: maintained

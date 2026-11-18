@@ -5,6 +5,7 @@ import * as DateTime from "effect/DateTime";
 
 import {
   continuedResponseWorkStartedAt,
+  omitUserAttachmentImages,
   omitRetriedFindingsReports,
   resolveWorkEntryToolPresentation,
   resolveWorkEntryToolRowPresentation,
@@ -708,5 +709,20 @@ describe("V2 continued response working clock", () => {
         },
       }),
     ).toBe(iso(40));
+  });
+});
+
+describe("omitUserAttachmentImages", () => {
+  it.each([
+    [["/data/attachments/own.png"], []],
+    [["/workspace/reference.png"], ["/workspace/reference.png"]],
+    [["/data/attachments/other.png"], ["/data/attachments/other.png"]],
+    [["/data/attachments/own.png", "/data/attachments/own.png"], []],
+    [["/workspace/own.png"], ["/workspace/own.png"]],
+    [["C:\\data\\attachments\\own.png"], []],
+    [["/data/not-attachments/own.png"], ["/data/not-attachments/own.png"]],
+    [["/data/attachments/nested/own.png"], ["/data/attachments/nested/own.png"]],
+  ])("filters only this thread's attachment files: %j", (paths, expected) => {
+    expect(omitUserAttachmentImages(paths, new Set(["own"]))).toEqual(expected);
   });
 });

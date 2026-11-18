@@ -34,6 +34,7 @@ import {
   workEntryEditDidNotApply,
   contextCompactionTokenCounts,
   workEntriesViewedImagePaths,
+  omitUserAttachmentImages,
   type ToolGroupSummaryKind,
   liveThoughtLine,
   workEntryHiddenByToolCallVisibility,
@@ -2620,13 +2621,25 @@ export function deriveMessagesTimelineRows(input: {
   const result = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
-  return result.map((row, index) => {
-    if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
+  const attachmentIds = new Set(
+    input.timelineEntries.flatMap((entry) =>
+      entry.kind === "message" && entry.message.role === "user"
+        ? (entry.message.attachments ?? []).map((attachment) => attachment.id)
+        : [],
+    ),
+  );
+  const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
+    if (row.kind !== "viewed-images") return [row];
+    const paths = omitUserAttachmentImages(row.paths, attachmentIds);
+    return paths.length === 0 ? [] : [paths === row.paths ? row : { ...row, paths }];
+  });
+  return visibleRows.map((row, index) => {
+    if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(visibleRows[index + 1])) {
       return { ...row, continuesWorkLog: true };
     }
     if (!timelineRowIsOwnUserMessage(row)) return row;
-    const previous = result[index - 1];
-    const groupedWithNext = timelineRowIsOwnUserMessage(result[index + 1]);
+    const previous = visibleRows[index - 1];
+    const groupedWithNext = timelineRowIsOwnUserMessage(visibleRows[index + 1]);
     const groupedWithPrevious = timelineRowIsOwnUserMessage(previous);
     const continuesSteer =
       groupedWithPrevious && messageIsSteer(row.message) && messageIsSteer(previous.message);
