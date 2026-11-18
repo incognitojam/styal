@@ -8,6 +8,7 @@ import {
   type OrchestrationV2Notification,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
+  type OrchestrationV2ThreadReportTarget,
   type OrchestrationV2ThreadShell,
   type RunId,
   type RuntimeRequestId,
@@ -94,6 +95,11 @@ export function requestReportKind(input: {
   return input.hasActiveRun ? null : "stopped_on_question";
 }
 
+/** A turn started by another thread's report. */
+const startedByReport = (
+  message: Pick<OrchestrationV2ConversationMessage, "notification"> | undefined,
+) => message?.notification?.source.kind === "launched_thread";
+
 /** Usage-limit recovery resends as the user; only a message from a client is a person's turn. */
 export const startedByPerson = (
   message: Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource"> | undefined,
@@ -102,13 +108,16 @@ export const startedByPerson = (
 /**
  * What a finished run owes the launcher. A result needs a thread with nothing else on the way,
  * which is what keeps routine turns in a long thread quiet; a person who started the turn is
- * already in the conversation, so it is theirs. A failure always counts.
+ * already in the conversation, so it is theirs, except for the first turn of a thread a person
+ * started under a coordinator, which has not heard of it yet. A failure always counts.
  */
 export function runReportKind(input: {
   readonly run: Pick<OrchestrationV2Run, "id" | "status" | "ordinal">;
   readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld">>;
   readonly reportedInRunId: RunId | undefined;
   readonly startedByPerson: boolean;
+  readonly startedByReport: boolean;
+  readonly toCoordinator: boolean;
   readonly hasOpenDelegatedTask: boolean;
   readonly pendingBackgroundTasks: number;
 }): "result" | "failed" | "stopped" | null {
@@ -121,12 +130,15 @@ export function runReportKind(input: {
       run.queueHeld !== true,
   );
   if (superseded) return null;
+  // A coordinator can be a thread that reports to another thread, so a report it answers could
+  // wake that thread again. Only work that did not start from a report reaches it on its own.
+  if (input.toCoordinator && input.startedByReport) return null;
   if (input.run.status === "failed") return "failed";
   if (input.run.status === "interrupted") return "stopped";
   if (
     input.run.status !== "completed" ||
     input.reportedInRunId === input.run.id ||
-    input.startedByPerson ||
+    (input.startedByPerson && !(input.toCoordinator && input.run.ordinal === 1)) ||
     input.hasOpenDelegatedTask ||
     input.pendingBackgroundTasks > 0
   ) {
@@ -153,9 +165,12 @@ function excerpt(text: string): string {
   return `${trimmed.slice(0, REPORT_TEXT_LIMIT).trimEnd()}…`;
 }
 
+type ReportSource = OrchestrationV2ThreadReportTarget["source"];
+
 function reportMessage(input: {
   readonly environmentId: EnvironmentId | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "id" | "title">;
+  readonly source: ReportSource;
   readonly situation: string;
   readonly body: string | undefined;
   readonly next: string;
@@ -164,7 +179,11 @@ function reportMessage(input: {
     input.environmentId === undefined
       ? ""
       : `, link ${formatThreadLink({ environmentId: input.environmentId, threadId: input.thread.id })}`;
-  const head = `Thread you launched, "${input.thread.title}" (${input.thread.id}${link}), ${input.situation}`;
+  const who =
+    input.source === "project-coordinator"
+      ? "Thread in the project you coordinate"
+      : "Thread you launched";
+  const head = `${who}, "${input.thread.title}" (${input.thread.id}${link}), ${input.situation}`;
   const body =
     input.body === undefined || input.body.trim() === ""
       ? ""
@@ -174,14 +193,16 @@ function reportMessage(input: {
 
 const reportNotification = (
   thread: Pick<OrchestrationV2AppThread, "id" | "title">,
+  source: ReportSource,
   outcome: OrchestrationV2Notification["outcome"],
   ending: string,
 ): OrchestrationV2Notification => {
   const label = reportLabel(thread.title.trim());
+  const kind = source === "project-coordinator" ? "Project thread" : "Launched thread";
   return {
     source: { kind: "launched_thread", childThreadId: thread.id },
     outcome,
-    summary: `Launched thread${label === undefined ? "" : ` "${label}"`} ${ending}`,
+    summary: `${kind}${label === undefined ? "" : ` "${label}"`} ${ending}`,
   };
 };
 
@@ -208,7 +229,7 @@ const reportCopy = {
 
 type ReportThreads = Pick<
   ThreadManagementServiceShape,
-  "dispatch" | "getThreadRecords" | "getThreadShell"
+  "dispatch" | "getThreadRecords" | "getThreadShell" | "reportRecipient"
 >;
 
 const deliver = Effect.fnUntraced(function* (
@@ -285,7 +306,8 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   if (target === undefined || target === null) return undefined;
 
   const { environmentId } = input;
-  const launcherId = target.threadId;
+  const { source } = target;
+  const recipient = () => threads.reportRecipient(thread);
 
   if (input.trigger.kind === "request") {
     const requestId = input.trigger.requestId;
@@ -301,11 +323,28 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
             ),
           });
     if (request === undefined || kind === null) {
-      yield* withdrawBlockedReport(threads, { threadId: thread.id, launcherId, key });
+      // Withdraw where the report went, whoever coordinates the project now.
+      const deliveredTo =
+        source === "project-coordinator" ? target.blockedReportsTo?.[requestId] : target.threadId;
+      if (deliveredTo !== undefined) {
+        yield* withdrawBlockedReport(threads, {
+          threadId: thread.id,
+          launcherId: deliveredTo,
+          key,
+        });
+      }
+      if (target.blockedReportsTo?.[requestId] !== undefined) {
+        yield* recordBlockedReport(threads, thread.id, requestId, null);
+      }
       return undefined;
     }
+    const launcherId = yield* recipient();
+    if (launcherId === null) return undefined;
     if (!launcherTakesReports(yield* threads.getThreadShell(launcherId))) {
       return { kind: "blocked", outcome: "dropped" } as const;
+    }
+    if (source === "project-coordinator") {
+      yield* recordBlockedReport(threads, thread.id, requestId, launcherId);
     }
     const asks = request.kind === "user_input" ? "a question" : "an approval";
     yield* deliver(threads, {
@@ -315,6 +354,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       text: reportMessage({
         environmentId,
         thread,
+        source,
         situation:
           kind === "blocked"
             ? `has been blocked on ${asks} for over ${Duration.toMinutes(BLOCKED_REPORT_DELAY)} minutes and cannot continue until it is answered.`
@@ -322,7 +362,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
         body: undefined,
         next: `Read it with t3_pending_request action read, threadId ${thread.id}, and requestId ${requestId}. Answer it with action respond when the answer follows from the task or the user's instructions; otherwise ask the user, then answer it. If it is no longer pending, it was answered or dismissed.`,
       }),
-      notification: reportNotification(thread, "updated", "is blocked and needs an answer"),
+      notification: reportNotification(thread, source, "updated", "is blocked and needs an answer"),
     });
     return { kind: "blocked", outcome: "delivered" } as const;
   }
@@ -330,6 +370,8 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   const runId = input.trigger.runId;
   const run = records.runs.find((candidate) => candidate.id === runId);
   if (run === undefined) return undefined;
+  const launcherId = yield* recipient();
+  if (launcherId === null) return undefined;
   const history = yield* threads.getThreadRecords(
     thread.id,
     ["messages", "turnItems", "providerTurns"],
@@ -346,6 +388,8 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     runs: records.runs,
     reportedInRunId: target.sentInRunId,
     startedByPerson: startedByPerson(startedBy),
+    startedByReport: startedByReport(startedBy),
+    toCoordinator: source === "project-coordinator",
     hasOpenDelegatedTask: records.subagents.some(
       (task) =>
         task.origin === "app_owned" &&
@@ -365,32 +409,59 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     text: reportMessage({
       environmentId,
       thread,
+      source,
       situation: copy.situation,
       body: subagentResultForRun(history, run).text,
       next: copy.next,
     }),
-    notification: reportNotification(thread, copy.outcome, copy.ending),
+    notification: reportNotification(thread, source, copy.outcome, copy.ending),
   });
   return { kind, outcome: "delivered" } as const;
 });
+
+/** Merged by the orchestrator, so reports checked at the same time keep each other's entries. */
+const recordBlockedReport = (
+  threads: ReportThreads,
+  threadId: ThreadId,
+  requestId: RuntimeRequestId,
+  recipient: ThreadId | null,
+) =>
+  threads.dispatch({
+    type: "thread.report-target.blocked-report",
+    commandId: CommandId.make(
+      `server:thread-report-target:${threadId}:${recipient === null ? "withdrawn" : "delivered"}:${requestId}`,
+    ),
+    threadId,
+    requestId,
+    recipient,
+  });
 
 /** The text and notification for a report the launched agent chose to send itself. */
 export function sentReport(input: {
   readonly environmentId: EnvironmentId | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "id" | "title">;
+  readonly source: ReportSource;
   readonly message: string;
 }) {
   return {
     text: reportMessage({
       environmentId: input.environmentId,
       thread: input.thread,
+      source: input.source,
       situation: "sent you a report.",
       body: input.message,
       next: "Read more with t3_thread_read. Reply with t3_thread_send.",
     }),
-    notification: reportNotification(input.thread, "updated", "sent a report"),
+    notification: reportNotification(input.thread, input.source, "updated", "sent a report"),
   };
 }
 
-export const threadReportNote = (launcherId: ThreadId) =>
-  `Note: the thread that launched this one (${launcherId}) asked to hear back. styal tells it when a turn ends with nothing else pending, when this thread fails, or when it stays blocked on an approval or question, so do not report those yourself. While a pull request or workflow watch is on, turn ends stay quiet: when you reach a result it should hear, such as a pull request ready for review, send it one short message with \`t3_thread_send\` to that thread id.`;
+export const threadReportNote = (
+  target: Pick<OrchestrationV2ThreadReportTarget, "source">,
+  recipientId: ThreadId,
+) =>
+  `Note: ${
+    target.source === "project-coordinator"
+      ? `this project's coordinator thread (${recipientId}) hears from threads started here.`
+      : `the thread that launched this one (${recipientId}) asked to hear back.`
+  } styal tells it when a turn ends with nothing else pending, when this thread fails, or when it stays blocked on an approval or question, so do not report those yourself. While a pull request or workflow watch is on, turn ends stay quiet: when you reach a result it should hear, such as a pull request ready for review, send it one short message with \`t3_thread_send\` to that thread id.`;

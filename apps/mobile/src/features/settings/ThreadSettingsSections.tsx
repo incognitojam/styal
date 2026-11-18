@@ -57,6 +57,12 @@ export function SettingsLabsRouteScreen() {
           setting="fastWorktreeCheckout"
           description="On a Mac, clone new worktrees from a checkout cached in the styal home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
         />
+        <MachineBetaSection
+          title="Project coordinators"
+          icon="person.2"
+          setting="projectCoordinatorsEnabled"
+          description="Let a project name one thread as its coordinator from the thread's menu. It is told to hand work to other threads, and hears when threads started in the project finish or need input."
+        />
       </ScrollView>
     </SettingsScreen>
   );
@@ -271,7 +277,10 @@ export function TurnUsageSettings() {
   );
 }
 
-type MachineBetaSetting = "linkedEnvironmentsEnabled" | "fastWorktreeCheckout";
+type MachineBetaSetting =
+  | "linkedEnvironmentsEnabled"
+  | "fastWorktreeCheckout"
+  | "projectCoordinatorsEnabled";
 
 /** One switch per connected machine that offers the beta, since each machine's own setting decides. */
 function MachineBetaSection({
@@ -283,7 +292,8 @@ function MachineBetaSection({
 }: {
   readonly title: string;
   readonly icon: ComponentProps<typeof SettingsSwitchRow>["icon"];
-  readonly capability: "peerLinks" | "fastWorktreeCheckout";
+  /** Omitted for a setting every connected server accepts. */
+  readonly capability?: "peerLinks" | "fastWorktreeCheckout";
   readonly setting: MachineBetaSetting;
   readonly description: string;
 }) {
@@ -291,7 +301,9 @@ function MachineBetaSection({
   const supported = environments.filter(
     (environment) =>
       environment.connection.phase === "connected" &&
-      environment.serverConfig?.environment.capabilities[capability] === true,
+      (capability === undefined
+        ? environment.serverConfig != null
+        : environment.serverConfig?.environment.capabilities[capability] === true),
   );
   const writable = useEnvironmentsWithScope(supported, AuthSettingsWriteScope);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
@@ -320,7 +332,9 @@ function MachineBetaSection({
                     patch:
                       setting === "linkedEnvironmentsEnabled"
                         ? { linkedEnvironmentsEnabled: value }
-                        : { fastWorktreeCheckout: value },
+                        : setting === "fastWorktreeCheckout"
+                          ? { fastWorktreeCheckout: value }
+                          : { projectCoordinatorsEnabled: value },
                   },
                 })
               }

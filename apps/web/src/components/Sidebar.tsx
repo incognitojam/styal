@@ -153,9 +153,11 @@ import {
 } from "../threadSelectionStore";
 import {
   canTurnThreadIntoProject,
+  readProjectCoordinatorState,
   useAcknowledgeThreadWoke,
   useThreadActions,
 } from "../hooks/useThreadActions";
+import { reportProjectCoordinatorFailure } from "../hooks/useThreadActionMenu";
 import { useProjectPinOrder } from "../hooks/useProjectPinOrder";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
@@ -1065,6 +1067,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     unpinThread,
     confirmAndUnpinThread,
     setThreadAutoSettle,
+    setProjectCoordinator,
     turnThreadIntoProject,
     reorderPinnedThread,
     reorderActiveThread,
@@ -3082,6 +3085,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              projectCoordinator: readProjectCoordinatorState(threadRef),
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -3161,6 +3165,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "unpin":
             attemptUnpin(threadRef);
+            return;
+          case "make-coordinator":
+          case "stop-coordinator":
+            await reportProjectCoordinatorFailure(
+              await setProjectCoordinator(threadRef, clicked.value === "make-coordinator"),
+            );
             return;
           case "turn-into-project": {
             const result = await turnThreadIntoProject(threadRef);

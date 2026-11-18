@@ -296,6 +296,25 @@ the project. The instructions apply to every checkout in the project group and w
 Claude, Cursor, Grok, and OpenCode. Clear the field or reset it to stop including them in future
 sessions.
 
+## Name a project coordinator
+
+Turn on **Project coordinators** in **Settings → Labs** to let one thread coordinate a project.
+Choose it from **Coordinator** in the project's settings, or with **Make project coordinator** in
+the thread's menu on web, desktop or mobile. **Stop being coordinator** or **None** clears it.
+
+The coordinator is told to hand work to other threads instead of doing it itself. Threads started in
+the project on the same machine report to it, including threads you start: it hears when one fails,
+stays stuck on an approval or question, or finishes its first turn with nothing else pending. A
+thread the coordinator launched with reports on reports once, and threads you keep talking to stay
+yours after their first turn. A turn started by another thread's report doesn't report to the
+coordinator, so threads can't keep waking each other. The coordinator must be a thread in the
+project. Clearing the coordinator, or turning the Labs switch off, stops new reports. The
+coordinator is kept on each machine, not in `styal.json`, and agents cannot set it yet.
+
+The coordinator's row looks like any other thread. The project's settings name it under
+**Coordinator**, its menu offers **Stop being coordinator**, and the details of a thread that reports
+to it show **Reports to** with its title.
+
 ## Keep the default branch current
 
 In Source control, enable **Automatically pull** to keep the default-branch checkout up to date

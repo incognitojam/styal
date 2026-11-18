@@ -4493,6 +4493,46 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream persists equivalent project instructions and applies them safely to fresh and recovered sessions for every supported provider without duplicating prompt content.
 
+  - id: project-coordinators
+    title: Name one thread per project as its coordinator
+    status: maintained
+    tier: yield
+    prs: [1552]
+    invariants:
+      - Project coordinators are a Labs server setting, off by default; the coordinator is machine-local server state keyed by project, set and cleared from the project's settings or the thread's menu on web and desktop, and from the thread's menu on mobile.
+      - While a project has a coordinator, threads created there report to it through thread reports, including threads a person starts, except threads that already report to their launcher, remote delegated work and imported sessions.
+      - A person-started thread reports its first turn's result; later turns a person starts stay theirs. Failures, stops and blocked requests report as for launched threads, once each.
+      - Reports, the report note, explicit reports and their permission follow the project's current coordinator; clearing it or turning the Labs switch off stops new reports, and a blocked report is withdrawn from the coordinator that received it.
+      - Only a thread of the same project can coordinate it; the settings RPC refuses another project's thread and reports never reach one.
+      - A turn started by another thread's report never reports to the coordinator on its own, so report wakes cannot cycle.
+      - Only the coordinator's thread receives the dispatch-only note, once when it becomes coordinator, and one note when it stops.
+      - The coordinator's sidebar row is an ordinary row; the project's settings name it, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
+    rationale: Upstream's Home (one fleet-wide full-access thread) is open and stale; this scopes the same idea, a setting that holds a thread id, to one project so Home can replace it later.
+    implementation_paths:
+      - apps/mobile/src/features/threads/projectCoordinator.ts
+      - apps/server/src/orchestration-v2/ProjectCoordinator.ts
+      - apps/server/src/orchestration-v2/ThreadReports.ts
+      - apps/web/src/components/settings/ProjectCoordinatorSetting.tsx
+      - packages/client-runtime/src/state/projectCoordinators.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/settings/LabsSettingsPanel.tsx
+      - apps/web/src/hooks/useThreadActionMenu.ts
+      - packages/contracts/src/settings.ts
+      - packages/shared/src/serverSettings.ts
+    tests:
+      - apps/server/src/orchestration-v2/ProjectCoordinator.test.ts
+      - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
+      - apps/server/src/orchestration-v2/ThreadReports.test.ts
+      - packages/shared/src/serverSettings.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15975
+      retire_when: Upstream ships Home or a per-project coordinator that covers project-scoped reports and dispatch.
+
   - id: project-emoji-search
     title: Search emoji by name in the project icon picker
     status: maintained

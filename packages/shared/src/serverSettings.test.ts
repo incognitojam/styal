@@ -7,7 +7,9 @@ import {
   SecretProviderKind,
   ServerSettings,
   ServerSettingsPatch,
+  ThreadId,
   UsageLimitSourceId,
+  projectCoordinatorThreadId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
@@ -138,6 +140,28 @@ describe("serverSettings helpers", () => {
       applyServerSettingsPatch(revoked, { projectFileActionApprovals: {} })
         .projectFileActionApprovals,
     ).toEqual({});
+  });
+
+  it("sets and clears one project's coordinator without touching another's", () => {
+    const app = ProjectId.make("project:app");
+    const docs = ProjectId.make("project:docs");
+    const set = applyServerSettingsPatch(
+      { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+      {
+        projectCoordinators: {
+          [app]: { threadId: ThreadId.make("thread:app-coordinator") },
+          [docs]: { threadId: ThreadId.make("thread:docs-coordinator") },
+        },
+      },
+    );
+    expect(projectCoordinatorThreadId(set, app)).toBe("thread:app-coordinator");
+    const cleared = applyServerSettingsPatch(set, { projectCoordinators: { [app]: null } });
+    expect(projectCoordinatorThreadId(cleared, app)).toBeNull();
+    expect(projectCoordinatorThreadId(cleared, docs)).toBe("thread:docs-coordinator");
+    // Turning the Labs switch off hides the coordinator without forgetting it.
+    const off = applyServerSettingsPatch(cleared, { projectCoordinatorsEnabled: false });
+    expect(projectCoordinatorThreadId(off, docs)).toBeNull();
+    expect(off.projectCoordinators[docs]?.threadId).toBe("thread:docs-coordinator");
   });
 
   it("keeps a source control host's saved tokens when a patch sets another host's token", () => {

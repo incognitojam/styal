@@ -541,6 +541,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["beta tab autocomplete predict next message claude codex ghost text"],
   },
   {
+    id: "project-coordinators",
+    title: "Project coordinators",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: [
+      "beta coordinator dispatch delegate report back project thread orchestrator home",
+    ],
+  },
+  {
     id: "simlock-hosts",
     title: "Simlock device hosts (alpha)",
     to: "/settings/labs",

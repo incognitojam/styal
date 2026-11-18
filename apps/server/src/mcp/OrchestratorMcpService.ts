@@ -3177,7 +3177,8 @@ const make = Effect.gen(function* () {
       // The launcher asked to hear back, so this is the report it opted in to, not driving it.
       const isReport =
         input.freshContext !== true &&
-        parent?.thread.reportTo?.threadId === input.threadId &&
+        parent?.thread.reportTo != null &&
+        (yield* threadManagement.reportRecipient(parent.thread)) === input.threadId &&
         (mode === "auto" || mode === "queue");
       if (!isReport) {
         yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
@@ -3214,6 +3215,7 @@ const make = Effect.gen(function* () {
                 ...sentReport({
                   environmentId: scope.environmentId,
                   thread: parent.thread,
+                  source: parent.thread.reportTo?.source,
                   message: input.message,
                 }),
                 mode: "queue" as const,
@@ -3240,7 +3242,13 @@ const make = Effect.gen(function* () {
               type: "thread.report-target.set",
               commandId: stableCommandId({ scope, requestKey: key, operation: "thread-report" }),
               threadId: parent.thread.id,
-              reportTo: { ...parent.thread.reportTo, sentInRunId: senderRun.id },
+              reportTo: {
+                threadId: parent.thread.reportTo.threadId,
+                sentInRunId: senderRun.id,
+                ...(parent.thread.reportTo.source === undefined
+                  ? {}
+                  : { source: parent.thread.reportTo.source }),
+              },
             })
             .pipe(
               Effect.catchCause((cause) =>

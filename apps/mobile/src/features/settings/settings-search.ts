@@ -150,6 +150,8 @@ const SETTINGS_SEARCH_TERMS = {
     "linked environments",
     "fast worktree checkout",
     "clone cache",
+    "project coordinators",
+    "coordinator",
   ],
   SettingsEnvironmentMaintenance: [
     "updates",

@@ -469,6 +469,8 @@ export function HomeScreen(props: HomeScreenProps) {
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
+    coordinatorThreadKeys,
+    coordinatorEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder();
@@ -611,6 +613,8 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={item.item.variant}
         hasQueuedMessages={item.hasQueuedMessages}
         hasUnsentDraft={item.hasUnsentDraft}
+        isProjectCoordinator={coordinatorThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
+        projectCoordinatorsEnabled={coordinatorEnvironmentIds.has(thread.environmentId)}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}
         wokeAt={item.item.wokeAt}

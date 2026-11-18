@@ -5,6 +5,8 @@ export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
   | "filter-by-project"
+  | "make-coordinator"
+  | "stop-coordinator"
   | "turn-into-project"
   | "project-settings"
   | "pin"
@@ -96,6 +98,8 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Set while project coordinators are on in Labs: whether this thread is its project's. */
+  readonly projectCoordinator?: { readonly isCoordinator: boolean } | null;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -192,6 +196,21 @@ export function buildThreadActionMenuItems(
               : `Filter by ${state.projectFilter.label}`,
             icon: "folder-tree",
           },
+        ]
+      : []),
+    ...(state.projectCoordinator
+      ? [
+          state.projectCoordinator.isCoordinator
+            ? {
+                id: "stop-coordinator" as const,
+                label: "Stop being coordinator",
+                icon: "folder-tree",
+              }
+            : {
+                id: "make-coordinator" as const,
+                label: "Make project coordinator",
+                icon: "folder-tree",
+              },
         ]
       : []),
     ...(state.canTurnIntoProject

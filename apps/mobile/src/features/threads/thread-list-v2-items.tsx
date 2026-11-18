@@ -72,6 +72,7 @@ import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { canTurnThreadIntoProject, turnThreadIntoProject } from "./turnThreadIntoProject";
+import { projectCoordinatorMenuItems, setProjectCoordinator } from "./projectCoordinator";
 import { threadCanArchive } from "../home/threadArchive";
 import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
@@ -719,6 +720,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly hasQueuedMessages?: boolean;
   /** The thread's composer holds unsent text or attachments. */
   readonly hasUnsentDraft?: boolean;
+  readonly isProjectCoordinator?: boolean;
+  readonly projectCoordinatorsEnabled?: boolean;
   readonly snoozed?: boolean;
   readonly pinned?: boolean;
   readonly wokeAt: string | null;
@@ -1022,6 +1025,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         supported: props.titleRegenerationSupported,
         isRegenerating: isRegeneratingTitle,
       }),
+      ...projectCoordinatorMenuItems({
+        enabled: props.projectCoordinatorsEnabled === true,
+        isCoordinator: props.isProjectCoordinator === true,
+        thread: { lineage: thread.lineage },
+      }),
       ...(canTurnIntoProject
         ? [
             {
@@ -1037,6 +1045,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       canTurnIntoProject,
       isRegeneratingTitle,
       props.titleRegenerationSupported,
+      props.projectCoordinatorsEnabled,
+      props.isProjectCoordinator,
+      thread.lineage,
       thread.reportTo,
       thread.runtime,
     ],
@@ -1148,6 +1159,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         });
       }
       if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
+      if (nativeEvent.event === "make-coordinator") void setProjectCoordinator(thread, true);
+      if (nativeEvent.event === "stop-coordinator") void setProjectCoordinator(thread, false);
       if (nativeEvent.event === "copy-thread") {
         const target = threadChipCopyTarget(
           { environmentId: thread.environmentId, threadId: thread.id },

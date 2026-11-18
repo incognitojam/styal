@@ -56,6 +56,7 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import { threadReportNote } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
+import { PROJECT_COORDINATOR_NOTE } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
 import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
@@ -362,6 +363,8 @@ export const McpToolUseCase = Schema.Struct({
     branchNote: Schema.optional(Schema.Literals(["temporary", "renamed"])),
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
+    /** This thread was just made its project's coordinator: T3 puts its note on the prompt. */
+    projectCoordinator: Schema.optional(Schema.Boolean),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3; for a
@@ -1147,7 +1150,7 @@ export const buildMessages = (sample: Sample) => {
         text(
           first
             ? withInlineContext(
-                threadReportNote(ThreadId.make(testCase.setup.reportTo!)),
+                threadReportNote({}, ThreadId.make(testCase.setup.reportTo!)),
                 turn.text,
               )
             : turn.text,
@@ -1156,7 +1159,12 @@ export const buildMessages = (sample: Sample) => {
     }
   }
   const userText = withInlineContext(
-    branchNote(testCase),
+    [
+      branchNote(testCase),
+      testCase.setup.projectCoordinator === true ? PROJECT_COORDINATOR_NOTE : "",
+    ]
+      .filter((part) => part !== "")
+      .join("\n\n"),
     testCase.promptContext === undefined
       ? testCase.prompt
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext }),
