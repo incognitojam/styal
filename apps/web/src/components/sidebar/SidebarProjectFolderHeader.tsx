@@ -114,6 +114,11 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         transition,
         visibility: !isDragging && transform?.scaleY === 0 ? "hidden" : undefined,
       }}
+      // Here, not on the name, so the chevron and New thread open the folder's menu too.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        props.onContextMenu(group, { x: event.clientX, y: event.clientY });
+      }}
     >
       <button
         {...listeners}
@@ -130,10 +135,6 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         aria-expanded={!collapsed}
         aria-current={props.selected ? "page" : undefined}
         onClick={() => (props.onOpen ? props.onOpen(group) : props.onToggle(group))}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          props.onContextMenu(group, { x: event.clientX, y: event.clientY });
-        }}
         className={cn(
           "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.selected && "bg-sidebar-row-active",
