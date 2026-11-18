@@ -421,6 +421,17 @@ export const make = Effect.gen(function* () {
       return { ...status, ...(sourceCheckout ? { sourceCheckout } : {}) };
     }),
     currentBranch: Effect.fn("GitWorkflowService.currentBranch")(function* (cwd) {
+      cwd = yield* checkout.root(cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.currentBranch",
+              cwd,
+              detail: "Could not resolve the worktree folder.",
+              cause,
+            }),
+        ),
+      );
       if (!(yield* detectGitRepositoryForStatus("GitWorkflowService.currentBranch", cwd))) {
         return null;
       }
@@ -457,17 +468,18 @@ export const make = Effect.gen(function* () {
     invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
     invalidateStatus: gitManager.invalidateStatus,
     headPath: Effect.fn("GitWorkflowService.headPath")(function (cwd) {
-      return git
-        .execute({
-          operation: "GitWorkflowService.headPath",
-          cwd,
-          args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
-          allowNonZeroExit: true,
-        })
-        .pipe(
-          Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
-          Effect.orElseSucceed(() => null),
-        );
+      return checkout.root(cwd).pipe(
+        Effect.flatMap((root) =>
+          git.execute({
+            operation: "GitWorkflowService.headPath",
+            cwd: root,
+            args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
+            allowNonZeroExit: true,
+          }),
+        ),
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
+        Effect.orElseSucceed(() => null),
+      );
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(

@@ -64,6 +64,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
   ] as const)("reports source checkout state and checks out again: %s", (state) =>
     Effect.gen(function* () {
       const f = yield* fixture;
+      yield* f.command(f.worktree, ["switch", "-c", "fixture-state"]);
       yield* f.write("src/source", "source");
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
@@ -101,6 +102,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
         ),
       );
       const cwd = state === "missing-nested" ? `${f.worktree}/src` : f.worktree;
+      assert.equal(yield* workflow.currentBranch(cwd), "fixture-state");
+      assert.equal(yield* workflow.headPath(cwd), yield* workflow.headPath(f.worktree));
       assert.isTrue((yield* workflow.localStatus({ cwd })).isRepo);
       assert.equal(
         (yield* workflow.localStatus({ cwd })).sourceCheckout,

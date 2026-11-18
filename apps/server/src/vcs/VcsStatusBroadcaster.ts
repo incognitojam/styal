@@ -399,7 +399,12 @@ export const make = Effect.gen(function* () {
       const cached = yield* getCachedStatus(cwd);
       if (cached?.local) {
         const branch = yield* workflow.currentBranch(cwd);
-        if (branch === cached.local.value.refName) return cached.local.value;
+        const sourceCheckout = yield* workflow.sourceCheckoutState(cwd);
+        if (
+          branch === cached.local.value.refName &&
+          sourceCheckout === cached.local.value.sourceCheckout
+        )
+          return cached.local.value;
         yield* workflow.invalidateLocalStatus(cwd);
         return yield* updateCachedLocalStatus(cwd, yield* workflow.localStatus({ cwd }), {
           publish: true,
@@ -895,11 +900,16 @@ export const make = Effect.gen(function* () {
             ? fs.exists(headDirectory).pipe(Effect.map((exists) => !exists))
             : Effect.succeed(false),
         ),
-        Stream.filter((event) => path.basename(event.path) === "HEAD"),
+        Stream.filter((event) =>
+          ["HEAD", "styal-checkout.json"].includes(path.basename(event.path)),
+        ),
         // A rebase moves HEAD many times; refresh once for whatever arrived during a refresh.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
-        Stream.runForEach(() =>
-          refreshCheckedOutRef(cwd).pipe(
+        Stream.runForEach((event) =>
+          (path.basename(event.path) === "HEAD"
+            ? refreshCheckedOutRef(cwd)
+            : refreshLocalStatusCore(cwd)
+          ).pipe(
             Effect.retry(CHECKOUT_REFRESH_RETRY),
             Effect.catchCause((cause) =>
               Effect.logWarning("VCS checked-out ref refresh failed", {
