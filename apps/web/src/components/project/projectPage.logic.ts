@@ -97,6 +97,54 @@ export function countProjectThreads(
   return { working, needYou };
 }
 
+/**
+ * Whether a project chat still hears from the threads it started, as the server decides for a
+ * launcher: not archived, deleted, or settled by the user.
+ */
+export function projectChatTakesReports(chat: {
+  readonly archivedAt: unknown;
+  readonly deletedAt?: unknown;
+  readonly settledOverride?: string | null;
+  readonly settleReason?: { readonly kind: string } | null | undefined;
+}): boolean {
+  return (
+    chat.archivedAt == null &&
+    chat.deletedAt == null &&
+    !(chat.settledOverride === "settled" && chat.settleReason?.kind === "user")
+  );
+}
+
+/**
+ * A thread the project's chat launched with reportBack stays on the project page until it needs
+ * you, fails, is pinned or you write to it. A `project-coordinator` report target only says the
+ * thread was created in the project. `chatThreadKeys`: chats that still take reports.
+ */
+export function staysOnProjectPage(
+  thread: EnvironmentThreadShell,
+  chatThreadKeys: ReadonlySet<string>,
+): boolean {
+  if (
+    thread.reportTo == null ||
+    thread.reportTo.source !== undefined ||
+    !chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) ||
+    thread.source.createdBy !== "agent" ||
+    thread.pinnedAt != null ||
+    thread.latestUserAuthoredMessageAt != null ||
+    thread.latestRun?.status === "failed"
+  )
+    return false;
+  switch (resolveSidebarThreadStatus(thread)) {
+    case "approval":
+    case "input":
+    case "request":
+    case "failed":
+    case "limited":
+      return false;
+    default:
+      return true;
+  }
+}
+
 export function formatProjectStatusLine(counts: ProjectThreadCounts): string | null {
   const needYou = counts.needYou.length;
   const parts = [

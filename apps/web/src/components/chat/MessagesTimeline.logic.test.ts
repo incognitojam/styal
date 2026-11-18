@@ -5142,6 +5142,100 @@ describe("linked timeline resources", () => {
     ]);
   });
 
+  it("lists a project chat turn's created and launched threads in one row after its answer", () => {
+    const created = (id: string, title: string) => {
+      const entry = event(id, "thread_created");
+      return {
+        ...entry,
+        projectedItem: {
+          item: { ...entry.projectedItem.item, targetThreadId: ThreadId.make(`t-${id}`), title },
+        } as OrchestrationV2ProjectedTurnItem,
+      };
+    };
+    const launch = {
+      kind: "work" as const,
+      id: "launch",
+      createdAt: "2026-09-08T10:00:03Z",
+      entry: {
+        id: "launch",
+        createdAt: "2026-09-08T10:00:03Z",
+        label: "Launched a project thread",
+        tone: "tool" as const,
+        runId,
+        projectedItem: {
+          item: {
+            id: "launch",
+            type: "dynamic_tool",
+            runId,
+            toolName: "t3_thread_launch",
+            status: "completed",
+            input: { title: "Launched one" },
+            output: { threadId: "t-launched" },
+            completedAt: null,
+            updatedAt: DateTime.makeUnsafe("2026-09-08T10:00:03Z"),
+          },
+        } as unknown as OrchestrationV2ProjectedTurnItem,
+      },
+    };
+    const remoteTask = event("remote", "subagent");
+    const delegated = {
+      ...remoteTask,
+      projectedItem: {
+        item: {
+          ...remoteTask.projectedItem.item,
+          origin: "app_owned",
+          childThreadId: null,
+          remoteChild: {
+            environmentId: "env-other",
+            threadId: "t-remote",
+            label: "laptop",
+            title: "Remote one",
+          },
+        },
+      } as unknown as OrchestrationV2ProjectedTurnItem,
+    };
+    // The answer comes from a run that resumed the first one after a restart.
+    const resumedRunId = RunId.make("resumed-run");
+    const answer = {
+      kind: "message" as const,
+      id: "final",
+      createdAt: "2026-09-08T10:00:04Z",
+      message: {
+        id: MessageId.make("final"),
+        role: "assistant" as const,
+        text: "Started them",
+        runId: resumedRunId,
+        streaming: false,
+        createdAt: "2026-09-08T10:00:04Z",
+        updatedAt: "2026-09-08T10:00:04Z",
+      },
+    };
+    for (const toolCallVisibility of ["showAll", "hideAll"] as const) {
+      const rows = deriveMessagesTimelineRows({
+        ...common,
+        timelineEntries: [created("a", "First"), created("b", "Second"), launch, delegated, answer],
+        runs: [{ id: runId }, { id: resumedRunId, restartContinuationOfRunId: runId }],
+        toolCallVisibility,
+        startedThreadsList: true,
+      });
+      expect(rows.filter((row) => row.id.startsWith("summary:"))).toEqual([]);
+      expect(rows.find((row) => row.kind === "started-threads")).toEqual({
+        kind: "started-threads",
+        id: `started:${runId}`,
+        createdAt: "2026-09-08T10:00:04Z",
+        threads: [
+          { environmentId: null, threadId: "t-a", title: "First" },
+          { environmentId: null, threadId: "t-b", title: "Second" },
+          { environmentId: null, threadId: "t-launched", title: "Launched one" },
+          { environmentId: "env-other", threadId: "t-remote", title: "Remote one" },
+        ],
+      });
+      expect(rows.map((row) => row.id).indexOf(`started:${runId}`)).toBe(
+        rows.map((row) => row.id).indexOf("final") + 1,
+      );
+    }
+  });
+
   it("shows a created chat after a steer only when that steer's segment is open", () => {
     const message = (id: string, role: "user" | "assistant", second: number) => ({
       kind: "message" as const,

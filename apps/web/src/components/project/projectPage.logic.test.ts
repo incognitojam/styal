@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   countProjectThreads,
+  staysOnProjectPage,
   formatProjectStatusLine,
   isProjectChatDraftId,
   projectChatDraftId,
@@ -83,6 +84,58 @@ describe("countProjectThreads", () => {
     );
     expect(counts.working).toBe(1);
     expect(counts.needYou).toEqual([]);
+  });
+});
+
+describe("staysOnProjectPage", () => {
+  const chats = new Set([`${local}:${chatId}`]);
+  const started = (id: string, overrides: Partial<EnvironmentThreadShell> = {}) =>
+    shell(id, {
+      reportTo: { threadId: chatId },
+      source: { createdBy: "agent" } as EnvironmentThreadShell["source"],
+      pinnedAt: null,
+      latestUserAuthoredMessageAt: null,
+      latestRun: null,
+      ...overrides,
+    });
+
+  it("keeps a thread an agent started for the chat off the sidebar while it works or after it finished", () => {
+    expect(staysOnProjectPage(started("working", { runtime: running }), chats)).toBe(true);
+    expect(staysOnProjectPage(started("done"), chats)).toBe(true);
+  });
+
+  it("brings it back when it needs you, fails, is pinned or you write to it", () => {
+    for (const thread of [
+      started("approval", { hasPendingApprovals: true }),
+      started("question", { hasPendingUserInput: true }),
+      started("report", { openReportQuestionCount: 1 }),
+      started("guest", { pendingGuestMessageCount: 1 }),
+      started("failed", { runtime: { status: "failed" } as EnvironmentThreadShell["runtime"] }),
+      started("failed-run", {
+        latestRun: { status: "failed" } as EnvironmentThreadShell["latestRun"],
+      }),
+      started("pinned", { pinnedAt: "2026-11-18T10:00:00.000Z" }),
+      started("written", { latestUserAuthoredMessageAt: "2026-11-18T10:00:00.000Z" }),
+    ]) {
+      expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
+    }
+  });
+
+  it("leaves threads a person or the project started, or that report elsewhere, in the sidebar", () => {
+    const person = started("person", {
+      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
+    });
+    const elsewhere = started("elsewhere", { reportTo: { threadId: ThreadId.make("other") } });
+    // Every thread created in the project reports to the chat; that alone does not say it started it.
+    const inProject = started("in-project", {
+      reportTo: { threadId: chatId, source: "project-coordinator" },
+    });
+    expect(staysOnProjectPage(inProject, chats)).toBe(false);
+    const otherMachine = started("remote", { environmentId: remote });
+    expect(staysOnProjectPage(person, chats)).toBe(false);
+    expect(staysOnProjectPage(elsewhere, chats)).toBe(false);
+    expect(staysOnProjectPage(otherMachine, chats)).toBe(false);
+    expect(staysOnProjectPage(started("no-chat"), new Set())).toBe(false);
   });
 });
 

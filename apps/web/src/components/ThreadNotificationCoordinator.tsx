@@ -37,6 +37,8 @@ import {
 import { type SystemNotificationHandle, showSystemNotification } from "../systemNotifications";
 import { resolveBackgroundThreadRequest } from "./backgroundThreadAnnouncement";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
+import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
+import { environmentServerConfigsAtom } from "../state/server";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
@@ -264,6 +266,26 @@ export function startThreadNotifications(
       environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
     );
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
+    // A thread the project chat launched finishes quietly while the chat hears its result. Read
+    // only when some thread was launched to report back, which few are.
+    let projectChatKeys: ReadonlySet<string> | null = null;
+    const reportingChatKeys = () => {
+      if (projectChatKeys !== null) return projectChatKeys;
+      const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
+      const chatIds = new Set(
+        settings?.projectCoordinatorsEnabled
+          ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
+          : [],
+      );
+      projectChatKeys = new Set(
+        threads.flatMap((thread) =>
+          chatIds.has(thread.id) && projectChatTakesReports(thread)
+            ? [`${environmentId}:${thread.id}`]
+            : [],
+        ),
+      );
+      return projectChatKeys;
+    };
     const changed: Array<[NotificationState | undefined, NotificationState]> = [];
     for (const rawThread of threads) {
       if (
@@ -307,7 +329,14 @@ export function startThreadNotifications(
             ? `${status}:${subject}`
             : `${thread.latestRun?.runId ?? ""}:${status}`;
       const completed = status === "ready" && thread.latestRun?.status === "completed";
-      const settled = completed && !monitorHoldsWakeCompletion(rawThread);
+      const settled =
+        completed &&
+        !monitorHoldsWakeCompletion(rawThread) &&
+        !(
+          rawThread.reportTo != null &&
+          rawThread.reportTo.source === undefined &&
+          staysOnProjectPage(thread, reportingChatKeys())
+        );
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
       const state = {

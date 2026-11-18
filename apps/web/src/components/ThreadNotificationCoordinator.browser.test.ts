@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   delegatedChild: null as "running" | "approval" | null,
   latestRunId: "run-1",
   workflowReview: false,
+  launchedByChat: null as "chat-live" | "chat-archived" | null,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -44,6 +45,19 @@ const atoms = await vi.hoisted(async () => {
   return {
     shell: Atom.make<unknown>(null),
     environmentIds: Atom.make<ReadonlyArray<string>>(["env-1"]),
+    serverConfigs: Atom.make<ReadonlyMap<string, unknown>>(
+      new Map([
+        [
+          "env-1",
+          {
+            settings: {
+              projectCoordinatorsEnabled: true,
+              projectCoordinators: { "project-1": { threadId: "chat-1" } },
+            },
+          },
+        ],
+      ]),
+    ),
   };
 });
 
@@ -116,6 +130,16 @@ function mockThreadShell() {
 
 let stableParent: ReturnType<typeof mockThreadShell> | null = null;
 function mockThreads() {
+  if (state.launchedByChat !== null) {
+    const chat = {
+      ...mockThreadShell(),
+      id: "chat-1",
+      status: "running",
+      latestRunCompletedAt: undefined,
+      archivedAt: state.launchedByChat === "chat-archived" ? SHELL_NOW : null,
+    };
+    return [{ ...mockThreadShell(), createdBy: "agent", reportTo: { threadId: "chat-1" } }, chat];
+  }
   if (state.delegatedChild === null) return [mockThreadShell()];
   stableParent ??= mockThreadShell();
   const child = {
@@ -153,6 +177,10 @@ vi.mock(import("../state/presentation"), async (original) => {
     },
   };
 });
+vi.mock(import("../state/server"), async (original) => ({
+  ...(await original()),
+  environmentServerConfigsAtom: atoms.serverConfigs as never,
+}));
 vi.mock(import("../hooks/useSettings"), async (original) => ({
   ...(await original()),
   getClientSettings: (() => ({
@@ -204,6 +232,7 @@ function setup() {
     delegatedChild: null,
     latestRunId: "run-1",
     workflowReview: false,
+    launchedByChat: null,
   });
   stableParent = null;
   state.settingsListeners.clear();
@@ -271,6 +300,18 @@ describe("thread notifications", () => {
       expect(state.sound).toHaveBeenCalledTimes(count);
     },
   );
+
+  it.each([
+    ["finishes quietly while the chat takes its report", "chat-live", 0],
+    ["sounds once the chat no longer takes reports", "chat-archived", 1],
+  ] as const)("a thread the project chat launched %s", async (_label, chat, count) => {
+    await using app = setup();
+    state.mode = "sound";
+    state.launchedByChat = chat;
+    await app.render();
+    await app.complete();
+    expect(state.sound).toHaveBeenCalledTimes(count);
+  });
 
   it.each([false, true])("keeps viewed attention sounds (approval=%s)", async (approval) => {
     await using app = setup();

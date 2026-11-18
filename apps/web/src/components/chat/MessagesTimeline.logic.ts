@@ -64,6 +64,7 @@ import {
   type TurnDiffSummary,
 } from "../../types";
 import {
+  EnvironmentId,
   idleCompactionOf,
   isCompactionCommandMessage,
   type MessageId,
@@ -75,7 +76,7 @@ import {
   type RunAttemptId,
   type RuntimeRequestId,
   RunId,
-  type ThreadId,
+  ThreadId,
   type TurnItemId,
 } from "@t3tools/contracts";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
@@ -524,6 +525,13 @@ export type TurnFoldActivityKind =
   | "image"
   | "context-compaction";
 
+export interface StartedThread {
+  /** Null for the chat's own machine. */
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId;
+  readonly title: string | null;
+}
+
 export interface TurnFoldActivitySummary {
   kind: TurnFoldActivityKind;
   count: number;
@@ -570,6 +578,13 @@ type MessagesTimelineRowContent =
       report: ReviewFindingsReport;
       groupId: string;
       expanded: boolean;
+    }
+  | {
+      /** On a project page: the threads one turn of its chat started, with their live state. */
+      kind: "started-threads";
+      id: string;
+      createdAt: string | null;
+      threads: ReadonlyArray<StartedThread>;
     }
   | {
       kind: "working";
@@ -1833,6 +1848,8 @@ export function deriveMessagesTimelineRows(input: {
   worktreeSetup?: WorktreeSetupSnapshot | null;
   toolCallVisibility?: ToolCallVisibility;
   revealedMessageId?: MessageId | null;
+  /** The project chat lists each turn's started threads in one row instead of a card each. */
+  startedThreadsList?: boolean;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input);
   const embeddedResultRunIds = new Set<RunId>();
@@ -2669,7 +2686,17 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   const result = attachTrailingToolGroupsToAssistant(
-    attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
+    attachCreatedThreadSummaries(
+      nextRows,
+      timelineEntries,
+      collapsedFoldMemberIds,
+      input.startedThreadsList === true
+        ? {
+            entries: input.timelineEntries,
+            runRoot: (runId) => continuedTurnRoots.get(runId) ?? runId,
+          }
+        : null,
+    ),
   );
   const attachmentIds = new Set(
     input.timelineEntries.flatMap((entry) =>
@@ -2736,12 +2763,88 @@ function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
   );
 }
 
+/**
+ * What each turn started: created threads, delegated tasks (here or on a linked machine), and
+ * launched threads, which leave only the tool's output. Keyed by the turn a restart continued.
+ */
+function startedThreadsByRun(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+  runRoot: (runId: RunId) => RunId,
+) {
+  const started = new Map<RunId, Map<string, StartedThread>>();
+  const add = (runId: RunId, thread: StartedThread) => {
+    const root = runRoot(runId);
+    const threads = started.get(root) ?? new Map<string, StartedThread>();
+    const key = `${thread.environmentId ?? ""}\u0000${thread.threadId}`;
+    if (!threads.has(key)) threads.set(key, thread);
+    started.set(root, threads);
+  };
+  for (const entry of timelineEntries) {
+    const item =
+      entry.kind === "work"
+        ? (entry.entry.projectedItem?.item ?? entry.entry.structuredPayload)
+        : entry.kind === "event"
+          ? entry.projectedItem.item
+          : undefined;
+    if (item?.type === "thread_created" && item.runId) {
+      add(item.runId, {
+        environmentId: null,
+        threadId: item.targetThreadId,
+        title: item.title ?? null,
+      });
+    } else if (item?.type === "subagent" && item.origin === "app_owned" && item.runId !== null) {
+      // A provider's own subagents have no thread to list.
+      if (item.childThreadId !== null) {
+        add(item.runId, { environmentId: null, threadId: item.childThreadId, title: null });
+      } else if (item.remoteChild) {
+        add(item.runId, {
+          environmentId: item.remoteChild.environmentId,
+          threadId: item.remoteChild.threadId,
+          title: item.remoteChild.title ?? null,
+        });
+      }
+    } else if (
+      item?.type === "dynamic_tool" &&
+      item.runId !== null &&
+      item.status === "completed" &&
+      resolveT3McpToolDefinition(item.toolName)?.summaryAction === "thread-create"
+    ) {
+      const output = compactDynamicToolOutput(item.output);
+      const input = item.input as
+        | { readonly title?: unknown; readonly environmentId?: unknown }
+        | null
+        | undefined;
+      const title = typeof input?.title === "string" ? input.title : null;
+      const environmentId =
+        typeof input?.environmentId === "string" ? EnvironmentId.make(input.environmentId) : null;
+      for (const threadId of [
+        output?.threadId,
+        ...(output?.threads ?? []).map((thread) => thread.threadId),
+      ]) {
+        if (threadId !== undefined) {
+          add(item.runId, { environmentId, threadId: ThreadId.make(threadId), title });
+        }
+      }
+    }
+  }
+  return started;
+}
+
 function attachCreatedThreadSummaries(
   rows: MessagesTimelineRow[],
   timelineEntries: ReadonlyArray<TimelineEntry>,
   collapsedFoldMemberIds: ReadonlySet<string>,
+  /** Unfiltered by tool visibility, with each run's restart root, for the project chat only. */
+  startedThreads: {
+    readonly entries: ReadonlyArray<TimelineEntry>;
+    readonly runRoot: (runId: RunId) => RunId;
+  } | null,
 ): MessagesTimelineRow[] {
   const terminalIndexes = new Map<RunId, number>();
+  const startedByRun =
+    startedThreads === null
+      ? null
+      : startedThreadsByRun(startedThreads.entries, startedThreads.runRoot);
   const createdByRun = new Map<RunId, Array<Extract<MessagesTimelineRow, { kind: "event" }>>>();
   for (const [index, row] of rows.entries()) {
     if (row.kind === "message" && row.showAssistantMeta && row.message.runId) {
@@ -2771,6 +2874,21 @@ function attachCreatedThreadSummaries(
         (collapsedFoldMemberIds.has(row.id) || index > terminalIndex)
       )
         return [];
+    }
+    if (row.kind === "message" && row.showAssistantMeta && row.message.runId && startedByRun) {
+      const runId = startedThreads!.runRoot(row.message.runId);
+      const threads = startedByRun.get(runId);
+      return threads === undefined
+        ? [row]
+        : [
+            row,
+            {
+              kind: "started-threads",
+              id: `started:${runId}`,
+              createdAt: row.createdAt,
+              threads: [...threads.values()],
+            },
+          ];
     }
     if (row.kind === "message" && row.showAssistantMeta && row.message.runId) {
       return [
@@ -2961,6 +3079,18 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     }
     case "worktree-setup":
       return a.snapshot === (b as typeof a).snapshot;
+    case "started-threads": {
+      const threads = (b as typeof a).threads;
+      return (
+        a.threads.length === threads.length &&
+        a.threads.every(
+          (thread, index) =>
+            thread.environmentId === threads[index]!.environmentId &&
+            thread.threadId === threads[index]!.threadId &&
+            thread.title === threads[index]!.title,
+        )
+      );
+    }
 
     case "assistant-meta": {
       const bm = b as typeof a;
