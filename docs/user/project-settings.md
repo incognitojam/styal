@@ -312,9 +312,11 @@ project. Clearing the coordinator, or turning the Labs switch off, stops new rep
 coordinator is kept on each machine, not in `styal.json`, and agents cannot set it yet.
 
 With the switch on, each project has a page with its coordinator as the project's chat. Open it with
-**Open project** in the command palette, the project's name in a thread's header, a project header
-when threads are grouped by project, or the chat's own row, which shows the project's name and how
-many of its threads are working or need you. **Project settings** links open the page, and its gear
+**Open project** in the command palette, the project's name in a thread's header, the name on a
+project's folder or on its header when threads are grouped by project, or, in the flat list, the
+chat's own row. Each shows how many of the project's threads are working or need you; in folders
+and grouped headers the chat has no row of its own, and the folder's chevron still opens and closes
+it. **Project settings** links open the page, and its gear
 button opens the settings. A project without a coordinator shows an empty chat: the first message
 starts a thread in the project's folder, without a worktree, and makes it the coordinator.
 

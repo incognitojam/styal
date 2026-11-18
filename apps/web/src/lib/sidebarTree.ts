@@ -1,5 +1,15 @@
 const ROW = "[data-sidebar-row]";
 
+// A row whose click does something else names the control that opens and closes it.
+function toggleOf(row: HTMLElement): HTMLElement {
+  const id = row.dataset.sidebarRow;
+  const toggle =
+    id === undefined
+      ? null
+      : row.ownerDocument.querySelector(`[data-sidebar-toggle-for="${CSS.escape(id)}"]`);
+  return toggle instanceof HTMLElement ? toggle : row;
+}
+
 /** Ref callback for a sidebar list; installs its keyboard navigation and returns its cleanup. */
 export function attachSidebarTree(element: HTMLElement | null) {
   return element ? installSidebarTree(element) : undefined;
@@ -123,14 +133,14 @@ export function installSidebarTree(root: HTMLElement) {
         target = rows.at(-1);
         break;
       case "ArrowRight":
-        if (row.getAttribute("aria-expanded") === "false") row.click();
+        if (row.getAttribute("aria-expanded") === "false") toggleOf(row).click();
         else
           target = rows.find(
             (candidate) => candidate.dataset.sidebarParent === row.dataset.sidebarRow,
           );
         break;
       case "ArrowLeft":
-        if (row.getAttribute("aria-expanded") === "true") row.click();
+        if (row.getAttribute("aria-expanded") === "true") toggleOf(row).click();
         else
           target = rows.find(
             (candidate) => candidate.dataset.sidebarRow === row.dataset.sidebarParent,

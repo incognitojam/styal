@@ -223,6 +223,7 @@ import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
+  keptSidebarFolderKeys,
   orderSidebarFolderGroups,
   sidebarFolderExpansionKeys,
   buildBulkTitleRegenerationContextMenuItem,
@@ -617,13 +618,16 @@ function useSidebarThreads(input: {
   const projectFolders =
     folderGroups === null
       ? null
-      : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty).map((folder) => {
+      : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty, (thread) =>
+          input.projectChatKeys.has(threadShellKey(thread)),
+        ).map((folder) => {
           const collapsed = !resolveProjectExpanded(
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
           return {
             group: folder.group,
+            chat: folder.chat,
             collapsed,
             // A closed folder still shows the open thread, and hints at the rest.
             threads: collapsed
@@ -1329,6 +1333,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
   const projectChatKeys =
     projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
+  // On the chat's own thread URL, the header that stands for the chat is the active location.
+  // Only while the chat has no row of its own: an active chat, which its header stands for.
+  const isRouteChat = (projectKey: string) => {
+    const chatKey = projectPages.get(projectKey)?.chatThreadKey;
+    return (
+      chatKey != null &&
+      chatKey === routeRowThreadKey &&
+      sectionByThreadKey.get(chatKey) === "active"
+    );
+  };
+  const projectChatShell = (projectKey: string) => {
+    const chatKey = projectPages.get(projectKey)?.chatThreadKey;
+    return chatKey == null
+      ? null
+      : (listedThreads.find((thread) => threadShellKey(thread) === chatKey) ?? null);
+  };
   const routeProjectKey = useParams({
     strict: false,
     select: (params) => params.projectKey ?? null,
@@ -1855,6 +1875,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     return router.navigate({ to: "/projects/$projectKey", params: { projectKey } });
   };
+
+  const openProjectPageForGroup = useStableCallback((group: SidebarProjectSnapshot) => {
+    void openProjectPage(group.projectKey);
+  });
 
   const navigateToThread = (threadRef: ScopedThreadRef) => {
     if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
@@ -2568,13 +2592,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? {
           folders: {
             order: folderGroups.map((group) => group.projectKey),
-            kept: new Set(
-              projectFolders.flatMap((folder) =>
-                folder.hiddenThreads.length > 0 || keepEmptyFolder(folder.group)
-                  ? [folder.group.projectKey]
-                  : [],
-              ),
-            ),
+            kept: keptSidebarFolderKeys(projectFolders, keepEmptyFolder),
             // Folders not showing yet open with their saved state.
             collapsed: new Set(
               folderGroups.flatMap((group) =>
@@ -4257,6 +4275,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 group={folder.group}
                                 collapsed={folder.collapsed}
                                 hiddenThreads={folder.hiddenThreads}
+                                chat={folder.chat}
+                                {...(projectPages.has(folder.group.projectKey)
+                                  ? {
+                                      statusLine:
+                                        projectPages.get(folder.group.projectKey)?.statusLine ??
+                                        null,
+                                      selected:
+                                        routeProjectKey === folder.group.projectKey ||
+                                        isRouteChat(folder.group.projectKey),
+                                      onOpen: openProjectPageForGroup,
+                                    }
+                                  : {})}
+                                revealRef={
+                                  isRouteChat(folder.group.projectKey) ? revealActiveRow : undefined
+                                }
                                 pinned={pinnedProjectGroupKeys.includes(folder.group.projectKey)}
                                 draggable={optimisticDrop === null && !folder.group.archived}
                                 onToggle={toggleProjectFolder}
@@ -4293,7 +4326,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               {...(group && projectPages.has(group.projectKey)
                                 ? {
                                     onOpen: () => void openProjectPage(group.projectKey),
-                                    selected: routeProjectKey === group.projectKey,
+                                    selected:
+                                      routeProjectKey === group.projectKey ||
+                                      (item.kind === "project-header" &&
+                                        isRouteChat(group.projectKey)),
+                                    ...(item.kind === "project-header" &&
+                                    isRouteChat(group.projectKey)
+                                      ? { revealRef: revealActiveRow }
+                                      : {}),
+                                    // Only the project's main header stands for its chat.
+                                    ...(item.kind === "project-header"
+                                      ? {
+                                          chat: projectChatShell(group.projectKey),
+                                          statusLine:
+                                            projectPages.get(group.projectKey)?.statusLine ?? null,
+                                        }
+                                      : {}),
                                   }
                                 : {})}
                               pinned={
