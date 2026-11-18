@@ -32,6 +32,7 @@ jobs:
       test_device_windows: ${{ steps.filter.outputs.test_device_windows }}
       test_web_1: ${{ steps.filter.outputs.test_web_1 }}
       test_web_2: ${{ steps.filter.outputs.test_web_2 }}
+      test_web_3: ${{ steps.filter.outputs.test_web_3 }}
       test_clients: ${{ steps.filter.outputs.test_clients }}
       test_e2e: ${{ steps.filter.outputs.test_e2e }}
       test_other: ${{ steps.filter.outputs.test_other }}
@@ -894,8 +895,13 @@ jobs:
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           # Missing gates fail closed; only explicit false permits a skipped job.
           echo "$RESULTS" | jq -e '.changes.outputs as $gates
-            | {test_workspace: ["test_web_1", "test_web_2", "test_clients", "test_e2e", "test_other"]} as $renamed
-            | all(to_entries[];
+            | {test_workspace: ["test_web_1", "test_web_2", "test_web_3", "test_clients", "test_e2e", "test_other"]} as $renamed
+            | ($gates.workspace_matrix | fromjson | .include) as $matrix
+            | all(range(1; 4); . as $shard
+                | $gates["test_web_\($shard)"] as $gate
+                | [$matrix[] | select(.suite == "Web \($shard)/3" and .shard == "\($shard)/3")] | length
+                | if $gate == "true" then . == 1 elif $gate == "false" then . == 0 else false end)
+            and all(to_entries[];
                 .value.result == "success"
                 or (.value.result == "skipped"
                   and (($renamed[.key] // [.key]) | all(.[]; $gates[.] == "false"))))' > /dev/null

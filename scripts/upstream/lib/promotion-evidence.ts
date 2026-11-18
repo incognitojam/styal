@@ -12,7 +12,7 @@ export const requiredIntakeJobs = [
   "Fork Release Smoke (Run)",
   "Fork Release Smoke",
   ...[1, 2, 3].map((shard) => `Fork Test (Server ${shard}/3)`),
-  ...["Web 1/2", "Web 2/2", "Clients", "E2E", "Other"].map(
+  ...["Web 1/3", "Web 2/3", "Web 3/3", "Clients", "E2E", "Other"].map(
     (suite) => `Fork Test (Workspace ${suite})`,
   ),
 ];
@@ -26,12 +26,13 @@ export function requiredIntakeSteps(name: string): ReadonlyArray<string> {
     "Fork Browser Calibration (Linux)": ["Capture calibration snapshots"],
     "Fork Test (Device Windows)": ["Test device commands"],
     "Fork Release Smoke (Run)": ["Exercise release-only workflow steps"],
-    "Fork Test (Workspace Web 1/2)": ["Test web shard", "Test workspace packages"],
-    "Fork Test (Workspace Web 2/2)": [
+    "Fork Test (Workspace Web 1/3)": ["Test web shard", "Test workspace packages"],
+    "Fork Test (Workspace Web 2/3)": [
       "Test web shard",
       "Test image compression",
       "Test Rust crates",
     ],
+    "Fork Test (Workspace Web 3/3)": ["Test web shard"],
     "Fork Test (Workspace Clients)": ["Test workspace packages"],
     "Fork Test (Workspace Other)": [
       "Test workspace packages",
