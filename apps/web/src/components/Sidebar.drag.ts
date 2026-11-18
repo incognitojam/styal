@@ -296,7 +296,8 @@ export function createSidebarSortingStrategy(input: {
     const scale =
       slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
     cardHeight ??= 82 * scale;
-    groupedCardHeight ??= 60 * scale;
+    // A folder row is one line; a card under a project header is two.
+    groupedCardHeight ??= (input.folders !== undefined ? 36 : 60) * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
     const group = groups[target.section];
@@ -369,9 +370,13 @@ export function createSidebarSortingStrategy(input: {
     };
     const section = (name: "active" | "settled") => {
       // Folders draw in place of the active placeholder.
-      if (name === "active" && input.folders !== undefined)
-        projected.push(...inFolders(groups.active, input.folders));
-      else if (groups[name].length === 0) marker(`${name}-placeholder`);
+      const folderRows =
+        name === "active" && input.folders !== undefined
+          ? inFolders(groups.active, input.folders)
+          : null;
+      if (folderRows !== null && folderRows.length > 0) projected.push(...folderRows);
+      // With no folder left, the empty Active target shows, folder mode included.
+      else if (folderRows !== null || groups[name].length === 0) marker(`${name}-placeholder`);
       else if (name === "active" && target.activeGroupOrder !== undefined)
         projected.push(...withProjectHeaders(groups.active));
       else projected.push(...groups[name]);

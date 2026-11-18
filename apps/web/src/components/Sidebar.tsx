@@ -2229,7 +2229,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
         // Rows in every section carry their group, so a row dragged into the
         // active section lands in its project's group.
-        return groupThreadsByProject || hasProjectFolders
+        return groupThreadsByProject || projectFolders !== null
           ? { kind: "thread", key, section, group: threadProjectGroup(thread) }
           : { kind: "thread", key, section };
       });
@@ -2422,12 +2422,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           settledThreads,
           activeThreads,
           workingShelfEnabled,
-          folders: hasProjectFolders ? { list: projectFolders, groupOf: threadProjectGroup } : null,
+          folders:
+            projectFolders === null ? null : { list: projectFolders, groupOf: threadProjectGroup },
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    ...(hasProjectFolders && folderGroups !== null
+    ...(projectFolders !== null && folderGroups !== null
       ? {
           folders: {
             order: folderGroups.map((group) => group.projectKey),

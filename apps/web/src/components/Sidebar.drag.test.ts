@@ -1050,6 +1050,30 @@ describe("project-grouped drag projection", () => {
     );
 
     it.each([
+      // Hovering Pinned leaves no folder, so the empty Active target opens as in the flat list.
+      { over: "pinned", placeholder: 1, settled: 36 },
+      // Dropping into Active opens A's folder: a header and a one-line row.
+      { over: "active", placeholder: 0, settled: -10 },
+    ])("with no folder showing, a drag over $over", ({ over, placeholder, settled }) => {
+      const noFolders = [
+        pinnedHeader,
+        pin("pa", "A"),
+        divider,
+        marker("active-placeholder"),
+        ...tail,
+      ];
+      const result = preview(
+        { items: noFolders, settledOrder: [], settledExpanded: true, folders: folders(["A"]) },
+        "pa",
+        over === "pinned"
+          ? sidebarMarkerId("pinned-header")
+          : sidebarMarkerId("active-placeholder"),
+      );
+      expect(result.get(sidebarMarkerId("active-placeholder"))?.scaleY).toBe(placeholder);
+      expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(settled);
+    });
+
+    it.each([
       // A's folder opens above B, with a header-sized gap above the row.
       { order: ["A", "B"], collapsed: [], shift: 25 },
       // A's folder was left collapsed, so it opens closed: only its header.
