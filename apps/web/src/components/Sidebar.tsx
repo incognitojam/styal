@@ -2001,11 +2001,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
+  const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
   // Folder rows only drag out to the composer; folders own their order, so nothing drops in the list.
   const isContextDrag =
-    projectFolders !== null ||
-    dragState?.contextDrag === true ||
-    dragState?.activeSection === "working";
+    hasProjectFolders || dragState?.contextDrag === true || dragState?.activeSection === "working";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -2201,7 +2200,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const branchlessActiveGroups = branchlessGroups(activeThreads);
   const branchlessWorkingGroups = branchlessGroups(workingThreads);
 
-  const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
   const sidebarListItemsFresh = ((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
@@ -2512,7 +2510,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     });
   };
   const handleThreadDragEnd = (event: DragEndEvent) => {
-    if (projectFolders !== null) return;
+    if (hasProjectFolders) return;
     const activeKey = String(event.active.id);
     if (draggedProjectGroup !== null) {
       if (event.over !== null) {
@@ -4058,7 +4056,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           );
                           continue;
                         }
-                        if (projectFolders !== null && item.marker === "active-placeholder") {
+                        if (hasProjectFolders && item.marker === "active-placeholder") {
                           for (const folder of projectFolders) {
                             items.push(
                               <SidebarProjectFolderHeader
