@@ -274,7 +274,7 @@ export const makeCheckoutSweep = Effect.gen(function* () {
               report.push({
                 ...entry,
                 reason: "Sources remain un-checked-out; restored before use",
-                bytes: state.bytes ?? null,
+                bytes: state.estimatedBytes ?? null,
               });
               return;
             }

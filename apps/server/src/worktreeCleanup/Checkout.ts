@@ -17,9 +17,7 @@ export class CheckoutLimits extends Context.Reference<{
 }) {}
 
 const Journal = Schema.Struct({
-  bytes: Schema.optionalKey(Schema.Number),
-  availableBefore: Schema.optionalKey(Schema.Number),
-  availableAfter: Schema.optionalKey(Schema.Number),
+  estimatedBytes: Schema.optionalKey(Schema.Number),
   phase: Schema.Literals(["releasing", "released", "restoring"]),
   status: Schema.String,
   index: Schema.String,
@@ -470,7 +468,18 @@ export const makeCheckout = Effect.gen(function* () {
       return current;
     });
     const before = yield* safeSnapshot();
-    const available = yield* io(() => fs.statfs(root));
+    const names = [...new Set(trackedPaths.split("\0").filter((name) => name.includes("/")))];
+    if (names.length > limits.entries)
+      return yield* fail("Worktree checkout inspection exceeded its file limit.");
+    const allocated = yield* io(async () => {
+      const sizes = new Map<string, number>();
+      for (const name of names) {
+        const target = path.join(root, name);
+        const stat = await fs.lstat(target);
+        if (stat.isFile() && stat.nlink === 1) sizes.set(target, stat.blocks * 512);
+      }
+      return sizes;
+    });
     yield* save(admin, { ...before, phase: "releasing" });
     yield* step("release-recorded");
     let mutationStarted = false;
@@ -488,7 +497,22 @@ export const makeCheckout = Effect.gen(function* () {
       yield* command(root, ["sparse-checkout", "set", "--cone"]);
       yield* step("release-set");
       yield* verify(root, before);
-      yield* save(admin, { ...before, phase: "released" });
+      const estimatedBytes = yield* io(async () => {
+        let bytes = 0;
+        for (const [target, size] of allocated) {
+          const missing = await fs.lstat(target).then(
+            () => false,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return true;
+              throw error;
+            },
+          );
+          if (missing) bytes += size;
+        }
+        return bytes;
+      });
+      yield* save(admin, { ...before, phase: "released", estimatedBytes });
+      return estimatedBytes;
     }).pipe(Effect.result);
     if (result._tag === "Failure") {
       if (mutationStarted) yield* restore(root);
@@ -499,16 +523,7 @@ export const makeCheckout = Effect.gen(function* () {
       return yield* result.failure;
     }
     yield* step("release-finished");
-    const after = yield* io(() => fs.statfs(root));
-    const bytes = Math.max(0, after.bavail * after.bsize - available.bavail * available.bsize);
-    yield* save(admin, {
-      ...before,
-      phase: "released",
-      bytes,
-      availableBefore: available.bavail * available.bsize,
-      availableAfter: after.bavail * after.bsize,
-    });
-    return bytes;
+    return result.success;
   }, Effect.uninterruptible);
   const state = Effect.fn("WorktreeCleanup.checkoutState")(function* (root: string) {
     const admin = yield* adminDirectory(root);

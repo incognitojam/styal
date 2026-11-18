@@ -15,6 +15,13 @@ it.effect(
       const f = yield* fixture;
       yield* f.write("src/clean.txt", "clean");
       yield* f.write("src/dirty.txt", "original");
+      yield* f.write(
+        "src/allocated.txt",
+        Array.from({ length: 8192 }, (_, i) => `fixture ${i * i}\n`).join(""),
+      );
+      yield* f.write("src/shared.txt", "shared blocks");
+      yield* f.write("src/staged.txt", "original staged file");
+      yield* f.write("root-kept.txt", "root file stays");
       yield* f.write(".gitignore", ".scratch/\n.env\n");
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
@@ -23,13 +30,28 @@ it.effect(
       yield* f.write(".scratch/note.md", "note");
       yield* f.write(".env", "SYNTHETIC_VALUE=kept");
       const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+      yield* f.write("src/staged.txt", "staged changes");
+      yield* f.command(f.worktree, ["add", "src/staged.txt"]);
+      yield* Effect.promise(() =>
+        physical.link(`${f.worktree}/src/shared.txt`, `${f.base}/shared.txt`),
+      );
+      const expectedBytes = yield* Effect.promise(async () => {
+        let bytes = 0;
+        for (const name of ["src/clean.txt", "src/allocated.txt", "src/staged.txt"])
+          bytes += (await physical.lstat(`${f.worktree}/${name}`)).blocks * 512;
+        return bytes;
+      });
+      expect(expectedBytes).toBeGreaterThan(0);
       const outside = `${f.base}/outside.txt`;
       yield* f.fs.writeFileString(outside, "outside remains");
       yield* Effect.promise(() => physical.symlink(outside, `${f.worktree}/.scratch/link`));
       const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
       yield* Effect.gen(function* () {
         const checkout = yield* makeCheckout;
-        yield* checkout.release(f.worktree, f.root);
+        expect(yield* checkout.release(f.worktree, f.root)).toBe(expectedBytes);
+        expect((yield* checkout.state(f.worktree))?.estimatedBytes).toBe(expectedBytes);
+        expect(yield* f.fs.readFileString(`${f.base}/shared.txt`)).toBe("shared blocks");
+        expect(yield* f.fs.readFileString(`${f.worktree}/root-kept.txt`)).toBe("root file stays");
         expect(yield* f.fs.exists(`${f.worktree}/src/clean.txt`)).toBe(false);
         expect(yield* f.fs.readFileString(`${f.worktree}/src/dirty.txt`)).toBe("modified");
         expect(yield* f.fs.readFileString(`${f.worktree}/src/untracked.txt`)).toBe("untracked");

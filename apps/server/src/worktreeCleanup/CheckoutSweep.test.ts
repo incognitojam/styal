@@ -390,7 +390,7 @@ it.effect(
       yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
       yield* Effect.gen(function* () {
         const checkout = yield* makeCheckout;
-        yield* checkout.release(f.worktree, f.root);
+        const estimatedBytes = yield* checkout.release(f.worktree, f.root);
         f.setThreads([{ ...f.threads()[0]!, settledAt: null, settledOverride: "active" }]);
         const sweep = yield* makeCheckoutSweep;
         const report: StorageCleanupReportEntry[] = [];
@@ -400,7 +400,7 @@ it.effect(
           expect.objectContaining({
             path: f.worktree,
             reason: "Sources remain un-checked-out; restored before use",
-            bytes: expect.any(Number),
+            bytes: estimatedBytes,
           }),
         ]);
       }).pipe(Effect.provide(f.layers));
