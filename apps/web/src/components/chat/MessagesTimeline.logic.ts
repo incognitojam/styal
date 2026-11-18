@@ -613,6 +613,8 @@ type MessagesTimelineRowContent =
       runId: string | null;
       paths: ReadonlyArray<string>;
       sources: ReadonlyArray<ViewedSource>;
+      /** The tool group a search chip with no results opens; null when it is open or has no toggle. */
+      collapsedGroupId: string | null;
     }
   | {
       kind: "turn-fold";
@@ -747,6 +749,7 @@ function viewedImagesRows(
   groupId: string,
   createdAt: string,
   groupedEntries: ReadonlyArray<WorkLogEntry>,
+  collapsedGroupId: string | null,
 ): Array<Extract<MessagesTimelineRow, { kind: "viewed-images" }>> {
   const paths = workEntriesViewedImagePaths(groupedEntries);
   const sources = workEntriesViewedSources(groupedEntries);
@@ -760,6 +763,7 @@ function viewedImagesRows(
           runId: groupedEntries[0]?.runId ?? null,
           paths,
           sources,
+          collapsedGroupId,
         },
       ];
 }
@@ -2131,6 +2135,7 @@ export function deriveMessagesTimelineRows(input: {
         activeWorkRow.groupId,
         activeWorkRow.createdAt,
         activeWorkRow.groupedEntries,
+        activeWorkRow.expanded ? null : activeWorkRow.groupId,
       ),
     );
   };
@@ -2445,6 +2450,11 @@ export function deriveMessagesTimelineRows(input: {
             workGroupId(timelineEntry.id),
             timelineEntry.createdAt,
             visibleGroupedEntries,
+            // A lone tool row has no group toggle; its row is already visible.
+            visibleGroupedEntries.length > 1 &&
+              !input.expandedWorkGroupIds?.has(workGroupId(timelineEntry.id))
+              ? workGroupId(timelineEntry.id)
+              : null,
           ),
         );
       }
@@ -2641,7 +2651,14 @@ export function deriveMessagesTimelineRows(input: {
       if (expanded) {
         nextRows.push(expandedWorkGroupRow(groupId, failedGroupAnchor.createdAt, groupedEntries));
       }
-      nextRows.push(...viewedImagesRows(groupId, failedGroupAnchor.createdAt, groupedEntries));
+      nextRows.push(
+        ...viewedImagesRows(
+          groupId,
+          failedGroupAnchor.createdAt,
+          groupedEntries,
+          expanded ? null : groupId,
+        ),
+      );
     } else {
       nextRows.push({
         kind: "thinking",
@@ -2665,13 +2682,17 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
     viewedPageRunIds(result),
   );
+  const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
   const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
+    const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();
+    shownSearchKeysByRunId.set(row.runId, shownSearchKeys);
     const sources = omitViewedSources(row.sources, {
       attachmentIds,
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
+      shownSearchKeys,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
@@ -3007,13 +3028,26 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.paths.length === bv.paths.length &&
         a.paths.every((path, index) => path === bv.paths[index]) &&
         a.sources.length === bv.sources.length &&
+        a.collapsedGroupId === bv.collapsedGroupId &&
         a.sources.every((source, index) => {
           const other = bv.sources[index]!;
-          return source.kind === "document"
-            ? other.kind === "document" &&
-                source.path === other.path &&
-                source.pages === other.pages
-            : other.kind === "page" && source.url === other.url;
+          if (source.kind === "document") {
+            return (
+              other.kind === "document" &&
+              source.path === other.path &&
+              source.pages === other.pages
+            );
+          }
+          if (source.kind === "page") return other.kind === "page" && source.url === other.url;
+          return (
+            other.kind === "search" &&
+            source.query === other.query &&
+            source.results.length === other.results.length &&
+            source.results.every(
+              (result, at) =>
+                result.url === other.results[at]?.url && result.title === other.results[at]?.title,
+            )
+          );
         })
       );
     }

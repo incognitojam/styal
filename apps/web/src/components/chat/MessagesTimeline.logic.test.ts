@@ -3153,7 +3153,7 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
-  it("shows images, documents and pages the agent viewed outside their collapsed tool group", () => {
+  it("shows images, documents, pages and searches the agent viewed outside their collapsed tool group", () => {
     const threadId = ThreadId.make("viewed-images-thread");
     const runId = RunId.make("viewed-images-run");
     const at = (second: number) =>
@@ -3189,6 +3189,12 @@ describe("deriveMessagesTimelineRows", () => {
       patterns: [url],
       fetchedUrl: url,
     });
+    // Codex reports a search's queries without results.
+    const search = (id: string, ordinal: number, query: string) => ({
+      ...base(id, ordinal),
+      type: "web_search" as const,
+      patterns: [query],
+    });
     const items = (settled: boolean) =>
       [
         {
@@ -3208,16 +3214,17 @@ describe("deriveMessagesTimelineRows", () => {
         read("read-spec", 5, "/repo/docs/spec.pdf"),
         fetch("fetch-menus", 6, "https://docs.example.com/menus"),
         fetch("fetch-sidebar", 7, "https://ui.example.org/sidebar"),
+        search("search-menus", 8, "menu guidelines"),
         settled
           ? {
-              ...base("answer", 8),
+              ...base("answer", 9),
               type: "assistant_message" as const,
               messageId: MessageId.make("answer"),
               text: "Here are both layouts, following https://ui.example.org/sidebar",
               streaming: false,
             }
           : {
-              ...base("ask-again", 8),
+              ...base("ask-again", 9),
               status: "waiting" as const,
               completedAt: null,
               type: "user_input_request" as const,
@@ -3241,7 +3248,7 @@ describe("deriveMessagesTimelineRows", () => {
           runId,
           status: settled ? "completed" : "running",
           startedAt: DateTime.formatIso(at(0)),
-          completedAt: settled ? DateTime.formatIso(at(8)) : null,
+          completedAt: settled ? DateTime.formatIso(at(9)) : null,
         },
         runningRunId: settled ? null : runId,
         isWorking: !settled,
@@ -3252,7 +3259,17 @@ describe("deriveMessagesTimelineRows", () => {
       });
       return rows.flatMap((row, index) =>
         row.kind === "viewed-images"
-          ? [{ after: rows[index - 1]?.kind, paths: row.paths, sources: row.sources }]
+          ? [
+              {
+                after: rows[index - 1]?.kind,
+                paths: row.paths,
+                sources: row.sources,
+                // The search chip opens the collapsed group just above the strip.
+                opensGroup:
+                  row.collapsedGroupId !== null &&
+                  row.collapsedGroupId === (rows[index - 1] as { groupId?: string }).groupId,
+              },
+            ]
           : [],
       );
     };
@@ -3260,16 +3277,38 @@ describe("deriveMessagesTimelineRows", () => {
     const spec = { kind: "document", path: "/repo/docs/spec.pdf" };
     const menus = { kind: "page", url: "https://docs.example.com/menus" };
     const sidebar = { kind: "page", url: "https://ui.example.org/sidebar" };
+    const query = { kind: "search", query: "menu guidelines", results: [] };
 
     expect(viewedImages(false)).toEqual([
-      { after: "work-live", paths, sources: [spec, menus, sidebar] },
+      { after: "work-live", paths, sources: [spec, menus, sidebar, query], opensGroup: true },
     ]);
     // A settled turn's fold keeps hiding its work, images included, until it is opened.
     expect(viewedImages(true)).toEqual([]);
     // The reply links the sidebar page, so the strip leaves it out.
     expect(viewedImages(true, new Set([runId]))).toEqual([
-      { after: "work-toggle", paths, sources: [spec, menus] },
+      { after: "work-toggle", paths, sources: [spec, menus, query], opensGroup: true },
     ]);
+  });
+
+  it("replaces a viewed-source row when a search result gains its title", () => {
+    const row = (title?: string): MessagesTimelineRow => ({
+      kind: "viewed-images",
+      id: "group:viewed-images",
+      createdAt: "2026-11-04T12:00:00.000Z",
+      runId: null,
+      paths: [],
+      sources: [
+        {
+          kind: "search",
+          query: "menu guidelines",
+          results: [{ url: "https://docs.example.com/menus", ...(title ? { title } : {}) }],
+        },
+      ],
+      collapsedGroupId: null,
+    });
+    const stable = computeStableMessagesTimelineRows([row()], { result: [], byId: new Map() });
+    const titled = row("Navigation menus");
+    expect(computeStableMessagesTimelineRows([titled], stable).result[0]).toBe(titled);
   });
 
   it("keeps imported V1 turns folded once the thread's first V2 run starts", () => {

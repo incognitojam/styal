@@ -737,6 +737,10 @@ describe("viewed sources", () => {
     item:
       | { readonly viewedDocument: { readonly path: string; readonly pages?: string } }
       | { readonly fetchedUrl: string }
+      | {
+          readonly patterns: ReadonlyArray<string>;
+          readonly results?: ReadonlyArray<{ readonly url?: string; readonly title?: string }>;
+        }
       | { readonly toolName: string },
     status: OrchestrationV2TurnItem["status"] = "completed",
   ): WorkLogPresentationEntry => {
@@ -764,19 +768,45 @@ describe("viewed sources", () => {
       structuredPayload:
         "fetchedUrl" in item
           ? { ...shared, type: "web_search", fetchedUrl: item.fetchedUrl }
-          : {
-              ...shared,
-              type: "dynamic_tool",
-              toolName: "toolName" in item ? item.toolName : "Read",
-              input: {},
-              ...("viewedDocument" in item ? { viewedDocument: item.viewedDocument } : {}),
-            },
+          : "patterns" in item
+            ? {
+                ...shared,
+                type: "web_search",
+                patterns: [...item.patterns],
+                ...(item.results ? { results: [...item.results] } : {}),
+              }
+            : {
+                ...shared,
+                type: "dynamic_tool",
+                toolName: "toolName" in item ? item.toolName : "Read",
+                input: {},
+                ...("viewedDocument" in item ? { viewedDocument: item.viewedDocument } : {}),
+              },
     };
   };
 
-  it("lists documents, then pages, each once in reading order", () => {
+  it("lists documents, then pages, then searches, each once in reading order", () => {
     const sources = workEntriesViewedSources([
+      entry("search-menus", {
+        patterns: ["menu  guidelines"],
+        results: [
+          { url: "https://docs.example.com/menus", title: "Navigation menus" },
+          { url: "not a url" },
+        ],
+      }),
       entry("fetch-menus", { fetchedUrl: "https://docs.example.com/menus" }),
+      entry("search-menus-again", {
+        patterns: ["Menu guidelines"],
+        results: [
+          { url: "https://docs.example.com/menus" },
+          { url: "https://ui.example.org/sidebar" },
+        ],
+      }),
+      // Codex batches queries; each one gets a chip.
+      entry("search-codex", { patterns: ["sidebar width", "menu guidelines", "nested menus"] }),
+      // An unmarked fetch from an older adapter is neither a page nor a search.
+      entry("unmarked-fetch", { patterns: ["https://help.example.io/export"] }),
+      entry("failed-search", { patterns: ["retention"] }, "failed"),
       entry("read-spec", { viewedDocument: { path: "/repo/spec.pdf", pages: "4-6" } }),
       entry("read-code", { toolName: "Read" }),
       entry("fetch-menus-again", { fetchedUrl: "http://docs.example.com/menus/#nav" }),
@@ -790,10 +820,20 @@ describe("viewed sources", () => {
       { kind: "document", path: "/repo/spec.pdf" },
       { kind: "document", path: "/repo/terms.docx" },
       { kind: "page", url: "https://docs.example.com/menus" },
+      {
+        kind: "search",
+        query: "menu guidelines",
+        results: [
+          { url: "https://docs.example.com/menus", title: "Navigation menus" },
+          { url: "https://ui.example.org/sidebar" },
+        ],
+      },
+      { kind: "search", query: "sidebar width", results: [] },
+      { kind: "search", query: "nested menus", results: [] },
     ]);
   });
 
-  it("leaves out the user's attachments and pages the run's reply links", () => {
+  it("leaves out the user's attachments, pages the run's reply links, and repeated searches", () => {
     const sources = [
       { kind: "document", path: "/data/attachments/own.pdf" },
       { kind: "document", path: "/repo/spec.pdf" },
@@ -803,6 +843,8 @@ describe("viewed sources", () => {
       { kind: "page", url: "https://wiki.example.org/Retention_(policy_(2026))" },
       { kind: "page", url: "https://wiki.example.org/Retention_" },
       { kind: "page", url: "https://docs.example.com/after-inline" },
+      { kind: "search", query: "Menu guidelines", results: [] },
+      { kind: "search", query: "sidebar width", results: [] },
     ] as const;
     const linked = assistantLinkedUrlKeysByRunId(
       [
@@ -834,11 +876,14 @@ describe("viewed sources", () => {
       omitViewedSources(sources, {
         attachmentIds: new Set(["own"]),
         linkedUrlKeys: linked.get("run-1") ?? new Set(),
+        // An earlier strip of the run already shows this search.
+        shownSearchKeys: new Set(["menu guidelines"]),
       }),
     ).toEqual([
       { kind: "document", path: "/repo/spec.pdf" },
       { kind: "page", url: "https://help.example.io/export" },
       { kind: "page", url: "https://wiki.example.org/Retention_" },
+      { kind: "search", query: "sidebar width", results: [] },
     ]);
     expect(linked.has("run-2")).toBe(false);
   });

@@ -1956,10 +1956,11 @@ function renderFeedEntry(
         <ViewedSourceChips
           sources={entry.sources}
           iconColor={iconSubtleColor}
-          onPressSource={(source) =>
-            props.markdownLinkHandlers.onLinkPress(
-              source.kind === "document" ? source.path : source.url,
-            )
+          onOpenLink={props.markdownLinkHandlers.onLinkPress}
+          onOpenGroup={
+            entry.collapsedGroupId === null
+              ? undefined
+              : () => props.onToggleWorkGroup(entry.collapsedGroupId!, entry.id)
           }
         />
       </View>

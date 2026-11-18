@@ -2308,14 +2308,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       : Effect.succeed(false);
 
     // Claude memory writes stay inline: clients keep an answer visible beside its memory note.
-    // Viewed images, documents and fetched pages stay inline for the strip under a folded group.
+    // Viewed images, documents, fetched pages and web searches stay inline for the strip under a
+    // folded group; the wire leaves out web search snippets.
     const inlineWorkOutput = sql`(item.type = 'dynamic_tool' AND (
       item.payload_json LIKE '%htmlRender%' OR item.payload_json LIKE ${`%${MCP_APP_OUTPUT_KEY}%`}
       OR item.payload_json LIKE '%"viewedImagePath"%'
       OR item.payload_json LIKE '%"viewedDocument"%'
       OR json_extract(item.payload_json, '$.toolName') = 'ReportFindings'
       OR item.payload_json LIKE '%"toolName":"%delegate_task"%'))
-      OR (item.type = 'web_search' AND item.payload_json LIKE '%"fetchedUrl"%')
+      OR item.type = 'web_search'
       OR (item.type IN ('file_change', 'command_execution', 'dynamic_tool')
         AND item.payload_json LIKE '%.claude/projects/%/memory/%')`;
 

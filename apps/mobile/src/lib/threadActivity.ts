@@ -308,6 +308,8 @@ type ThreadFeedEntryContent =
       readonly runId: RunId | null;
       readonly paths: ReadonlyArray<string>;
       readonly sources: ReadonlyArray<ViewedSource>;
+      /** The tool group a search chip with no results opens; null when it is open or has no toggle. */
+      readonly collapsedGroupId: string | null;
     }
   | {
       readonly type: "run-fold";
@@ -2068,13 +2070,17 @@ export function deriveThreadFeedPresentation(
     feed.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
     viewedPageRunIds(result),
   );
+  const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
   const visibleRows = result.flatMap<ThreadFeedEntry>((row) => {
     if (row.type !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
+    const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();
+    shownSearchKeysByRunId.set(row.runId, shownSearchKeys);
     const sources = omitViewedSources(row.sources, {
       attachmentIds,
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
+      shownSearchKeys,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
@@ -2248,6 +2254,9 @@ function appendActivityGroupRows(
         runId: groupableRun[0]!.runId,
         paths,
         sources,
+        // A lone tool row has no group toggle; its row is already visible.
+        collapsedGroupId:
+          groupableRun.length > 1 && !expandedWorkGroupIds.has(groupId) ? groupId : null,
       });
     }
     groupableRun = [];
