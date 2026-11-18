@@ -702,7 +702,10 @@ export function workEntriesViewedSources(
 ): ViewedSource[] {
   const documents = new Map<string, ViewedSource>();
   const pages = new Map<string, ViewedSource>();
-  const searches = new Map<string, Extract<ViewedSource, { kind: "search" }>>();
+  const searches = new Map<
+    string,
+    { readonly query: string; readonly results: ViewedSearchResult[]; readonly urls: Set<string> }
+  >();
   for (const source of entries.flatMap(workEntryViewedSources)) {
     if (source.kind === "document") {
       const seen = documents.get(source.path);
@@ -716,17 +719,25 @@ export function workEntriesViewedSources(
       if (!pages.has(key)) pages.set(key, source);
     } else {
       const key = viewedSearchKey(source.query);
-      const seen = searches.get(key);
-      if (seen === undefined) {
-        searches.set(key, source);
-        continue;
+      const search = searches.get(key) ?? { query: source.query, results: [], urls: new Set() };
+      searches.set(key, search);
+      for (const result of source.results) {
+        const url = viewedSourceUrlKey(result.url)!;
+        if (search.urls.has(url)) continue;
+        search.urls.add(url);
+        search.results.push(result);
       }
-      const urls = new Set(seen.results.map((result) => viewedSourceUrlKey(result.url)));
-      const added = source.results.filter((result) => !urls.has(viewedSourceUrlKey(result.url)));
-      if (added.length > 0) searches.set(key, { ...seen, results: [...seen.results, ...added] });
     }
   }
-  return [...documents.values(), ...pages.values(), ...searches.values()];
+  return [
+    ...documents.values(),
+    ...pages.values(),
+    ...[...searches.values()].map(({ query, results }) => ({
+      kind: "search" as const,
+      query,
+      results,
+    })),
+  ];
 }
 
 /** `text` without any of `characters` at its end; a backward scan, linear in a long run. */
