@@ -1369,10 +1369,10 @@ features:
 
   - id: desktop-fullscreen-restore
     title: Reopen the macOS main window in native fullscreen
-    status: maintained
+    status: retiring
     tier: yield
     prs: [730]
-    rationale: Native macOS apps reopen in fullscreen when they quit in fullscreen. Upstream closed both pull requests for scope and incomplete verification, not on the behavior.
+    rationale: Maintainer decided on 2026-11-18 to drop fullscreen restoration so the upstream window-state rewrite can be imported without rebuilding this yield feature.
     invariants:
       - On macOS, a main window that quits in native fullscreen, including through hold-to-quit and update restarts, reopens in native fullscreen; leaving fullscreen before quitting reopens it windowed.
       - Fullscreen restoration keeps the saved normal bounds and maximized state, so leaving fullscreen returns to the previous window; startup transitions do not overwrite them.
@@ -1391,7 +1391,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/10817
         - https://github.com/pingdotgg/t3code/pull/14682
-      retire_when: Upstream restores native macOS fullscreen when the main window reopens.
+      retire_when: The fullscreen restoration removal pull request lands on main.
 
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown

@@ -28,14 +28,9 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import {
-  QUIT_SHORTCUT_CHANNEL,
-  SNAP_SHOT_EVENT_CHANNEL,
-  WINDOW_FULLSCREEN_STATE_CHANNEL,
-} from "../ipc/channels.ts";
+import { SNAP_SHOT_EVENT_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
-import { QUIT_HOLD_DURATION_MS } from "./QuitHold.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
 
@@ -235,7 +230,6 @@ function layerTest(input: {
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
-  readonly mainWindowFullscreenUpdates?: boolean[];
   readonly mainWindowMaximizedUpdates?: boolean[];
   readonly beforeMainWindowBoundsUpdate?: (
     bounds: DesktopAppSettings.DesktopWindowBounds,
@@ -254,7 +248,7 @@ function layerTest(input: {
   const layerDesktopAppSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
     get: Effect.sync(() => desktopSettings),
     load: Effect.sync(() => desktopSettings),
-    setMainWindowBounds: (bounds, isMaximized, isFullscreen) =>
+    setMainWindowBounds: (bounds, isMaximized) =>
       Effect.gen(function* () {
         if (input.beforeMainWindowBoundsUpdate) {
           yield* input.beforeMainWindowBoundsUpdate(bounds);
@@ -262,17 +256,14 @@ function layerTest(input: {
         const changed =
           desktopSettings.mainWindowBounds === null ||
           !desktopWindowBoundsEquivalence(desktopSettings.mainWindowBounds, bounds) ||
-          desktopSettings.mainWindowFullscreen !== isFullscreen ||
           desktopSettings.mainWindowMaximized !== isMaximized;
         if (changed) {
           desktopSettings = {
             ...desktopSettings,
             mainWindowBounds: bounds,
-            mainWindowFullscreen: isFullscreen,
             mainWindowMaximized: isMaximized,
           };
           input.mainWindowBoundsUpdates?.push(bounds);
-          input.mainWindowFullscreenUpdates?.push(isFullscreen);
           input.mainWindowMaximizedUpdates?.push(isMaximized);
         }
         return { settings: desktopSettings, changed };
@@ -1081,100 +1072,6 @@ describe("DesktopWindow", () => {
       }),
   );
 
-  it.effect("restores the persisted native macOS fullscreen state", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
-      const mainWindowFullscreenUpdates: boolean[] = [];
-      const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
-      const mainWindowMaximizedUpdates: boolean[] = [];
-      const layer = layerTest({
-        window: fakeWindow.window,
-        createCount,
-        mainWindow,
-        createdWindowOptions,
-        mainWindowFullscreenUpdates,
-        mainWindowBoundsUpdates,
-        mainWindowMaximizedUpdates,
-        desktopSettings: {
-          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-          mainWindowBounds: { x: 120, y: 80, width: 1320, height: 880 },
-          mainWindowFullscreen: true,
-          mainWindowMaximized: true,
-        },
-      });
-
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-
-        assert.equal(createdWindowOptions[0]?.fullscreen, true);
-        assert.equal(fakeWindow.setFullScreen.mock.calls.length, 0);
-        const resize = fakeWindow.windowListeners.get("resize");
-        const readyToShow = fakeWindow.windowListeners.get("ready-to-show");
-        const enterFullscreen = fakeWindow.windowListeners.get("enter-full-screen");
-        if (!resize || !readyToShow || !enterFullscreen) {
-          return yield* Effect.die("window startup listeners were not registered");
-        }
-        fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1920, height: 1080 });
-        resize();
-        yield* TestClock.adjust(500);
-        yield* desktopWindow.flushMainWindowBounds;
-        assert.deepEqual(mainWindowFullscreenUpdates, []);
-        assert.deepEqual(mainWindowBoundsUpdates, []);
-        readyToShow();
-        assert.equal(fakeWindow.maximize.mock.calls.length, 0);
-
-        fakeWindow.isFullScreen.mockReturnValue(true);
-        enterFullscreen();
-        yield* desktopWindow.flushMainWindowBounds;
-        assert.deepEqual(mainWindowFullscreenUpdates, [true]);
-        assert.deepEqual(mainWindowBoundsUpdates, [{ x: 0, y: 0, width: 1100, height: 780 }]);
-        assert.deepEqual(mainWindowMaximizedUpdates, [true]);
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect.each(["win32", "linux"] as const)(
-    "ignores saved macOS fullscreen state on %s",
-    (platform) =>
-      Effect.gen(function* () {
-        const fakeWindow = makeFakeBrowserWindow();
-        const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
-        const mainWindowFullscreenUpdates: boolean[] = [];
-        const layer = layerTest({
-          platform,
-          window: fakeWindow.window,
-          createCount: yield* Ref.make(0),
-          mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
-          createdWindowOptions,
-          mainWindowFullscreenUpdates,
-          desktopSettings: {
-            ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-            mainWindowBounds: { x: 120, y: 80, width: 1320, height: 880 },
-            mainWindowFullscreen: true,
-            mainWindowMaximized: true,
-          },
-        });
-
-        yield* Effect.gen(function* () {
-          const desktopWindow = yield* DesktopWindow.DesktopWindow;
-          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-          assert.isUndefined(createdWindowOptions[0]?.fullscreen);
-          const readyToShow = fakeWindow.windowListeners.get("ready-to-show");
-          if (!readyToShow) return yield* Effect.die("ready-to-show listener was not registered");
-          readyToShow();
-          assert.equal(fakeWindow.maximize.mock.calls.length, 1);
-          fakeWindow.isFullScreen.mockReturnValue(true);
-          yield* desktopWindow.flushMainWindowBounds;
-          assert.deepEqual(mainWindowFullscreenUpdates, [false]);
-          assert.equal(fakeWindow.setFullScreen.mock.calls.length, 0);
-        }).pipe(Effect.provide(layer));
-      }),
-  );
-
   it.effect("persists normal bounds and state for a maximized window", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();
@@ -1248,156 +1145,6 @@ describe("DesktopWindow", () => {
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => Promise.resolve());
         assert.deepEqual(mainWindowBoundsUpdates, [{ x: 80, y: 60, width: 1280, height: 840 }]);
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect.each([false, true])(
-    "preserves off-display fullscreen bounds with maximized=%s",
-    (mainWindowMaximized) =>
-      Effect.gen(function* () {
-        const fakeWindow = makeFakeBrowserWindow();
-        const createCount = yield* Ref.make(0);
-        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-        const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
-        const layer = layerTest({
-          window: fakeWindow.window,
-          createCount,
-          mainWindow,
-          mainWindowBoundsUpdates,
-          desktopSettings: {
-            ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-            mainWindowBounds: { x: 2040, y: 80, width: 1320, height: 880 },
-            mainWindowFullscreen: true,
-            mainWindowMaximized,
-          },
-        });
-
-        yield* Effect.gen(function* () {
-          const desktopWindow = yield* DesktopWindow.DesktopWindow;
-          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-          const resize = fakeWindow.windowListeners.get("resize");
-          const enterFullscreen = fakeWindow.windowListeners.get("enter-full-screen");
-          const leaveFullscreen = fakeWindow.windowListeners.get("leave-full-screen");
-          if (!resize || !enterFullscreen || !leaveFullscreen) {
-            return yield* Effect.die("window fullscreen listeners were not registered");
-          }
-
-          resize();
-          yield* TestClock.adjust(500);
-          yield* desktopWindow.flushMainWindowBounds;
-          assert.deepEqual(mainWindowBoundsUpdates, []);
-
-          fakeWindow.isFullScreen.mockReturnValue(true);
-          enterFullscreen();
-          yield* desktopWindow.flushMainWindowBounds;
-          assert.deepEqual(mainWindowBoundsUpdates, []);
-
-          fakeWindow.isFullScreen.mockReturnValue(false);
-          leaveFullscreen();
-          yield* desktopWindow.flushMainWindowBounds;
-          assert.deepEqual(mainWindowBoundsUpdates, [{ x: 0, y: 0, width: 1100, height: 780 }]);
-        }).pipe(Effect.provide(layer));
-      }),
-  );
-
-  it.effect("preserves fullscreen through hold-to-quit concealment and shutdown flush", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      const bounds = { x: 200, y: 130, width: 1400, height: 940 };
-      fakeWindow.getNormalBounds.mockReturnValue(bounds);
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
-      const mainWindowFullscreenUpdates: boolean[] = [];
-      const layer = layerTest({
-        window: fakeWindow.window,
-        createCount,
-        mainWindow,
-        mainWindowBoundsUpdates,
-        mainWindowFullscreenUpdates,
-      });
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-        const beforeInput = fakeWindow.webContentsListeners.get("before-input-event")!;
-        const input = {
-          type: "keyDown",
-          key: "q",
-          meta: true,
-          control: false,
-          alt: false,
-          shift: false,
-          isAutoRepeat: false,
-        };
-        const event = { preventDefault: vi.fn() };
-        const armed = new Promise<void>((resolve) => {
-          fakeWindow.send.mockImplementation((channel, hint) => {
-            if (channel === QUIT_SHORTCUT_CHANNEL && hint.state === "down") resolve();
-          });
-        });
-        const now = vi.spyOn(Date, "now").mockReturnValue(1000);
-        try {
-          fakeWindow.isFullScreen.mockReturnValue(true);
-          fakeWindow.windowListeners.get("enter-full-screen")!();
-          beforeInput(event, input);
-          yield* Effect.promise(() => armed);
-          now.mockReturnValue(1000 + QUIT_HOLD_DURATION_MS);
-          fakeWindow.windowListeners.get("resize")!();
-          beforeInput(event, { ...input, isAutoRepeat: true });
-          assert.deepEqual(fakeWindow.setFullScreen.mock.calls, [[false]]);
-          assert.deepEqual(fakeWindow.setOpacity.mock.calls, [[0]]);
-          fakeWindow.isFullScreen.mockReturnValue(false);
-          fakeWindow.windowListeners.get("leave-full-screen")!();
-          fakeWindow.windowListeners.get("resize")!();
-          yield* TestClock.adjust(1000);
-          beforeInput(event, { ...input, type: "keyUp" });
-          yield* desktopWindow.flushMainWindowBounds;
-          assert.deepEqual(mainWindowFullscreenUpdates, [true]);
-          assert.deepEqual(mainWindowBoundsUpdates, [bounds]);
-        } finally {
-          beforeInput(event, { ...input, type: "keyUp" });
-          now.mockRestore();
-        }
-      }).pipe(Effect.provide(layer));
-    }),
-  );
-
-  it.effect("flushes normal bounds when fullscreen before the debounce completes", () =>
-    Effect.gen(function* () {
-      const fakeWindow = makeFakeBrowserWindow();
-      fakeWindow.getBounds.mockReturnValue({ x: 0, y: 0, width: 1920, height: 1080 });
-      fakeWindow.getNormalBounds.mockReturnValue({ x: 200, y: 130, width: 1400, height: 940 });
-      const createCount = yield* Ref.make(0);
-      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const mainWindowBoundsUpdates: DesktopAppSettings.DesktopWindowBounds[] = [];
-      const mainWindowFullscreenUpdates: boolean[] = [];
-      const layer = layerTest({
-        window: fakeWindow.window,
-        createCount,
-        mainWindow,
-        mainWindowBoundsUpdates,
-        mainWindowFullscreenUpdates,
-      });
-
-      yield* Effect.gen(function* () {
-        const desktopWindow = yield* DesktopWindow.DesktopWindow;
-        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
-
-        const resize = fakeWindow.windowListeners.get("resize");
-        if (!resize) {
-          return yield* Effect.die("window resize listener was not registered");
-        }
-        resize();
-        yield* TestClock.adjust(250);
-        fakeWindow.isFullScreen.mockReturnValue(true);
-
-        yield* desktopWindow.flushMainWindowBounds;
-
-        assert.deepEqual(mainWindowBoundsUpdates, [{ x: 200, y: 130, width: 1400, height: 940 }]);
-        assert.deepEqual(mainWindowFullscreenUpdates, [true]);
-        assert.equal(fakeWindow.getBounds.mock.calls.length, 0);
-        assert.equal(fakeWindow.getNormalBounds.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));
     }),
   );
@@ -1564,17 +1311,15 @@ describe("DesktopWindow", () => {
     }),
   );
 
-  it.effect("persists and publishes native macOS fullscreen changes", () =>
+  it.effect("publishes native macOS fullscreen changes", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-      const mainWindowFullscreenUpdates: boolean[] = [];
       const layer = layerTest({
         window: fakeWindow.window,
         createCount,
         mainWindow,
-        mainWindowFullscreenUpdates,
       });
 
       yield* Effect.gen(function* () {
@@ -1597,7 +1342,6 @@ describe("DesktopWindow", () => {
         yield* TestClock.adjust(500);
         yield* desktopWindow.flushMainWindowBounds;
 
-        assert.deepEqual(mainWindowFullscreenUpdates, [true, false]);
         assert.deepEqual(fakeWindow.send.mock.calls, [
           [WINDOW_FULLSCREEN_STATE_CHANNEL, true],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, false],

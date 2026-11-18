@@ -25,7 +25,6 @@ const DesktopSettingsPatch = Schema.Struct({
       }),
     ),
   ),
-  mainWindowFullscreen: Schema.optionalKey(Schema.Boolean),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
@@ -110,11 +109,7 @@ describe("DesktopSettings", () => {
       yield* withSettings(
         Effect.gen(function* () {
           const settings = yield* DesktopAppSettings.DesktopAppSettings;
-          yield* settings.setMainWindowBounds(
-            { x: 10, y: 20, width: 900, height: 600 },
-            true,
-            false,
-          );
+          yield* settings.setMainWindowBounds({ x: 10, y: 20, width: 900, height: 600 }, true);
         }),
       ).pipe(Effect.provideService(Tracer.Tracer, tracer));
       const operationSpans = spans.filter(
@@ -126,7 +121,6 @@ describe("DesktopSettings", () => {
         y: 20,
         width: 900,
         height: 600,
-        isFullscreen: false,
         isMaximized: true,
       });
       assert.equal(operationSpans[0]!.status._tag, "Ended");
@@ -188,7 +182,6 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
-          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
@@ -214,14 +207,12 @@ describe("DesktopSettings", () => {
         ]) {
           yield* writeSettingsPatch({
             mainWindowBounds: bounds,
-            mainWindowFullscreen: true,
             mainWindowMaximized: true,
             serverExposureMode: "network-accessible",
           });
 
           const loaded = yield* settings.load;
           assert.isNull(loaded.mainWindowBounds);
-          assert.isFalse(loaded.mainWindowFullscreen);
           assert.isFalse(loaded.mainWindowMaximized);
           assert.equal(loaded.serverExposureMode, "network-accessible");
         }
@@ -236,11 +227,7 @@ describe("DesktopSettings", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
-        yield* settings.setMainWindowBounds(
-          { x: -1200, y: 40, width: 400, height: 360 },
-          true,
-          true,
-        );
+        yield* settings.setMainWindowBounds({ x: -1200, y: 40, width: 400, height: 360 }, true);
         yield* settings.setServerExposureMode("network-accessible");
 
         const persisted = yield* decodeDesktopSettingsPatch(
@@ -248,7 +235,6 @@ describe("DesktopSettings", () => {
         );
         assert.deepEqual(persisted, {
           mainWindowBounds: { x: -1200, y: 40, width: 400, height: 360 },
-          mainWindowFullscreen: true,
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
         } satisfies typeof DesktopSettingsPatch.Type);
@@ -259,25 +245,40 @@ describe("DesktopSettings", () => {
         }).pipe(Effect.provide(DesktopAppSettings.layer));
         assert.deepEqual(restored.mainWindowBounds, persisted.mainWindowBounds);
         assert.isTrue(restored.mainWindowMaximized);
-        assert.isTrue(restored.mainWindowFullscreen);
       }),
     ),
   );
 
-  it.effect("persists fullscreen-only changes and clears the saved flag on exit", () =>
+  it.effect("ignores the obsolete fullscreen flag and drops it on the next save", () =>
     withSettings(
       Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
         const bounds = { x: 120, y: 80, width: 1320, height: 880 };
-        yield* settings.setMainWindowBounds(bounds, false, false);
-        assert.isTrue((yield* settings.setMainWindowBounds(bounds, false, true)).changed);
-        assert.isTrue((yield* settings.load).mainWindowFullscreen);
-        assert.isFalse((yield* settings.setMainWindowBounds(bounds, false, true)).changed);
-        assert.isTrue((yield* settings.setMainWindowBounds(bounds, false, false)).changed);
-        const loaded = yield* settings.load;
-        assert.isFalse(loaded.mainWindowFullscreen);
-        assert.deepEqual(loaded.mainWindowBounds, bounds);
-        assert.isFalse(loaded.mainWindowMaximized);
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.desktopSettingsPath,
+          JSON.stringify({
+            mainWindowBounds: bounds,
+            mainWindowMaximized: true,
+            mainWindowFullscreen: true,
+          }),
+        );
+        assert.deepEqual(yield* settings.load, {
+          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+          mainWindowBounds: bounds,
+          mainWindowMaximized: true,
+        });
+        yield* settings.setServerExposureMode("network-accessible");
+        assert.deepEqual(
+          JSON.parse(yield* fileSystem.readFileString(environment.desktopSettingsPath)),
+          {
+            mainWindowBounds: bounds,
+            mainWindowMaximized: true,
+            serverExposureMode: "network-accessible",
+          },
+        );
       }),
     ),
   );
@@ -346,7 +347,6 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
-          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
@@ -376,7 +376,6 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
-          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
