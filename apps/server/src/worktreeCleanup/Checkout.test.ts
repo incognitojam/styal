@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import { GitCommandError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
@@ -35,20 +36,27 @@ it.effect(
       yield* Effect.promise(() =>
         physical.link(`${f.worktree}/src/shared.txt`, `${f.base}/shared.txt`),
       );
-      const expectedBytes = yield* Effect.promise(async () => {
-        let bytes = 0;
-        for (const name of ["src/clean.txt", "src/allocated.txt", "src/staged.txt"])
-          bytes += (await physical.lstat(`${f.worktree}/${name}`)).blocks * 512;
-        return bytes;
-      });
-      expect(expectedBytes).toBeGreaterThan(0);
       const outside = `${f.base}/outside.txt`;
       yield* f.fs.writeFileString(outside, "outside remains");
       yield* Effect.promise(() => physical.symlink(outside, `${f.worktree}/.scratch/link`));
       const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
       yield* Effect.gen(function* () {
+        using samples = vi.spyOn(physical, "lstat");
         const checkout = yield* makeCheckout;
-        expect(yield* checkout.release(f.worktree, f.root)).toBe(expectedBytes);
+        const released = yield* checkout.release(f.worktree, f.root);
+        const removed = ["src/clean.txt", "src/allocated.txt", "src/staged.txt"].map(
+          (name) => `${f.worktree}/${name}`,
+        );
+        const allocations = samples.mock.calls.flatMap(([target], i) => {
+          const result = samples.mock.settledResults[i];
+          return removed.includes(String(target)) && result?.type === "fulfilled"
+            ? [Number(result.value.blocks) * 512]
+            : [];
+        });
+        expect(allocations).toHaveLength(3);
+        const expectedBytes = allocations.reduce((sum, bytes) => sum + bytes, 0);
+        expect(expectedBytes).toBeGreaterThan(0);
+        expect(released).toBe(expectedBytes);
         expect((yield* checkout.state(f.worktree))?.estimatedBytes).toBe(expectedBytes);
         expect(yield* f.fs.readFileString(`${f.base}/shared.txt`)).toBe("shared blocks");
         expect(yield* f.fs.readFileString(`${f.worktree}/root-kept.txt`)).toBe("root file stays");
@@ -368,7 +376,7 @@ it.effect.each([
     }).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
       Effect.provideService(CheckoutLimits, {
-        entries: failure === "file-limit" ? 0 : 100_000,
+        entries: failure === "file-limit" ? 1 : 100_000,
         bytes: failure === "byte-limit" ? 0 : 1_000_000,
       }),
       Effect.provideService(HostProcess.Platform, failure === "windows" ? "win32" : platform),

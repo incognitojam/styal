@@ -415,6 +415,9 @@ export const makeCheckout = Effect.gen(function* () {
     const trackedPaths = yield* command(root, ["ls-files", "-z"]);
     if (trackedPaths && !trackedPaths.endsWith("\0"))
       return yield* fail("Incomplete tracked file list.");
+    const tracked = trackedPaths.split("\0").filter(Boolean);
+    if (tracked.length > limits.entries)
+      return yield* fail("Worktree checkout inspection exceeded its file limit.");
     for (const cached of [[], ["--cached"]]) {
       const attributes = yield* command(
         root,
@@ -468,9 +471,7 @@ export const makeCheckout = Effect.gen(function* () {
       return current;
     });
     const before = yield* safeSnapshot();
-    const names = [...new Set(trackedPaths.split("\0").filter((name) => name.includes("/")))];
-    if (names.length > limits.entries)
-      return yield* fail("Worktree checkout inspection exceeded its file limit.");
+    const names = [...new Set(tracked.filter((name) => name.includes("/")))];
     const allocated = yield* io(async () => {
       const sizes = new Map<string, number>();
       for (const name of names) {
