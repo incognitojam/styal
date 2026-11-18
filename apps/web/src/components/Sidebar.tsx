@@ -1460,6 +1460,31 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       });
     },
   );
+  // Starts in the checkout of the project you are in, as the project filter does.
+  const startThreadInProjectGroup = useStableCallback(
+    async (projectGroup: SidebarProjectSnapshot) => {
+      const result = await settlePromise(() =>
+        startNewThreadFromContext(
+          {
+            ...newThreadContext,
+            activeThread: newThreadContext.activeThread ?? undefined,
+            scopedProjectGroups: [projectGroup],
+          },
+          "sidebar",
+        ),
+      );
+      if (result._tag === "Failure") {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not create thread",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    },
+  );
   const handleProjectGroupContextMenu = (groupKey: string, position: { x: number; y: number }) => {
     void (async () => {
       const api = readLocalApi();
@@ -1515,26 +1540,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       } else if (clicked.value === "project-settings") {
         openProjectSettings(projectGroup);
       } else if (clicked.value === "new-thread") {
-        const result = await settlePromise(() =>
-          startNewThreadFromContext(
-            {
-              ...newThreadContext,
-              activeThread: newThreadContext.activeThread ?? undefined,
-              scopedProjectGroups: [projectGroup],
-            },
-            "sidebar",
-          ),
-        );
-        if (result._tag === "Failure") {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not create thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
+        await startThreadInProjectGroup(projectGroup);
       } else if (clicked.value === "copy-path" || clicked.value.startsWith("copy-path:")) {
         const member = members[clicked.value === "copy-path" ? 0 : Number(clicked.value.slice(10))];
         if (member) {
@@ -1557,7 +1563,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const startThreadInProjectFolder = useStableCallback((group: SidebarProjectSnapshot) => {
     if (isMobile) setOpenMobile(false);
-    void handleNewThread(scopeProjectRef(group.environmentId, group.id));
+    void startThreadInProjectGroup(group);
   });
   const handleProjectFolderContextMenu = useStableCallback(
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {

@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { nextProjectPinOrderKey } from "@t3tools/client-runtime/state/project-organization";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 
@@ -96,10 +97,28 @@ export function useProjectGroupUpdate() {
   return { updateProjectGroup, canOrganizeProjectGroup };
 }
 
+// The newest pin slot handed out. Pins made faster than the list updates
+// still land in click order instead of sharing one slot.
+let lastIssuedPinOrderKey: string | null = null;
+
+/** The slot after every pinned project, where a new pin lands. */
+export function issuePinOrderKey(
+  projects: Parameters<typeof nextProjectPinOrderKey>[0],
+): string | null {
+  const key = nextProjectPinOrderKey(
+    lastIssuedPinOrderKey === null
+      ? projects
+      : [...projects, { pinnedAt: "issued", pinOrderKey: lastIssuedPinOrderKey }],
+  );
+  if (key !== null) lastIssuedPinOrderKey = key;
+  return key;
+}
+
 /** Pin state for a project group, shared by every list that can pin or unpin a project. */
 export function useProjectPin() {
   const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
-  const environments = [...new Set(useProjects().map((project) => project.environmentId))].map(
+  const projects = useProjects();
+  const environments = [...new Set(projects.map((project) => project.environmentId))].map(
     (environmentId) => ({ environmentId }),
   );
   const operableEnvironmentIds = useEnvironmentsWithScope(
@@ -116,7 +135,7 @@ export function useProjectPin() {
   const setProjectGroupPinned = (group: PinnableGroup, pinned: boolean) => {
     void updateProjectGroup(
       group.memberProjects,
-      { pinned },
+      pinned ? { pinned, pinOrderKey: issuePinOrderKey(projects) } : { pinned },
       pinned ? "Failed to pin project" : "Failed to unpin project",
     );
   };
