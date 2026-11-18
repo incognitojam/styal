@@ -23,6 +23,7 @@ import {
   prepareModelPreferencesPatch,
 } from "./useSettings";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { useUiStateStore } from "~/uiStateStore";
 
 beforeEach(() => {
   persistenceMocks.getClientSettings.mockReset().mockResolvedValue(null);
@@ -34,9 +35,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function savedProjectOrder(projectOrder: string[]): Disposable {
+  const previous = useUiStateStore.getState().projectOrder;
+  useUiStateStore.setState({ projectOrder });
+  return { [Symbol.dispose]: () => useUiStateStore.setState({ projectOrder: previous }) };
+}
+
 describe("client settings hydration", () => {
   const savedSettings = {
     ...DEFAULT_CLIENT_SETTINGS,
+    folderSidebarDefaultApplied: true,
     timestampFormat: "12-hour" as const,
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "gpt-5.6" }],
   };
@@ -164,6 +172,42 @@ describe("client settings hydration", () => {
     const expected = { ...savedSettings, onboardingCompletedAt, wordWrap: true };
     expect(getClientSettings()).toEqual(expected);
     expect(durableSettings).toEqual(expected);
+  });
+
+  it("moves a grouped device to project folders once and saves the move", async () => {
+    using _order = savedProjectOrder(["project-b", "project-a"]);
+    const flushWrites = () =>
+      persistClientSettingsUpdate(
+        (current) => current,
+        async () => {},
+      );
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+      sidebarThreadGrouping: "project",
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    const moved = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: true,
+      folderSidebarDefaultApplied: true,
+      sidebarThreadGrouping: "project",
+      sidebarProjectSortOrder: "manual",
+    };
+    expect(getClientSettings()).toEqual(moved);
+    expect(persistenceMocks.setClientSettings).toHaveBeenCalledExactlyOnceWith(moved);
+
+    // The next load keeps the flat list the user then picked.
+    __resetClientSettingsPersistenceForTests();
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...moved,
+      boringSidebarEnabled: false,
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    expect(getClientSettings().boringSidebarEnabled).toBe(false);
+    expect(persistenceMocks.setClientSettings).toHaveBeenCalledOnce();
   });
 });
 

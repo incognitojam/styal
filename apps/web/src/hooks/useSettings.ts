@@ -52,6 +52,8 @@ import { environmentCatalog } from "~/connection/catalog";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useUiStateStore } from "~/uiStateStore";
+import { folderSidebarMovePatch } from "./folderSidebarMove";
 import { useTheme } from "./useTheme";
 import {
   environmentSession,
@@ -153,6 +155,11 @@ async function hydrateClientSettings(): Promise<void> {
         replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
       }
       setClientSettingsHydrationStatus("ready");
+      const folderMove = folderSidebarMovePatch(
+        getClientSettingsSnapshot(),
+        useUiStateStore.getState().projectOrder,
+      );
+      if (folderMove) void persistClientSettingsPatch(folderMove);
     } catch (error) {
       if (hydrationGeneration === clientSettingsHydrationGeneration) {
         setClientSettingsHydrationStatus("failed");
