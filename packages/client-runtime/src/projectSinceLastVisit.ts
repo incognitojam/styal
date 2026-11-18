@@ -2,6 +2,7 @@ import {
   type CoordinatorReport,
   type EnvironmentId,
   isListedThreadLineage,
+  type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
 
@@ -14,13 +15,17 @@ const SINCE_LAST_VISIT_FLAT_LIMIT = 6;
 const FOLDED_REPORTS = 3;
 const FOLDED_NAMES = 4;
 
-/** Epoch milliseconds: after `since`, up to and including `until` (when the page opened). */
+/** Epoch milliseconds. */
 export interface SinceLastVisitWindow {
+  /** The user's last visit, on the chat server's clock. */
   readonly since: number;
+  /** When the page opened, on this client's clock: for the 30-minute gap and time labels only. */
   readonly until: number;
+  /** The chat's last change when the page opened, on its server's clock: later reports are new. */
+  readonly reportsUntil: number;
 }
 
-type MarkerShell = Pick<EnvironmentThreadShell, "lastVisitedAt" | "opens">;
+type MarkerShell = Pick<EnvironmentThreadShell, "lastVisitedAt" | "opens" | "updatedAt">;
 
 export type SinceLastVisitThreadShell = Pick<
   EnvironmentThreadShell,
@@ -68,8 +73,6 @@ export interface SinceLastVisitReportLine {
 export type SinceLastVisitLine = SinceLastVisitThreadLine | SinceLastVisitReportLine;
 
 const parse = (iso: string | null | undefined) => (iso ? Date.parse(iso) : Number.NaN);
-const within = (at: number, window: SinceLastVisitWindow) =>
-  at > window.since && at <= window.until;
 const newestFirst = (a: { readonly at: number }, b: { readonly at: number }) => b.at - a.at;
 
 /**
@@ -83,27 +86,32 @@ export function sinceLastVisitWindow(chat: MarkerShell, now: number): SinceLastV
   );
   if (marks.length === 0) return null;
   const since = Math.max(...marks);
-  return now - since < SINCE_LAST_VISIT_MIN_AWAY_MS ? null : { since, until: now };
+  if (now - since < SINCE_LAST_VISIT_MIN_AWAY_MS) return null;
+  return { since, until: now, reportsUntil: Math.max(since, parse(chat.updatedAt)) };
 }
 
-/** What changed in the project's threads in the window, newest first. */
+/**
+ * What changed in the project's threads after `since`, newest first. The threads are a snapshot
+ * taken when the page opened, so nothing later is in it. A shell carries only its latest run: an
+ * earlier run that ended in the window and was followed by another is not listed.
+ */
 export function sinceLastVisitThreadLines(
   threads: ReadonlyArray<SinceLastVisitThreadShell>,
   chat: ThreadRef,
-  window: SinceLastVisitWindow,
+  since: number,
 ): SinceLastVisitThreadLine[] {
   const lines: SinceLastVisitThreadLine[] = [];
   const pullRequests = new Set<string>();
   for (const thread of threads) {
-    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
+    if (thread.deletedAt !== null) continue;
     if (!isListedThreadLineage(thread.lineage)) continue;
     if (thread.environmentId === chat.environmentId && thread.id === chat.threadId) continue;
     const ref = { environmentId: thread.environmentId, threadId: thread.id };
     const run = thread.latestRun;
     const completedAt = parse(run?.completedAt);
-    // Opening the thread after it ended is seeing it.
-    const seen = parse(thread.lastVisitedAt) >= completedAt;
-    if (run && within(completedAt, window) && !seen) {
+    // Opening the thread after it ended is seeing it; archiving it is putting it away.
+    const seen = parse(thread.lastVisitedAt) >= completedAt || thread.archivedAt !== null;
+    if (run && completedAt > since && !seen) {
       const base = { ...ref, id: `thread:${thread.environmentId}:${thread.id}` };
       const line = { ...base, title: thread.title, at: completedAt };
       if (run.status === "failed") {
@@ -123,7 +131,7 @@ export function sinceLastVisitThreadLines(
     for (const pullRequest of thread.pullRequests) {
       const mergedAt = parse(pullRequest.snapshot?.mergedAt);
       const key = `${pullRequest.host}/${pullRequest.repository}#${pullRequest.number}`;
-      if (!within(mergedAt, window) || pullRequests.has(key)) continue;
+      if (!(mergedAt > since) || pullRequests.has(key)) continue;
       pullRequests.add(key);
       lines.push({
         ...ref,
@@ -151,22 +159,27 @@ type ReportState = {
 
 /**
  * The chat's reports posted in the window, the latest version per topic, newest first. An open
- * question is in Needs you, and a dismissed report was already seen.
+ * question is in Needs you, and a dismissed report was already seen, even once a newer version
+ * replaced it.
  */
 export function sinceLastVisitReportLines(
   reports: ReadonlyArray<ReportState>,
+  dismissals: ReadonlyArray<{ readonly messageId: string; readonly version: number }>,
   window: SinceLastVisitWindow,
 ): SinceLastVisitReportLine[] {
   const latest = new Map<string, ReportState>();
   for (const report of reports) {
     const tag = report.message.report;
-    if (!tag || !within(parse(report.message.createdAt), window)) continue;
+    const at = parse(report.message.createdAt);
+    if (!tag || !(at > window.since && at <= window.reportsUntil)) continue;
     if ((latest.get(tag.key)?.message.report?.version ?? 0) < tag.version)
       latest.set(tag.key, report);
   }
+  const dismissed = new Set(dismissals.map((ref) => `${ref.messageId}\0${ref.version}`));
   const lines: SinceLastVisitReportLine[] = [];
   for (const { message, state } of latest.values()) {
     if (state === "open" || state === "dismissed" || !message.report) continue;
+    if (dismissed.has(`${message.id}\0${message.report.version}`)) continue;
     lines.push({
       kind: "report",
       id: `report:${message.id}`,
@@ -197,26 +210,68 @@ export function sinceLastVisitHistoryGap(
 export interface CapturedSinceLastVisit {
   readonly window: SinceLastVisitWindow;
   readonly threadLines: ReadonlyArray<SinceLastVisitThreadLine>;
+  /** The machines whose threads are in `threadLines`, each read once its snapshot was live. */
+  readonly environments: ReadonlySet<EnvironmentId>;
+  /**
+   * Settled threads before this time were not on the client, so changes in them may be missing.
+   * Null when every thread that could have changed since the last visit was there.
+   */
+  readonly unloadedBefore: number | null;
 }
 
 /**
- * Taken once per page view, from the first chat shell the page sees: viewing the chat moves its
- * read mark moments later. `undefined` waits for the shell; null is a view with nothing to show.
+ * Taken once per page view from the chat's live shell, before the page records the visit. Null
+ * when the chat was never visited or the user was away under 30 minutes.
  */
 export function captureSinceLastVisit(
-  previous: CapturedSinceLastVisit | null | undefined,
-  input: {
-    readonly chat: MarkerShell | null;
-    readonly chatRef: ThreadRef;
-    readonly threads: ReadonlyArray<SinceLastVisitThreadShell>;
-  },
+  chat: MarkerShell,
   now: number,
-): CapturedSinceLastVisit | null | undefined {
-  if (previous !== undefined) return previous;
-  if (input.chat === null) return undefined;
-  const window = sinceLastVisitWindow(input.chat, now);
-  if (window === null) return null;
-  return { window, threadLines: sinceLastVisitThreadLines(input.threads, input.chatRef, window) };
+): CapturedSinceLastVisit | null {
+  const window = sinceLastVisitWindow(chat, now);
+  return window === null
+    ? null
+    : { window, threadLines: [], environments: new Set(), unloadedBefore: null };
+}
+
+/**
+ * Adds one machine's threads, read once from its live snapshot; a machine already added is kept as
+ * it was. `olderSettled` is where that machine's shell cut settled threads, with how many it left
+ * out per project.
+ */
+export function addSinceLastVisitEnvironment(
+  captured: CapturedSinceLastVisit,
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly projectIds: ReadonlySet<ProjectId>;
+    readonly threads: ReadonlyArray<SinceLastVisitThreadShell>;
+    readonly chatRef: ThreadRef;
+    readonly olderSettled: {
+      readonly beforeMs: number;
+      readonly counts: ReadonlyMap<ProjectId, number>;
+    } | null;
+  },
+): CapturedSinceLastVisit {
+  if (captured.environments.has(input.environmentId)) return captured;
+  const threads = input.threads.filter(
+    (thread) =>
+      thread.environmentId === input.environmentId && input.projectIds.has(thread.projectId),
+  );
+  const older = input.olderSettled;
+  const leftOut =
+    older !== null &&
+    older.beforeMs > captured.window.since &&
+    [...input.projectIds].some((projectId) => (older.counts.get(projectId) ?? 0) > 0);
+  return {
+    ...captured,
+    threadLines: [
+      ...captured.threadLines,
+      ...sinceLastVisitThreadLines(threads, input.chatRef, captured.window.since),
+    ].sort(newestFirst),
+    environments: new Set(captured.environments).add(input.environmentId),
+    unloadedBefore: leftOut
+      ? Math.max(captured.unloadedBefore ?? 0, older.beforeMs)
+      : captured.unloadedBefore,
+  };
 }
 
 export type SinceLastVisitGroup = "failed" | "reports" | "finished" | "merged";

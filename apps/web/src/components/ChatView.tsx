@@ -447,6 +447,8 @@ type ChatViewProps =
       projectChat?: ProjectChat;
       /** What happened since the user last looked, taken when the project page opened. */
       sinceLastVisit?: CapturedSinceLastVisit | null;
+      /** Leave the visit unrecorded until the project page has read the last one. */
+      holdVisit?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -482,6 +484,7 @@ export default function ChatView(props: ChatViewProps) {
     projectChat,
   } = props;
   const sinceLastVisit = routeKind === "server" ? (props.sinceLastVisit ?? null) : null;
+  const holdVisit = routeKind === "server" && props.holdVisit === true;
   const embedded = parentPanel !== undefined;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1108,7 +1111,8 @@ export default function ChatView(props: ChatViewProps) {
           : {
               kind: "inserted",
               id: "project-since-last-visit",
-              createdAt: new Date(sinceLastVisit.window.until).toISOString(),
+              // The chat's last change before the page opened, on the clock its rows carry.
+              createdAt: new Date(sinceLastVisit.window.reportsUntil).toISOString(),
               content: (
                 <ProjectSinceLastVisit
                   chatRef={routeThreadRef}
@@ -4408,7 +4412,7 @@ export default function ChatView(props: ChatViewProps) {
         onConfirm={onConfirmRevertStable}
       />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      <ThreadVisitWatermark threadRef={routeThreadRef} />
+      {holdVisit ? null : <ThreadVisitWatermark threadRef={routeThreadRef} />}
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

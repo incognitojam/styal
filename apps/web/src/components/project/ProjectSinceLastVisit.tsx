@@ -138,7 +138,7 @@ export function ProjectSinceLastVisit({
     window,
   );
   const layout = sinceLastVisitLayout(
-    sinceLastVisitGroups(threadLines, sinceLastVisitReportLines(reports, window)),
+    sinceLastVisitGroups(threadLines, sinceLastVisitReportLines(reports, chat.dismissals, window)),
     expanded,
   );
 
@@ -167,6 +167,11 @@ export function ProjectSinceLastVisit({
     </>
   ) : null;
 
+  const unloadedNote =
+    captured.unloadedBefore === null
+      ? null
+      : `Threads that settled before ${time(captured.unloadedBefore)} aren't loaded here, so some changes may be missing.`;
+
   if (layout.total === 0) {
     return (
       <div
@@ -176,6 +181,7 @@ export function ProjectSinceLastVisit({
         <span>
           Nothing new since your last visit, {formatRelativeTimeLabel(sinceIso, window.until)}
           {loadEarlierControl ? <> · {loadEarlierControl}</> : null}
+          {unloadedNote ? <> · {unloadedNote}</> : null}
         </span>
       </div>
     );
@@ -227,6 +233,9 @@ export function ProjectSinceLastVisit({
         ))}
         {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
           <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
+        ) : null}
+        {unloadedNote ? (
+          <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
         ) : null}
       </div>
     </div>
