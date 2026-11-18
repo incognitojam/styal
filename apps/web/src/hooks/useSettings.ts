@@ -53,7 +53,7 @@ import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useUiStateStore } from "~/uiStateStore";
-import { folderSidebarMovePatch } from "./folderSidebarMove";
+import { takeFolderSidebarMove } from "./folderSidebarMove";
 import { useTheme } from "./useTheme";
 import {
   environmentSession,
@@ -151,15 +151,16 @@ async function hydrateClientSettings(): Promise<void> {
       if (hydrationGeneration !== clientSettingsHydrationGeneration) {
         return;
       }
-      if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+      const loaded = persistedSettings
+        ? { ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings }
+        : getClientSettingsSnapshot();
+      // Joins the loaded settings, so changes queued before they loaded still apply after it.
+      const folderMove = takeFolderSidebarMove(loaded, useUiStateStore.getState().projectOrder);
+      if (persistedSettings || folderMove) {
+        replaceClientSettingsSnapshot({ ...loaded, ...folderMove });
       }
       setClientSettingsHydrationStatus("ready");
-      const folderMove = folderSidebarMovePatch(
-        getClientSettingsSnapshot(),
-        useUiStateStore.getState().projectOrder,
-      );
-      if (folderMove) void persistClientSettingsPatch(folderMove);
+      if (folderMove) void persistClientSettingsPatch({});
     } catch (error) {
       if (hydrationGeneration === clientSettingsHydrationGeneration) {
         setClientSettingsHydrationStatus("failed");

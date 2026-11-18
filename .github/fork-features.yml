@@ -6588,7 +6588,7 @@ features:
     prs: [1606]
     invariants:
       - On web and desktop, project folders are the sidebar's default layout. Settings → General → Sidebar → Sidebar layout chooses Project folders or Flat list for this device, with Two-line folder rows under it while folders are chosen; Labs has no folder switch. The stored key stays upstream's `boringSidebarEnabled`.
-      - Each device moves to project folders once, on its first load of a build with this change, whatever layout it showed, because a stored flat list cannot be told from an untouched default. The move is recorded on the device, so later choices stay, reloads and second runs change nothing, and each other device moves on its own first load.
+      - Each device moves to project folders once, on its first load of a build with this change, whatever layout it showed, because a stored flat list cannot be told from an untouched default. The move is recorded in the client's local storage, apart from the client settings that older builds rewrite, so later choices stay, reloads, second runs and a return from an older build change nothing, and each other device moves on its own first load. A layout or Project order chosen before the settings finish loading wins over the move.
       - A device that showed the removed "Group threads by project" headers with a saved project order gets Project order set to Manual in the same move, so its folders keep that order. Devices that already showed folders, or had no saved order, keep their Project order.
     rationale: Maintainer decision of 2026-11-18, one grouped sidebar instead of two, with folders for everyone and the flat list kept as a choice. Upstream keeps folders off behind its Labs switch.
     implementation_paths:

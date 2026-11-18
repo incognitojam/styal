@@ -24,11 +24,16 @@ import {
 } from "./useSettings";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { useUiStateStore } from "~/uiStateStore";
+import * as Schema from "effect/Schema";
+import { FOLDER_SIDEBAR_MOVED_KEY } from "./folderSidebarMove";
+import { removeLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
 
 beforeEach(() => {
   persistenceMocks.getClientSettings.mockReset().mockResolvedValue(null);
   persistenceMocks.setClientSettings.mockReset().mockResolvedValue(undefined);
   __resetClientSettingsPersistenceForTests();
+  // A device already moved to project folders, unless a test is about the move.
+  setLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, true, Schema.Boolean);
 });
 
 afterEach(() => {
@@ -44,7 +49,6 @@ function savedProjectOrder(projectOrder: string[]): Disposable {
 describe("client settings hydration", () => {
   const savedSettings = {
     ...DEFAULT_CLIENT_SETTINGS,
-    folderSidebarDefaultApplied: true,
     timestampFormat: "12-hour" as const,
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "gpt-5.6" }],
   };
@@ -175,6 +179,7 @@ describe("client settings hydration", () => {
   });
 
   it("moves a grouped device to project folders once and saves the move", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
     using _order = savedProjectOrder(["project-b", "project-a"]);
     const flushWrites = () =>
       persistClientSettingsUpdate(
@@ -191,7 +196,6 @@ describe("client settings hydration", () => {
     const moved: ClientSettings = {
       ...DEFAULT_CLIENT_SETTINGS,
       boringSidebarEnabled: true,
-      folderSidebarDefaultApplied: true,
       sidebarThreadGrouping: "project",
       sidebarProjectSortOrder: "manual",
     };
@@ -208,6 +212,29 @@ describe("client settings hydration", () => {
     await flushWrites();
     expect(getClientSettings().boringSidebarEnabled).toBe(false);
     expect(persistenceMocks.setClientSettings).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a layout chosen while the first load is still pending", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
+    let finishRead!: (settings: ClientSettings) => void;
+    persistenceMocks.getClientSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const hydration = ensureClientSettingsHydrated();
+    const choice = persistClientSettingsPatch({ boringSidebarEnabled: false });
+    finishRead({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled: false });
+    await hydration;
+    await choice;
+    await persistClientSettingsUpdate(
+      (current) => current,
+      async () => {},
+    );
+
+    expect(getClientSettings().boringSidebarEnabled).toBe(false);
+    expect(persistenceMocks.setClientSettings.mock.lastCall?.[0].boringSidebarEnabled).toBe(false);
   });
 });
 
