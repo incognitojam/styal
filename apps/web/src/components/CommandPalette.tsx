@@ -242,6 +242,7 @@ import {
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
+import { useProjectPages } from "./project/useProjectPages";
 import { CommandPaletteContent, type PendingInputSelection } from "./CommandPaletteContent";
 import {
   selectCommandPaletteClientSettings,
@@ -534,6 +535,7 @@ function OpenCommandPaletteDialog(props: {
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
   const navigate = useNavigate();
+  const projectPages = useProjectPages();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { openChildSearch, setOpen } = props;
   // Keyed by palette session: the intent and restored search only seed this
@@ -1650,6 +1652,37 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       ...(picksProject ? { shortcutCommand: "chat.new" as const } : {}),
       groups: [{ value: NEW_THREAD_IN_GROUP, label: "Projects", items: projectThreadItems }],
+    });
+  }
+
+  if (projectPages.size > 0) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-project",
+      searchTerms: ["open project", "project page", "project chat", "coordinator"],
+      title: "Open project…",
+      icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <FolderIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "open-project",
+          label: "Projects",
+          items: [...projectPages.values()].map((page) => ({
+            kind: "action" as const,
+            value: `open-project:${page.group.projectKey}`,
+            searchTerms: [page.group.displayName],
+            title: page.group.displayName,
+            ...(page.statusLine ? { description: page.statusLine } : {}),
+            icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              await navigate({
+                to: "/projects/$projectKey",
+                params: { projectKey: page.group.projectKey },
+              });
+            },
+          })),
+        },
+      ],
     });
   }
 

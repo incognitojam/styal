@@ -7,7 +7,10 @@ import { SectionHeaderStatus } from "../ui/collapsible-section-header";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { reportRecipientId } from "@t3tools/client-runtime/state/project-coordinators";
+import {
+  reportRecipientId,
+  shownReportRecipientId,
+} from "@t3tools/client-runtime/state/project-coordinators";
 import {
   deriveWorkflowGroups,
   projectedSubagentsToRuntime,
@@ -649,8 +652,16 @@ export function ThreadRelationshipsPanel(props: {
 
   // A linked environment's agent may have delegated this thread from there.
   const delegatedFrom = currentThread?.delegatedFrom;
+  const recipientId = currentThread
+    ? reportRecipientId(currentThread, settings ?? undefined)
+    : null;
+  const recipient = useQuietThreadShell(
+    currentThread && recipientId !== null ? scopeThreadRef(props.environmentId, recipientId) : null,
+  );
   const reportsTo =
-    (currentThread && reportRecipientId(currentThread, settings ?? undefined)) ?? undefined;
+    (currentThread &&
+      shownReportRecipientId(currentThread, recipientId, recipient?.projectId ?? null)) ??
+    undefined;
 
   const lineageVisible =
     props.showLineage &&

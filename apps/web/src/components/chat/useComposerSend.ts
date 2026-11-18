@@ -174,6 +174,12 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
+  /** Runs before a draft's first message creates its thread; a failure keeps the draft unsent. */
+  beforeDraftThreadCreate?:
+    | ((threadRef: ScopedThreadRef) => Promise<AtomCommandResult<unknown, unknown>>)
+    | undefined;
+  /** The server refused to create the draft's thread, so that thread id will never exist. */
+  onDraftThreadNotCreated?: ((threadRef: ScopedThreadRef) => void) | undefined;
   reportReply?: { ref: import("./CoordinatorReports").ReportReference; title: string } | null;
   onReportAnswered?: () => void;
   readonly environmentId: EnvironmentId;
@@ -1298,6 +1304,13 @@ export function useComposerSend(input: ComposerSendInput) {
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     let turnStartAttempted = false;
+    if (failure === null && isLocalDraftThread && input.beforeDraftThreadCreate) {
+      const prepared = await input.beforeDraftThreadCreate(
+        scopeThreadRef(environmentId, threadIdForSend),
+      );
+      if (prepared._tag === "Failure") failure = prepared;
+    }
+
     if (failure === null && turnAttachmentsResult._tag === "Success") {
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
@@ -1400,6 +1413,7 @@ export function useComposerSend(input: ComposerSendInput) {
           isLocalDraftThread &&
           isOrchestrationDispatchCommandError(squashAtomCommandFailure(startResult))
         ) {
+          input.onDraftThreadNotCreated?.(scopeThreadRef(environmentId, threadIdForSend));
           resetDraftThreadAfterFailedPromotion(
             composerDraftTarget,
             newThreadId(),

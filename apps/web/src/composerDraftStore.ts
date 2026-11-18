@@ -5005,6 +5005,35 @@ export function usePromotingDraftThreadKeys(): ReadonlyArray<string> {
   );
 }
 
+/**
+ * A draft in the project's checkout that no "New thread" reuses, for a project page's chat. A
+ * fresh one drops the redirect a sent one left under the same id.
+ */
+export function ensureProjectChatDraft(input: {
+  readonly draftId: DraftId;
+  readonly threadId: ThreadId;
+  readonly projectRef: ScopedProjectRef;
+  readonly logicalProjectKey: string;
+}): void {
+  useComposerDraftStore.setState((state) => {
+    if (state.draftThreadsByThreadKey[input.draftId] !== undefined) return state;
+    const { [input.draftId]: _sent, ...promotedDraftRedirects } = state.promotedDraftRedirects;
+    return {
+      draftThreadsByThreadKey: {
+        ...state.draftThreadsByThreadKey,
+        [input.draftId]: createDraftThreadState(
+          input.projectRef,
+          input.threadId,
+          logicalProjectDraftKey(input.logicalProjectKey),
+          undefined,
+          { envMode: "local", branch: null, worktreePath: null },
+        ),
+      },
+      promotedDraftRedirects,
+    };
+  });
+}
+
 export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
   const draftStore = useComposerDraftStore.getState();
   for (const [draftId, draftThread] of Object.entries(draftStore.draftThreadsByThreadKey)) {

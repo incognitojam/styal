@@ -37,7 +37,11 @@ export const currentProjectCoordinator = Effect.fn("ProjectCoordinator.current")
     : null;
 });
 
-/** Refuses a coordinator that is not a thread of the project it is set for. */
+/**
+ * Refuses a coordinator that is a thread of another project, or a deleted one. A thread that does
+ * not exist yet is accepted, so a new project chat is named before its first turn starts; until it
+ * exists, `currentProjectCoordinator` treats the project as having none.
+ */
 export const assertProjectCoordinatorsBelong = Effect.fn("ProjectCoordinator.assertBelong")(
   function* <ShellError>(
     getThreadShell: ProjectCoordinatorLookup<never, ShellError>["getThreadShell"],
@@ -45,14 +49,16 @@ export const assertProjectCoordinatorsBelong = Effect.fn("ProjectCoordinator.ass
   ) {
     for (const [projectId, coordinator] of Object.entries(patch.projectCoordinators ?? {})) {
       if (coordinator === null) continue;
+      const refused = new ServerSettingsError({
+        settingsPath: `projectCoordinators.${projectId}`,
+        operation: "set-project-coordinator",
+      });
+      // Only a lookup that found no thread accepts it; a failed lookup refuses.
       const shell = yield* getThreadShell(coordinator.threadId).pipe(
-        Effect.orElseSucceed(() => null),
+        Effect.mapError(() => refused),
       );
-      if (shell === null || shell.deletedAt !== null || shell.projectId !== projectId) {
-        return yield* new ServerSettingsError({
-          settingsPath: `projectCoordinators.${projectId}`,
-          operation: "set-project-coordinator",
-        });
+      if (shell !== null && (shell.deletedAt !== null || shell.projectId !== projectId)) {
+        return yield* refused;
       }
     }
   },

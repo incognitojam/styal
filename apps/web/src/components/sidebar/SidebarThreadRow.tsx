@@ -640,6 +640,11 @@ type SidebarThreadRowProps = {
   scratchMachineLabel: string | null;
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
+  /**
+   * Set when this thread is its project's chat: a flat card shows the project's name over this
+   * status line (null when nothing is running or waiting).
+   */
+  projectChatStatusLine?: string | null | undefined;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   timestampMode: SidebarThreadTimestampMode;
@@ -735,6 +740,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const threadKey = scopedThreadKey(threadRef);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const { leaseLiveStatus, rowRef: leaseRowRef } = useSidebarRowSubscriptionLease(props.isActive);
+  const projectChatCard =
+    variant === "card" && !props.grouped && props.projectChatStatusLine !== undefined;
   const { revealRef } = props;
   const rowRef = (row: HTMLElement | null) => {
     const stopReveal = row === null ? undefined : revealRef?.(row, threadKey);
@@ -1059,9 +1066,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
 
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: projectChatCard ? (props.projectDisplayName ?? thread.title) : thread.title,
     statusLabel: topStatus?.label ?? null,
-    projectDisplayName: props.projectDisplayName,
+    projectDisplayName: projectChatCard
+      ? (props.projectChatStatusLine ?? null)
+      : props.projectDisplayName,
     isActive: props.isActive,
   });
 
@@ -1214,13 +1223,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   // Only the trailing icons would remain, so the row moves them to the title line instead.
   // Grouped and compact rows keep their fixed heights.
   const metaLineEmpty =
-    !props.compact &&
-    !props.grouped &&
-    !checkoutThread.branch &&
-    !showsScratchMachine &&
-    prBadge === null &&
-    diff === null &&
-    runningTerminalIds.length === 0;
+    projectChatCard ||
+    (!props.compact &&
+      !props.grouped &&
+      !checkoutThread.branch &&
+      !showsScratchMachine &&
+      prBadge === null &&
+      diff === null &&
+      runningTerminalIds.length === 0);
   const metaLine =
     props.compact || metaLineEmpty ? null : (
       <div
@@ -1580,7 +1590,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </>
               ) : props.projectDisplayName ? (
                 <span
-                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    projectChatCard
+                      ? "font-medium text-foreground text-sm"
+                      : "font-normal text-secondary-label text-xs",
+                  )}
                 >
                   {props.projectDisplayName}
                 </span>
@@ -1726,8 +1741,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </div>
             {props.grouped ? null : (
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                {title}
-                {regeneratingTitleStatus}
+                {projectChatCard ? (
+                  <span
+                    aria-hidden
+                    className="min-w-0 flex-1 truncate text-muted-foreground text-sm"
+                  >
+                    {props.projectChatStatusLine ?? "Project chat"}
+                  </span>
+                ) : (
+                  <>
+                    {title}
+                    {regeneratingTitleStatus}
+                  </>
+                )}
                 {titleLineIcons}
               </div>
             )}
