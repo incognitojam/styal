@@ -18,7 +18,7 @@ function sourceControlHostIcon(host: string): ReactNode {
   return <Icon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />;
 }
 
-const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
+export const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
   const brandIcon = sourceControlHostIcon(host);
   const faviconUrl = brandIcon ? null : faviconUrlForOrigin(`https://${host}`);

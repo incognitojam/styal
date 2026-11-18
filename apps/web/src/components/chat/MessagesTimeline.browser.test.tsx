@@ -1814,7 +1814,10 @@ describe("MessagesTimeline attachments", () => {
             kind: "viewed-images",
             id: "viewed",
             createdAt: CREATED_AT,
+            runId: null,
             paths: ["/repo/first.png", "/repo/second.png", "/repo/third.png"],
+            sources: [],
+            collapsedGroupId: null,
           }}
         />
       </TimelineRowCtx>,

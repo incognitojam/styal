@@ -161,6 +161,8 @@ export function turnItemNeedsDetailFetch(item: OrchestrationV2TurnItem): boolean
       return item.outputOmitted === true;
     case "dynamic_tool":
       return item.outputOmitted === true || isSummarizedValue(item.input);
+    case "web_search":
+      return item.outputOmitted === true;
     default:
       return false;
   }

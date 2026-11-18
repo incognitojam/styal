@@ -691,6 +691,14 @@ function compactStrings(values: ReadonlyArray<string | null | undefined>): Reado
   });
 }
 
+/** `openPage` and `findInPage` read one page; `search` and `other` do not. */
+function webSearchFetchedUrl(item: CodexWebSearchItem): string | undefined {
+  const action = item.action;
+  if (action?.type !== "openPage" && action?.type !== "findInPage") return undefined;
+  const url = action.url?.trim();
+  return url ? url : undefined;
+}
+
 function webSearchPatterns(item: CodexWebSearchItem): ReadonlyArray<string> {
   if (item.action === null || item.action === undefined) {
     return compactStrings([item.query]);
@@ -4008,6 +4016,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
             const { ordinal, startedAt } = yield* resolveItemPosition(input.context, input.item.id);
             const patterns = webSearchPatterns(input.item);
+            const fetchedUrl = webSearchFetchedUrl(input.item);
             const status = input.completed ? "completed" : "running";
             const node: OrchestrationV2ExecutionNode = {
               id: nodeId,
@@ -4043,6 +4052,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               updatedAt,
               type: "web_search",
               ...(patterns.length === 0 ? {} : { patterns: [...patterns] }),
+              ...(fetchedUrl === undefined ? {} : { fetchedUrl }),
             };
             return { node, turnItem };
           },

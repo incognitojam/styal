@@ -42,7 +42,7 @@ describe("fork CI change gates", () => {
       ]) {
         expect(output[gate]).toBe(true);
       }
-      expect(suites(output)).toEqual(["Web 1/2", "Web 2/2", "Clients", "E2E", "Other"]);
+      expect(suites(output)).toEqual(["Web 1/3", "Web 2/3", "Web 3/3", "Clients", "E2E", "Other"]);
     }
   });
 
@@ -52,7 +52,13 @@ describe("fork CI change gates", () => {
     expect(output.test_device_windows).toBe(false);
     expect(output.preview_calibration).toBe(true);
     expect(output.release_smoke).toBe(false);
-    expect(suites(output)).toEqual(["Web 1/2", "Web 2/2", "E2E", "Other"]);
+    expect(suites(output)).toEqual(["Web 1/3", "Web 2/3", "Web 3/3", "E2E", "Other"]);
+    expect(output.test_web_3).toBe(true);
+    expect(
+      JSON.parse(output.workspace_matrix)
+        .include.filter((entry: { shard?: string }) => entry.shard)
+        .map((entry: { shard: string }) => entry.shard),
+    ).toEqual(["1/3", "2/3", "3/3"]);
     const other = JSON.parse(output.workspace_matrix).include.find(
       (entry: { suite: string }) => entry.suite === "Other",
     );
@@ -86,9 +92,9 @@ describe("fork CI change gates", () => {
     expect(web.fork_filters).toBe("");
   });
 
-  it("runs Rust in Web 2/2 and the scripts tests that read crate sources", () => {
+  it("runs Rust in Web 2/3 and the scripts tests that read crate sources", () => {
     const output = gates(["native/resource-monitor/src/main.rs"]);
-    expect(suites(output)).toEqual(["Web 2/2", "Other"]);
+    expect(suites(output)).toEqual(["Web 2/3", "Other"]);
     expect(output.rust).toBe(true);
   });
 
@@ -151,11 +157,31 @@ describe("required CI aggregate checks", () => {
         }
         results[name].result = original;
       }
-      for (const gate of Object.keys(results.changes.outputs))
-        results.changes.outputs[gate] = "true";
+      results.changes.outputs = Object.fromEntries(
+        Object.entries(gates(null)).map(([key, value]) => [key, String(value)]),
+      );
       expect(run()).not.toBe(0);
       for (const result of Object.values(results)) result.result = "success";
       expect(run()).toBe(0);
+      if (job === "test_workspace_required") {
+        const original = results.changes.outputs.workspace_matrix;
+        const matrix = JSON.parse(original);
+        for (const shard of ["1/3", "2/3", "3/3"]) {
+          const entry = matrix.include.find((entry: { shard?: string }) => entry.shard === shard);
+          for (const include of [
+            matrix.include.filter((entry: { shard?: string }) => entry.shard !== shard),
+            [...matrix.include, entry],
+            matrix.include.map((item: { shard?: string }) =>
+              item === entry ? { ...item, shard: "1/2" } : item,
+            ),
+          ]) {
+            results.changes.outputs.workspace_matrix = JSON.stringify({ include });
+            expect(run()).not.toBe(0);
+          }
+        }
+        results.changes.outputs.workspace_matrix = original;
+        expect(run()).toBe(0);
+      }
       for (const [name, result] of Object.entries(results)) {
         if (name !== "changes" && name !== "lint") result.result = "skipped";
       }

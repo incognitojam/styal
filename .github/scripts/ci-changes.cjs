@@ -162,12 +162,14 @@ function decide(files, packages, full) {
   const threaded = other.filter((pkg) => !SERVER_SOURCE_TESTS.has(pkg.name));
   const web1 = has("@t3tools/web") || has("@t3tools/client-runtime");
   const web2 = has("@t3tools/web") || everything || rust;
+  const web3 = has("@t3tools/web");
   const clients = has("@t3tools/desktop") || has("@t3tools/mobile");
   // E2E boots the server and built web client without workspace dependencies.
   const e2e = has("@t3tools/e2e") || has("@styal/cli") || has("@t3tools/web");
   const suites = [
-    web1 && { suite: "Web 1/2", shard: "1/2", filters: "--filter './packages/client-runtime'" },
-    web2 && { suite: "Web 2/2", shard: "2/2", native: true },
+    web1 && { suite: "Web 1/3", shard: "1/3", filters: "--filter './packages/client-runtime'" },
+    web2 && { suite: "Web 2/3", shard: "2/3", native: true },
+    web3 && { suite: "Web 3/3", shard: "3/3" },
     clients && { suite: "Clients", filters: "--filter './apps/desktop' --filter './apps/mobile'" },
     e2e && { suite: "E2E", e2e: true },
     other.length > 0 && {
@@ -208,6 +210,7 @@ function decide(files, packages, full) {
       preview_calibration: has("@t3tools/desktop") || has("@t3tools/web"),
       test_web_1: web1,
       test_web_2: web2,
+      test_web_3: web3,
       test_clients: clients,
       test_e2e: e2e,
       test_other: other.length > 0,

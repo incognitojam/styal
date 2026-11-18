@@ -23,6 +23,7 @@ import {
 } from "../../lib/enrichedLinkPresentation";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { ThreadContextDivider } from "./thread-context-divider";
+import { ViewedSourceChips } from "./ViewedSourceChips";
 import {
   ThreadHandoffDivider,
   ThreadHandoffRow,
@@ -1938,13 +1939,30 @@ function renderFeedEntry(
 
   if (entry.type === "viewed-images") {
     const thumbnailWidth = Math.floor((props.contentWidth - VIEWED_IMAGE_GAP) / 2);
+    const images =
+      entry.paths.length === 0 ? null : (
+        <View className="flex-row flex-wrap pb-2" style={{ gap: VIEWED_IMAGE_GAP }}>
+          {entry.paths.map((path) => (
+            <View key={path} style={{ width: thumbnailWidth }}>
+              {props.renderViewedImage({ href: path, alt: null, title: null })}
+            </View>
+          ))}
+        </View>
+      );
+    if (entry.sources.length === 0) return images;
     return (
-      <View className="flex-row flex-wrap pb-2" style={{ gap: VIEWED_IMAGE_GAP }}>
-        {entry.paths.map((path) => (
-          <View key={path} style={{ width: thumbnailWidth }}>
-            {props.renderViewedImage({ href: path, alt: null, title: null })}
-          </View>
-        ))}
+      <View>
+        {images}
+        <ViewedSourceChips
+          sources={entry.sources}
+          iconColor={iconSubtleColor}
+          onOpenLink={props.markdownLinkHandlers.onLinkPress}
+          onOpenGroup={
+            entry.collapsedGroupId === null
+              ? undefined
+              : () => props.onToggleWorkGroup(entry.collapsedGroupId!, entry.id)
+          }
+        />
       </View>
     );
   }
