@@ -3,7 +3,7 @@ import { sortActiveThreadsByOrderKey } from "./threadSort.ts";
 /** Stable-cluster `items` by group, keeping their relative order within a
     group. Groups missing from `groupOrder` lead, in order of their first
     item; the rest follow `groupOrder`. */
-export function clusterByGroup<T>(
+function clusterByGroup<T>(
   items: readonly T[],
   groupOf: (item: T) => string,
   groupOrder: readonly string[] = [],

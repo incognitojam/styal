@@ -466,12 +466,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["sort projects sidebar manual created recent"],
   },
   {
-    id: "group-threads-by-project",
-    title: "Group threads by project",
-    to: "/settings/general",
-    searchTerms: ["sidebar headers repository active threads"],
-  },
-  {
     id: "snooze-options",
     title: "Snooze options",
     to: "/settings/threads",
@@ -499,17 +493,19 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "boring-sidebar",
-    title: "Boring sidebar (group by project)",
-    to: "/settings/labs",
-    searchTerms: ["beta folders project tree classic sidebar"],
+    title: "Sidebar layout",
+    to: "/settings/general",
+    searchTerms: [
+      "project folders flat list group threads by project headers boring sidebar tree classic",
+    ],
   },
   {
     id: "boring-sidebar-multiline",
     title: "Two-line folder rows",
-    to: "/settings/labs",
-    // Shown inside the boring sidebar row only while it is on, so search lands on the parent.
+    to: "/settings/general",
+    // Shown inside the sidebar layout row only while folders are on, so search lands on the parent.
     targetId: "boring-sidebar",
-    searchTerms: ["beta boring sidebar folder rows multiline branch pull request details"],
+    searchTerms: ["project folder rows multiline branch pull request details"],
   },
   {
     id: "tool-call-visibility",

@@ -8,7 +8,6 @@ import {
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
-  SidebarProjectGroupHeader,
 } from "./sidebar/SidebarListMarkers";
 import {
   SidebarSearchResultRow,
@@ -62,10 +61,6 @@ import {
   isThreadWorking,
 } from "@t3tools/client-runtime/state/thread-inbox";
 
-import {
-  groupActiveThreadsByProject,
-  groupWorkingThreadsByProject,
-} from "@t3tools/client-runtime/state/thread-project-groups";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
@@ -396,14 +391,6 @@ type SidebarOptimisticDrop = {
   readonly assignedKeys: ReadonlyMap<string, string>;
 };
 
-// Inputs for clustering active and Working threads under project headers.
-interface SidebarProjectGrouping {
-  readonly projectGroupByKey: ReadonlyMap<string, SidebarProjectSnapshot>;
-  readonly orderedProjectGroupKeys: readonly string[];
-  readonly pinnedProjectGroupKeys: readonly string[];
-  readonly projectGroupKeys: readonly string[];
-}
-
 function sidebarThreadProjectGroup(
   projectGroupByKey: ReadonlyMap<string, SidebarProjectSnapshot>,
   thread: Pick<EnvironmentThreadShell, "environmentId" | "projectId">,
@@ -415,7 +402,6 @@ function sidebarThreadProjectGroup(
 interface SidebarThreadPartitionInput {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly scopedProjectKeys: ReadonlySet<string> | null;
-  readonly projectGrouping: SidebarProjectGrouping | null;
   /** Tasks linked environments run for a listed thread; they show under it. */
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
@@ -502,7 +488,6 @@ function routeThreadOnly(
 function useSidebarThreads(input: {
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
-  readonly projectGrouping: SidebarProjectGrouping | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly connectedEnvironmentIds: readonly EnvironmentId[];
   readonly optimisticDrop: SidebarOptimisticDrop | null;
@@ -519,7 +504,6 @@ function useSidebarThreads(input: {
   const {
     projectScopeKey,
     scopedProjectKeys,
-    projectGrouping,
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
@@ -570,13 +554,12 @@ function useSidebarThreads(input: {
   const partition = partitionSidebarThreads({
     threads,
     scopedProjectKeys,
-    projectGrouping,
     delegatedUnderParent,
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
     workingShelfEnabled,
-    keepOutOfWorkingShelf: projectGrouping === null ? input.projectChatKeys : EMPTY_KEY_SET,
+    keepOutOfWorkingShelf: input.projectChatKeys,
     sortActiveBySend: folderGroups !== null,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
@@ -713,7 +696,6 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     threads,
     scopedProjectKeys,
     delegatedUnderParent,
-    projectGrouping,
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
@@ -803,8 +785,6 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
           preferredIds: optimisticDrop.order,
           getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
         });
-  const groupOf = (thread: EnvironmentThreadShell) =>
-    sidebarThreadProjectGroup(projectGrouping?.projectGroupByKey ?? new Map(), thread);
   return {
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -816,26 +796,9 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
           }),
     draggableThreadKeys,
     activeReorderableThreadKeys,
-    // Grouping clusters rows without changing their order within a
-    // project, so jump shortcuts and range select follow what renders.
-    activeThreads: projectGrouping
-      ? groupActiveThreadsByProject(
-          optimisticActive,
-          groupOf,
-          projectGrouping.orderedProjectGroupKeys,
-          projectGrouping.pinnedProjectGroupKeys,
-        )
-      : optimisticActive,
+    activeThreads: optimisticActive,
     // Newest send first; finishing and waking again do not move a row.
-    // Grouped projects follow the saved order, then the project list, so
-    // a send never reorders the headers.
-    workingThreads: projectGrouping
-      ? groupWorkingThreadsByProject(sortWorkingThreadsBySend(working), groupOf, [
-          ...projectGrouping.pinnedProjectGroupKeys,
-          ...projectGrouping.orderedProjectGroupKeys,
-          ...projectGrouping.projectGroupKeys,
-        ])
-      : sortWorkingThreadsBySend(working),
+    workingThreads: sortWorkingThreadsBySend(working),
     snoozedThreads: snoozed.toSorted(
       (left, right) =>
         firstValidTimestampMs(left.snoozedUntil ?? null) -
@@ -942,7 +905,6 @@ function useSidebarLookups() {
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const {
-    projectOrder,
     orderedProjects,
     unsortedGroups: unsortedProjectGroups,
     groups: sortedProjectGroups,
@@ -951,8 +913,7 @@ function useSidebarLookups() {
   const savedPinnedProjectKeys = sortPinnedProjectsFirst(projectGroups).flatMap((group) =>
     group.pinnedAt == null || group.archived ? [] : [group.projectKey],
   );
-  // Logical project (the same grouping the project scope uses) for each
-  // physical project, when active threads are grouped under project headers.
+  // Logical project (the same grouping the project scope uses) for each physical project.
   const projectGroupByKey = new Map<string, SidebarProjectSnapshot>(
     unsortedProjectGroups.flatMap((group) =>
       group.memberProjects.map(
@@ -963,19 +924,6 @@ function useSidebarLookups() {
   const projectGroupByLogicalKey = new Map(
     unsortedProjectGroups.map((group) => [group.projectKey, group] as const),
   );
-  // Saved project order (shared with the legacy sidebar), as logical groups.
-  // A group ranks by its earliest member.
-  const rankByPhysicalKey = new Map(projectOrder.map((key, index) => [key, index] as const));
-  const orderedProjectGroupKeys = unsortedProjectGroups
-    .flatMap((group) => {
-      const ranks = group.memberProjects.flatMap((member) => {
-        const rank = rankByPhysicalKey.get(member.physicalProjectKey);
-        return rank === undefined ? [] : [rank];
-      });
-      return ranks.length === 0 ? [] : [{ key: group.projectKey, rank: Math.min(...ranks) }];
-    })
-    .toSorted((left, right) => left.rank - right.rank)
-    .map(({ key }) => key);
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
@@ -1009,7 +957,6 @@ function useSidebarLookups() {
     savedPinnedProjectKeys,
     projectGroupByKey,
     projectGroupByLogicalKey,
-    orderedProjectGroupKeys,
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
@@ -1077,12 +1024,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projects,
     serverConfigs,
     orderedProjects,
-    unsortedProjectGroups,
     projectGroups,
     savedPinnedProjectKeys,
     projectGroupByKey,
     projectGroupByLogicalKey,
-    orderedProjectGroupKeys,
     environmentLabelById,
     providerEntriesByEnvironment,
     projectByKey,
@@ -1098,9 +1043,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
-  // Boring mode's folders take the place of the project headers.
-  const groupThreadsByProject =
-    useClientSettings((s) => s.sidebarThreadGrouping === "project") && !boringSidebarEnabled;
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const timestampMode = useClientSettings((s) => s.sidebarThreadTimestampMode);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -1202,7 +1144,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   } = useProjectPin();
   const { setProjectPinned, reorderPinnedProjects, archiveProject, unarchiveProject } =
     useProjectPinOrder();
-  // Pinned projects lead the grouped list in their pin order. A pin change
+  // Pinned projects lead the folders in their pin order. A pin change
   // dropped in the list shows at once and holds until the projects match it.
   const [pendingPinnedProjectKeys, setPendingPinnedProjectKeys] = useState<
     readonly string[] | null
@@ -1342,12 +1284,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       chatKey === routeRowThreadKey &&
       sectionByThreadKey.get(chatKey) === "active"
     );
-  };
-  const projectChatShell = (projectKey: string) => {
-    const chatKey = projectPages.get(projectKey)?.chatThreadKey;
-    return chatKey == null
-      ? null
-      : (listedThreads.find((thread) => threadShellKey(thread) === chatKey) ?? null);
   };
   const routeProjectKey = useParams({
     strict: false,
@@ -1505,70 +1441,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
     },
   );
-  const handleProjectGroupContextMenu = (groupKey: string, position: { x: number; y: number }) => {
-    void (async () => {
-      const api = readLocalApi();
-      const projectGroup =
-        projectGroupByLogicalKey.get(groupKey) ?? projectGroupByKey.get(groupKey);
-      if (!api || !projectGroup) return;
-      const isFiltered = projectScopeKeys.includes(projectGroup.projectKey);
-      const isPinned = projectGroup.pinned;
-      const members = projectGroup.memberProjects;
-      const clicked = await settlePromise(() =>
-        api.contextMenu.show(
-          [
-            { id: "new-thread", label: "New thread" },
-            {
-              id: "filter-project",
-              label: isFiltered ? "Show all projects" : `Filter by ${projectGroup.displayName}`,
-            },
-            ...(canPinProject(projectGroup)
-              ? [
-                  {
-                    id: "pin-project",
-                    label: isPinned ? "Unpin project" : "Pin project",
-                    separatorBefore: true,
-                  },
-                  { id: "archive-project", label: "Archive project" },
-                ]
-              : []),
-            {
-              id: "copy-path",
-              label: "Copy project path",
-              separatorBefore: true,
-              ...(members.length > 1
-                ? {
-                    children: members.map((member, index) => ({
-                      id: `copy-path:${index}`,
-                      label: `${member.environmentLabel ?? "Environment"}: ${member.workspaceRoot}`,
-                    })),
-                  }
-                : {}),
-            },
-            { id: "project-settings", label: "Project settings" },
-          ],
-          position,
-        ),
-      );
-      if (clicked._tag === "Failure" || !clicked.value) return;
-      if (clicked.value === "filter-project") {
-        setProjectScopeKeys(isFiltered ? [] : [projectGroup.projectKey]);
-      } else if (clicked.value === "pin-project") {
-        await setProjectPinned(projectGroup, !isPinned, projectGroupsRef.current);
-      } else if (clicked.value === "archive-project") {
-        await archiveProject(projectGroup);
-      } else if (clicked.value === "project-settings") {
-        openProjectSettings(projectGroup);
-      } else if (clicked.value === "new-thread") {
-        await startThreadInProjectGroup(projectGroup);
-      } else if (clicked.value === "copy-path" || clicked.value.startsWith("copy-path:")) {
-        const member = members[clicked.value === "copy-path" ? 0 : Number(clicked.value.slice(10))];
-        if (member) {
-          copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
-        }
-      }
-    })();
-  };
   const handleProjectSettings = useStableCallback(
     (
       event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLInputElement>,
@@ -1721,14 +1593,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectScopeKey,
     scopedProjectKeys,
     serverConfigs,
-    projectGrouping: groupThreadsByProject
-      ? {
-          projectGroupByKey,
-          orderedProjectGroupKeys,
-          pinnedProjectGroupKeys,
-          projectGroupKeys: unsortedProjectGroups.map((group) => group.projectKey),
-        }
-      : null,
     connectedEnvironmentIds,
     optimisticDrop,
     threads: listedThreads,
@@ -1738,16 +1602,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     keepEmptyFolders: keepEmptyFolder,
     projectChatKeys,
   });
-  // Grouped by project, a project's header stands for its chat, so the chat has no row there.
-  const isProjectChatUnderHeader = (threadKey: string, section: SidebarSection) =>
-    groupThreadsByProject &&
-    !singleProjectScope &&
-    section === "active" &&
-    projectPageByChatKey.has(threadKey);
-  const orderedThreadKeys = listedThreadKeys.filter(
-    (threadKey) =>
-      !isProjectChatUnderHeader(threadKey, sectionByThreadKey.get(threadKey) ?? "active"),
-  );
+  const orderedThreadKeys = listedThreadKeys;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -2338,23 +2193,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     })();
   };
 
-  // Project groups where no thread in the section carries a branch render
-  // one-line rows, so a group never mixes row heights.
-  const branchlessGroups = (sectionThreads: readonly EnvironmentThreadShell[]) => {
-    const branchless = new Set<string>();
-    if (!groupThreadsByProject) return branchless;
-    const branched = new Set<string>();
-    for (const thread of sectionThreads) {
-      const group = threadProjectGroup(thread);
-      if (thread.branch) branched.add(group);
-      else branchless.add(group);
-    }
-    for (const group of branched) branchless.delete(group);
-    return branchless;
-  };
-  const branchlessActiveGroups = branchlessGroups(activeThreads);
-  const branchlessWorkingGroups = branchlessGroups(workingThreads);
-
   const sidebarListItemsFresh = ((): readonly SidebarListItem[] => {
     const rowsOf = (
       list: readonly EnvironmentThreadShell[],
@@ -2364,7 +2202,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
         // Rows in every section carry their group, so a row dragged into the
         // active section lands in its project's group.
-        return groupThreadsByProject || projectFolders !== null
+        return projectFolders !== null
           ? { kind: "thread", key, section, group: threadProjectGroup(thread) }
           : { kind: "thread", key, section };
       });
@@ -2399,47 +2237,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (hasProjectFolders && !folderDividerPlaced) {
       items.push({ kind: "marker", marker: "pinned-projects-divider" });
     }
-    const activeRows = hasProjectFolders ? [] : rowsOf(activeThreads, "active");
-    let activeGroup: string | undefined;
-    // Grouped projects: the divider follows the pinned projects' rows, so
-    // dropping a header above it pins the project.
-    const pinnedGroups = new Set(pinnedProjectGroupKeys);
-    let pinnedDividerPlaced = false;
-    for (const row of activeRows) {
-      if (
-        !singleProjectScope &&
-        row.kind === "thread" &&
-        row.group !== undefined &&
-        row.group !== activeGroup
-      ) {
-        if (!pinnedDividerPlaced && !pinnedGroups.has(row.group)) {
-          items.push({ kind: "marker", marker: "pinned-projects-divider" });
-          pinnedDividerPlaced = true;
-        }
-        activeGroup = row.group;
-        items.push({ kind: "project-header", group: row.group });
-      }
-      if (row.kind === "thread" && isProjectChatUnderHeader(row.key, "active")) continue;
-      items.push(row);
-    }
-    if (activeGroup !== undefined && !pinnedDividerPlaced) {
-      items.push({ kind: "marker", marker: "pinned-projects-divider" });
-    }
+    if (!hasProjectFolders) items.push(...rowsOf(activeThreads, "active"));
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
-      let workingGroup: string | undefined;
-      for (const row of rowsOf(visibleWorkingThreads, "working")) {
-        if (
-          !singleProjectScope &&
-          row.kind === "thread" &&
-          row.group !== undefined &&
-          row.group !== workingGroup
-        ) {
-          workingGroup = row.group;
-          items.push({ kind: "working-project-header", group: row.group });
-        }
-        items.push(row);
-      }
+      items.push(...rowsOf(visibleWorkingThreads, "working"));
     }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
@@ -3775,7 +3576,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
                           onContextMenu={(event) => {
                             event.preventDefault();
-                            handleProjectGroupContextMenu(scopedProjectGroups[0]!.projectKey, {
+                            handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
                               x: event.clientX,
                               y: event.clientY,
                             });
@@ -3788,7 +3589,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               return;
                             event.preventDefault();
                             const rect = event.currentTarget.getBoundingClientRect();
-                            handleProjectGroupContextMenu(scopedProjectGroups[0]!.projectKey, {
+                            handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
                               x: rect.left,
                               y: rect.bottom,
                             });
@@ -4121,15 +3922,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           : isCard
                             ? "card"
                             : "slim";
-                        const groupedByHeader =
-                          groupThreadsByProject && (section === "active" || section === "working");
-                        const grouped = groupedByHeader || singleProjectScope;
-                        const compact =
-                          groupedByHeader &&
-                          (section === "working"
-                            ? branchlessWorkingGroups
-                            : branchlessActiveGroups
-                          ).has(threadProjectGroup(thread));
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -4142,8 +3934,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
-                            grouped={grouped}
-                            compact={compact}
+                            grouped={singleProjectScope}
                             navigationParent={
                               folderRow ??
                               (section === "working" ||
@@ -4260,98 +4051,45 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
                           continue;
                         }
-                        if (
-                          item.kind === "project-header" ||
-                          item.kind === "working-project-header"
-                        ) {
-                          const folder =
-                            item.kind === "project-header"
-                              ? folderByGroup.get(item.group)
-                              : undefined;
-                          if (folder !== undefined) {
-                            items.push(
-                              <SidebarProjectFolderHeader
-                                key={`project-folder:${folder.group.projectKey}`}
-                                group={folder.group}
-                                collapsed={folder.collapsed}
-                                hiddenThreads={folder.hiddenThreads}
-                                chat={folder.chat}
-                                {...(projectPages.has(folder.group.projectKey)
-                                  ? {
-                                      statusLine:
-                                        projectPages.get(folder.group.projectKey)?.statusLine ??
-                                        null,
-                                      selected:
-                                        routeProjectKey === folder.group.projectKey ||
-                                        isRouteChat(folder.group.projectKey),
-                                      onOpen: openProjectPageForGroup,
-                                    }
-                                  : {})}
-                                revealRef={
-                                  isRouteChat(folder.group.projectKey) ? revealActiveRow : undefined
-                                }
-                                pinned={pinnedProjectGroupKeys.includes(folder.group.projectKey)}
-                                draggable={optimisticDrop === null && !folder.group.archived}
-                                onToggle={toggleProjectFolder}
-                                onNewThread={startThreadInProjectFolder}
-                                onContextMenu={handleProjectFolderContextMenu}
-                              />,
-                            );
-                            for (const thread of folder.threads) {
-                              items.push(
-                                renderThreadRow(
-                                  thread,
-                                  "active",
-                                  sidebarFolderRowId(folder.group.projectKey),
-                                ),
-                              );
-                            }
-                            continue;
-                          }
-                          // Threads whose project record has not loaded yet
-                          // group under their physical key.
-                          const group =
-                            projectGroupByLogicalKey.get(item.group) ??
-                            projectGroupByKey.get(item.group);
+                        if (item.kind === "project-header") {
+                          const folder = folderByGroup.get(item.group);
+                          if (folder === undefined) continue;
                           items.push(
-                            <SidebarProjectGroupHeader
-                              key={sidebarListItemId(item)}
-                              id={sidebarListItemId(item)}
-                              navigationParent={
-                                item.kind === "working-project-header" ? "shelf:working" : undefined
-                              }
-                              group={item.group}
-                              project={group ?? null}
-                              label={group?.displayName ?? "Unknown project"}
-                              {...(group && projectPages.has(group.projectKey)
+                            <SidebarProjectFolderHeader
+                              key={`project-folder:${folder.group.projectKey}`}
+                              group={folder.group}
+                              collapsed={folder.collapsed}
+                              hiddenThreads={folder.hiddenThreads}
+                              chat={folder.chat}
+                              {...(projectPages.has(folder.group.projectKey)
                                 ? {
-                                    onOpen: () => void openProjectPage(group.projectKey),
+                                    statusLine:
+                                      projectPages.get(folder.group.projectKey)?.statusLine ?? null,
                                     selected:
-                                      routeProjectKey === group.projectKey ||
-                                      (item.kind === "project-header" &&
-                                        isRouteChat(group.projectKey)),
-                                    ...(item.kind === "project-header" &&
-                                    isRouteChat(group.projectKey)
-                                      ? { revealRef: revealActiveRow }
-                                      : {}),
-                                    // Only the project's main header stands for its chat.
-                                    ...(item.kind === "project-header"
-                                      ? {
-                                          chat: projectChatShell(group.projectKey),
-                                          statusLine:
-                                            projectPages.get(group.projectKey)?.statusLine ?? null,
-                                        }
-                                      : {}),
+                                      routeProjectKey === folder.group.projectKey ||
+                                      isRouteChat(folder.group.projectKey),
+                                    onOpen: openProjectPageForGroup,
                                   }
                                 : {})}
-                              pinned={
-                                item.kind === "project-header" &&
-                                pinnedProjectGroupKeys.includes(item.group)
+                              revealRef={
+                                isRouteChat(folder.group.projectKey) ? revealActiveRow : undefined
                               }
-                              draggable={item.kind === "project-header" && optimisticDrop === null}
-                              onContextMenu={handleProjectGroupContextMenu}
+                              pinned={pinnedProjectGroupKeys.includes(folder.group.projectKey)}
+                              draggable={optimisticDrop === null && !folder.group.archived}
+                              onToggle={toggleProjectFolder}
+                              onNewThread={startThreadInProjectFolder}
+                              onContextMenu={handleProjectFolderContextMenu}
                             />,
                           );
+                          for (const thread of folder.threads) {
+                            items.push(
+                              renderThreadRow(
+                                thread,
+                                "active",
+                                sidebarFolderRowId(folder.group.projectKey),
+                              ),
+                            );
+                          }
                           continue;
                         }
                         switch (item.marker) {

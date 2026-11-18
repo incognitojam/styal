@@ -52,6 +52,8 @@ import { environmentCatalog } from "~/connection/catalog";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useUiStateStore } from "~/uiStateStore";
+import { folderSidebarMovePatch, markFolderSidebarMoved } from "./folderSidebarMove";
 import { useTheme } from "./useTheme";
 import {
   environmentSession,
@@ -149,10 +151,25 @@ async function hydrateClientSettings(): Promise<void> {
       if (hydrationGeneration !== clientSettingsHydrationGeneration) {
         return;
       }
-      if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+      const loaded = persistedSettings
+        ? { ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings }
+        : getClientSettingsSnapshot();
+      // Joins the loaded settings, so changes queued before they loaded still apply after it.
+      const folderMove = folderSidebarMovePatch(loaded, useUiStateStore.getState().projectOrder);
+      if (persistedSettings || folderMove) {
+        replaceClientSettingsSnapshot({ ...loaded, ...folderMove });
       }
       setClientSettingsHydrationStatus("ready");
+      if (folderMove) {
+        void persistClientSettingsUpdate((current) => current)
+          .then(markFolderSidebarMoved)
+          .catch((error: unknown) => {
+            console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} folder sidebar move failed`, {
+              operation: "persist",
+              ...safeErrorLogAttributes(error),
+            });
+          });
+      }
     } catch (error) {
       if (hydrationGeneration === clientSettingsHydrationGeneration) {
         setClientSettingsHydrationStatus("failed");

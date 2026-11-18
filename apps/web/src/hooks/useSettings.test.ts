@@ -23,16 +23,32 @@ import {
   prepareModelPreferencesPatch,
 } from "./useSettings";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { useUiStateStore } from "~/uiStateStore";
+import * as Schema from "effect/Schema";
+import { FOLDER_SIDEBAR_MOVED_KEY } from "./folderSidebarMove";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from "./useLocalStorage";
 
 beforeEach(() => {
   persistenceMocks.getClientSettings.mockReset().mockResolvedValue(null);
   persistenceMocks.setClientSettings.mockReset().mockResolvedValue(undefined);
   __resetClientSettingsPersistenceForTests();
+  // A device already moved to project folders, unless a test is about the move.
+  setLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, true, Schema.Boolean);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+function savedProjectOrder(projectOrder: string[]): Disposable {
+  const previous = useUiStateStore.getState().projectOrder;
+  useUiStateStore.setState({ projectOrder });
+  return { [Symbol.dispose]: () => useUiStateStore.setState({ projectOrder: previous }) };
+}
 
 describe("client settings hydration", () => {
   const savedSettings = {
@@ -164,6 +180,94 @@ describe("client settings hydration", () => {
     const expected = { ...savedSettings, onboardingCompletedAt, wordWrap: true };
     expect(getClientSettings()).toEqual(expected);
     expect(durableSettings).toEqual(expected);
+  });
+
+  it("moves a grouped device to project folders once and saves the move", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
+    using _order = savedProjectOrder(["project-b", "project-a"]);
+    const flushWrites = () =>
+      persistClientSettingsUpdate(
+        (current) => current,
+        async () => {},
+      );
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+      sidebarThreadGrouping: "project",
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    const moved: ClientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: true,
+      sidebarThreadGrouping: "project",
+      sidebarProjectSortOrder: "manual",
+    };
+    expect(getClientSettings()).toEqual(moved);
+    expect(persistenceMocks.setClientSettings).toHaveBeenCalledExactlyOnceWith(moved);
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(true);
+
+    // The next load keeps the flat list the user then picked.
+    __resetClientSettingsPersistenceForTests();
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...moved,
+      boringSidebarEnabled: false,
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    expect(getClientSettings().boringSidebarEnabled).toBe(false);
+    expect(persistenceMocks.setClientSettings).toHaveBeenCalledOnce();
+  });
+
+  it("moves again on the next load when saving the move fails", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+    });
+    persistenceMocks.setClientSettings.mockRejectedValueOnce(new Error("disk full"));
+    const flushWrites = () =>
+      persistClientSettingsUpdate(
+        (current) => current,
+        async () => {},
+      );
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(null);
+
+    __resetClientSettingsPersistenceForTests();
+    persistenceMocks.getClientSettings.mockResolvedValueOnce({
+      ...DEFAULT_CLIENT_SETTINGS,
+      boringSidebarEnabled: false,
+    });
+    await ensureClientSettingsHydrated();
+    await flushWrites();
+    expect(persistenceMocks.setClientSettings.mock.lastCall?.[0].boringSidebarEnabled).toBe(true);
+    expect(getLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY, Schema.Boolean)).toBe(true);
+  });
+
+  it("keeps a layout chosen while the first load is still pending", async () => {
+    removeLocalStorageItem(FOLDER_SIDEBAR_MOVED_KEY);
+    let finishRead!: (settings: ClientSettings) => void;
+    persistenceMocks.getClientSettings.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const hydration = ensureClientSettingsHydrated();
+    const choice = persistClientSettingsPatch({ boringSidebarEnabled: false });
+    finishRead({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled: false });
+    await hydration;
+    await choice;
+    await persistClientSettingsUpdate(
+      (current) => current,
+      async () => {},
+    );
+
+    expect(getClientSettings().boringSidebarEnabled).toBe(false);
+    expect(persistenceMocks.setClientSettings.mock.lastCall?.[0].boringSidebarEnabled).toBe(false);
   });
 });
 

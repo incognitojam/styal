@@ -263,6 +263,10 @@
         "base": "e2afd2546eb34fde33ac9fb24c052e8a9d63b519",
         "head": "07a64096873a80e9022be53678685b40fd7b2158"
       }
+    },
+    {
+      "pr": 34729,
+      "reason": "Adds opt-in project folders to the mobile chat lists. Web and desktop moved to upstream's project folders and dropped the fork's grouped headers in fork #1606, but mobile keeps the fork's own Group threads by project until this arrives. When it lands through intake, retire the fork's mobile grouping the same way (move mobile users with grouping on to folders, keep their project order) and update the sidebar-project-thread-groups ledger entry."
     }
   ]
 }

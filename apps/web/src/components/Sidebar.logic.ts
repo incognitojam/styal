@@ -26,7 +26,6 @@ import {
 } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
-import { clusterByGroup } from "@t3tools/client-runtime/state/thread-project-groups";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
@@ -226,26 +225,18 @@ export type SidebarListItem =
       readonly kind: "thread";
       readonly key: string;
       readonly section: SidebarSection;
-      /** Project group key when the sidebar groups active threads by project. */
+      /** Project folder key while folders render. */
       readonly group?: string;
     }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker }
-  /** Heads a run of active threads from one project. */
-  | { readonly kind: "project-header"; readonly group: string }
-  /** Heads a run of Working shelf threads from one project. Never dragged. */
-  | { readonly kind: "working-project-header"; readonly group: string };
+  /** A project folder's header, above its threads. */
+  | { readonly kind: "project-header"; readonly group: string };
 
 export function sidebarListItemId(item: SidebarListItem): string {
   if (item.kind === "thread") return item.key;
   if (item.kind === "marker") return sidebarMarkerId(item.marker);
   // Group keys contain colons; encoding keeps marker ids colon-free.
-  const prefix = item.kind === "working-project-header" ? "working-project" : "project";
-  return `${SIDEBAR_MARKER_PREFIX}${prefix}-${encodeURIComponent(item.group)}`;
-}
-
-/** Project groups in the order their headers render. */
-function sidebarProjectGroupOrder(items: readonly SidebarListItem[]): string[] {
-  return items.flatMap((item) => (item.kind === "project-header" ? [item.group] : []));
+  return `${SIDEBAR_MARKER_PREFIX}project-${encodeURIComponent(item.group)}`;
 }
 
 function sectionAtSidebarSlot(items: readonly SidebarListItem[], index: number): SidebarSection {
@@ -265,9 +256,6 @@ type SidebarDropTarget = {
   readonly section: "pinned" | "active" | "settled";
   readonly pinnedOrder: readonly string[];
   readonly activeOrder: readonly string[];
-  /** With project grouping, the moved row's project group in its new order.
-      Rows never leave their project, so order keys are planned within it. */
-  readonly activeGroupOrder?: readonly string[];
 };
 
 export function resolveSidebarDropTarget(
@@ -296,7 +284,7 @@ export function resolveSidebarDropTarget(
   const activeRows: Extract<SidebarListItem, { kind: "thread" }>[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
-    if (item.kind === "project-header" || item.kind === "working-project-header") continue;
+    if (item.kind === "project-header") continue;
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
       else if (
@@ -308,20 +296,7 @@ export function resolveSidebarDropTarget(
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
     else activeRows.push(item);
   }
-  const groupOrder = sidebarProjectGroupOrder(items);
-  if (groupOrder.length === 0) {
-    return { section, pinnedOrder, activeOrder: activeRows.map((row) => row.key) };
-  }
-  // Projects keep their order: a row dropped among another project's rows
-  // joins its own project at the matching position.
-  const clustered = clusterByGroup(activeRows, (row) => row.group ?? "", groupOrder);
-  const movedGroup = activeRows.find((row) => row.key === activeKey)?.group;
-  return {
-    section,
-    pinnedOrder,
-    activeOrder: clustered.map((row) => row.key),
-    activeGroupOrder: clustered.flatMap((row) => (row.group === movedGroup ? [row.key] : [])),
-  };
+  return { section, pinnedOrder, activeOrder: activeRows.map((row) => row.key) };
 }
 
 /** Where a dropped project header leaves the projects: their new order, of
@@ -333,7 +308,7 @@ export type SidebarProjectDrop = {
 
 const PINNED_PROJECTS_DIVIDER = sidebarMarkerId("pinned-projects-divider");
 
-/** Null when the drop is outside the grouped active rows. The pointer's slot picks the neighbor,
+/** Null when the drop is outside the project folders. The pointer's slot picks the neighbor,
     like arrayMove; the pinned projects divider takes a slot too, so dropping on it crosses it.
     `trailingGroups` stay below every other project, so a drop on one lands before them. */
 export function resolveSidebarProjectDrop(
@@ -556,13 +531,7 @@ export function planSidebarThreadDrop(input: {
       ) {
         return { kind: "none" };
       }
-      // Grouped rows only order against their own project: keys of other
-      // projects' rows stay reserved but never constrain the move.
-      const assignments = arrange(
-        target.activeGroupOrder ?? order,
-        activeKeysById,
-        activeReorderableKeys,
-      );
+      const assignments = arrange(order, activeKeysById, activeReorderableKeys);
       if (assignments === null) return { kind: "none" };
       return {
         kind: "move-active",

@@ -1,5 +1,3 @@
-import { PinIcon } from "lucide-react";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -11,8 +9,6 @@ import {
   type SidebarListMarker,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
-import { SidebarFolderDot, useSidebarFolderDot } from "./SidebarProjectFolderHeader";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 
 function SortableSidebarMarker(props: {
   marker: SidebarListMarker;
@@ -147,101 +143,5 @@ export function SidebarSectionHeader(props: {
         {props.label}
       </CollapsibleSectionHeader>
     </SortableSidebarMarker>
-  );
-}
-
-// Heads a run of active or Working threads from one project when the sidebar
-// groups by project. The rows below it drop their own project label. Dragging
-// an active header reorders projects; its rows collapse until the drop.
-export function SidebarProjectGroupHeader(props: {
-  id: string;
-  navigationParent?: string | undefined;
-  group: string;
-  project: ProjectFaviconProject | null;
-  label: string;
-  pinned: boolean;
-  draggable: boolean;
-  /** Opens the project page; `selected` while it is open. */
-  onOpen?: (() => void) | undefined;
-  selected?: boolean | undefined;
-  /** The project's chat, which has no row of its own here, and its status line. */
-  chat?: EnvironmentThreadShell | null | undefined;
-  statusLine?: string | null | undefined;
-  /** Set while the route is the chat's thread, which this header stands for. */
-  revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
-  onContextMenu: (group: string, position: { x: number; y: number }) => void;
-}) {
-  const chatDot = useSidebarFolderDot(props.chat ? [props.chat] : []);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.id,
-    disabled: { draggable: !props.draggable },
-    animateLayoutChanges: animateSidebarLayoutChanges,
-  });
-  return (
-    <li
-      ref={setNodeRef}
-      data-thread-selection-safe
-      data-testid="sidebar-project-group-header"
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        props.onContextMenu(props.group, { x: event.clientX, y: event.clientY });
-      }}
-      className={cn("mx-0.5 list-none pt-2", isDragging && "relative z-20")}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        visibility: !isDragging && transform?.scaleY === 0 ? "hidden" : undefined,
-      }}
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        ref={(row) =>
-          row && props.revealRef && props.chat
-            ? props.revealRef(row, `${props.chat.environmentId}:${props.chat.id}`)
-            : undefined
-        }
-        data-sidebar-row={props.id}
-        data-sidebar-parent={props.navigationParent}
-        aria-label={props.label}
-        aria-current={props.selected ? "page" : undefined}
-        onClick={props.onOpen}
-        onKeyDown={(event) => {
-          if (props.onOpen && event.key === "Enter") {
-            event.preventDefault();
-            props.onOpen();
-            return;
-          }
-          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-            event.preventDefault();
-            event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            props.onContextMenu(props.group, { x: rect.left, y: rect.bottom });
-            return;
-          }
-          listeners?.onKeyDown?.(event);
-        }}
-        className={cn(
-          "group/sidebar-project-header flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-normal outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          props.draggable && "cursor-grab",
-          props.onOpen && "cursor-pointer hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-          props.selected && "bg-sidebar-row-active text-sidebar-foreground",
-          isDragging && "cursor-grabbing bg-sidebar-row-hover",
-        )}
-      >
-        {props.project ? (
-          <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-        ) : null}
-        <span className="min-w-0 truncate">{props.label}</span>
-        {props.pinned ? (
-          <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />
-        ) : null}
-        {props.statusLine ? (
-          <span className="ml-auto shrink-0 text-sidebar-muted-foreground">{props.statusLine}</span>
-        ) : null}
-        <SidebarFolderDot dot={chatDot} />
-      </div>
-    </li>
   );
 }

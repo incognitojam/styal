@@ -12,7 +12,7 @@ After the first commit, the worktree default takes effect again.
 ## Start a thread
 
 On web and desktop, **New thread** opens the project picker when you have more than one
-open project in the default or project-grouped sidebar. Archived projects don't count. **Shift-click** to start in
+open project. Archived projects don't count. **Shift-click** to start in
 the current project, or use a project's own new-thread action. A new thread carries
 your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
@@ -111,8 +111,9 @@ edge to pin a thread. Section labels stay readable for the whole drag, and the s
 thread is over takes the accent color. Section labels also
 identify empty sections and a collapsed settled shelf.
 
-Drag within the pinned or active section to change its order. Other rows slide aside to show the
-spot where the thread will land. Drops into either section keep the position you choose. On
+Drag within the pinned section, or the active section of the flat list, to change its order. Other
+rows slide aside to show the spot where the thread will land. Drops into either section keep the
+position you choose. On
 mobile, open a thread's menu and choose **Arrange threads**. Drag a handle within or between
 **Pinned** and **Active** to reorder, pin, or unpin. Drop onto the **Settled** divider to
 settle a thread. The dragged card shows the action before you release it. Expand **Snoozed**
@@ -163,7 +164,7 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
-This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
+This applies to the flat list; project folders have no Working section. It is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
@@ -180,55 +181,47 @@ open thread's project, or the first selected project when no thread is open. Cho
 **All projects** to clear the filter.
 
 With one project selected on web and desktop, its name appears above search instead of
-on every thread. Right-click the named filter for project actions. Selecting several
-projects or **All projects** restores the thread labels and grouped headers.
+on every thread. Right-click the named filter for the project's folder actions. Selecting several
+projects or **All projects** shows every project's name again.
 
-## Group threads by project
+## Project folders
 
-On web and desktop, turn on **Settings → General → Sidebar → Group threads by
-project** to list active threads under a header for each project. Matching repositories
-across environments share one header. The Working section groups its threads the same way,
-keeping projects in a fixed order and the thread you last sent work to first within each
-project. Pinned, snoozed, and settled threads are not grouped.
+On web and desktop, the sidebar puts active threads in a folder for each project. Matching
+repositories across environments share one folder. [Pinned projects](./project-settings.md#pin-and-archive-projects)
+come first, marked with a pin, and the rest follow **Settings → General → Project order**. Drag a
+folder by its header to move the project, or across the **Pinned projects above** line to pin or
+unpin it. The order of pinned projects syncs to your other devices and project pickers. Moving a
+folder among the unpinned ones sets **Project order** to **Manual**, so it stays where you put it on
+this device. A project with no active threads has no folder unless it is pinned or you pick it in
+the project filter. An archived project's folder comes last and shows only while it has active
+threads.
 
-On mobile, turn on **Settings → Organization → Group threads by project**. Each device keeps
-its own setting. **Move up** and **Move down** move a thread within its project, and pinned
-projects come first. Mobile headers cannot be dragged or opened for project actions, and
-**Arrange threads** still shows one list.
+Click a folder to open or close it. A closed folder shows how many threads it holds, and a dot when
+one of them needs you. Use the pen button on a folder to start a thread in that project; it starts
+in the checkout you are working in when that checkout belongs to the project. Right-click a folder
+for **New thread**, project filtering, **Pin project**, **Archive project** (an archived project's
+folder offers **Unarchive project** instead, and no filter), **Copy path** (choose the checkout when
+a project spans several), and **Project settings**.
 
-While grouping is on, dragging a thread reorders it only within its own project. Drag a
-project's header to move the project and all its threads. The project order is saved on
-this device and does not sync to your other devices.
+Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread into
+Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay ordered
+by their latest message, so a thread dropped there joins its own project's folder, and folders
+have no Working section; the flat list keeps both your own order and the Working section.
+**Two-line folder rows**, under **Settings → General → Sidebar layout**, adds the branch, pull
+request, and agent under each title.
 
-[Pinned projects](./project-settings.md#pin-and-archive-projects) come first, marked with a
-pin. While you drag a header, a **Pinned projects above** line marks where they end: drop a
-project above it to pin it, or below it to unpin it. The order of pinned projects syncs to your
-other devices and project pickers.
+To see every thread in one list instead, set **Settings → General → Sidebar layout** to **Flat
+list**. Each device keeps its own choice. Updating to this version moves each device to project
+folders once, including devices that used the flat list; choose **Flat list** again to go back. If
+you used **Group threads by project**, which project folders replace, your project order carries
+over and **Project order** is set to **Manual**.
 
-Right-click a project header for **New thread**, project filtering, **Pin project**,
-**Archive project**, **Copy project path**, and **Project settings**. If a project spans several checkouts, choose
-which path to copy. **Show all projects** clears an active project filter.
+### Group threads by project on mobile
 
-### Project folders (beta)
-
-Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. Pinned projects come first, marked with a pin, and the rest
-follow **Settings → General → Project order**. Drag a folder by its header to move the project, or
-across the **Pinned projects above** line to pin or unpin it. Moving a folder among the unpinned
-ones sets **Project order** to **Manual**, so it stays where you put it. A project with no active
-threads has no folder unless it is pinned or you pick it in the project filter. An archived
-project's folder comes last and shows only while it has active threads. Click a folder to open or
-close it. A closed folder shows how many threads it holds, and a dot when one of them
-needs you. Use the pen button on a folder to start a thread in that project. Right-click a folder
-for **New thread**, project filtering, **Pin project**, **Archive project** (an archived
-project's folder offers **Unarchive project** instead, and no filter), **Copy path** (choose the checkout when a project spans several), and
-**Project settings**.
-Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread
-into Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay
-ordered by their latest message, so a thread dropped there joins its own project's folder. The
-Working section is off in this mode. Folders take the place of project headers while this is on.
-**Two-line folder rows** in the same section adds the branch, pull request, and agent under each
-title. Each device keeps its own choice.
+On iOS and Android, turn on **Settings → Organization → Group threads by project** to list active
+threads under a header for each project. Each device keeps its own setting. **Move up** and **Move
+down** move a thread within its project, and pinned projects come first. Mobile headers cannot be
+dragged or opened for project actions, and **Arrange threads** still shows one list.
 
 ## Settle finished work
 

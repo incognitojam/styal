@@ -522,7 +522,7 @@ describe("sidebar folder menu", () => {
         }),
       );
     } else if (scenario.choose === "pin") {
-      // Both checkouts take one slot after beta's, as a pin from the grouped header does.
+      // Both checkouts take one slot after beta's.
       await vi.waitFor(() => expect(updateProject).toHaveBeenCalledTimes(2));
       const inputs = updateProject.mock.calls.map(([command]) => command.input);
       expect(inputs.map((input) => input.pinned)).toEqual([true, true]);

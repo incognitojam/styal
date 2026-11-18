@@ -170,12 +170,8 @@ export function createSidebarCollisionDetection(
   };
 }
 
-function isGroupedCard(item: SidebarListItem): boolean {
-  return (
-    item.kind === "thread" &&
-    (item.section === "active" || item.section === "working") &&
-    item.group !== undefined
-  );
+function isFolderRow(item: SidebarListItem): boolean {
+  return item.kind === "thread" && item.section === "active" && item.group !== undefined;
 }
 
 export function createSidebarSortingStrategy(input: {
@@ -190,7 +186,7 @@ export function createSidebarSortingStrategy(input: {
   cardHeight?: number;
   slimHeight?: number;
   boundaryLabelHeight?: number;
-  /** Unscaled height of a project header; 32px unless folders render. */
+  /** Unscaled height of a project folder header. */
   projectHeaderHeight?: number;
   /** Projects that stay below the rest when a project header moves. */
   trailingProjectGroups?: ReadonlySet<string>;
@@ -287,8 +283,7 @@ export function createSidebarSortingStrategy(input: {
       settled: [],
     };
     let cardHeight = input.cardHeight;
-    // Active cards under a project header are two lines instead of three.
-    let groupedCardHeight: number | undefined;
+    let folderRowHeight: number | undefined;
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     let folderHeaderHeight: number | undefined;
@@ -297,7 +292,6 @@ export function createSidebarSortingStrategy(input: {
         folderHeaderHeight = Math.max(folderHeaderHeight ?? 0, rects[index]?.height ?? 0);
         continue;
       }
-      if (item.kind === "working-project-header") continue;
       if (item.kind === "marker") {
         if (isShelfHeader(item)) {
           const height = rects[index]?.height;
@@ -305,7 +299,7 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
-      if (isGroupedCard(item)) groupedCardHeight ??= rects[index]?.height;
+      if (isFolderRow(item)) folderRowHeight ??= rects[index]?.height;
       else if (item.section === "pinned" || item.section === "active" || item.section === "working")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
@@ -314,8 +308,7 @@ export function createSidebarSortingStrategy(input: {
     const scale =
       slimHeight !== undefined ? slimHeight / 36 : (headerScale ?? (cardHeight ?? 82) / 82);
     cardHeight ??= 82 * scale;
-    // A folder row is one line; a card under a project header is two.
-    groupedCardHeight ??= (input.folders !== undefined ? 36 : 60) * scale;
+    folderRowHeight ??= 36 * scale;
     slimHeight ??= 36 * scale;
     const labelHeight = (input.boundaryLabelHeight ?? 0) * scale;
     const group = groups[target.section];
@@ -344,24 +337,6 @@ export function createSidebarSortingStrategy(input: {
     groups.settled = visible.map((key) => ({ kind: "thread", key, section: "settled" }));
     const projected: SidebarListItem[] = [];
     const marker = (name: SidebarListMarker) => projected.push({ kind: "marker", marker: name });
-    // Grouped active rows follow the clustered drop order. Headers only exist
-    // for groups that had rows at pickup: a row moving into a new group gets
-    // its header once the drop lands.
-    const withProjectHeaders = (rows: readonly ThreadItem[]) => {
-      const activeRanks = new Map(target.activeOrder.map((key, index) => [key, index]));
-      const rank = (row: ThreadItem) => activeRanks.get(row.key) ?? Number.POSITIVE_INFINITY;
-      const result: SidebarListItem[] = [];
-      let group: string | undefined;
-      for (const row of rows.toSorted((left, right) => rank(left) - rank(right))) {
-        if (row.group !== undefined && row.group !== group) {
-          const header: SidebarListItem = { kind: "project-header", group: row.group };
-          if (indices.has(sidebarListItemId(header))) result.push(header);
-        }
-        group = row.group;
-        result.push(row);
-      }
-      return result;
-    };
     // Folders follow the folder order, so a folder the drop opens shows in its place.
     const inFolders = (rows: readonly ThreadItem[], folders: NonNullable<typeof input.folders>) => {
       const rowsByGroup = new Map<string | undefined, ThreadItem[]>();
@@ -395,8 +370,6 @@ export function createSidebarSortingStrategy(input: {
       if (folderRows !== null && folderRows.length > 0) projected.push(...folderRows);
       // With no folder left, the empty Active target shows, folder mode included.
       else if (folderRows !== null || groups[name].length === 0) marker(`${name}-placeholder`);
-      else if (name === "active" && target.activeGroupOrder !== undefined)
-        projected.push(...withProjectHeaders(groups.active));
       else projected.push(...groups[name]);
     };
     marker("pinned-header");
@@ -405,14 +378,9 @@ export function createSidebarSortingStrategy(input: {
     section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
-      // Working rows are never dragged, so the shelf keeps its rendered
-      // rows and project headers.
+      // Working rows are never dragged, so the shelf keeps its rendered rows.
       projected.push(
-        ...items.filter(
-          (item) =>
-            item.kind === "working-project-header" ||
-            (item.kind === "thread" && item.section === "working"),
-        ),
+        ...items.filter((item) => item.kind === "thread" && item.section === "working"),
       );
     }
     if (
@@ -428,8 +396,8 @@ export function createSidebarSortingStrategy(input: {
     const heights = projected.map((item) => {
       const index = indices.get(sidebarListItemId(item));
       const rect = index === undefined ? undefined : rects[index];
-      const fallback = isGroupedCard(item)
-        ? groupedCardHeight
+      const fallback = isFolderRow(item)
+        ? folderRowHeight
         : item.kind === "thread" &&
             (item.section === "pinned" || item.section === "active" || item.section === "working")
           ? cardHeight

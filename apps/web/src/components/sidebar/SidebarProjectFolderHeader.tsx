@@ -36,7 +36,7 @@ const FOLDER_DOT_LABEL = {
 export const SIDEBAR_FOLDER_HEADER_HEIGHT = 40;
 
 /** The most urgent state among threads a header stands for, as the folder dot shows it. */
-export function useSidebarFolderDot(threads: readonly EnvironmentThreadShell[]) {
+function useSidebarFolderDot(threads: readonly EnvironmentThreadShell[]) {
   const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   return threads.length === 0
     ? null
@@ -53,7 +53,7 @@ export function useSidebarFolderDot(threads: readonly EnvironmentThreadShell[]) 
       );
 }
 
-export function SidebarFolderDot(props: { dot: ReturnType<typeof useSidebarFolderDot> }) {
+function SidebarFolderDot(props: { dot: ReturnType<typeof useSidebarFolderDot> }) {
   return props.dot ? (
     <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[props.dot])}>
       <span className="sr-only">{FOLDER_DOT_LABEL[props.dot]}</span>

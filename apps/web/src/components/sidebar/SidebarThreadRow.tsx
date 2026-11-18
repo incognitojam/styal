@@ -604,14 +604,11 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
 
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
-  // "folder" is a one-line row inside a boring sidebar project folder;
+  // "folder" is a one-line row inside a project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
-  // A header or the single-project filter already identifies the project.
+  // The single-project filter already identifies the project.
   grouped: boolean;
-  // Grouped cards whose project has no branched threads (typically a folder
-  // without git): the branch line would be empty, so the row is one line.
-  compact: boolean;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   navigationParent?: string | undefined;
@@ -855,7 +852,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
-  const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
     shouldShowInstanceBadge(providerEntry, props.providerEntryByInstanceId.values());
@@ -1221,67 +1217,61 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
   const diff = latestRunDiff(thread);
   // Only the trailing icons would remain, so the row moves them to the title line instead.
-  // Grouped and compact rows keep their fixed heights.
+  // Grouped rows keep their fixed height.
   const metaLineEmpty =
     projectChatCard ||
-    (!props.compact &&
-      !props.grouped &&
+    (!props.grouped &&
       !checkoutThread.branch &&
       !showsScratchMachine &&
       prBadge === null &&
       diff === null &&
       runningTerminalIds.length === 0);
-  const metaLine =
-    props.compact || metaLineEmpty ? null : (
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
-          props.grouped ? "mt-1" : "mt-0.5",
-        )}
-      >
-        {checkoutThread.branch ? (
-          <>
-            <ThreadWorktreeIndicator thread={checkoutThread} />
-            <span className="flex min-w-0 flex-1">
-              <MiddleTruncate value={checkoutThread.branch} showTitle={false} />
-            </span>
-          </>
-        ) : showsScratchMachine ? (
-          <>
-            <EnvironmentMachineIcon
-              aria-hidden
-              kind={props.environmentMachine}
-              className="size-3 shrink-0"
-            />
-            <span className="min-w-0 flex-1 truncate">{props.scratchMachineLabel}</span>
-          </>
-        ) : (
-          <span className="flex-1" />
-        )}
-        {terminalStatusIcon}
-        {prBadge}
-        {diff ? (
-          <span className="shrink-0 font-mono">
-            <span className="text-diff-addition-foreground">
-              +{formatDiffCount(diff.insertions)}
-            </span>{" "}
-            <span className="text-diff-deletion-foreground">
-              −{formatDiffCount(diff.deletions)}
-            </span>
+  const metaLine = metaLineEmpty ? null : (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 text-secondary-label text-xs",
+        props.grouped ? "mt-1" : "mt-0.5",
+      )}
+    >
+      {checkoutThread.branch ? (
+        <>
+          <ThreadWorktreeIndicator thread={checkoutThread} />
+          <span className="flex min-w-0 flex-1">
+            <MiddleTruncate value={checkoutThread.branch} showTitle={false} />
           </span>
-        ) : null}
-        <span
-          aria-hidden
-          className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-        >
-          {remoteMachineIcon}
-          <SidebarProviderStack
-            thread={thread}
-            providerEntryByInstanceId={props.providerEntryByInstanceId}
+        </>
+      ) : showsScratchMachine ? (
+        <>
+          <EnvironmentMachineIcon
+            aria-hidden
+            kind={props.environmentMachine}
+            className="size-3 shrink-0"
           />
+          <span className="min-w-0 flex-1 truncate">{props.scratchMachineLabel}</span>
+        </>
+      ) : (
+        <span className="flex-1" />
+      )}
+      {terminalStatusIcon}
+      {prBadge}
+      {diff ? (
+        <span className="shrink-0 font-mono">
+          <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
+          <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
         </span>
-      </div>
-    );
+      ) : null}
+      <span
+        aria-hidden
+        className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
+      >
+        {remoteMachineIcon}
+        <SidebarProviderStack
+          thread={thread}
+          providerEntryByInstanceId={props.providerEntryByInstanceId}
+        />
+      </span>
+    </div>
+  );
   const titleLineIcons = metaLineEmpty ? (
     <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
       {remoteMachineIcon}
@@ -1492,38 +1482,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     );
   }
 
-  const rowIdentityIcons = (
-    <span
-      aria-hidden
-      className={cn(
-        "pointer-events-none inline-flex shrink-0 items-center gap-1",
-        !props.compact && "ml-auto",
-      )}
-    >
-      {isRemote ? (
-        <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-          <EnvironmentMachineIcon
-            aria-hidden
-            kind={props.environmentMachine}
-            className="size-3.5"
-          />
-        </span>
-      ) : null}
-      {driverKind ? (
-        <span className="inline-flex shrink-0 items-center">
-          <ProviderInstanceIcon
-            driverKind={driverKind}
-            displayName={providerEntry?.displayName ?? modelInstanceId}
-            accentColor={providerEntry?.accentColor}
-            showBadge={showInstanceBadge}
-            // Glyph dims, badge stays saturated; offset matches the composer trigger.
-            iconClassName="size-3.5 opacity-60"
-            badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-5xs"
-          />
-        </span>
-      ) : null}
-    </span>
-  );
   const regeneratingTitleStatus = isRegeneratingTitle ? (
     <span role="status" className="sr-only">
       Regenerating title
@@ -1537,11 +1495,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       className={cn(
         // Matches the content box height; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto]",
-        props.compact
-          ? "[contain-intrinsic-size:auto_36px]"
-          : props.grouped
-            ? "[contain-intrinsic-size:auto_56px]"
-            : "[contain-intrinsic-size:auto_78px]",
+        props.grouped ? "[contain-intrinsic-size:auto_56px]" : "[contain-intrinsic-size:auto_78px]",
         metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
         sortable?.isDragging && "relative z-20",
       )}
@@ -1571,7 +1525,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              props.compact ? "h-9" : props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
+              props.grouped ? "h-[3.5rem]" : "h-[4.875rem]",
               metaLineEmpty && "h-auto",
             )}
           >
@@ -1602,12 +1556,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : (
                 <span className="flex-1" />
               )}
-              {props.compact ? (
-                <>
-                  {terminalStatusIcon}
-                  {prBadge}
-                </>
-              ) : null}
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
@@ -1736,7 +1684,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {jumpHintLabel ? <JumpHintBadge label={jumpHintLabel} /> : null}
                 </span>
               )}
-              {props.compact ? rowIdentityIcons : null}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             {props.grouped ? null : (
