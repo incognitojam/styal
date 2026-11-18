@@ -550,8 +550,11 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? ["Project order"]
       : []),
-    ...(settings.sidebarThreadGrouping !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping
-      ? ["Group threads by project"]
+    ...(settings.boringSidebarEnabled !== DEFAULT_UNIFIED_SETTINGS.boringSidebarEnabled
+      ? ["Sidebar layout"]
+      : []),
+    ...(settings.boringSidebarMultilineRows !== DEFAULT_UNIFIED_SETTINGS.boringSidebarMultilineRows
+      ? ["Two-line folder rows"]
       : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
@@ -744,7 +747,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
-      sidebarThreadGrouping: DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping,
+      boringSidebarEnabled: DEFAULT_UNIFIED_SETTINGS.boringSidebarEnabled,
+      boringSidebarMultilineRows: DEFAULT_UNIFIED_SETTINGS.boringSidebarMultilineRows,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
@@ -850,6 +854,69 @@ function useTranslatedSearchableSetting() {
   };
 }
 
+/** The sidebar's layout. Upstream keeps project folders behind a Labs switch. */
+function SidebarLayoutRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("boring-sidebar")}
+      description="Show threads in a folder for each project, or in one flat list. Pinned threads stay on top, and Snoozed and Settled stay at the bottom."
+      resetAction={
+        settings.boringSidebarEnabled !== DEFAULT_UNIFIED_SETTINGS.boringSidebarEnabled ? (
+          <SettingResetButton
+            label="sidebar layout"
+            onClick={() =>
+              updateSettings({
+                boringSidebarEnabled: DEFAULT_UNIFIED_SETTINGS.boringSidebarEnabled,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={settings.boringSidebarEnabled ? "folders" : "flat"}
+          onValueChange={(value) => updateSettings({ boringSidebarEnabled: value === "folders" })}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Sidebar layout">
+            <SelectValue>
+              {settings.boringSidebarEnabled ? "Project folders" : "Flat list"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem hideIndicator value="folders">
+              Project folders
+            </SelectItem>
+            <SelectItem hideIndicator value="flat">
+              Flat list
+            </SelectItem>
+          </SelectPopup>
+        </Select>
+      }
+    >
+      {settings.boringSidebarEnabled ? (
+        <div className="mt-2 mb-2 border-l-2 border-border/60 ps-3">
+          <SettingsRow
+            {...searchableSetting("boring-sidebar-multiline")}
+            className="px-0 py-2 sm:px-0"
+            description="Show folder threads on two lines: the title, then the branch, pull request, and agent."
+            control={
+              <Switch
+                checked={settings.boringSidebarMultilineRows}
+                onCheckedChange={(checked) =>
+                  updateSettings({ boringSidebarMultilineRows: Boolean(checked) })
+                }
+                aria-label="Two-line folder rows"
+              />
+            }
+          />
+        </div>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
 export function GeneralSettingsPanel() {
   const gt = useGT();
   const m = useMessages();
@@ -918,6 +985,7 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="sidebar" title={gt("Sidebar")}>
+        <SidebarLayoutRow />
         <SettingsRow
           {...setting("project-grouping")}
           description={<T>Combine matching repositories across environments.</T>}
@@ -994,38 +1062,11 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          {...searchableSetting("group-threads-by-project")}
-          forkFeature="sidebar-project-thread-groups"
-          description="Show active threads under a header for each project. The boring sidebar in Labs uses project folders instead."
-          resetAction={
-            settings.sidebarThreadGrouping !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping ? (
-              <SettingResetButton
-                label="thread grouping"
-                onClick={() =>
-                  updateSettings({
-                    sidebarThreadGrouping: DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarThreadGrouping === "project"}
-              onCheckedChange={(checked) =>
-                updateSettings({ sidebarThreadGrouping: checked ? "project" : "none" })
-              }
-              aria-label="Group threads by project"
-            />
-          }
-        />
-
-        <SettingsRow
           {...setting("working-shelf")}
           description={
             <T>
               Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
+              the inbox when they need you. Project folders have no Working section.
             </T>
           }
           resetAction={
