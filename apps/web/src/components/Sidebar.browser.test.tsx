@@ -362,9 +362,10 @@ describe("sidebar drag reorder", () => {
 describe("sidebar folder menu", () => {
   // The folder header menu offers what the grouped project header menu does.
   it.each([
-    { choose: "filter-project", result: "the sidebar filters to the project" },
-    { choose: "archive-project", result: "the project is archived" },
-    { choose: "copy-path:1", result: "the second checkout's path is copied" },
+    { choose: "filter-project", archived: false, result: "the sidebar filters to the project" },
+    { choose: "archive-project", archived: false, result: "the project is archived" },
+    { choose: "unarchive-project", archived: true, result: "an archived project comes back" },
+    { choose: "copy-path:1", archived: false, result: "the second checkout's path is copied" },
   ] as const)("choosing $choose: $result", async (scenario) => {
     using _settings = clientSettings("boring");
     using stack = new DisposableStack();
@@ -375,9 +376,11 @@ describe("sidebar folder menu", () => {
     const originalPinOrder = vi.mocked(useProjectPinOrder).getMockImplementation()!;
     stack.defer(() => vi.mocked(useProjectPinOrder).mockImplementation(originalPinOrder));
     const archiveProject = vi.fn().mockResolvedValue({ _tag: "Success" });
+    const unarchiveProject = vi.fn().mockResolvedValue({ _tag: "Success" });
     vi.mocked(useProjectPinOrder).mockImplementation(() => ({
       ...originalPinOrder(),
       archiveProject,
+      unarchiveProject,
     }));
     stack.defer(() => useUiStateStore.setState({ sidebarProjectScopeKeys: [] }));
     vi.mocked(readEnvironmentScope).mockReturnValue(true);
@@ -387,9 +390,11 @@ describe("sidebar folder menu", () => {
       canonicalKey: "github.com/example/alpha",
       locator: { source: "git-remote", remoteName: "origin", remoteUrl: "git@example.com:alpha" },
     } as const;
-    const local = { ...project("alpha"), repositoryIdentity: identity };
+    const archivedAt = scenario.archived ? "2026-01-02T00:00:00.000Z" : null;
+    const local = { ...project("alpha"), repositoryIdentity: identity, archivedAt };
     const remote = {
       ...project("alpha-remote"),
+      archivedAt,
       environmentId: remoteEnvironmentId,
       workspaceRoot: "/srv/alpha",
       repositoryIdentity: identity,
@@ -436,7 +441,11 @@ describe("sidebar folder menu", () => {
     const items: ReadonlyArray<{ id: string; children?: ReadonlyArray<{ id: string }> }> =
       show.mock.calls[0]![0];
     expect(items.map((item) => item.id)).toEqual(
-      expect.arrayContaining(["filter-project", "archive-project", "copy-path"]),
+      expect.arrayContaining([
+        "filter-project",
+        scenario.archived ? "unarchive-project" : "archive-project",
+        "copy-path",
+      ]),
     );
     expect(
       items.find((item) => item.id === "copy-path")?.children?.map((child) => child.id),
@@ -449,6 +458,9 @@ describe("sidebar folder menu", () => {
     } else if (scenario.choose === "archive-project") {
       await vi.waitFor(() => expect(archiveProject).toHaveBeenCalledOnce());
       expect(archiveProject.mock.calls[0]![0].memberProjects).toHaveLength(2);
+    } else if (scenario.choose === "unarchive-project") {
+      await vi.waitFor(() => expect(unarchiveProject).toHaveBeenCalledOnce());
+      expect(archiveProject).not.toHaveBeenCalled();
     } else {
       await vi.waitFor(() => expect(copy).toHaveBeenCalledWith("/srv/alpha"));
     }

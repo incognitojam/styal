@@ -1196,7 +1196,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setProjectGroupPinned,
     toggleProjectGroupPin,
   } = useProjectPin();
-  const { setProjectPinned, reorderPinnedProjects, archiveProject } = useProjectPinOrder();
+  const { setProjectPinned, reorderPinnedProjects, archiveProject, unarchiveProject } =
+    useProjectPinOrder();
   // Pinned projects lead the grouped list in their pin order. A pin change
   // dropped in the list shows at once and holds until the projects match it.
   const [pendingPinnedProjectKeys, setPendingPinnedProjectKeys] = useState<
@@ -1591,7 +1592,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     group.pinned
                       ? { id: "unpin", label: "Unpin project", icon: "pin-off" }
                       : { id: "pin", label: "Pin project", icon: "pin" },
-                    { id: "archive-project", label: "Archive project", icon: "archive" },
+                    group.archived
+                      ? { id: "unarchive-project", label: "Unarchive project", icon: "archive" }
+                      : { id: "archive-project", label: "Archive project", icon: "archive" },
                   ]
                 : []),
               { id: "project-settings", label: "Project settings", icon: "settings" },
@@ -1619,6 +1622,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "archive-project":
             void archiveProject(group);
+            return;
+          case "unarchive-project":
+            void unarchiveProject(group);
             return;
           case "pin":
           case "unpin":
