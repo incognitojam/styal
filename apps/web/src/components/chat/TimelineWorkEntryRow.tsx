@@ -308,7 +308,11 @@ export function ViewedImagesTimelineRow({
   return (
     <div className="flex flex-col gap-2">
       {row.paths.length > 0 ? images : null}
-      <ViewedSourceChips sources={row.sources} />
+      <ViewedSourceChips
+        rowId={row.id}
+        sources={row.sources}
+        collapsedGroupId={row.collapsedGroupId}
+      />
     </div>
   );
 }

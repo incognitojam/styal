@@ -639,7 +639,18 @@ export function omitUserAttachmentImages(
 /** A document the agent read or a web page it fetched, shown beside a tool group's images. */
 export type ViewedSource =
   | { readonly kind: "document"; readonly path: string; readonly pages?: string }
-  | { readonly kind: "page"; readonly url: string };
+  | { readonly kind: "page"; readonly url: string }
+  | {
+      readonly kind: "search";
+      readonly query: string;
+      /** The http(s) results the provider reported; empty when it reported none (Codex). */
+      readonly results: ReadonlyArray<ViewedSearchResult>;
+    };
+
+export interface ViewedSearchResult {
+  readonly url: string;
+  readonly title?: string;
+}
 
 function workEntryViewedSource(entry: WorkLogPresentationEntry): ViewedSource | null {
   const item = entry.structuredPayload;
@@ -660,15 +671,36 @@ function workEntryViewedSource(entry: WorkLogPresentationEntry): ViewedSource | 
       ? null
       : { kind: "page", url: item.fetchedUrl };
   }
+  if (item.type === "web_search") {
+    const query = item.patterns?.[0]?.replace(/\s+/g, " ").trim();
+    // A lone URL is a fetch the adapter did not mark with fetchedUrl, not a search.
+    if (!query || viewedSourceUrlKey(query) !== null) return null;
+    return {
+      kind: "search",
+      query,
+      results: (item.results ?? []).flatMap((result) => {
+        const title = result.title?.trim();
+        return result.url !== undefined && viewedSourceUrlKey(result.url) !== null
+          ? [{ url: result.url, ...(title ? { title } : {}) }]
+          : [];
+      }),
+    };
+  }
   return null;
 }
 
-/** Documents, then pages, each once and in reading order. */
+/** Same query regardless of case and spacing. */
+export function viewedSearchKey(query: string): string {
+  return query.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Documents, then pages, then searches, each once and in reading order. */
 export function workEntriesViewedSources(
   entries: ReadonlyArray<WorkLogPresentationEntry>,
 ): ViewedSource[] {
   const documents = new Map<string, ViewedSource>();
   const pages = new Map<string, ViewedSource>();
+  const searches = new Map<string, Extract<ViewedSource, { kind: "search" }>>();
   for (const entry of entries) {
     const source = workEntryViewedSource(entry);
     if (source?.kind === "document") {
@@ -681,9 +713,19 @@ export function workEntriesViewedSources(
     } else if (source?.kind === "page") {
       const key = viewedSourceUrlKey(source.url)!;
       if (!pages.has(key)) pages.set(key, source);
+    } else if (source?.kind === "search") {
+      const key = viewedSearchKey(source.query);
+      const seen = searches.get(key);
+      if (seen === undefined) {
+        searches.set(key, source);
+        continue;
+      }
+      const urls = new Set(seen.results.map((result) => viewedSourceUrlKey(result.url)));
+      const added = source.results.filter((result) => !urls.has(viewedSourceUrlKey(result.url)));
+      if (added.length > 0) searches.set(key, { ...seen, results: [...seen.results, ...added] });
     }
   }
-  return [...documents.values(), ...pages.values()];
+  return [...documents.values(), ...pages.values(), ...searches.values()];
 }
 
 /** `text` without any of `characters` at its end; a backward scan, linear in a long run. */
@@ -820,19 +862,26 @@ export function assistantLinkedUrlKeysByRunId(
   return keysByRunId;
 }
 
-/** Leaves out the user's own attachments and pages the turn's reply already links. */
+/**
+ * Leaves out the user's own attachments, pages the turn's reply already links, and searches an
+ * earlier strip of the same run already shows; `shownSearchKeys` collects the run's searches.
+ */
 export function omitViewedSources(
   sources: readonly ViewedSource[],
   input: {
     readonly attachmentIds: ReadonlySet<string>;
     readonly linkedUrlKeys: ReadonlySet<string>;
+    readonly shownSearchKeys: Set<string>;
   },
 ): readonly ViewedSource[] {
-  const retained = sources.filter((source) =>
-    source.kind === "document"
-      ? !isUserAttachmentPath(source.path, input.attachmentIds)
-      : !input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!),
-  );
+  const retained = sources.filter((source) => {
+    if (source.kind === "document") return !isUserAttachmentPath(source.path, input.attachmentIds);
+    if (source.kind === "page") return !input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!);
+    const key = viewedSearchKey(source.query);
+    if (input.shownSearchKeys.has(key)) return false;
+    input.shownSearchKeys.add(key);
+    return true;
+  });
   return retained.length === sources.length ? sources : retained;
 }
 
@@ -848,6 +897,7 @@ export function foldViewedSources<Source>(
 
 /** "settings-spec.pdf"; "docs.example.com/guides/menus", middle-shortened past 48 characters. */
 export function viewedSourceLabel(source: ViewedSource): string {
+  if (source.kind === "search") return source.query;
   if (source.kind === "document") {
     return source.path.split(/[\\/]/).at(-1) || source.path;
   }
@@ -857,6 +907,11 @@ export function viewedSourceLabel(source: ViewedSource): string {
   const full = [host, ...segments].join("/");
   if (full.length <= 48 || segments.length < 2) return full;
   return `${host}/…/${segments.at(-1)}`;
+}
+
+/** "docs.example.com" for a search result's address. */
+export function viewedSearchResultSite(url: string): string {
+  return new URL(url).host.replace(/^www\./, "");
 }
 
 /** "p. 3" or "pp. 4–6" from a read's page range; null without one. */

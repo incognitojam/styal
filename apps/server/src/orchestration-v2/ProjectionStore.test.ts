@@ -3837,7 +3837,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             item.deferredWork === undefined,
         ),
       );
-      // The strip under a folded settled turn shows documents read and pages fetched.
+      // The strip under a folded settled turn shows documents read, pages fetched and searches.
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET payload_json = json_set(payload_json, '$.toolName', 'Read',
           '$.viewedDocument', json('{"path":"/repo/spec.pdf"}'))
@@ -3879,7 +3879,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         });
       const [fetch] = yield* webSearchWindow("https://docs.example.com/menus");
       assert.strictEqual(fetch?.fetchedUrl, "https://docs.example.com/menus");
-      assert.lengthOf(yield* webSearchWindow(null), 0);
+      // A search keeps its query and result list for the strip as well.
+      assert.lengthOf(yield* webSearchWindow(null), 1);
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET payload_json = json_remove(payload_json, '$.results')
         WHERE thread_id = ${threadId} AND ordinal = 900`;

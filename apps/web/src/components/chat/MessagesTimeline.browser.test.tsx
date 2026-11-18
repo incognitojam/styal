@@ -1817,6 +1817,7 @@ describe("MessagesTimeline attachments", () => {
             runId: null,
             paths: ["/repo/first.png", "/repo/second.png", "/repo/third.png"],
             sources: [],
+            collapsedGroupId: null,
           }}
         />
       </TimelineRowCtx>,
