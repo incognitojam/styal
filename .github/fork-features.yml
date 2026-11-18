@@ -7795,11 +7795,11 @@ features:
     title: Free settled worktree sources in place and restore before use
     status: maintained
     tier: keep
-    prs: []
+    prs: [1584]
     invariants:
       - Source cleanup is per project and machine, off by default, and waits seven days after settlement with delegated children following their parent chain.
       - Only canonical managed linked worktrees recorded on live threads may be un-checked-out under the workspace lease; local changes, untracked and ignored files remain intact.
-      - Git cone-mode sparse checkout removes unchanged sources. User sparse checkouts, populated submodules, LFS, active sessions and terminals, pending work, locks and unfinished Git operations prevent cleanup.
+      - Git cone-mode sparse checkout removes unchanged sources. Nested ignored files in tracked source folders, unstaged deletions, user sparse checkouts, populated submodules, content filters including LFS, active sessions and terminals, pending work, locks and unfinished Git operations prevent cleanup.
       - Turns, terminals, checkpoint rollback and Git mutations restore sources under the same lease or fail loudly. Durable recovery records protect interrupted operations.
       - Storage reports the volume available-byte difference. Windows does not un-check-out sources. No agent context is added.
     implementation_paths:

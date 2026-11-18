@@ -183,9 +183,17 @@ it.effect.each([
   { order: "cleanup-first", restoreFiles: true },
   { order: "rollback-first", restoreFiles: true },
   { order: "rollback-first", restoreFiles: true, sparse: true },
+  { order: "rollback-first", restoreFiles: false, sparse: true, projectRoot: true },
   { order: "cleanup-first", restoreFiles: false, unmanaged: true },
-])("locks rollback with %s", ({ order, restoreFiles, unmanaged = false, sparse = false }) =>
+])("locks rollback with %s", (scenario) =>
   Effect.gen(function* () {
+    const {
+      order,
+      restoreFiles,
+      unmanaged = false,
+      sparse = false,
+      projectRoot = false,
+    } = scenario;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const real = sparse ? yield* fixture : undefined;
@@ -229,7 +237,7 @@ it.effect.each([
       thread: {
         id: threadId,
         projectId,
-        worktreePath,
+        worktreePath: projectRoot ? null : worktreePath,
         branch,
         activeProviderThreadId: providerThreadId,
         modelSelection: { instanceId: providerInstanceId, model: "test-model" },
@@ -260,7 +268,9 @@ it.effect.each([
           Layer.mock(ProjectStore.ProjectStoreV2)({
             get: (id) => {
               assert.equal(id, projectId);
-              return Effect.succeedSome({ workspaceRoot } as never);
+              return Effect.succeedSome({
+                workspaceRoot: projectRoot ? worktreePath : workspaceRoot,
+              } as never);
             },
           }),
           Layer.mock(GitWorkflow.GitWorkflowService)({
@@ -325,7 +335,10 @@ it.effect.each([
                   );
                 assert.equal(input.runtimePolicy.cwd, worktreePath);
                 if (!(yield* fileSystem.exists(worktreePath).pipe(Effect.orDie))) {
-                  return yield* new ProviderWorkspaceMissingError({ threadId, cwd: worktreePath });
+                  return yield* new ProviderWorkspaceMissingError({
+                    threadId,
+                    cwd: worktreePath,
+                  });
                 }
                 calls.push("session");
                 if (order === "rollback-first") yield* Deferred.await(release);
@@ -334,8 +347,8 @@ it.effect.each([
           }),
           Layer.mock(RuntimePolicy.RuntimePolicyV2)({
             resolve: ({ thread }) => {
-              assert.equal(thread.worktreePath, worktreePath);
-              return Effect.succeed({ cwd: thread.worktreePath } as never);
+              assert.equal(thread.worktreePath, projectRoot ? null : worktreePath);
+              return Effect.succeed({ cwd: worktreePath } as never);
             },
           }),
         ),

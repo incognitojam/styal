@@ -89,7 +89,7 @@ const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
   );
 
 function startWithMissingWorktree(
-  worktreePath: string,
+  worktreePath: string | null,
   realPaths: Record<string, string> = {
     [managedWorktreesDir]: managedWorktreesDir,
     [`${managedWorktreesDir}/project`]: `${managedWorktreesDir}/project`,
@@ -101,6 +101,7 @@ function startWithMissingWorktree(
   isStripped: (root: string) => Effect.Effect<boolean> = () => Effect.succeed(false),
   onSetup: Effect.Effect<void> = Effect.void,
   checkoutGit: GitVcsDriver.GitVcsDriver["Service"] = {} as GitVcsDriver.GitVcsDriver["Service"],
+  projectWorkspaceRoot = "/tmp/provider-turn-start-project",
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
   const runId = RunId.make("run_provider_turn_start_projection_failure");
@@ -199,8 +200,7 @@ function startWithMissingWorktree(
           runForThread: runSetup,
         }),
         Layer.mock(ProjectService.ProjectService)({
-          getById: () =>
-            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
+          getById: () => Effect.succeedSome({ workspaceRoot: projectWorkspaceRoot } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => {
@@ -2076,7 +2076,7 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
             consumeStripped: () => Effect.succeed(false),
             isStripped: () => Effect.succeed(false),
           }),
-          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThreadRecords: () =>
               Effect.succeed({
@@ -2156,6 +2156,36 @@ effectIt.effect(
         events.some((event) => event.type === "run.updated" && event.payload.status === "failed"),
       ).toBe(true);
       expect(yield* f.fs.exists(`${f.worktree}/src/main.txt`)).toBe(false);
+    }).pipe(Effect.provide(cleanupNodeLayer), Effect.scoped),
+);
+
+effectIt.effect.each(["project-root", "nested-project-root", "unmanaged-thread"] as const)(
+  "restores the effective execution checkout for %s",
+  (location) =>
+    Effect.gen(function* () {
+      const f = yield* cleanupFixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      const projectRoot = location === "nested-project-root" ? `${f.worktree}/src` : f.worktree;
+      const harness = startWithMissingWorktree(
+        location === "unmanaged-thread" ? f.worktree : null,
+        { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
+        true,
+        { status: "no-script" },
+        () => Effect.succeed(false),
+        `${f.base}/another-managed-folder`,
+        () => Effect.succeed(false),
+        Effect.void,
+        f.git,
+        projectRoot,
+      );
+      yield* harness.start;
+      expect(yield* f.fs.readFileString(`${f.worktree}/src/main.txt`)).toBe("tracked source");
     }).pipe(Effect.provide(cleanupNodeLayer), Effect.scoped),
 );
 

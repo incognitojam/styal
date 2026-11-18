@@ -13,6 +13,7 @@ import {
   RunId,
   RuntimeRequestId,
   type OrchestrationProjectShell,
+  type TerminalSummary,
   type StorageCleanupReportEntry,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
@@ -23,9 +24,10 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
-import { CheckoutRetention, makeCheckoutSweep } from "./CheckoutSweep.ts";
-import { CheckoutLimits } from "./Checkout.ts";
+import { CheckoutRetention, CheckoutSweepLimits, makeCheckoutSweep } from "./CheckoutSweep.ts";
+import { CheckoutLimits, makeCheckout } from "./Checkout.ts";
 
+import { makeHasCanonicalTerminal } from "../storageCleanup.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TestClock } from "effect/testing";
 import { ThreadId } from "@t3tools/contracts";
@@ -33,6 +35,7 @@ import { ThreadId } from "@t3tools/contracts";
 const setup = Effect.gen(function* () {
   const f = yield* fixture;
   const sql = yield* SqlClient.SqlClient;
+  const hasCanonicalTerminal = yield* makeHasCanonicalTerminal;
   yield* sql`CREATE TABLE orchestration_v2_projection_provider_sessions (payload_json TEXT, status TEXT)`;
   yield* f.fs.writeFileString(
     `${f.root}/styal.json`,
@@ -67,10 +70,10 @@ const setup = Effect.gen(function* () {
     }),
   ];
   let afterRead = Effect.void;
-  let snapshotReads = 0;
   let projectList = [project];
   let terminal = false;
   let live = false;
+  let terminalPaths: Array<Pick<TerminalSummary, "status" | "cwd" | "worktreePath">> = [];
   yield* TestClock.adjust("8 days");
   const layers = Layer.mergeAll(
     Layer.succeed(ServerConfig.ServerConfig, f.config),
@@ -88,7 +91,7 @@ const setup = Effect.gen(function* () {
           projects: [],
           threads,
           archivedThreads: [],
-        })).pipe(Effect.tap(() => (++snapshotReads === 2 ? afterRead : Effect.void))),
+        })).pipe(Effect.tap(() => afterRead)),
       getThreadShell: (id) =>
         Effect.sync(() => threads.find((thread) => thread.id === id) ?? null).pipe(
           Effect.tap(() => afterRead),
@@ -116,6 +119,10 @@ const setup = Effect.gen(function* () {
     terminal: () => terminal,
     setTerminal: (value: boolean) => {
       terminal = value;
+    },
+    canonicalTerminal: (root: string) => hasCanonicalTerminal(root, terminalPaths),
+    setTerminalPaths: (paths: typeof terminalPaths) => {
+      terminalPaths = paths;
     },
     setLive: (value: boolean) => {
       live = value;
@@ -148,6 +155,12 @@ it.effect.each([
   "archived",
   "parent-active",
   "project-root-inside",
+  "missing-project",
+  "missing-worktree",
+  "terminal-alias",
+  "terminal-alias-final",
+  "terminal-unverifiable",
+  "deadline",
 ] as const)("source sweep rechecks ownership and activity under the lease: %s", (blocker) =>
   Effect.gen(function* () {
     const f = yield* setup;
@@ -171,6 +184,24 @@ it.effect.each([
         },
       ]);
     }
+    if (blocker === "missing-project")
+      f.setProjects([
+        f.project,
+        { ...f.project, id: ProjectId.make("missing"), workspaceRoot: `${f.base}/missing-project` },
+      ]);
+    if (blocker === "missing-worktree")
+      yield* f.command(f.root, ["worktree", "remove", f.worktree]);
+    if (blocker === "terminal-alias" || blocker === "terminal-alias-final") {
+      const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+      const alias = `${f.base}/terminal-alias`;
+      yield* Effect.promise(() => physical.symlink(f.worktree, alias));
+      if (blocker === "terminal-alias")
+        f.setTerminalPaths([{ cwd: alias, worktreePath: null, status: "running" }]);
+    }
+    if (blocker === "terminal-unverifiable")
+      f.setTerminalPaths([
+        { cwd: `${f.base}/missing-terminal-alias`, worktreePath: null, status: "running" },
+      ]);
     if (blocker === "active")
       f.setThreads([{ ...original, settledAt: null, settledOverride: "active" }]);
     if (blocker === "run")
@@ -259,12 +290,22 @@ it.effect.each([
       }
       const retention = yield* CheckoutRetention;
       const sweep = yield* makeCheckoutSweep.pipe(
+        Effect.provideService(CheckoutSweepLimits, {
+          durationMs: blocker === "deadline" ? 50 : 600_000,
+          roots: 10_000,
+        }),
         Effect.provideService(CheckoutRetention, blocker === "short-retention" ? 50 : retention),
         Effect.provideService(CheckoutLimits, {
           entries: 100_000,
           bytes: 1_000_000,
           step: (step) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
+              if (blocker === "deadline" && step === "release-recorded")
+                yield* TestClock.adjust("100 millis");
+              if (blocker === "terminal-alias-final" && step === "release-recorded")
+                f.setTerminalPaths([
+                  { cwd: `${f.base}/terminal-alias`, worktreePath: null, status: "running" },
+                ]);
               if (blocker === "unsettle-during-inspection" && step === "release-recorded")
                 f.setThreads([{ ...original, settledAt: null, settledOverride: "active" }]);
             }),
@@ -283,28 +324,85 @@ it.effect.each([
         yield* Deferred.await(held);
         const checked = yield* Deferred.make<void>();
         f.setAfterRead(Deferred.succeed(checked, undefined).pipe(Effect.asVoid));
-        const waiting = yield* sweep(f.terminal, reports).pipe(Effect.forkChild);
+        const waiting = yield* sweep(f.terminal, reports, f.canonicalTerminal).pipe(
+          Effect.forkChild,
+        );
         yield* Deferred.await(checked);
         f.setThreads([{ ...original, settledAt: null, settledOverride: "active" }]);
         yield* Deferred.succeed(unblock, undefined);
         yield* Fiber.join(holder);
         yield* Fiber.join(waiting);
-      } else yield* sweep(f.terminal, reports);
+      } else yield* sweep(f.terminal, reports, f.canonicalTerminal);
       const expectedPath =
         blocker === "unmanaged" ? `${f.base}/unmanaged/src/clean` : `${f.worktree}/src/clean`;
       expect(yield* f.fs.exists(expectedPath)).toBe(
         blocker !== "none" &&
           blocker !== "parent" &&
           blocker !== "archived" &&
-          blocker !== "short-retention",
+          blocker !== "short-retention" &&
+          blocker !== "missing-project" &&
+          blocker !== "missing-worktree",
       );
       if (
         blocker === "none" ||
         blocker === "parent" ||
         blocker === "archived" ||
-        blocker === "short-retention"
+        blocker === "short-retention" ||
+        blocker === "missing-project"
       )
         expect(reports.some((entry) => entry.outcome === "removed")).toBe(true);
+      if (blocker === "missing-worktree") expect(reports).toEqual([]);
     }).pipe(Effect.provide(f.layers));
   }).pipe(Effect.provide(testLayers)),
+);
+
+it.effect("keeps remaining worktrees after the sweep reaches its worktree limit", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    yield* f.write("src/clean", "source");
+    yield* f.command(f.worktree, ["add", "."]);
+    yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+    const second = `${f.config.worktreesDir}/fixture/second`;
+    const commit = (yield* f.command(f.worktree, ["rev-parse", "HEAD"])).stdout.trim();
+    yield* f.command(f.root, ["worktree", "add", "--detach", second, commit]);
+    const original = f.threads()[0]!;
+    f.setThreads([original, { ...original, id: ThreadId.make("second"), worktreePath: second }]);
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeCheckoutSweep.pipe(
+        Effect.provideService(CheckoutSweepLimits, { durationMs: 600_000, roots: 1 }),
+      );
+      const report: StorageCleanupReportEntry[] = [];
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
+      expect(yield* f.fs.exists(`${f.worktree}/src/clean`)).toBe(false);
+      expect(yield* f.fs.readFileString(`${second}/src/clean`)).toBe("source");
+      expect(report.some((entry) => entry.reason.includes("limit"))).toBe(true);
+    }).pipe(Effect.provide(f.layers));
+  }).pipe(Effect.provide(testLayers)),
+);
+
+it.effect(
+  "reports a released worktree after its owner becomes active without using the folder",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.write("src/clean", "source");
+      yield* f.command(f.worktree, ["add", "."]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      yield* Effect.gen(function* () {
+        const checkout = yield* makeCheckout;
+        yield* checkout.release(f.worktree, f.root);
+        f.setThreads([{ ...f.threads()[0]!, settledAt: null, settledOverride: "active" }]);
+        const sweep = yield* makeCheckoutSweep;
+        const report: StorageCleanupReportEntry[] = [];
+        yield* sweep(f.terminal, report, f.canonicalTerminal);
+        expect(yield* f.fs.exists(`${f.worktree}/src/clean`)).toBe(false);
+        expect(report).toEqual([
+          expect.objectContaining({
+            path: f.worktree,
+            reason: "Sources remain un-checked-out; restored before use",
+            bytes: expect.any(Number),
+          }),
+        ]);
+      }).pipe(Effect.provide(f.layers));
+    }).pipe(Effect.provide(testLayers)),
 );

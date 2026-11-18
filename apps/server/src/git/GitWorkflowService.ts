@@ -1,7 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
@@ -181,7 +180,6 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
-  const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
   const checkout = yield* makeCheckout;
@@ -189,8 +187,17 @@ export const make = Effect.gen(function* () {
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
-    fileSystem.realPath(rootPath).pipe(
-      Effect.orElseSucceed(() => rootPath),
+    checkout.root(rootPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation: "GitWorkflowService.restoreCheckout",
+            command: "rev-parse --show-toplevel",
+            cwd: rootPath,
+            detail: "Could not identify the checkout. The Git action was not started.",
+            cause,
+          }),
+      ),
       Effect.flatMap((cwd) =>
         withWorkspaceLease(
           cwd,
@@ -215,7 +222,8 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* registry.resolve({ cwd }).pipe(
+    const handle = yield* checkout.root(cwd).pipe(
+      Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
           new GitManagerError({
@@ -233,7 +241,8 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* registry.resolve({ cwd }).pipe(
+    const handle = yield* checkout.root(cwd).pipe(
+      Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
           new GitCommandError({

@@ -181,6 +181,15 @@ it.effect.each(["staged", "moved-branch", "deleted-branch", "created-file", "det
 );
 
 it.effect.each([
+  "release-journal-written",
+  "release-journal-renamed",
+  "release-journal-durable",
+  "released-journal-written",
+  "released-journal-renamed",
+  "released-journal-durable",
+  "restore-journal-written",
+  "restore-journal-renamed",
+  "restore-journal-durable",
   "release-recorded",
   "release-set",
   "release-finished",
@@ -340,6 +349,8 @@ it.effect(
         expect(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`)).toBe(
           "changed during restore",
         );
+        yield* f.write(".scratch/note", "protected");
+        yield* normal.restore(f.worktree);
       }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
     }).pipe(Effect.provide(nodeLayer)),
 );
@@ -392,5 +403,103 @@ it.effect.each(
       expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("original");
       expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe("");
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver));
+  }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.effect.each(["nested-ignored", "deleted"] as const)(
+  "refuses before Git can discard local state: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("src/clean", "source");
+      yield* f.command(f.worktree, ["add", "."]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
+      if (scenario === "nested-ignored") yield* f.write("src/cache/local", "irreplaceable");
+      else yield* f.fs.remove(`${f.worktree}/src/clean`);
+      const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
+      yield* Effect.gen(function* () {
+        const checkout = yield* makeCheckout;
+        expect((yield* checkout.release(f.worktree, f.root).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        );
+        if (scenario === "nested-ignored")
+          expect(yield* f.fs.readFileString(`${f.worktree}/src/cache/local`)).toBe("irreplaceable");
+        else expect(yield* f.fs.exists(`${f.worktree}/src/clean`)).toBe(false);
+        expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
+          before,
+        );
+        yield* checkout.restore(f.worktree);
+      }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
+    }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.effect.each(["new-file", "obstruction"] as const)(
+  "recovery can finish after a filesystem change: %s",
+  (scenario) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("docs/source", "source");
+      yield* f.command(f.worktree, ["add", "."]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
+      yield* f.write(".scratch/note", "protected");
+      yield* Effect.gen(function* () {
+        const normal = yield* makeCheckout;
+        if (scenario === "new-file") {
+          const stopped = yield* makeCheckout.pipe(
+            Effect.provideService(CheckoutLimits, {
+              entries: 100_000,
+              bytes: 1_000_000,
+              step: (step) => (step === "release-set" ? Effect.die("stop") : Effect.void),
+            }),
+          );
+          yield* stopped.release(f.worktree, f.root).pipe(Effect.exit);
+          yield* f.write("new-note", "new");
+        } else {
+          yield* normal.release(f.worktree, f.root);
+          yield* f.write("docs", "obstruction");
+          expect((yield* normal.restore(f.worktree).pipe(Effect.result))._tag).toBe("Failure");
+          yield* f.fs.rename(`${f.worktree}/docs`, `${f.worktree}/moved-note`);
+        }
+        yield* normal.restore(f.worktree);
+        expect(yield* f.fs.readFileString(`${f.worktree}/docs/source`)).toBe("source");
+        expect(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`)).toBe("protected");
+        expect(
+          yield* f.fs.readFileString(
+            `${f.worktree}/${scenario === "new-file" ? "new-note" : "moved-note"}`,
+          ),
+        ).toBe(scenario === "new-file" ? "new" : "obstruction");
+      }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
+    }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.effect("keeps sources when the recovery directory cannot be synced", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+    yield* f.write("src/clean", "source");
+    yield* f.command(f.worktree, ["add", "."]);
+    yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+    const admin = (yield* f.command(f.worktree, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
+    yield* Effect.gen(function* () {
+      const normal = yield* makeCheckout;
+      const unsynced = yield* makeCheckout.pipe(
+        Effect.provideService(
+          PhysicalFileSystem.PhysicalFileSystem,
+          PhysicalFileSystem.PhysicalFileSystem.of({
+            ...physical,
+            open: (target, flags, mode) =>
+              target === admin
+                ? Promise.reject(new Error("directory sync unavailable"))
+                : physical.open(target, flags, mode),
+          }),
+        ),
+      );
+      expect((yield* unsynced.release(f.worktree, f.root).pipe(Effect.result))._tag).toBe(
+        "Failure",
+      );
+      expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
+      yield* normal.restore(f.worktree);
+      expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
+    }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
 );

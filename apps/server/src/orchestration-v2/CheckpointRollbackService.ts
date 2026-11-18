@@ -145,13 +145,16 @@ export const layer: Layer.Layer<
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
-    const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly providerThreadId: ProviderThreadId;
-      readonly checkpointId: CheckpointId;
-      readonly scopeId: CheckpointScopeId;
-      readonly restoreFiles?: boolean;
-    }) {
+    const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (
+      input: {
+        readonly threadId: ThreadId;
+        readonly providerThreadId: ProviderThreadId;
+        readonly checkpointId: CheckpointId;
+        readonly scopeId: CheckpointScopeId;
+        readonly restoreFiles?: boolean;
+      },
+      workspace?: string,
+    ) {
       const context = yield* projections.getCheckpointRollbackContext(input.threadId, input);
       const { providerThread, checkpoint, scope, targetAttempt, runsToRollback, staleCheckpoints } =
         context;
@@ -227,8 +230,8 @@ export const layer: Layer.Layer<
             });
 
       const { worktreePath, branch } = context.thread;
-      if (worktreePath !== null) {
-        yield* checkout.restore(path.resolve(worktreePath)).pipe(
+      if (workspace !== undefined) {
+        yield* checkout.restore(workspace).pipe(
           Effect.mapError(
             (cause) =>
               new CheckpointRollbackExecutionError({
@@ -401,10 +404,16 @@ export const layer: Layer.Layer<
         function* (input) {
           // Storage cleanup removes worktrees under the same lease.
           const thread = yield* projections.getThread(input.threadId);
-          yield* Effect.scoped(
+          const project =
             thread.worktreePath === null
+              ? Option.getOrUndefined(yield* projects.get(thread.projectId))
+              : undefined;
+          const cwd = thread.worktreePath ?? project?.workspaceRoot;
+          const workspace = cwd === undefined ? undefined : yield* checkout.root(cwd);
+          yield* Effect.scoped(
+            workspace === undefined
               ? execute(input)
-              : withWorkspaceLease(path.resolve(thread.worktreePath), execute(input)),
+              : withWorkspaceLease(workspace, execute(input, workspace)),
           );
         },
         (effect, input) =>

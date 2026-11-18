@@ -439,11 +439,14 @@ export const layer: Layer.Layer<
       };
     };
 
-    const start = Effect.fn("orchestrationV2.providerTurnStart.start")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly runId: RunId;
-      readonly willRetry?: boolean;
-    }) {
+    const start = Effect.fn("orchestrationV2.providerTurnStart.start")(function* (
+      input: {
+        readonly threadId: ThreadId;
+        readonly runId: RunId;
+        readonly willRetry?: boolean;
+      },
+      workspace?: string,
+    ) {
       const { runId } = input;
       const projection = yield* projectionStore.getTurnStartContext(input.threadId, runId);
       const run = projection.runs.find((candidate) => candidate.id === runId);
@@ -730,8 +733,8 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (worktreePath !== null && (yield* isManagedWorktreePath(worktreePath))) {
-        const restored = yield* checkout.restore(path.resolve(worktreePath)).pipe(Effect.result);
+      if (workspace !== undefined) {
+        const restored = yield* checkout.restore(workspace).pipe(Effect.result);
         if (restored._tag === "Failure") {
           if (input.willRetry === true) return yield* restored.failure;
           yield* settleStartFailure({
@@ -742,6 +745,8 @@ export const layer: Layer.Layer<
           });
           return;
         }
+      }
+      if (worktreePath !== null && (yield* isManagedWorktreePath(worktreePath))) {
         const exists = yield* fileSystem
           .exists(worktreePath)
           .pipe(Effect.orElseSucceed(() => true));
@@ -2152,11 +2157,17 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          const project =
+            thread.worktreePath === null
+              ? Option.getOrUndefined(yield* projects.getById(thread.projectId))
+              : undefined;
+          const cwd = thread.worktreePath ?? project?.workspaceRoot;
+          const workspace = cwd === undefined ? undefined : yield* checkout.root(cwd);
           yield* Effect.scoped(
             Effect.gen(function* () {
-              const providerTurn = yield* thread.worktreePath === null
+              const providerTurn = yield* workspace === undefined
                 ? start(input)
-                : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+                : withWorkspaceLease(workspace, start(input, workspace));
               if (providerTurn !== undefined) yield* providerTurn;
             }),
           );

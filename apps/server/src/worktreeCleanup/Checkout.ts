@@ -24,6 +24,7 @@ const Journal = Schema.Struct({
   status: Schema.String,
   index: Schema.String,
   files: Schema.Record(Schema.String, Schema.String),
+  recoveryFiles: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 });
 const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Journal));
 const encode = Schema.encodeEffect(Schema.fromJsonString(Journal));
@@ -58,6 +59,37 @@ export const makeCheckout = Effect.gen(function* () {
       return yield* fail("Git checkout check failed or returned incomplete output.");
     return result.stdout;
   });
+  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string) {
+    const resolved = path.resolve(cwd);
+    let canonical = resolved;
+    let parent = resolved;
+    const missing: string[] = [];
+    while (true) {
+      const real = yield* io(() =>
+        fs.realpath(parent).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+          throw error;
+        }),
+      );
+      if (real !== null) {
+        canonical = path.join(real, ...missing);
+        break;
+      }
+      if (path.dirname(parent) === parent) break;
+      missing.unshift(path.basename(parent));
+      parent = path.dirname(parent);
+    }
+    for (let directory = canonical; ; directory = path.dirname(directory)) {
+      const marker = yield* io(() =>
+        fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+          throw error;
+        }),
+      );
+      if (marker?.isFile() || marker?.isDirectory()) return directory;
+      if (path.dirname(directory) === directory) return canonical;
+    }
+  });
   const adminDirectory = Effect.fn("WorktreeCleanup.checkoutAdmin")(function* (root: string) {
     const file = path.join(root, ".git");
     const stat = yield* io(() =>
@@ -88,7 +120,10 @@ export const makeCheckout = Effect.gen(function* () {
     )
       return yield* fail("Worktree registration does not match this folder.");
   });
-  const snapshot = Effect.fn("WorktreeCleanup.checkoutSnapshot")(function* (root: string) {
+  const snapshot = Effect.fn("WorktreeCleanup.checkoutSnapshot")(function* (
+    root: string,
+    protectedNames: readonly string[] = [],
+  ) {
     const status = yield* command(root, [
       "status",
       "--porcelain=v1",
@@ -107,7 +142,9 @@ export const makeCheckout = Effect.gen(function* () {
     ]);
     for (const list of [status, index, dirty, others, ignored])
       if (list && !list.endsWith("\0")) return yield* fail("Incomplete worktree file list.");
-    const names = [...new Set(`${dirty}${others}${ignored}`.split("\0").filter(Boolean))];
+    const names = [
+      ...new Set([...`${dirty}${others}${ignored}`.split("\0").filter(Boolean), ...protectedNames]),
+    ];
     if (names.length > limits.entries)
       return yield* fail("Worktree checkout inspection exceeded its file limit.");
     const files: Record<string, string> = Object.create(null);
@@ -116,11 +153,17 @@ export const makeCheckout = Effect.gen(function* () {
       if (path.isAbsolute(name) || name.split("/").some((part) => part === ".." || part === ".git"))
         return yield* fail("Unsafe worktree file path.");
       const target = path.join(root, name);
-      if ((yield* io(() => fs.realpath(path.dirname(target)))) !== path.dirname(target))
+      const parent = yield* io(() =>
+        fs.realpath(path.dirname(target)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+          throw error;
+        }),
+      );
+      if (parent !== null && parent !== path.dirname(target))
         return yield* fail("Worktree file has a symlinked parent.");
       const stat = yield* io(() =>
         fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return null;
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
           throw error;
         }),
       );
@@ -142,13 +185,17 @@ export const makeCheckout = Effect.gen(function* () {
       files[name] =
         `${stat.isSymbolicLink() ? "link" : stat.mode}:${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
     }
-    return { status, index, files };
+    return {
+      status,
+      index: yield* crypto.digestHex(Digest.sha256, new TextEncoder().encode(index)),
+      files,
+    };
   });
   const verify = Effect.fn("WorktreeCleanup.verifyCheckout")(function* (
     root: string,
     before: Omit<typeof Journal.Type, "phase">,
   ) {
-    const after = yield* snapshot(root);
+    const after = yield* snapshot(root, Object.keys(before.files));
     if (
       before.status !== after.status ||
       before.index !== after.index ||
@@ -159,13 +206,23 @@ export const makeCheckout = Effect.gen(function* () {
       );
   });
   const journalPath = (admin: string) => path.join(admin, "styal-checkout.json");
+  const syncAdmin = Effect.fn("WorktreeCleanup.syncCheckoutDirectory")(function* (admin: string) {
+    yield* io(async () => {
+      const directory = await fs.open(admin, "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    });
+  });
   const save = Effect.fn("WorktreeCleanup.saveCheckout")(function* (
     admin: string,
     value: typeof Journal.Type,
   ) {
     const text = yield* encode(value);
+    const temporary = `${journalPath(admin)}.new`;
     yield* io(async () => {
-      const temporary = `${journalPath(admin)}.new`;
       const handle = await fs.open(temporary, "w", 0o600);
       try {
         await handle.writeFile(text);
@@ -173,8 +230,18 @@ export const makeCheckout = Effect.gen(function* () {
       } finally {
         await handle.close();
       }
-      await fs.rename(temporary, journalPath(admin));
     });
+    const phase =
+      value.phase === "releasing"
+        ? "release"
+        : value.phase === "restoring"
+          ? "restore"
+          : "released";
+    yield* step(`${phase}-journal-written`);
+    yield* io(() => fs.rename(temporary, journalPath(admin)));
+    yield* step(`${phase}-journal-renamed`);
+    yield* syncAdmin(admin);
+    yield* step(`${phase}-journal-durable`);
   });
   const step = (name: string) => limits.step?.(name) ?? Effect.void;
   const restore = Effect.fn("WorktreeCleanup.restoreCheckout")(function* (root: string) {
@@ -191,11 +258,70 @@ export const makeCheckout = Effect.gen(function* () {
       Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
     );
     yield* identity(root, admin);
-    // A released tree may have acquired new edits; interrupted mutations retain their original comparison.
-    const before = journal.phase === "released" ? yield* snapshot(root) : journal;
-    yield* save(admin, { ...before, phase: "restoring" });
+    const originals = journal.recoveryFiles ?? journal.files;
+    const current = yield* snapshot(root, Object.keys(originals));
+    const absentSources = new Set(
+      Object.entries(current.files)
+        .filter(([name, hash]) => hash === "missing" && !(name in originals))
+        .map(([name]) => name),
+    );
+    const records = current.status.split("\0");
+    const status: string[] = [];
+    for (let i = 0; i < records.length - 1; i++) {
+      const record = records[i]!;
+      if (record.startsWith(" D ") && absentSources.has(record.slice(3))) {
+        const parts = record.slice(3).split("/");
+        const obstructed = parts
+          .slice(0, -1)
+          .some((_, index) => current.files[parts.slice(0, index + 1).join("/")] !== undefined);
+        if (journal.phase === "released" && !obstructed)
+          return yield* fail(
+            "A tracked file was deleted while sources were absent. Stage or undo the deletion before retrying checkout.",
+          );
+        continue;
+      }
+      if (record.startsWith(" D ") && record.slice(3) in originals)
+        return yield* fail(
+          "A protected tracked file was deleted while sources were absent. Stage or undo the deletion before retrying checkout.",
+        );
+      status.push(record);
+      if (/^[RC]|^.[RC]/.test(record)) status.push(records[++i]!);
+    }
+    const before = {
+      ...current,
+      status: status.length ? `${status.join("\0")}\0` : "",
+      files: Object.fromEntries(
+        Object.entries(current.files).filter(([name]) => !absentSources.has(name)),
+      ),
+    };
+    if (
+      journal.phase !== "released" &&
+      (before.index !== journal.index ||
+        Object.entries(originals).some(([name, hash]) => before.files[name] !== hash))
+    )
+      return yield* fail(
+        "Protected worktree files differ during recovery. Resolve filesystem conflicts and retry; the recovery record is retained.",
+      );
+    const recoveryFiles = Object.fromEntries(
+      Object.keys(originals).map((name) => [name, before.files[name]!]),
+    );
+    yield* save(admin, { ...before, recoveryFiles, phase: "restoring" });
     yield* step("restore-recorded");
     yield* command(root, ["sparse-checkout", "disable"]);
+    if (absentSources.size)
+      yield* command(
+        root,
+        [
+          "--literal-pathspecs",
+          "restore",
+          "--worktree",
+          "--ignore-skip-worktree-bits",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        [0],
+        `${[...absentSources].join("\0")}\0`,
+      );
     yield* step("restore-disabled");
     yield* verify(root, before);
     const tracked = (yield* command(root, ["ls-files", "-t", "-z"])).split("\0").filter(Boolean);
@@ -209,6 +335,7 @@ export const makeCheckout = Effect.gen(function* () {
         }),
     );
     yield* io(() => fs.unlink(journalPath(admin)));
+    yield* syncAdmin(admin);
     yield* step("restore-finished");
   }, Effect.uninterruptible);
   const release = Effect.fn("WorktreeCleanup.releaseCheckout")(function* (
@@ -242,6 +369,8 @@ export const makeCheckout = Effect.gen(function* () {
       "CHERRY_PICK_HEAD",
       "REVERT_HEAD",
       "BISECT_LOG",
+      "sequencer",
+      "SQUASH_MSG",
       "rebase-merge",
       "rebase-apply",
       "index.lock",
@@ -293,22 +422,71 @@ export const makeCheckout = Effect.gen(function* () {
       const fields = attributes.split("\0");
       if (attributes && (!attributes.endsWith("\0") || (fields.length - 1) % 3 !== 0))
         return yield* fail("Incomplete Git attribute list.");
-      if (fields.some((value, index) => index % 3 === 2 && value === "lfs"))
-        return yield* fail("Worktree uses Git LFS.");
+      if (
+        fields.some(
+          (value, index) =>
+            index % 3 === 2 && value !== "unspecified" && value !== "unset" && value !== "",
+        )
+      )
+        return yield* fail("Worktree uses a Git content filter, including Git LFS.");
     }
-    const before = yield* snapshot(root);
+    const safeSnapshot = Effect.fn("WorktreeCleanup.safeSourceCheckout")(function* () {
+      const current = yield* snapshot(root);
+      if (Object.values(current.files).includes("missing"))
+        return yield* fail("Worktree has an unstaged deletion; sources kept.");
+      const ignored = yield* command(root, [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+      ]);
+      if (ignored && !ignored.endsWith("\0")) return yield* fail("Incomplete ignored file list.");
+      const trackedDirectories = new Set(
+        trackedPaths
+          .split("\0")
+          .filter((name) => name.includes("/"))
+          .map((name) => name.split("/")[0]),
+      );
+      if (
+        ignored
+          .split("\0")
+          .some((name) => name.includes("/") && trackedDirectories.has(name.split("/")[0]))
+      )
+        return yield* fail(
+          "Ignored files inside tracked source folders could be removed by Git; sources kept.",
+        );
+      if (current.status.split("\0").some((entry) => entry.startsWith(" A ")))
+        return yield* fail("Worktree has intent-to-add changes; sources kept.");
+      return current;
+    });
+    const before = yield* safeSnapshot();
     const available = yield* io(() => fs.statfs(root));
     yield* save(admin, { ...before, phase: "releasing" });
     yield* step("release-recorded");
+    let mutationStarted = false;
     const result = yield* Effect.gen(function* () {
+      const final = yield* safeSnapshot();
+      if (
+        before.status !== final.status ||
+        before.index !== final.index ||
+        Object.entries(before.files).some(([name, hash]) => final.files[name] !== hash) ||
+        Object.keys(before.files).length !== Object.keys(final.files).length
+      )
+        return yield* fail("Worktree files changed during inspection; sources kept.");
       yield* beforeChange;
+      mutationStarted = true;
       yield* command(root, ["sparse-checkout", "set", "--cone"]);
       yield* step("release-set");
       yield* verify(root, before);
       yield* save(admin, { ...before, phase: "released" });
     }).pipe(Effect.result);
     if (result._tag === "Failure") {
-      yield* restore(root);
+      if (mutationStarted) yield* restore(root);
+      else {
+        yield* io(() => fs.unlink(journalPath(admin)));
+        yield* syncAdmin(admin);
+      }
       return yield* result.failure;
     }
     yield* step("release-finished");
@@ -338,5 +516,5 @@ export const makeCheckout = Effect.gen(function* () {
           Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
         );
   });
-  return { release, restore, state };
+  return { release, restore, state, root };
 });

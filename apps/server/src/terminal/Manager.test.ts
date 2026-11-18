@@ -446,37 +446,59 @@ it.layer(
   ),
   { excludeTestServices: true },
 )("TerminalManager", (it) => {
-  it.effect.each(["shell", "command"] as const)(
-    "restores source before opening a %s terminal",
-    (mode) =>
-      Effect.gen(function* () {
-        const f = yield* fixture;
-        yield* f.write("src/main.txt", "tracked source");
-        yield* f.command(f.worktree, ["add", "src/main.txt"]);
-        yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
-        const checkout = yield* makeCheckout.pipe(
-          Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
-        );
-        yield* checkout.release(f.worktree, f.root);
-        assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
-        class CheckoutPty extends FakePtyAdapter {
-          override spawn(input: PtyAdapter.PtySpawnInput) {
-            return f.fs.readFileString(`${f.worktree}/src/main.txt`).pipe(
-              Effect.tap((text) => Effect.sync(() => assert.equal(text, "tracked source"))),
-              Effect.orDie,
-              Effect.andThen(super.spawn(input)),
-            );
-          }
+  it.effect.each([
+    { mode: "shell", location: "root" },
+    { mode: "command", location: "root" },
+    { mode: "shell", location: "nested" },
+    { mode: "command", location: "nested" },
+    { mode: "shell", location: "missing-nested" },
+    { mode: "shell", location: "aliased-nested" },
+  ])("restores source before opening a $mode terminal from $location", ({ mode, location }) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.write("src/main.txt", "tracked source");
+      yield* f.command(f.worktree, ["add", "src/main.txt"]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      if (location === "nested" || location === "aliased-nested")
+        yield* f.write("src/keep.txt", "untracked note");
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      yield* checkout.release(f.worktree, f.root);
+      assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
+      class CheckoutPty extends FakePtyAdapter {
+        override spawn(input: PtyAdapter.PtySpawnInput) {
+          return f.fs.readFileString(`${f.worktree}/src/main.txt`).pipe(
+            Effect.tap((text) => Effect.sync(() => assert.equal(text, "tracked source"))),
+            Effect.orDie,
+            Effect.andThen(super.spawn(input)),
+          );
         }
-        const { manager } = yield* createManager(5, {
-          gitDriver: f.git,
-          ptyAdapter: new CheckoutPty(),
-        });
-        const input = openInput({ cwd: f.worktree, worktreePath: f.worktree });
-        if (mode === "shell") yield* manager.open(input);
-        else yield* manager.openCommand({ ...input, command: "synthetic" });
-        yield* manager.close({ threadId: input.threadId, terminalId: input.terminalId });
-      }).pipe(Effect.scoped),
+      }
+      const { manager } = yield* createManager(5, {
+        gitDriver: f.git,
+        ptyAdapter: new CheckoutPty(),
+      });
+      const alias = `${f.base}/terminal-alias`;
+      if (location === "aliased-nested") {
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        yield* Effect.promise(() => physical.symlink(f.worktree, alias));
+      }
+      const cwd =
+        location === "root"
+          ? f.worktree
+          : `${location === "aliased-nested" ? alias : f.worktree}/src`;
+      const input = openInput({
+        cwd,
+        ...(location === "root" ? { worktreePath: f.worktree } : {}),
+      });
+      const terminal =
+        mode === "shell"
+          ? yield* manager.open(input)
+          : yield* manager.openCommand({ ...input, command: "synthetic" });
+      assert.equal(terminal.cwd, cwd);
+      yield* manager.close({ threadId: input.threadId, terminalId: input.terminalId });
+    }).pipe(Effect.scoped),
   );
 
   it.effect("spawns lazily and reuses running terminal per thread", () =>
