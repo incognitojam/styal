@@ -52,7 +52,7 @@ and other phone-only settings ignore the filter.
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the
-new-thread list, the command palette, the sidebar project filter, and mobile. In the boring sidebar, pinned projects get the top
+new-thread list, the command palette, the sidebar project filter, and mobile. In the sidebar, pinned projects get the top
 folders, even with no active threads. Pin or unpin a project from its row in any of those lists,
 or press the thread pin shortcut (`mod+shift+p` by default) on the highlighted row. **Pin
 project** in the command palette and **Settings → Projects** work too. A list keeps its order
@@ -65,7 +65,7 @@ back. On mobile, both are in **Settings → Projects → Organize**.
 
 A project on several machines must have every machine connected to pin or archive it.
 
-With [threads grouped by project](./thread-sidebar.md#group-threads-by-project), you can also drag a project's header to pin it, unpin it, or change the order of pinned projects, and right-click the header to archive it. Archived projects' pull requests leave the **Pull requests** page.
+With [project folders](./thread-sidebar.md#project-folders), you can also drag a folder's header to pin it, unpin it, or change the order of pinned projects, and right-click the folder to archive it. Archived projects' pull requests leave the **Pull requests** page.
 
 ## Worktree branch names
 
@@ -313,10 +313,9 @@ coordinator is kept on each machine, not in `styal.json`, and agents cannot set 
 
 With the switch on, each project has a page with its coordinator as the project's chat. Open it with
 **Open project** in the command palette, the project's name in a thread's header, the name on a
-project's folder or on its header when threads are grouped by project, or, in the flat list, the
-chat's own row. Each shows how many of the project's threads are working or need you; in folders
-and grouped headers the chat has no row of its own, and the folder's chevron still opens and closes
-it. **Project settings** links open the page, and its gear
+project's folder, or, in the flat list, the chat's own row. Each shows how many of the project's
+threads are working or need you; in folders the chat has no row of its own, and the folder's
+chevron still opens and closes it. **Project settings** links open the page, and its gear
 button opens the settings. A project without a coordinator shows an empty chat: the first message
 starts a thread in the project's folder, without a worktree, and makes it the coordinator.
 

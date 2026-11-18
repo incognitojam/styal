@@ -188,7 +188,7 @@ describe("client settings hydration", () => {
     });
     await ensureClientSettingsHydrated();
     await flushWrites();
-    const moved = {
+    const moved: ClientSettings = {
       ...DEFAULT_CLIENT_SETTINGS,
       boringSidebarEnabled: true,
       folderSidebarDefaultApplied: true,

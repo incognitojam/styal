@@ -4506,7 +4506,7 @@ features:
       - A turn started by another thread's report never reports to the coordinator on its own, so report wakes cannot cycle.
       - Only the coordinator's thread receives the dispatch-only note, once when it becomes coordinator, and one note when it stops.
       - With the switch on, /projects/<key> is the project page on web and desktop, a one-line header (name, status line of working and need-you threads, machine, New thread, settings) over the coordinator's chat; a project without one gets a draft in its checkout whose first message creates the thread and stores it as the coordinator. With the switch off the route opens the project's settings, as before.
-      - The palette's Open project, a thread header's project name, Project settings links, a folder's name or a grouped sidebar header (each carrying the chat's status dot and the status line, the chat having no row there; the folder chevron still toggles) and the chat's own row open the page; in the flat sidebar that row shows the project's name over the status line and stays in the list while it works, instead of folding into the Working section. The project's settings name the coordinator, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
+      - The palette's Open project, a thread header's project name, Project settings links, a folder's name (carrying the chat's status dot and the status line, the chat having no row there; the folder chevron still toggles) and the chat's own row open the page; in the flat sidebar that row shows the project's name over the status line and stays in the list while it works, instead of folding into the Working section. The project's settings name the coordinator, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
       - The project page's Needs you lists the approvals, questions and report questions of the threads its status line counts as needing you, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads.
     rationale: Upstream's Home (one fleet-wide full-access thread) is open and stale; this scopes the same idea, a setting that holds a thread id, to one project so Home can replace it later.
     implementation_paths:
@@ -4613,7 +4613,7 @@ features:
     prs: [83, 162, 865, 954, 1391]
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
-      - With exactly one logical project selected on web and desktop, the filter shows its name above search and exposes project actions by pointer or keyboard context menu. Pinned, active, Working, snoozed, and settled rows omit the project icon and name, and Active and Working omit project headers. Multiple selections and All projects restore normal labels and headers; hover details, drafts, search results, and project folders retain their project context.
+      - With exactly one logical project selected on web and desktop, the filter shows its name above search and exposes the project folder menu by pointer or keyboard context menu. Pinned, active, Working, snoozed, and settled rows omit the project icon and name. Multiple selections and All projects restore normal labels; hover details, drafts, search results, and project folders retain their project context.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project. With several filtered projects, a thread on screen in any of them keeps its project, the first filtered project in list order replaces the fallback default, and the sidebar button opens the project picker instead of creating directly.
       - Mobile New thread buttons prefer the filtered project over another open thread; the contextual keyboard shortcut prefers the open thread. The last valid project is the automatic fallback when neither supplies one; there is no reuse setting, and old saved opt-outs are ignored. Connected, unarchived copies win within a filtered group, preserving the current or remembered copy when connected. Saved drafts retain their own project.
     implementation_paths:
@@ -6581,6 +6581,38 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9759
       retire_when: Upstream keeps read Approval rows at full prominence, as it already does for Input rows.
 
+  - id: sidebar-folder-default
+    title: Project folders are the default sidebar, chosen outside Labs
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - On web and desktop, project folders are the sidebar's default layout. Settings → General → Sidebar → Sidebar layout chooses Project folders or Flat list for this device, with Two-line folder rows under it while folders are chosen; Labs has no folder switch. The stored key stays upstream's `boringSidebarEnabled`.
+      - Each device moves to project folders once, on its first load of a build with this change, whatever layout it showed, because a stored flat list cannot be told from an untouched default. The move is recorded on the device, so later choices stay, reloads and second runs change nothing, and each other device moves on its own first load.
+      - A device that showed the removed "Group threads by project" headers with a saved project order gets Project order set to Manual in the same move, so its folders keep that order. Devices that already showed folders, or had no saved order, keep their Project order.
+    rationale: Maintainer decision of 2026-11-18, one grouped sidebar instead of two, with folders for everyone and the flat list kept as a choice. Upstream keeps folders off behind its Labs switch.
+    implementation_paths:
+      - apps/web/src/components/settings/LabsSettingsPanel.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/hooks/folderSidebarMove.ts
+      - apps/web/src/hooks/useSettings.ts
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/web/src/components/settings/LabsSettingsPanel.tsx
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/hooks/useSettings.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/web/src/hooks/folderSidebarMove.test.ts
+      - apps/web/src/hooks/useSettings.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/6927cfe2adb0867eb098009a5eb35e42da2b13a1/apps/web/src/components/settings/LabsSettingsPanel.tsx
+      retire_when: Upstream makes project folders its default layout outside Labs and keeps the flat list as an option.
+
   - id: sidebar-last-message-time
     title: Choose the timestamp shown for thread activity
     status: maintained
@@ -6633,26 +6665,16 @@ features:
       retire_when: Upstream labels thread rows and command palette actions using the latest chat message timestamp across web and mobile without letting non-message updates reset the clock.
 
   - id: sidebar-project-thread-groups
-    title: Group active sidebar threads under project headers
+    title: Project folders drag, pin and archive like the old grouped headers, and mobile groups threads by project
     status: maintained
     tier: keep
     prs: [533, 546, 585, 745, 1586, 1592, 1595]
     invariants:
-      - Settings → General → Sidebar → Group threads by project is off by default; when off, active threads stay one flat list.
-      - With the boring sidebar (Settings → Labs) on, its project folders take the place of these headers on web and desktop; the setting keeps its value and applies again when the boring sidebar is off.
-      - While the boring sidebar's folders show, threads drag between the folders, Pinned and Settled, Snoozed threads drag back out, and pinned threads reorder, with the same drop rules and saved results as the flat list. Folders keep upstream's latest-message order, so a thread dropped into them lands in its own folder by its latest message and folder rows never reorder by drag. Folder headers move with the rows during a drag; a folder that stays without rows keeps its header.
-      - Folders put pinned projects first in their shared pin order, with a pin icon, and the rest in the Project order setting's order. Dragging a folder header moves the project and saves the order on the device, switching Project order to Manual when the drop leaves unpinned folders out of the setting's order; dragging it across the "Pinned projects above" divider pins or unpins it and saves the pin order, as dragging a grouped header does. Archived folders stay last and cannot be dragged. While the last row of the only folder is dragged out, the dashed Active target shows as in the flat list.
-      - A folder header's menu has every item a grouped header's menu has (New thread, filtering to the project or showing all projects except on an archived project's folder, Pin or Unpin, Archive with Undo where every machine with the project supports project organization (Unarchive on an archived project's folder), Copy path with a choice per checkout for a project on several machines, and Project settings). New thread from a folder starts on the checkout of the open thread when it belongs to the project, as from a grouped header.
-      - On mobile, Settings → Organization → Group threads by project is a per-device preference, off by default. The phone list and the tablet sidebar group active and Working threads under headers with the project icon, name and a pin icon for pinned projects, using the same project order rules as web. Move up and Move down step past the neighbouring thread in the same project. Mobile headers are not interactive, and the Arrange threads sheet stays one list.
-      - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
-      - With grouping and the Working section on, Working threads sit under non-draggable headers per logical project, ordered by the saved project order and then the project list, so sending work never reorders projects. Within a project they keep newest-send-first order.
-      - On web and desktop, a project group whose threads in that section all lack branches uses 36px one-line rows; if any of them has a branch, every row in that group keeps the two-line layout. Active and Working groups decide this separately. Turning grouping off restores the flat list layout.
-      - One-line grouped rows retain the title, pull request badge or terminal status, status/time and hover actions, and trailing machine/provider icons, using existing thread branch data without additional WebSocket payloads or git status lookups.
-      - A dragged thread reorders only within its own project and never moves a project, including the first reorder that assigns manual thread keys and the optimistic placement while those writes arrive. Dragging a project header moves the whole project, and that order persists in the client's manual project order.
-      - Projects without a saved position follow their newest created or reopened active thread independently of manual thread keys.
-      - Pinned projects lead the grouped Active and Working lists in their shared pin order, ahead of the saved project order, and their headers show a pin icon. A zero-height divider follows the pinned projects' groups and shows a "Pinned projects above" label only while a header is dragged. Dropping a header above it pins the project at that slot, dropping it below unpins it, and moving it among pinned projects saves the pin order through the shared project write hook; pinned projects without active threads keep their place relative to the pinned projects around the drop. The new placement shows at once and holds until the projects match it or the write fails.
-      - Group headers open project actions on right-click or the keyboard context-menu shortcut to start a thread in that project, toggle its filter, pin or unpin it, archive it, copy a checkout path, or open Project Settings. Pin and archive appear only when every machine with the project supports project organization. New threads preserve the current environment when it belongs to the group; grouped paths are selectable per checkout.
-    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists. Upstream's pin and archive has no drag order, so the fork keeps `pinOrderKey` on the project record (fork migration 11's column, the update payload and `useProjectPinOrder`) for ordering these headers and folders; a pin from any menu takes the slot after the pinned projects, as a grouped header's Pin does, and project pickers follow upstream's order.
+      - While project folders show, threads drag between the folders, Pinned and Settled, Snoozed threads drag back out, and pinned threads reorder, with the same drop rules and saved results as the flat list. Folders keep upstream's latest-message order, so a thread dropped into them lands in its own folder by its latest message and folder rows never reorder by drag. Folder headers move with the rows during a drag; a folder that stays without rows keeps its header.
+      - Folders put pinned projects first in their shared pin order, with a pin icon, and the rest in the Project order setting's order. Dragging a folder header moves the project and saves the order on the device, switching Project order to Manual when the drop leaves unpinned folders out of the setting's order; dragging it across the "Pinned projects above" divider pins or unpins it and saves the pin order. Archived folders stay last and cannot be dragged. While the last row of the only folder is dragged out, the dashed Active target shows as in the flat list.
+      - A folder header's menu offers New thread, filtering to the project or showing all projects except on an archived project's folder, Pin or Unpin, Archive with Undo where every machine with the project supports project organization (Unarchive on an archived project's folder), Copy path with a choice per checkout for a project on several machines, and Project settings. New thread from a folder starts on the checkout of the open thread when it belongs to the project. Right-clicking the project filter's name, while one project is selected, opens the same menu.
+      - On mobile, Settings → Organization → Group threads by project is a per-device preference, off by default. The phone list and the tablet sidebar group active and Working threads under headers with the project icon, name and a pin icon for pinned projects, with pinned projects first in their shared pin order, then the saved project order. Move up and Move down step past the neighbouring thread in the same project. Mobile headers are not interactive, and the Arrange threads sheet stays one list.
+    rationale: The fork's "Group threads by project" headers were removed from web and desktop on 2026-11-18 in favour of upstream's project folders, which carry the fork's drags, pins and menu items listed here; mobile keeps its own grouping until upstream's mobile folders arrive. Upstream's pin and archive has no drag order, so the fork keeps `pinOrderKey` on the project record (fork migration 11's column, the update payload and `useProjectPinOrder`) for ordering folders; a pin from any menu takes the slot after the pinned projects, and project pickers follow upstream's order.
     implementation_paths:
       - apps/mobile/src/features/home/HomeScreen.tsx
       - apps/mobile/src/features/home/homeThreadList.ts
@@ -6665,10 +6687,7 @@ features:
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/components/sidebar/SidebarListMarkers.tsx
-      - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/hooks/useProjectGroupUpdate.ts
       - apps/web/src/hooks/useProjectPinOrder.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
@@ -6679,8 +6698,6 @@ features:
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - packages/contracts/src/settings.ts
@@ -6690,15 +6707,13 @@ features:
       - apps/web/src/components/Sidebar.browser.test.tsx
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
-      - apps/web/src/components/sidebar/SidebarListMarkers.browser.test.tsx
-      - e2e/tests/sidebar-project-groups.e2e.ts
       - packages/client-runtime/src/state/projectOrganization.test.ts
       - packages/client-runtime/src/state/threadProjectGroups.test.ts
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/pull/13815
-      retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
+        - https://github.com/pingdotgg/t3code/pull/34729
+      retire_when: Upstream's project folders drag threads between sections, reorder, pin and unpin projects by dragging their headers, archive and unarchive from the folder menu with a per-checkout Copy path, and upstream's mobile app groups active threads by project.
 
   - id: simulator-memory-profiles
     title: Apply project memory modes at simulator startup

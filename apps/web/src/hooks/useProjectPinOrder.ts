@@ -18,7 +18,7 @@ type OrganizedGroup = Pick<
 >;
 type GroupResult = AtomCommandResult<void, unknown>;
 
-/** Writes behind the grouped sidebar's project headers, which keep a shared order for pins. */
+/** Writes behind the project folders' headers, which keep a shared order for pins. */
 export function useProjectPinOrder() {
   const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
 

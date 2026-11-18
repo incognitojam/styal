@@ -297,16 +297,15 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   shown without rearranging threads. Compared with
   [T3 Code revision d2c9281](https://github.com/pingdotgg/t3code/tree/d2c9281b8112dc3b2991642c4bdb985e4b08b9bb),
   which shows the last user message without this choice. [Working with threads](./thread-sidebar.md).
-- **Pin and archive projects from grouped headers.** T3 Code also has project pins and archives. With threads grouped by project, styal adds dragging a header to pin it, unpin it, or change the order of pinned projects, and archiving from the header menu with **Undo**. Archived projects' pull requests also leave the **Pull requests** page. Compared with
-  [T3 Code revision ffaa1db](https://github.com/pingdotgg/t3code/tree/ffaa1dba76d86c073533055e48d7f8f015c8a7b7),
-  which keeps pins in your project sort order and lists archived projects' pull requests.
-  [Pin and archive projects](./project-settings.md#pin-and-archive-projects).
-- **Threads grouped by project.** An optional setting lists active threads under a header for
-  each project, and dragging a header reorders projects. Compared with
-  [T3 Code revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),
-  checked October 1, 2026, which shows active threads as one list; an open pull request
-  ([#13815](https://github.com/pingdotgg/t3code/pull/13815)) proposes collapsible, title-only
-  groups instead. [Group threads by project](./thread-sidebar.md#group-threads-by-project).
+- **Project folders by default.** On web and desktop the sidebar puts active threads in a folder
+  for each project, and **Settings → General → Sidebar layout** switches to the flat list. Dragging
+  a folder header moves the project, or pins, unpins, or reorders pinned projects; the folder menu
+  also archives a project with **Undo**, and archived projects' pull requests leave the **Pull
+  requests** page. Compared with
+  [T3 Code revision 6927cfe](https://github.com/pingdotgg/t3code/tree/6927cfe2adb0867eb098009a5eb35e42da2b13a1),
+  checked November 18, 2026, which keeps folders off behind **Settings → Labs**, without folder
+  dragging or archiving, and lists archived projects' pull requests.
+  [Project folders](./thread-sidebar.md#project-folders).
 - **Compact single-project filters.** On web and desktop, selecting one project names it above search and removes repeated project labels and section headers. Selecting several projects or All projects restores them. Compared with [T3 Code revision d5fc29f](https://github.com/pingdotgg/t3code/tree/d5fc29fe5cb62db68bfbf824cfabe0ae94ac6ac4), checked November 7, 2026, which repeats the project on thread cards. [Filter by project](./thread-sidebar.md#filter-by-project).
 - **Proactive panels by default.** Newly linked reviews open automatically, and completed agent work
   switches to its diff. You can turn this off in Settings. Compared with

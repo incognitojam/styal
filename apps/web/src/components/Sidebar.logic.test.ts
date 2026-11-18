@@ -1132,71 +1132,6 @@ describe("sortPinnedThreadsForSidebar", () => {
   });
 });
 
-describe("drops into project-grouped active threads", () => {
-  const row = (key: string, section: SidebarSection, group: string): SidebarListItem => ({
-    kind: "thread",
-    key,
-    section,
-    group,
-  });
-  const header = (group: string): SidebarListItem => ({ kind: "project-header", group });
-  // Pinned p1 (B) | Active: A a1 a2, B b1 b2
-  const items: readonly SidebarListItem[] = [
-    { kind: "marker", marker: "pinned-header" },
-    row("p1", "pinned", "B"),
-    { kind: "marker", marker: "pinned-divider" },
-    { kind: "marker", marker: "active-placeholder" },
-    header("A"),
-    row("a1", "active", "A"),
-    row("a2", "active", "A"),
-    header("B"),
-    row("b1", "active", "B"),
-    row("b2", "active", "B"),
-    { kind: "marker", marker: "settled-header" },
-    { kind: "marker", marker: "settled-placeholder" },
-  ];
-  const activeOrder = (activeKey: string, overId: string) =>
-    resolveSidebarDropTarget(items, activeKey, overId)?.activeOrder;
-
-  it("reorders within a project", () => {
-    expect(activeOrder("a2", "a1")).toEqual(["a2", "a1", "b1", "b2"]);
-  });
-
-  it("keeps a row dropped among another project's rows in its own project", () => {
-    expect(activeOrder("b2", "a2")).toEqual(["a1", "a2", "b2", "b1"]);
-    expect(activeOrder("p1", "a2")).toEqual(["a1", "a2", "p1", "b1", "b2"]);
-  });
-
-  it("never moves a project when a row is dropped above it", () => {
-    expect(activeOrder("b2", sidebarListItemId(header("A")))).toEqual(["a1", "a2", "b2", "b1"]);
-  });
-
-  it("plans order keys within the moved row's project", () => {
-    // Stored keys interleave the projects; the header order clusters them.
-    const activeKeysById = new Map<string, string | null>([
-      ["a1", "c"],
-      ["b1", "f"],
-      ["a2", "m"],
-      ["b2", "t"],
-    ]);
-    const target = resolveSidebarDropTarget(items, "a2", "a1")!;
-    expect(target.activeGroupOrder).toEqual(["a2", "a1"]);
-    const result = planSidebarThreadDrop({
-      activeKey: "a2",
-      activeSection: "active",
-      target,
-      pinnedOrder: ["p1"],
-      pinnedKeysById: new Map([["p1", "f"]]),
-      activeOrder: ["a1", "a2", "b1", "b2"],
-      activeKeysById,
-    });
-    if (result.kind !== "move-active") throw new Error(`unexpected ${result.kind}`);
-    expect(result.assignments).toHaveLength(1);
-    expect(result.assignments[0]!.id).toBe("a2");
-    expect(result.assignments[0]!.orderKey < "c").toBe(true);
-  });
-});
-
 describe("resolveSidebarProjectDrop", () => {
   const row = (key: string, section: SidebarSection, group?: string): SidebarListItem =>
     group === undefined
@@ -1634,7 +1569,6 @@ describe("Working shelf (beta)", () => {
         rows: ReturnType<typeof thread>[];
         moved: ReturnType<typeof thread>;
         order: ReturnType<typeof thread>[];
-        groupOrder?: ReturnType<typeof thread>[];
         from?: "active" | "pinned";
         connectedEnvironmentIds?: EnvironmentId[];
       }) => {
@@ -1657,7 +1591,6 @@ describe("Working shelf (beta)", () => {
             section: input.section,
             pinnedOrder: targetOrder,
             activeOrder: targetOrder,
-            ...(input.groupOrder ? { activeGroupOrder: input.groupOrder.map(keyOf) } : {}),
           },
           pinnedOrder: originalOrder,
           activeOrder: originalOrder,
@@ -1824,39 +1757,6 @@ describe("Working shelf (beta)", () => {
           expect(result.plan).toEqual({ kind: "none" });
         },
       );
-
-      it("plans a grouped drop within its project around offline rows", () => {
-        const neighbor = thread("neighbor");
-        const elsewhere = { section: "active" as const, moved: online };
-        const otherProject = planDrop({
-          ...elsewhere,
-          rows: [offline, neighbor, online],
-          order: [online, neighbor, offline],
-          groupOrder: [online, neighbor],
-        });
-        expect(otherProject.plan.kind).toBe("move-active");
-        expect(otherProject.assignments.map(({ id }) => id).toSorted()).toEqual(
-          [keyOf(neighbor), keyOf(online)].toSorted(),
-        );
-
-        const sameProject = planDrop({
-          ...elsewhere,
-          rows: [offline, neighbor, online],
-          order: [neighbor, offline, online],
-          groupOrder: [neighbor, offline, online],
-        });
-        expect(sameProject.plan).toEqual({ kind: "none" });
-
-        const allOnline = planDrop({
-          ...elsewhere,
-          rows: [offline, neighbor, online],
-          order: [neighbor, offline, online],
-          groupOrder: [neighbor, offline, online],
-          connectedEnvironmentIds: [onlineEnvironmentId, offlineEnvironmentId],
-        });
-        expect(allOnline.plan.kind).toBe("move-active");
-        expect(allOnline.assignments.map(({ id }) => id)).toContain(keyOf(offline));
-      });
     });
 
     it("only changes lifecycle when the inbox is time-ordered", () => {

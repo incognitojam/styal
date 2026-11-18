@@ -13,11 +13,7 @@ export function useSidebarProjectGroups() {
   return useSidebarProjectGroupSources().groups;
 }
 
-/**
- * The sidebar's project groups with what they are built from: the saved project order, the
- * projects in that order, and the groups before sorting. The sidebar's project headers for
- * active threads rank and reorder groups from these.
- */
+/** The sidebar's project groups with the projects in saved order and the groups before sorting. */
 export function useSidebarProjectGroupSources() {
   const projects = useProjects();
   // Activity order lags a running thread's streaming ticks until its next
@@ -54,5 +50,5 @@ export function useSidebarProjectGroupSources() {
     sortOrder,
     delegatedUnderParent,
   );
-  return { projectOrder, orderedProjects, unsortedGroups, groups };
+  return { orderedProjects, unsortedGroups, groups };
 }

@@ -40,7 +40,7 @@ function layout(
     const height =
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
-        : item.kind === "project-header" || item.kind === "working-project-header"
+        : item.kind === "project-header"
           ? headerHeight * scale
           : item.marker === "pinned-header" ||
               item.marker === "pinned-divider" ||
@@ -903,7 +903,7 @@ describe("sidebar drag projection", () => {
   });
 });
 
-describe("project-grouped drag projection", () => {
+describe("project header drag projection", () => {
   const row = (key: string, group: string): SidebarListItem => ({
     kind: "thread",
     key,
@@ -945,44 +945,6 @@ describe("project-grouped drag projection", () => {
       .map(({ id }) => id);
   };
 
-  it("reserves a two-line slot for a grouped card when pinned cards are taller", () => {
-    const withPin = [pinnedHeader, thread("p", "pinned"), divider, ...items.slice(2)];
-    const args = layout(withPin, "a2", "a1");
-    // Pinned cards are three lines; grouped active cards are two.
-    let top = 100;
-    const rects = withPin.map((item) => {
-      const height =
-        item.kind === "thread"
-          ? item.section === "pinned"
-            ? 82
-            : item.section === "active"
-              ? 60
-              : 36
-          : item.kind === "project-header"
-            ? 24
-            : item.kind === "marker" && item.marker === "settled-header"
-              ? 32
-              : 0;
-      const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
-      top += height + 1;
-      return rect;
-    });
-    const strategy = createSidebarSortingStrategy({
-      items: withPin,
-      settledOrder: [],
-      settledExpanded: true,
-    });
-    const a1 = withPin.findIndex((item) => sidebarListItemId(item) === "a1");
-    // a1 moves down by exactly the lifted grouped card's slot.
-    expect(strategy({ ...args, rects, index: a1 })?.y).toBe(61);
-  });
-
-  it("keeps project order when a row is dropped above another project", () => {
-    const headerA = sidebarListItemId(header("A"));
-    const headerB = sidebarListItemId(header("B"));
-    expect(projectedTops("b2", headerA)).toEqual([headerA, "a1", "a2", headerB, "b1"]);
-  });
-
   it("collapses a lifted project's rows and opens its slot between projects", () => {
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));
@@ -1020,11 +982,6 @@ describe("project-grouped drag projection", () => {
     expect(result.get("z1")?.y).toBe(-166);
   });
 
-  it("keeps a row hovered over another project in its own project", () => {
-    const headerA = sidebarListItemId(header("A"));
-    const headerB = sidebarListItemId(header("B"));
-    expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
-  });
   describe("with folders", () => {
     const pin = (key: string, group: string): SidebarListItem => ({
       kind: "thread",
@@ -1180,56 +1137,6 @@ describe("project-grouped drag projection", () => {
         expect(result.get("b1")?.y).toBe(shift);
       },
     );
-  });
-
-  describe("with a grouped Working shelf", () => {
-    const workingHeader = (group: string): SidebarListItem => ({
-      kind: "working-project-header",
-      group,
-    });
-    const workingRow = (key: string, group: string): SidebarListItem => ({
-      kind: "thread",
-      key,
-      section: "working",
-      group,
-    });
-    const withWorking = [
-      ...items.slice(0, -2),
-      marker("working-header"),
-      workingHeader("B"),
-      workingRow("wb", "B"),
-      workingHeader("A"),
-      workingRow("wa", "A"),
-      ...items.slice(-2),
-    ];
-    const shelfIds = [
-      sidebarMarkerId("working-header"),
-      sidebarListItemId(workingHeader("B")),
-      "wb",
-      sidebarListItemId(workingHeader("A")),
-      "wa",
-    ];
-    const input = { items: withWorking, settledOrder: [], settledExpanded: true };
-
-    it("keeps the shelf's project headers in place while an active row moves", () => {
-      const result = preview(input, "a2", "a1");
-      expect(result.get("a1")?.y).toBe(83);
-      for (const id of shelfIds) expect(result.get(id)).toEqual(stationary);
-    });
-
-    it("moves the shelf as a block when a project header moves", () => {
-      const headerA = sidebarListItemId(header("A"));
-      const result = preview(input, headerA, "b2");
-      const shelf = shelfIds.map((id) => result.get(id));
-      expect(shelf.every((transform) => transform?.scaleY === 1)).toBe(true);
-      expect(new Set(shelf.map((transform) => transform?.y)).size).toBe(1);
-    });
-
-    it("never takes a drop on a Working project header", () => {
-      expect(
-        resolveSidebarDropTarget(withWorking, "a1", sidebarListItemId(workingHeader("A"))),
-      ).toBeNull();
-    });
   });
 });
 
