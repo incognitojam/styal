@@ -3642,6 +3642,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {composerSuggestionsVisible && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
                   <ComposerCommandMenu
+                    notice={
+                      gitCwd &&
+                      (composerTriggerKind === "skill" ||
+                        composerTriggerKind === "slash-command" ||
+                        composerTriggerKind === "path") ? (
+                        <SourceCheckoutNotice
+                          environmentId={environmentId}
+                          cwd={gitCwd}
+                          context={composerTriggerKind === "path" ? "files" : "skills"}
+                        />
+                      ) : null
+                    }
                     listId={composerSuggestionListId}
                     items={composerMenuItems}
                     resolvedTheme={resolvedTheme}
@@ -3937,3 +3949,4 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     </form>
   );
 });
+import { SourceCheckoutNotice } from "../SourceCheckoutNotice";

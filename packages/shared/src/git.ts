@@ -385,6 +385,7 @@ function toRemoteStatusPart(status: VcsStatusResult): VcsStatusRemoteResult {
 
 function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
   return {
+    ...(status.sourceCheckout ? { sourceCheckout: status.sourceCheckout } : {}),
     ...(status.autoPull ? { autoPull: status.autoPull } : {}),
     isRepo: status.isRepo,
     ...(status.sourceControlProvider

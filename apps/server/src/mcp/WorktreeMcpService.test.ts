@@ -321,6 +321,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
           listRefs,
           listLocalBranchNames,
           localStatus,
+          sourceCheckoutState: () => Effect.undefined,
           fetchWorktreeBaseCommit,
           createWorktree,
           removeWorktree,
@@ -712,24 +713,29 @@ describe("t3_worktree_handoff", () => {
 });
 
 describe("t3_worktree_status", () => {
-  it.effect("reports an attached thread's worktree and branch", () => {
-    const harness = makeHarness({
-      thread: {
-        worktreePath: "/worktrees/project/existing",
-        branch: "feature/existing",
-      },
-      projectNewWorktreesStartFromOrigin: true,
-    });
-    return Effect.gen(function* () {
-      const result = yield* runStatus(harness);
-      expect(result).toMatchObject({
-        attached: true,
-        worktreePath: "/worktrees/project/existing",
-        branch: "feature/existing",
-        defaultStartFromOrigin: true,
+  it.effect.each(["released", "recovery-required"] as const)(
+    "reports an attached thread's source checkout state: %s",
+    (state) => {
+      const harness = makeHarness({
+        git: { sourceCheckoutState: () => Effect.succeed(state) },
+        thread: {
+          worktreePath: "/worktrees/project/existing",
+          branch: "feature/existing",
+        },
+        projectNewWorktreesStartFromOrigin: true,
       });
-    });
-  });
+      return Effect.gen(function* () {
+        const result = yield* runStatus(harness);
+        expect(result).toMatchObject({
+          attached: true,
+          worktreePath: "/worktrees/project/existing",
+          branch: "feature/existing",
+          defaultStartFromOrigin: true,
+          sourceCheckout: state,
+        });
+      });
+    },
+  );
 });
 
 describe("t3_worktree_list", () => {

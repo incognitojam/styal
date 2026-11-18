@@ -1,5 +1,6 @@
 import { useSidebarWorkspaceTabs } from "../layout/workspace/useSystemWorkspaceTabBar";
 import { Button } from "../../components/ui/Button";
+import { SourceCheckoutNotice } from "../../components/SourceCheckoutNotice";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -850,9 +851,25 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         {props.draftControls}
         {!isSubmissionLocked &&
         composerMenu.trigger &&
-        (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
+        (composerMenu.items.length > 0 ||
+          composerMenu.trigger.kind === "pull-request" ||
+          composerMenu.trigger.kind === "skill" ||
+          composerMenu.trigger.kind === "slash-command" ||
+          composerMenu.trigger.kind === "path") ? (
           <ComposerPopoverAnchor>
             <ComposerCommandPopover
+              notice={
+                props.projectCwd &&
+                (composerMenu.trigger.kind === "skill" ||
+                  composerMenu.trigger.kind === "slash-command" ||
+                  composerMenu.trigger.kind === "path") ? (
+                  <SourceCheckoutNotice
+                    environmentId={props.environmentId}
+                    cwd={props.projectCwd}
+                    context={composerMenu.trigger.kind === "path" ? "files" : "skills"}
+                  />
+                ) : null
+              }
               items={composerMenu.items}
               triggerKind={composerMenu.trigger.kind}
               isLoading={composerMenu.isLoading}

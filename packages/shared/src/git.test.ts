@@ -285,6 +285,7 @@ describe("applyGitStatusStreamEvent", () => {
 
   it("preserves local-only fields when applying a remote update", () => {
     const current: VcsStatusResult = {
+      sourceCheckout: "released",
       isRepo: true,
       sourceControlProvider: {
         kind: SourceControlProviderKind.make("github"),
@@ -320,6 +321,11 @@ describe("applyGitStatusStreamEvent", () => {
       behindCount: 1,
       pr: null,
     });
+    const { sourceCheckout: _sourceCheckout, ...checkedOut } = current;
+    expect(
+      applyGitStatusStreamEvent(current, { _tag: "localUpdated", local: checkedOut })
+        .sourceCheckout,
+    ).toBeUndefined();
   });
 
   it("keeps an unborn repository unborn across a remote update", () => {

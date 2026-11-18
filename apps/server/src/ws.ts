@@ -3090,6 +3090,16 @@ export const layerWsRpc = (
             .pipe(Effect.map((cancelled) => ({ cancelled }))),
         [WS_METHODS.vcsRefreshStatus]: (input) =>
           vcsStatusBroadcaster.refreshStatus(input.cwd, { localOnly: input.localOnly ?? false }),
+        [WS_METHODS.gitCheckOutSources]: (input) =>
+          gitWorkflow
+            .checkOutSources(input)
+            .pipe(
+              Effect.tap(() =>
+                vcsStatusBroadcaster
+                  .refreshStatus(input.cwd, { localOnly: true })
+                  .pipe(Effect.ignore({ log: true })),
+              ),
+            ),
         [WS_METHODS.vcsPull]: (input) =>
           gitWorkflow.pullCurrentBranch(input.cwd).pipe(
             Effect.matchCauseEffect({

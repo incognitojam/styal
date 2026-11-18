@@ -1099,6 +1099,7 @@ function ThreadRouteContent(
                 }
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
+                cwd={selectedThreadCwd}
                 inspectorMode={inspectorMode}
                 onOpenFilesInspector={handleOpenFilesInspector}
                 onReturnToThread={props.onReturnToThread}

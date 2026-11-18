@@ -1342,6 +1342,14 @@ export default function FilePreviewPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      {!attachment && !isHostFile ? (
+        <SourceCheckoutNotice
+          environmentId={environmentId}
+          cwd={cwd}
+          context="files"
+          onCheckedOut={file.refresh}
+        />
+      ) : null}
       {breadcrumbPath !== null && breadcrumbTrail !== null ? (
         <div className={FILE_SURFACE_SUBHEADER_CLASS} data-surface-subheader>
           <ScrollArea
@@ -1802,3 +1810,4 @@ export function WorkspaceLargeTextPreview(props: {
     </>
   );
 }
+import { SourceCheckoutNotice } from "../SourceCheckoutNotice";

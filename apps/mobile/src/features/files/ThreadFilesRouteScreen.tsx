@@ -17,6 +17,7 @@ import { mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { SourceCheckoutNotice } from "../../components/SourceCheckoutNotice";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { DelimitedFilePreview } from "./DelimitedFilePreview";
 import { AudioFilePreview } from "./AudioFilePreview";
@@ -582,6 +583,12 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         onBack={handleReturnToThread}
       />
       <ScreenContent>
+        <SourceCheckoutNotice
+          environmentId={environmentId}
+          cwd={cwd}
+          context="files"
+          onCheckedOut={entriesQuery.refresh}
+        />
         <FileTreeBrowser
           key={JSON.stringify([environmentId, cwd])}
           revealSelection={entriesQuery.revealSelection}
@@ -984,6 +991,12 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           onBack={handleBack}
         />
         <ScreenContent>
+          <SourceCheckoutNotice
+            environmentId={environmentId}
+            cwd={cwd}
+            context="files"
+            onCheckedOut={entriesQuery.refresh}
+          />
           <FileTreeBrowser
             key={JSON.stringify([environmentId, directoryPath])}
             revealSelection={entriesQuery.revealSelection}
@@ -1025,6 +1038,15 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         actions={fileMenuActions}
       />
       <ScreenContent>
+        <SourceCheckoutNotice
+          environmentId={environmentId}
+          cwd={cwd}
+          context="files"
+          onCheckedOut={() => {
+            fileQuery.refresh();
+            handleRetryPreview();
+          }}
+        />
         <FileContent
           key={previewKey}
           activeMode={resolvedActiveMode}

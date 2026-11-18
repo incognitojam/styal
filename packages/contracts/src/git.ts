@@ -232,6 +232,7 @@ export const AutoPullOutcome = Schema.Struct({
 export type AutoPullOutcome = typeof AutoPullOutcome.Type;
 
 const VcsStatusLocalShape = {
+  sourceCheckout: Schema.optional(Schema.Literals(["released", "recovery-required"])),
   autoPull: Schema.optional(
     Schema.Struct({
       enabled: Schema.Boolean,
