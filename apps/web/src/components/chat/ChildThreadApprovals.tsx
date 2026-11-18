@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type ProviderApprovalDecision,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import type { ChildThreadApproval } from "@t3tools/client-runtime/state/thread-requests";
 import { fullAccessOverrideExplanation } from "@t3tools/client-runtime/state/thread-requests";
 import {
@@ -12,7 +16,16 @@ import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
-function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
+/** `bare` leaves out the frame and heading, for a row that already names the thread. */
+export function ChildApproval({
+  entry,
+  bare = false,
+  onResponded,
+}: {
+  entry: ChildThreadApproval;
+  bare?: boolean;
+  onResponded?: (decision: ProviderApprovalDecision) => void;
+}) {
   const canRespond = useEnvironmentScope(entry.thread.environmentId, AuthOrchestrationOperateScope);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
   const [responding, setResponding] = useState(false);
@@ -21,9 +34,9 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
   return (
     <section
       aria-label={`Approval from ${entry.title}`}
-      className="rounded-lg border border-border bg-background p-3 text-xs"
+      className={bare ? "text-xs" : "rounded-lg border border-border bg-background p-3 text-xs"}
     >
-      <p className="mb-2 font-medium">Approval needed from {entry.title}</p>
+      {bare ? null : <p className="mb-2 font-medium">Approval needed from {entry.title}</p>}
       <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono">
         {approval.detail || approval.requestKind}
       </pre>
@@ -54,7 +67,8 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
               environmentId: entry.thread.environmentId,
               input: { threadId: entry.thread.threadId, requestId, decision },
             });
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            if (result._tag === "Success") onResponded?.(decision);
+            else if (!isAtomCommandInterrupted(result)) {
               const failure = squashAtomCommandFailure(result);
               setError(
                 failure instanceof Error ? failure.message : "Failed to submit approval decision.",

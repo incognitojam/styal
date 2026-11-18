@@ -20,6 +20,8 @@ export interface ProjectPage {
   /** `environmentId:threadId` of the chat, once it exists. */
   readonly chatThreadKey: string | null;
   readonly statusLine: string | null;
+  /** The threads the status line counts as needing you. */
+  readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
 }
 
 /** Every project with a page (project coordinators on in Labs), by its logical project key. */
@@ -51,6 +53,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       chatThreadKey:
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
       statusLine: null,
+      needYou: [],
     });
   }
   if (pages.size === 0) return pages;
@@ -63,10 +66,12 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     else threadsByPage.set(projectKey, [thread]);
   }
   for (const [projectKey, page] of pages) {
-    const statusLine = formatProjectStatusLine(
-      countProjectThreads(threadsByPage.get(projectKey) ?? [], page.chatThreadKey),
-    );
-    pages.set(projectKey, { ...page, statusLine });
+    const counts = countProjectThreads(threadsByPage.get(projectKey) ?? [], page.chatThreadKey);
+    pages.set(projectKey, {
+      ...page,
+      statusLine: formatProjectStatusLine(counts),
+      needYou: counts.needYou,
+    });
   }
   return pages;
 }

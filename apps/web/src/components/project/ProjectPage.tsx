@@ -127,6 +127,7 @@ function ProjectChat({ page }: { page: ProjectPageState }) {
     project: page.group,
     name: page.group.displayName,
     statusLine: page.statusLine,
+    needYou: page.needYou,
     machine:
       environmentLabel === undefined
         ? null

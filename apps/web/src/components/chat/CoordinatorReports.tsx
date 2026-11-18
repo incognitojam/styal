@@ -13,6 +13,15 @@ import { Button } from "../ui/button";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  type AnsweredNeed,
+  AnsweredNeedRow,
+  ProjectNeedRow,
+  useProjectNeeds,
+} from "../project/ProjectNeedsYou";
+
+const NO_PROJECT_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
 
 export type ReportReference = { messageId: MessageId; key: string; version: number };
 export type ReportState = ReturnType<
@@ -94,32 +103,18 @@ export function ReportAnswerBar({
           {sendError}
         </p>
       ) : null}
-      {tag.answers?.map((answer, index) => (
-        <button
-          key={answer}
-          type="button"
-          disabled={disabled}
-          className={cn(
-            "flex w-full cursor-pointer items-start gap-2 rounded-md border px-3 py-1.5 text-left hover:bg-accent/60 disabled:cursor-default disabled:opacity-64",
-            index === 0 ? "border-primary/50 bg-primary/8" : "border-input bg-background/40",
-          )}
-          onClick={() => {
-            setSending(true);
-            setSendError(null);
-            void ctx
-              .send(formatReportAnswer(tag, answer), ref)
-              .catch(() => setSendError("Could not send your answer. Try again."))
-              .finally(() => setSending(false));
-          }}
-        >
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{answer}</span>
-          {index === 0 ? (
-            <span className="shrink-0 rounded-full bg-primary/12 px-1.5 text-xs leading-5 text-primary">
-              Recommended
-            </span>
-          ) : null}
-        </button>
-      ))}
+      <ReportAnswerOptions
+        answers={tag.answers ?? []}
+        disabled={disabled}
+        onPick={(answer) => {
+          setSending(true);
+          setSendError(null);
+          void ctx
+            .send(formatReportAnswer(tag, answer), ref)
+            .catch(() => setSendError("Could not send your answer. Try again."))
+            .finally(() => setSending(false));
+        }}
+      />
       <div className="flex items-center justify-between">
         <Button
           size="xs"
@@ -142,6 +137,37 @@ export function ReportAnswerBar({
       </div>
     </div>
   );
+}
+
+/** A report's offered answers, recommended first. */
+export function ReportAnswerOptions({
+  answers,
+  disabled,
+  onPick,
+}: {
+  answers: readonly string[];
+  disabled: boolean;
+  onPick: (answer: string) => void;
+}) {
+  return answers.map((answer, index) => (
+    <button
+      key={answer}
+      type="button"
+      disabled={disabled}
+      className={cn(
+        "flex w-full cursor-pointer items-start gap-2 rounded-md border px-3 py-1.5 text-left hover:bg-accent/60 disabled:cursor-default disabled:opacity-64",
+        index === 0 ? "border-primary/50 bg-primary/8" : "border-input bg-background/40",
+      )}
+      onClick={() => onPick(answer)}
+    >
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{answer}</span>
+      {index === 0 ? (
+        <span className="shrink-0 rounded-full bg-primary/12 px-1.5 text-xs leading-5 text-primary">
+          Recommended
+        </span>
+      ) : null}
+    </button>
+  ));
 }
 
 /** Names the report a user message answers and opens that report version. */
@@ -203,31 +229,39 @@ export function NeedsYou({
   reports,
   scroll,
   runs,
+  project = NO_PROJECT_THREADS,
   ...reviewProps
 }: {
   reports: readonly ReportState[];
   scroll: (id: MessageId) => void;
   runs: ReadonlyArray<ThreadWorkflowRunWatch>;
+  /** On a project page: the project's threads that need you, answered here. */
+  project?: ReadonlyArray<EnvironmentThreadShell>;
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
+  const [openNeed, setOpenNeed] = useState<string | null>(null);
+  // The latest answer only; the rows follow each thread's own pending state.
+  const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
+  const needs = useProjectNeeds(project);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
+    ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
-  if (!rows.length) return null;
+  if (!rows.length && !answered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
         <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-          <span>Needs you · {rows.length}</span>
+          <span>{rows.length ? `Needs you · ${rows.length}` : "Answered"}</span>
           {rows.length > 3 ? (
             <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
               {expanded ? "Show less" : `Show all ${rows.length}`}
             </Button>
           ) : null}
         </div>
-        <div className="flex flex-col divide-y divide-border/60">
+        <div className="flex max-h-[min(24rem,45dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
           {visible.map((row, index) =>
             row.kind === "run" ? (
               <WorkflowRunReviewRow
@@ -236,6 +270,14 @@ export function NeedsYou({
                 run={row.run}
                 // The thread's background-work actions belong to the first run only.
                 {...(index === 0 ? {} : { watchActions: undefined })}
+              />
+            ) : row.kind === "need" ? (
+              <ProjectNeedRow
+                key={row.need.key}
+                need={row.need}
+                open={openNeed === row.need.key}
+                onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
+                onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
               />
             ) : (
               <button
@@ -258,6 +300,11 @@ export function NeedsYou({
             ),
           )}
         </div>
+        {answered ? (
+          <div className="border-t border-border/60">
+            <AnsweredNeedRow answered={answered} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

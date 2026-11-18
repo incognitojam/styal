@@ -177,6 +177,7 @@ import {
 import { type LegendListRef } from "@legendapp/list/react";
 import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
 import { DEFAULT_INTERACTION_MODE, type ChatMessage } from "../types";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useTheme } from "../hooks/useTheme";
 import { copyThreadReference } from "../lib/copyThreadReference";
@@ -426,6 +427,12 @@ const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
+/** The chat on a project page: the project's header replaces the thread's. */
+type ProjectChat = ProjectChatHeaderProps & {
+  /** The project's threads that need you, listed above the composer. */
+  readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+};
+
 type ChatViewProps =
   | {
       environmentId: EnvironmentId;
@@ -435,8 +442,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
       embedded?: SideChatParentPanel;
-      /** The chat on a project page: the project's header replaces the thread's. */
-      projectChat?: ProjectChatHeaderProps;
+      projectChat?: ProjectChat;
       routeKind: "server";
       draftId?: never;
     }
@@ -447,7 +453,7 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       embedded?: never;
-      projectChat?: ProjectChatHeaderProps;
+      projectChat?: ProjectChat;
       /** Runs before the draft's first message creates its thread. */
       beforeThreadCreate?: (
         threadRef: ScopedThreadRef,
@@ -3845,6 +3851,7 @@ export default function ChatView(props: ChatViewProps) {
                         environmentId={environmentId}
                         threadId={activeThreadId}
                         runs={activeThreadShell?.workflowRuns ?? []}
+                        {...(projectChat ? { project: projectChat.needYou } : {})}
                         watchActions={
                           workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined
                         }
