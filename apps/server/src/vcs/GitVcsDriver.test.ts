@@ -647,9 +647,21 @@ it.effect("checkpoint recovery preserves interruption and removes the private in
 
 it.effect.each(
   [false, true].flatMap((nested) =>
-    (["sparse", "flags", "manual-skip", "missing", "non-cone-missing"] as const).map(
-      (indexState) => ({ nested, indexState }),
-    ),
+    (
+      [
+        "sparse",
+        "flags",
+        "manual-skip",
+        "missing",
+        "non-cone",
+        "non-cone-flags",
+        "non-cone-manual-skip",
+        "non-cone-missing",
+        "non-cone-root-missing",
+        "non-cone-submodule",
+        "non-cone-submodule-missing",
+      ] as const
+    ).map((indexState) => ({ nested, indexState })),
   ),
 )(
   "sparse checkpoint preserves two captures (nested=$nested, index=$indexState)",
@@ -662,14 +674,32 @@ it.effect.each(
       const driver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
         Effect.provideService(VcsProcess.VcsProcess, {
           run: (input) => {
-            if (input.args.includes("read-tree") && input.args.includes("index.sparse=true"))
+            if (
+              input.args.includes("read-tree") &&
+              (input.args.includes("index.sparse=true") || input.args.includes("-u"))
+            )
               freshReadTrees++;
-            return liveProcess.run(input);
+            return liveProcess.run(input).pipe(
+              Effect.tap(() =>
+                Effect.gen(function* () {
+                  if (indexState !== "non-cone-flags" || !input.args.includes("-u")) return;
+                  const temporary = input.env?.GIT_WORK_TREE;
+                  assert.isDefined(temporary);
+                  const stat = yield* fs.stat(path.join(temporary!, "scope/in/edit"));
+                  assert.isTrue(Option.isSome(stat.mtime));
+                  if (Option.isNone(stat.mtime)) return;
+                  const real = path.join(cwd, "scope/in/edit");
+                  yield* fs.writeFileString(real, "modified\n");
+                  yield* fs.utimes(real, stat.mtime.value, stat.mtime.value);
+                }),
+              ),
+            );
           },
         }),
       );
       const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-sparse-" });
       const { git } = yield* makeCheckpointFixture(driver, cwd);
+      const populated = indexState.includes("submodule");
       const write = Effect.fn(function* (name: string, contents: string) {
         yield* fs.makeDirectory(path.dirname(path.join(cwd, name)), { recursive: true });
         yield* fs.writeFileString(path.join(cwd, name), contents);
@@ -683,27 +713,69 @@ it.effect.each(
       ]) {
         yield* write(name, "original\n");
       }
+      if (populated) {
+        const upstream = path.join(cwd, ".git", "submodule-fixture");
+        yield* git(["init", "-b", "main", upstream]);
+        yield* git(["-C", upstream, "config", "user.name", "Fixture"]);
+        yield* git(["-C", upstream, "config", "user.email", "fixture@example.invalid"]);
+        yield* fs.writeFileString(path.join(upstream, "file"), "base\n");
+        yield* git(["-C", upstream, "add", "."]);
+        yield* git(["-C", upstream, "commit", "-m", "fixture: submodule"]);
+        yield* git(["-c", "protocol.file.allow=always", "submodule", "add", upstream, "lib"]);
+      }
       yield* git(["add", "."]);
       yield* git(["commit", "-m", "sparse fixture"]);
       yield* git(["sparse-checkout", "set", "--cone", "--sparse-index", "scope/in", "elsewhere"]);
-      if (indexState === "non-cone-missing")
-        yield* git(["sparse-checkout", "set", "--no-cone", "/scope/in/", "/elsewhere/"]);
+      const rootOnly = indexState === "non-cone-root-missing" || populated;
+      if (indexState.startsWith("non-cone"))
+        yield* git([
+          "sparse-checkout",
+          "set",
+          "--no-cone",
+          ...(rootOnly ? ["/*", "!/*/"] : ["/scope/in/", "/elsewhere/"]),
+        ]);
       yield* write("scope/in/edit", "staged\n");
       yield* write("elsewhere/file", "staged outside\n");
-      yield* git(["add", "."]);
+      yield* git(["add", ...(rootOnly ? ["--sparse"] : []), "."]);
       if (indexState === "flags")
         yield* git(["update-index", "--assume-unchanged", "scope/in/delete"]);
-      if (indexState === "manual-skip")
+      if (indexState === "manual-skip" || indexState === "non-cone-manual-skip")
         yield* git(["update-index", "--skip-worktree", "scope/in/delete"]);
+      if (indexState === "non-cone-flags") {
+        yield* git(["update-index", "--assume-unchanged", "scope/out/deep/absent"]);
+        yield* git(["config", "core.checkStat", "minimal"]);
+        yield* git(["config", "core.trustctime", "false"]);
+      }
+      if (populated) {
+        yield* git(["config", "submodule.recurse", "true"]);
+        yield* git(["-C", "lib", "config", "user.name", "Fixture"]);
+        yield* git(["-C", "lib", "config", "user.email", "fixture@example.invalid"]);
+        yield* git(["-C", "lib", "checkout", "-b", "local-work"]);
+        yield* write("lib/file", "local commit\n");
+        yield* git(["-C", "lib", "commit", "-am", "fixture: local submodule work"]);
+        yield* write("lib/file", "staged only\n");
+        yield* git(["-C", "lib", "add", "file"]);
+        yield* write("lib/file", "working copy\n");
+        if (!indexState.endsWith("missing"))
+          yield* git(["update-index", "--assume-unchanged", "scope/out/deep/absent"]);
+      }
       yield* git(["config", "sparse.expectFilesOutsideOfPatterns", "true"]);
       yield* write("scope/in/edit", "working\n");
       yield* write("scope/out/present", "modified skipped\n");
       yield* write("scope/out/new file", "new outside cone\n");
       yield* write("elsewhere/file", "working outside\n");
-      yield* fs.remove(path.join(cwd, "scope/in/delete"));
+      yield* fs.remove(path.join(cwd, "scope/in/delete"), { force: true });
       const indexPath = path.join(cwd, ".git/index");
       if (indexState.endsWith("missing")) yield* fs.remove(indexPath);
       const originalIndex = yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null));
+      const moduleFiles = populated ? ["HEAD", "index", "config"] : [];
+      const moduleBefore = yield* Effect.forEach(moduleFiles, (name) =>
+        fs.readFile(path.join(cwd, ".git/modules/lib", name)),
+      );
+      const moduleHead = populated
+        ? (yield* git(nested ? ["rev-parse", "HEAD:lib"] : ["-C", "lib", "rev-parse", "HEAD"]))
+            .stdout
+        : null;
       const captureCwd = nested ? path.join(cwd, "scope") : cwd;
       for (const turn of [1, 2]) {
         const ref = CheckpointRef.make(`refs/t3/checkpoints/sparse/${turn}`);
@@ -716,19 +788,27 @@ it.effect.each(
           cwd: captureCwd,
           checkpointRef: ref,
         });
-        if (indexState === "non-cone-missing") {
-          assert.strictEqual((yield* capture.pipe(Effect.flip))._tag, "VcsProcessExitError");
-          assert.isFalse(
-            yield* driver.checkpoints.hasCheckpointRef({ cwd: captureCwd, checkpointRef: ref }),
-          );
-          assert.isFalse(yield* fs.exists(indexPath));
-          break;
-        }
         yield* capture;
+        if (populated) {
+          assert.deepEqual(
+            yield* Effect.forEach(moduleFiles, (name) =>
+              fs.readFile(path.join(cwd, ".git/modules/lib", name)),
+            ),
+            moduleBefore,
+          );
+          assert.strictEqual(
+            yield* fs.readFileString(path.join(cwd, "lib/file")),
+            "working copy\n",
+          );
+          assert.strictEqual((yield* git(["rev-parse", `${ref}:lib`])).stdout, moduleHead);
+        }
         for (const [name, content] of [
           ["scope/out/deep/absent", "original\n"],
           ["scope/out/present", "modified skipped\n"],
-          ["scope/in/edit", turn === 1 ? "working\n" : "second\n"],
+          [
+            "scope/in/edit",
+            indexState === "non-cone-flags" ? "modified\n" : turn === 1 ? "working\n" : "second\n",
+          ],
           ["elsewhere/file", nested ? "original\n" : "working outside\n"],
           [
             turn === 1 ? "scope/out/new file" : "scope/out/second",
@@ -738,7 +818,8 @@ it.effect.each(
           assert.strictEqual((yield* git(["show", `${ref}:${name}`])).stdout, content);
         }
         const files = (yield* git(["ls-tree", "-rz", "--name-only", ref])).stdout.split("\0");
-        assert.notInclude(files, "scope/in/delete");
+        if (rootOnly) assert.include(files, "scope/in/delete");
+        else assert.notInclude(files, "scope/in/delete");
         if (turn === 2) assert.notInclude(files, "scope/out/new file");
         assert.deepEqual(
           yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null)),
@@ -750,7 +831,15 @@ it.effect.each(
           "working outside\n",
         );
       }
-      assert.strictEqual(freshReadTrees, indexState === "missing" ? 2 : 0);
+      assert.strictEqual(
+        freshReadTrees,
+        indexState.endsWith("missing") || indexState === "non-cone-flags" || populated ? 2 : 0,
+      );
+      assert.isEmpty(
+        (yield* fs.readDirectory(path.join(cwd, ".git"))).filter((name) =>
+          name.startsWith("styal-checkpoint-"),
+        ),
+      );
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 

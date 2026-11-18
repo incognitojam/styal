@@ -1,4 +1,6 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as NodeServices from "../nodeServices.ts";
 import { assert, it } from "@effect/vitest";
 import {
   CheckpointId,
@@ -92,6 +94,8 @@ it.effect.each([
       runsToRollback: [{ id: "later-run", ordinal: 1, status: "completed", rootNodeId: null }],
     } as unknown as ProjectionCheckpointRollbackContext;
     const layerTest = CheckpointRollbackService.layer.pipe(
+      Layer.provide(NodeCrypto.layer),
+      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
       Layer.provide(
         Layer.mergeAll(
           NodeServices.layer,

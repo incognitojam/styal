@@ -1160,6 +1160,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             return true;
           }).pipe(Effect.orElseSucceed(() => false));
           if (!reusedIndex) {
+            yield* cleanupTempIndex;
+            let nonCone = false;
             if (sparseCheckout) {
               const cone = yield* execute({
                 operation,
@@ -1167,26 +1169,58 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 args: ["config", "--bool", "core.sparseCheckoutCone"],
                 allowNonZeroExit: true,
               });
-              // Rebuilding a non-cone index loses exclusions; do not publish false deletions.
-              if (cone.stdout.trim() !== "true") {
-                return yield* new VcsProcessExitError({
-                  operation,
-                  command: "git read-tree",
-                  cwd: input.cwd,
-                  exitCode: 1,
-                  detail: "Cannot rebuild a checkpoint index for non-cone sparse checkout.",
-                });
-              }
+              nonCone = cone.stdout.trim() !== "true";
             }
-            yield* cleanupTempIndex;
-            yield* execute({
-              operation,
-              cwd: input.cwd,
-              args: sparseCheckout
-                ? [...indexConfig, "-c", "index.sparse=true", "read-tree", "--reset", "HEAD"]
-                : [...indexConfig, "read-tree", "HEAD"],
-              env: commitEnv,
-            });
+            if (nonCone) {
+              yield* Effect.gen(function* () {
+                const temporaryTree = yield* fileSystem.makeTempDirectoryScoped({
+                  directory: gitCommonDir,
+                  prefix: "styal-checkpoint-tree-",
+                });
+                // Git applies non-cone exclusions only with -u; keep those writes off the user's tree.
+                yield* execute({
+                  operation,
+                  cwd: input.cwd,
+                  args: [
+                    ...indexConfig,
+                    "-c",
+                    "core.ignorestat=false",
+                    "-c",
+                    "index.sparse=false",
+                    "read-tree",
+                    "--reset",
+                    "-u",
+                    "--no-recurse-submodules",
+                    "HEAD",
+                  ],
+                  env: { ...commitEnv, GIT_WORK_TREE: temporaryTree },
+                });
+                // Git disables racy-stat checks at zero; a nonzero old time invalidates the private cache.
+                yield* fileSystem.utimes(tempIndexPath, 1, 1);
+              }).pipe(
+                Effect.scoped,
+                Effect.catchTags({
+                  PlatformError: () =>
+                    Effect.fail(
+                      new VcsProcessExitError({
+                        operation,
+                        command: "git read-tree",
+                        cwd: input.cwd,
+                        exitCode: 1,
+                        detail: "Could not build a private non-cone checkpoint index.",
+                      }),
+                    ),
+                }),
+              );
+            } else
+              yield* execute({
+                operation,
+                cwd: input.cwd,
+                args: sparseCheckout
+                  ? [...indexConfig, "-c", "index.sparse=true", "read-tree", "--reset", "HEAD"]
+                  : [...indexConfig, "read-tree", "HEAD"],
+                env: commitEnv,
+              });
           }
         }
 

@@ -1296,6 +1296,7 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
   cleanRegenerableFiles: Schema.optionalKey(Schema.Boolean),
+  releaseWorktreeSources: Schema.optionalKey(Schema.Boolean),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1329,7 +1330,10 @@ export const ProjectSettingsOverrides = Schema.Struct({
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
 } satisfies Record<
-  ProjectScopedServerSettingKey | "providerInstances" | "cleanRegenerableFiles",
+  | ProjectScopedServerSettingKey
+  | "providerInstances"
+  | "cleanRegenerableFiles"
+  | "releaseWorktreeSources",
   unknown
 >);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;

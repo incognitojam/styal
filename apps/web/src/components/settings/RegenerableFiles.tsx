@@ -59,14 +59,17 @@ function CheckoutCleanup({
   const save = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const canSave = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const [busy, setBusy] = useState(false);
-  const update = async (checked: boolean) => {
+  const update = async (
+    key: "cleanRegenerableFiles" | "releaseWorktreeSources",
+    checked: boolean,
+  ) => {
     setBusy(true);
     const result = await save({
       environmentId,
       input: {
         patch: {
           projectSettingsOverrides: {
-            [member.id]: { ...overrides, cleanRegenerableFiles: checked },
+            [member.id]: { ...overrides, [key]: checked },
           },
         },
       },
@@ -85,7 +88,20 @@ function CheckoutCleanup({
             aria-label="Clean up regenerable files"
             checked={migrationComplete && overrides.cleanRegenerableFiles !== false}
             disabled={busy || !canSave || !migrationComplete}
-            onCheckedChange={(checked) => void update(checked)}
+            onCheckedChange={(checked) => void update("cleanRegenerableFiles", checked)}
+          />
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("worktree-release-sources")}
+        forkFeature="worktree-source-checkout"
+        description="Free unchanged sources after 7 settled days on this machine. Keep local and ignored files; restore before use. Enables per-worktree Git configuration."
+        control={
+          <Switch
+            aria-label="Free source files in settled worktrees"
+            checked={overrides.releaseWorktreeSources === true}
+            disabled={busy || !canSave}
+            onCheckedChange={(checked) => void update("releaseWorktreeSources", checked)}
           />
         }
       />

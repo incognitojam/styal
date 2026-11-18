@@ -24,6 +24,7 @@ export const SETTINGS_FORK_FEATURES = [
   "source-control-fork-remotes",
   "turn-token-usage",
   "worktree-declared-cleanup",
+  "worktree-source-checkout",
 ] as const;
 
 export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
@@ -37,6 +38,7 @@ export type SettingsForkFeature = (typeof SETTINGS_FORK_FEATURES)[number];
 export const SETTINGS_BADGED: Readonly<Record<string, SettingsForkFeature>> = {
   "coordinator-reports": "coordinator-reports",
   "project-coordinators": "project-coordinators",
+  "worktree-release-sources": "worktree-source-checkout",
   "worktree-clean-regenerable-files": "worktree-declared-cleanup",
   "agent-hardware-access": "hardware-leases",
   "discord-rich-presence": "desktop-discord-rich-presence",
