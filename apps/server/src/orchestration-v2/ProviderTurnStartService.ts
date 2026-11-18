@@ -911,6 +911,8 @@ export const layer: Layer.Layer<
         });
         if (!repaired.committed) return;
       }
+      // Released by the caller's scope once the provider accepts or refuses the start.
+      yield* providerSessions.holdForTurnStart(providerSessionId);
       const sessionResult = yield* Effect.result(
         providerSessions.open({
           threadId: projection.thread.id,
@@ -1957,10 +1959,14 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
-          const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
-          if (providerTurn !== undefined) yield* providerTurn;
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const providerTurn = yield* thread.worktreePath === null
+                ? start(input)
+                : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+              if (providerTurn !== undefined) yield* providerTurn;
+            }),
+          );
         },
         (effect, input) =>
           effect.pipe(

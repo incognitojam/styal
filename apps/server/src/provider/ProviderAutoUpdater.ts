@@ -23,6 +23,7 @@ import type * as Scope from "effect/Scope";
 
 import { ServerConfig } from "../config.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { LEFTOVER_REQUEST_AFTER_MS } from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import {
@@ -76,13 +77,6 @@ export function decideProviderAutoUpdate(
   if (order === 0 && selfUpdaterActive === true) return { version: testedVersion, takeover: true };
   return null;
 }
-
-/**
- * How long a question may stay pending after its run finished before it stops
- * holding back an update. Some providers (Codex) keep working after asking, so
- * a run can complete while its question waits unseen for hours.
- */
-const LEFTOVER_REQUEST_AFTER_MS = 60 * 60 * 1_000;
 
 /**
  * How a thread's provider process would be affected by replacing its CLI:

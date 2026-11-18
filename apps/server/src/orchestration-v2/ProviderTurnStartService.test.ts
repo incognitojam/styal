@@ -948,6 +948,7 @@ function makeLocalCommandHarness(input: {
                   } as never)
                 : Effect.die("A local command must not open a native session."),
   );
+  const sessionHolds: Array<string> = [];
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
   >((runInput) =>
@@ -1110,6 +1111,14 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           open,
+          holdForTurnStart: () =>
+            Effect.acquireRelease(
+              Effect.sync(() => sessionHolds.push(`held after ${open.mock.calls.length} opens`)),
+              () =>
+                Effect.sync(() =>
+                  sessionHolds.push(`released after ${startRootRun.mock.calls.length} starts`),
+                ),
+            ).pipe(Effect.asVoid),
           get: () =>
             Effect.succeed(
               input.previousTurn?.liveSession === false
@@ -1146,6 +1155,7 @@ function makeLocalCommandHarness(input: {
     resolveRuntimePolicy,
     createWorktree,
     open,
+    sessionHolds,
     fallbackEnsureThread,
     writeIfRunCurrent,
     startRootRun,
@@ -1499,6 +1509,8 @@ effectIt.effect.each([
 
     expect(harness.interruptTurn).not.toHaveBeenCalled();
     expect(harness.projection().runs.at(-1)?.status).toBe("running");
+    // Retirement keeps the session from before it opens until the provider accepts the turn.
+    expect(harness.sessionHolds).toEqual(["held after 0 opens", "released after 1 starts"]);
   }),
 );
 

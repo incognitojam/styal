@@ -63,6 +63,14 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
 /** Lets a retiring session's run take its turn's end before the release fails subscribers. */
 const RETIRE_AFTER_TURN_MS = 1000;
+/** How often a retiring session kept for background work or a question is checked again. */
+const RETIRE_RECHECK_MS = 60 * 1000;
+/**
+ * How long a question may stay pending after its run finished before it stops
+ * holding back an update. Some providers (Codex) keep working after asking, so
+ * a run can complete while its question waits unseen for hours.
+ */
+export const LEFTOVER_REQUEST_AFTER_MS = 60 * 60 * 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
 export const PROVIDER_INTERRUPT_TIMEOUT_MS = 15 * 1000;
@@ -216,6 +224,13 @@ export interface ProviderSessionManagerV2Shape {
   readonly retireInstances: (input: {
     readonly instanceIds: ReadonlyArray<ProviderInstanceId>;
   }) => Effect.Effect<void>;
+  /**
+   * Keeps the session from retiring until the scope closes. A turn holds it from before it
+   * opens the session until the provider accepts or refuses the start.
+   */
+  readonly holdForTurnStart: (
+    providerSessionId: ProviderSessionId,
+  ) => Effect.Effect<void, never, Scope.Scope>;
   /**
    * Other threads with a run or background work on this session's shared process; empty when
    * it serves one thread.
@@ -482,6 +497,8 @@ export const layerWithOptions = (
           }),
       );
       const sessions = yield* Ref.make(new Map<string, LiveSessionEntry>());
+      // Plain counts, so a removal reads them inside its own atomic update.
+      const heldSessions = new Map<string, number>();
       // Retry per released entry; reusing ids must not lose cleanup for earlier threads.
       const releaseRecordRetries = yield* FiberSet.make();
       const nextSubscriberId = yield* Ref.make(0);
@@ -1047,6 +1064,7 @@ export const layerWithOptions = (
           readonly providerSessionId: ProviderSessionId;
           readonly onlyIfIdleGeneration?: number;
           readonly keepIfBusyOtherThan?: ReadonlyArray<ProviderThreadId>;
+          readonly keepIfHeld?: boolean;
           readonly keepIf?: Effect.Effect<boolean>;
         }): Effect.fn.Return<readonly [Option.Option<LiveSessionEntry>, DateTime.Utc]> {
           const key = sessionKey(input.providerSessionId);
@@ -1065,6 +1083,9 @@ export const layerWithOptions = (
                 (existing.busyTurns.size > 0 ||
                   existing.idleGeneration !== input.onlyIfIdleGeneration)
               ) {
+                return ["kept", current] as const;
+              }
+              if (input.keepIfHeld === true && heldSessions.has(key)) {
                 return ["kept", current] as const;
               }
               const own = input.keepIfBusyOtherThan;
@@ -1140,6 +1161,7 @@ export const layerWithOptions = (
         readonly cancelIdleFiber?: boolean;
         readonly onlyIfIdleGeneration?: number;
         readonly keepIfBusyOtherThan?: ReadonlyArray<ProviderThreadId>;
+        readonly keepIfHeld?: boolean;
         readonly keepIf?: Effect.Effect<boolean>;
         readonly gracefulSubscribers?: boolean;
       }) =>
@@ -1245,6 +1267,28 @@ export const layerWithOptions = (
           ),
         );
 
+      // An unread projection counts as a question, so a release never cancels one unseen.
+      const hasRecentQuestion = Effect.fn("ProviderSessionManager.hasRecentQuestion")(
+        function* (entry: LiveSessionEntry) {
+          const now = yield* Clock.currentTimeMillis;
+          const projections = yield* Effect.forEach(entry.attachedThreadIds, (threadId) =>
+            projectionStore.getThreadRecords(threadId, ["runtimeRequests"], {
+              runtimeRequestStatuses: ["pending"],
+            }),
+          );
+          return projections.some((projection) =>
+            projection.runtimeRequests.some(
+              (request) =>
+                request.status === "pending" &&
+                request.responseCapability.type === "live" &&
+                request.responseCapability.providerSessionId === entry.runtime.providerSessionId &&
+                now - DateTime.toEpochMillis(request.createdAt) < LEFTOVER_REQUEST_AFTER_MS,
+            ),
+          );
+        },
+        Effect.orElseSucceed(() => true),
+      );
+
       const releaseIfStillIdle = Effect.fn("ProviderSessionManager.releaseIfStillIdle")(
         function* (input: {
           readonly providerSessionId: ProviderSessionId;
@@ -1262,6 +1306,9 @@ export const layerWithOptions = (
           }
           // Capture runtime identity before yielding; replacements can reuse the session id.
           const probedRuntime = entry.runtime;
+          const recheckMs = entry.retireWhenIdle
+            ? Math.min(idleTimeoutMs, RETIRE_RECHECK_MS)
+            : idleTimeoutMs;
           const hasPendingWork =
             probedRuntime.hasPendingBackgroundWork === undefined
               ? false
@@ -1294,7 +1341,7 @@ export const layerWithOptions = (
                 pinnedForMs: now - pinnedSinceMs,
               });
               // Recheck on this fiber; scheduleIdleReleaseInternal would interrupt it and self-deadlock.
-              yield* Effect.sleep(Duration.millis(idleTimeoutMs));
+              yield* Effect.sleep(Duration.millis(recheckMs));
               return yield* releaseIfStillIdle(input);
             }
             yield* Effect.logWarning("orchestration-v2.driver-session.idle-release-pin-expired", {
@@ -1302,12 +1349,19 @@ export const layerWithOptions = (
               pinnedForMs: now - pinnedSinceMs,
             });
           }
+          // The question ages out, so the recheck ends; activity meanwhile bumps the generation.
+          if (entry.retireWhenIdle && (yield* hasRecentQuestion(entry))) {
+            yield* Effect.sleep(Duration.millis(recheckMs));
+            return yield* releaseIfStillIdle(input);
+          }
           // Adapter probes yield; guard busyTurns and idleGeneration atomically when removing the entry.
+          // A held retiring session is scheduled again when its hold ends.
           yield* releaseEntry({
             providerSessionId: input.providerSessionId,
             reason: "idle_timeout",
             cancelIdleFiber: false,
             onlyIfIdleGeneration: input.generation,
+            ...(entry.retireWhenIdle ? { keepIfHeld: true, keepIf: hasRecentQuestion(entry) } : {}),
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("orchestration-v2.driver-session.idle-release-failed", {
@@ -2048,6 +2102,84 @@ export const layerWithOptions = (
           },
           (effect) => effect.pipe(Effect.ignoreCause),
         );
+        const compactThread = runtime.compactThread;
+        const sendContextFor = (input: ProviderAdapter.ProviderAdapterV2TurnInput) => ({
+          runId: input.runId,
+          runOrdinal: input.runOrdinal,
+          properties: {
+            model: input.modelSelection.model,
+            runtimeMode: input.runtimePolicy.runtimeMode,
+            interactionMode: input.runtimePolicy.interactionMode,
+          },
+        });
+        // Compaction is a turn too: busy until its turn.terminal, so no release cuts it short.
+        const startBusyTurn = (
+          input: ProviderAdapter.ProviderAdapterV2TurnInput,
+          start: ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"],
+          operation: "send" | "compact",
+        ) => {
+          const context = sendContextFor(input);
+          return observeActivity(
+            providerSessionId,
+            ensureThreadAttached({
+              providerSessionId,
+              threadId: input.threadId,
+              providerInstanceId: runtime.instanceId,
+            }),
+          ).pipe(
+            // Failed or stopped starts may omit turn.terminal; clear their turns so sessions can idle.
+            Effect.andThen(
+              holdThreadLoaded({
+                providerSessionId,
+                threadId: input.threadId,
+                providerThread: input.providerThread,
+              }),
+            ),
+            Effect.andThen(
+              Effect.acquireUseRelease(
+                markBusy(
+                  providerSessionId,
+                  busyTurnKey(input.providerThread.id, input.runOrdinal),
+                  runtime,
+                ).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("orchestration-v2.driver-session.activity-failed", {
+                      providerSessionId,
+                      cause,
+                    }).pipe(Effect.as(true)),
+                  ),
+                  // A release between attach and markBusy leaves nothing to mark: fail the
+                  // start instead of running it on a runtime being torn down.
+                  Effect.flatMap((marked) =>
+                    marked
+                      ? Effect.void
+                      : Effect.fail(
+                          new ProviderAdapter.ProviderAdapterTurnStartError({
+                            driver: runtime.driver,
+                            threadId: input.threadId,
+                            providerThreadId: input.providerThread.id,
+                            runId: input.runId,
+                            cause: "The provider session was released while the turn started.",
+                          }),
+                        ),
+                  ),
+                ),
+                () =>
+                  Effect.sync(() => sendContexts.set(input.providerThread.id, context)).pipe(
+                    Effect.andThen(() => start(input)),
+                    turnMetrics(operation, input.modelSelection.model),
+                  ),
+                (_, exit) =>
+                  Exit.isFailure(exit)
+                    ? observeActivity(
+                        providerSessionId,
+                        markIdle(providerSessionId, input.providerThread.id, input.runOrdinal),
+                      )
+                    : Effect.void,
+              ),
+            ),
+          );
+        };
         return {
           ...runtime,
           // Pi replaces its session snapshot as metadata changes.
@@ -2180,79 +2312,14 @@ export const layerWithOptions = (
               ),
               Effect.map(({ loaded }) => loaded),
             ),
-          startTurn: (input) => {
-            const context = {
-              runId: input.runId,
-              runOrdinal: input.runOrdinal,
-              properties: {
-                model: input.modelSelection.model,
-                runtimeMode: input.runtimePolicy.runtimeMode,
-                interactionMode: input.runtimePolicy.interactionMode,
-              },
-            };
-            return observeActivity(
-              providerSessionId,
-              ensureThreadAttached({
-                providerSessionId,
-                threadId: input.threadId,
-                providerInstanceId: runtime.instanceId,
-              }),
-            ).pipe(
-              // Failed or stopped starts may omit turn.terminal; clear their turns so sessions can idle.
-              Effect.andThen(
-                holdThreadLoaded({
-                  providerSessionId,
-                  threadId: input.threadId,
-                  providerThread: input.providerThread,
-                }),
-              ),
-              Effect.andThen(
-                Effect.acquireUseRelease(
-                  markBusy(
-                    providerSessionId,
-                    busyTurnKey(input.providerThread.id, input.runOrdinal),
-                    runtime,
-                  ).pipe(
-                    Effect.catchCause((cause) =>
-                      Effect.logWarning("orchestration-v2.driver-session.activity-failed", {
-                        providerSessionId,
-                        cause,
-                      }).pipe(Effect.as(true)),
-                    ),
-                    // A release between attach and markBusy leaves nothing to mark: fail the
-                    // start instead of running it on a runtime being torn down.
-                    Effect.flatMap((marked) =>
-                      marked
-                        ? Effect.void
-                        : Effect.fail(
-                            new ProviderAdapter.ProviderAdapterTurnStartError({
-                              driver: runtime.driver,
-                              threadId: input.threadId,
-                              providerThreadId: input.providerThread.id,
-                              runId: input.runId,
-                              cause: "The provider session was released while the turn started.",
-                            }),
-                          ),
-                    ),
-                  ),
-                  () =>
-                    Effect.sync(() => sendContexts.set(input.providerThread.id, context)).pipe(
-                      Effect.andThen(() => runtime.startTurn(input)),
-                      turnMetrics("send", input.modelSelection.model),
-                    ),
-                  (_, exit) =>
-                    Exit.isFailure(exit)
-                      ? observeActivity(
-                          providerSessionId,
-                          markIdle(providerSessionId, input.providerThread.id, input.runOrdinal),
-                        )
-                      : Effect.void,
-                ),
-              ),
+          startTurn: (input) =>
+            startBusyTurn(input, runtime.startTurn, "send").pipe(
               // Telemetry interruption must not clear an already accepted turn.
-              Effect.tap(() => recordSent(input.message, context)),
-            );
-          },
+              Effect.tap(() => recordSent(input.message, sendContextFor(input))),
+            ),
+          ...(compactThread === undefined
+            ? {}
+            : { compactThread: (input) => startBusyTurn(input, compactThread, "compact") }),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
               Effect.andThen(
@@ -2825,14 +2892,20 @@ export const layerWithOptions = (
                 entry.runtime.hasPendingBackgroundWork?.pipe(
                   Effect.catchCause(() => Effect.succeed(true)),
                 ) ?? Effect.succeed(false);
+              const keep = Effect.zipWith(
+                Effect.zipWith(replaced, hasPendingWork, (a, b) => a || b),
+                hasRecentQuestion(entry),
+                (a, b) => a || b,
+              );
               return releaseEntry({
                 providerSessionId,
                 reason: "manual_shutdown",
                 detail: "Provider updated.",
                 keepIfBusyOtherThan: [],
-                keepIf: Effect.zipWith(replaced, hasPendingWork, (a, b) => a || b),
+                keepIfHeld: true,
+                keepIf: keep,
               }).pipe(
-                // A kept session with only background work left starts its shorter idle wait now.
+                // A kept idle session starts its shorter wait now; a busy or held one does later.
                 Effect.andThen(scheduleIdleReleaseInternal(providerSessionId)),
                 logReleaseFailure(providerSessionId),
               );
@@ -2840,6 +2913,23 @@ export const layerWithOptions = (
             { concurrency: "unbounded", discard: true },
           );
         }),
+        holdForTurnStart: (providerSessionId) => {
+          const key = sessionKey(providerSessionId);
+          return Effect.acquireRelease(
+            Effect.sync(() => {
+              heldSessions.set(key, (heldSessions.get(key) ?? 0) + 1);
+            }),
+            () =>
+              Effect.gen(function* () {
+                const remaining = (heldSessions.get(key) ?? 1) - 1;
+                if (remaining > 0) heldSessions.set(key, remaining);
+                else heldSessions.delete(key);
+                if ((yield* Ref.get(sessions)).get(key)?.retireWhenIdle === true) {
+                  yield* scheduleIdleReleaseInternal(providerSessionId);
+                }
+              }).pipe(Effect.ignoreCause),
+          );
+        },
         otherWorkingThreads: Effect.fn("ProviderSessionManager.otherWorkingThreads")(
           function* (input) {
             const entry = (yield* Ref.get(sessions)).get(sessionKey(input.providerSessionId));

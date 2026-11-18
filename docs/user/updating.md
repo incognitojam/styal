@@ -252,9 +252,14 @@ must be enabled to download the latest styal model catalog.
 
 Provider updates do not interrupt running chats. After a successful update,
 chats on that provider CLI use the new version from their next turn; a turn
-already running finishes on the previous one. A chat with background work
-still running, such as a long command, keeps the previous CLI until that work
-ends. If discovery fails, check the provider status and refresh it again.
+already running finishes on the previous one. A chat keeps the previous CLI
+while it still has background work running, such as a long command, unless that
+work has reported nothing for four hours, and while a question it asked has
+waited less than an hour. Codex runs every chat of a provider instance in one
+process, so one such Codex chat keeps all chats on that instance on the
+previous version. OpenCode's own background server is not restarted by an
+update, so chats that use it can keep the previous version until that server
+restarts. If discovery fails, check the provider status and refresh it again.
 
 <a id="styal-managed-updates"></a>
 
