@@ -7474,7 +7474,7 @@ features:
     title: Show documents, web pages and web searches the agent and its subagents used beside the viewed-image strip
     status: maintained
     tier: yield
-    prs: [1597, 1601]
+    prs: [1597, 1601, 1610]
     invariants:
       - Claude Read of a PDF or office document sets viewedDocument (with the page range when given), and Claude WebFetch and Codex openPage or findInPage set fetchedUrl on the web_search item.
       - Settled turns keep those items and web searches inline, so web, desktop and mobile show the chips under a folded tool group after a reload.
