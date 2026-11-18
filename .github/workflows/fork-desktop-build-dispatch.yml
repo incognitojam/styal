@@ -13,8 +13,10 @@ on:
       - "scripts/build-desktop-artifact*"
       - "scripts/lib/*external-packages*"
       - "scripts/prepare-server-compile-cache.cjs"
+      - "scripts/linux-after-pack.ts"
       - "scripts/verify-desktop-startup.mjs"
       - ".github/workflows/fork-desktop-build*.yml"
+      - ".github/workflows/fork-js-bundle.yml"
   workflow_dispatch:
     inputs:
       target:
@@ -80,6 +82,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installer = (Get-ChildItem .scratch/released-desktop/*.exe).FullName
           7z x $installer '-o.scratch/released-desktop/app' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $payload = (Get-ChildItem .scratch/released-desktop/app -Recurse -Filter 'app-64.7z').FullName
+          7z x $payload '-o.scratch/released-desktop/app' -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Load packaged main process
         shell: pwsh

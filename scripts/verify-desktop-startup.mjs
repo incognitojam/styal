@@ -18,6 +18,9 @@ export function verifyDesktopStartup(executable, version) {
     XDG_CACHE_HOME: home,
     APPDATA: home,
     LOCALAPPDATA: home,
+    TMPDIR: home,
+    TMP: home,
+    TEMP: home,
     T3CODE_DISABLE_AUTO_UPDATE: "true",
   });
   const needsDisplay = process.platform === "linux" && !env.DISPLAY;
@@ -28,7 +31,7 @@ export function verifyDesktopStartup(executable, version) {
       [...(needsDisplay ? ["-a", executable] : []), "--no-sandbox", "--version"],
       { cwd: home, env, encoding: "utf8", timeout: 30_000 },
     );
-    if (result.status !== 0 || result.stdout.trim() !== version) {
+    if (result.error || result.status !== 0 || result.stdout.trim() !== version) {
       throw new Error(
         `Packaged desktop startup failed (${result.status ?? result.signal}): ${result.error ?? ""}\n${result.stdout}\n${result.stderr}`,
       );
