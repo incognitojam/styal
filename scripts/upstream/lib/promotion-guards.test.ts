@@ -159,3 +159,78 @@ console.log(JSON.stringify([response]));
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it("waits for exact-SHA readiness before manual approval and bypasses it for automatic promotion", () => {
+  const root = NodePath.resolve(import.meta.dirname, "../../..");
+  const workflow = parse(
+    NodeFS.readFileSync(
+      NodePath.join(root, ".github/workflows/promote-upstream-intake.yml"),
+      "utf8",
+    ),
+  );
+  const job = workflow.jobs.required_checks;
+  const step = job.steps.find(
+    (entry: { name?: string }) => entry.name === "Wait for coordinator readiness",
+  );
+  assert.isDefined(step);
+  assert.deepEqual(workflow.jobs.promote.needs, ["validate", "required_checks"]);
+  assert.include(workflow.jobs.promote.if, "needs.required_checks.result == 'success'");
+  assert.include(workflow.jobs.promote.if, "github.event_name == 'workflow_run'");
+  assert.equal(job.permissions.statuses, "read");
+  assert.isAtLeast(job["timeout-minutes"], 190);
+  assert.include(step.env.READINESS_CHECKS, "301");
+  assert.include(step.env.READINESS_CHECKS, "workflow_dispatch");
+  NodeChildProcess.execFileSync("git", ["check-ignore", "-q", ".scratch/"], { cwd: root });
+  NodeFS.mkdirSync(NodePath.join(root, ".scratch"), { recursive: true });
+  const directory = NodeFS.mkdtempSync(NodePath.join(root, ".scratch/intake-readiness-"));
+  const sha = "a".repeat(40);
+  const old = "b".repeat(40);
+  try {
+    NodeFS.writeFileSync(
+      NodePath.join(directory, "gh"),
+      `#!/usr/bin/env node
+const path = process.argv.at(-1);
+if (path !== 'repos/incognitojam/styal/commits/${sha}/status?per_page=100') process.exit(2);
+const statuses = process.env.FIXTURE === 'missing' ? [] : [{ context: 'Intake ready', state: process.env.FIXTURE === 'pending' ? 'pending' : 'success' }];
+console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '${sha}', statuses }]));
+`,
+      { mode: 0o755 },
+    );
+    NodeFS.writeFileSync(NodePath.join(directory, "sleep"), "#!/bin/sh\nexit 2\n", { mode: 0o755 });
+    for (const [lane, fixture, expected] of [
+      ["manual", "missing", 1],
+      ["manual", "old", 1],
+      ["manual", "pending", 1],
+      ["manual", "ready", 0],
+      ["automatic", "missing", 0],
+    ] as const) {
+      const summary = NodePath.join(directory, "summary");
+      NodeFS.writeFileSync(summary, "");
+      const result = NodeChildProcess.spawnSync("bash", ["-c", step.run], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${directory}${NodePath.delimiter}${process.env.PATH ?? ""}`,
+          GITHUB_REPOSITORY: "incognitojam/styal",
+          CANDIDATE_SHA: sha,
+          PROMOTION_LANE: lane,
+          READINESS_CHECKS: "1",
+          FIXTURE: fixture,
+          GITHUB_STEP_SUMMARY: summary,
+        },
+      });
+      assert.equal(result.status, expected, `${lane}/${fixture}: ${result.stderr}`);
+      assert.include(
+        NodeFS.readFileSync(summary, "utf8"),
+        expected === 1
+          ? "No approval requested"
+          : lane === "automatic"
+            ? "Automatic lane"
+            : "Coordinator ready",
+      );
+    }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});

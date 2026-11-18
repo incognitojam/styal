@@ -69,7 +69,7 @@ export function holdingCandidates(
       holding.set(sha, { branch, sha, url: run.html_url });
     } else if (
       newest &&
-      run.conclusion === "failure" &&
+      (run.conclusion === "failure" || run.conclusion === "timed_out") &&
       (!latestCi || latestCi.head_sha === sha) &&
       now < until
     ) {
