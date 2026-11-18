@@ -220,8 +220,8 @@ threads has no folder unless it is pinned or you pick it in the project filter. 
 project's folder comes last and shows only while it has active threads. Click a folder to open or
 close it. A closed folder shows how many threads it holds, and a dot when one of them
 needs you. Use the pen button on a folder to start a thread in that project. Right-click a folder
-for **New thread**, project filtering, **Pin project**, **Archive project** (**Unarchive project** on an
-archived project's folder), **Copy path** (choose the checkout when a project spans several), and
+for **New thread**, project filtering, **Pin project**, **Archive project** (an archived
+project's folder offers **Unarchive project** instead, and no filter), **Copy path** (choose the checkout when a project spans several), and
 **Project settings**.
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. Drag a thread
 into Pinned or Settled, or back into the folders, as in the flat list. Threads in a folder stay
