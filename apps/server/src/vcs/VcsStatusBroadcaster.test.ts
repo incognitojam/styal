@@ -1371,7 +1371,10 @@ describe("VcsStatusBroadcaster", () => {
             state.currentLocalStatus = full;
             yield* fs.remove(path.join(gitDir, fileName));
             yield* Deferred.await(restored);
-            assert.equal(state.remoteStatusRefreshUpstreamValues?.length, 1);
+            assert.deepStrictEqual(
+              new Set(state.remoteStatusRefreshUpstreamValues),
+              new Set([false]),
+            );
             return;
           }
           assert.deepStrictEqual(
