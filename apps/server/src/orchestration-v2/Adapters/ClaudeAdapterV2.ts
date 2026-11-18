@@ -10955,6 +10955,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               );
               return;
             }
+            // Claude answers a steer it has not read yet as the next native turn, which echoes
+            // the steer. A result without echoes cannot prove that turn will come.
+            if (
+              !interrupted &&
+              context.pendingSteers.size > 0 &&
+              claudeEchoedPromptUuids(message).length > 0 &&
+              terminalStatusFromResult(message) === "completed"
+            ) {
+              context.steeredSegmentUsage.push(message.usage);
+              context.steeredLedgerUsage = addClaudeLedgerUsage(
+                context.steeredLedgerUsage,
+                resultLedgerUsage.get(message),
+              );
+              return;
+            }
             yield* Ref.update(steeredTurns, (current) => {
               const next = new Set(current);
               next.delete(context.providerTurnId);
@@ -12640,7 +12655,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
         );
 
-        // Move subagents to the background before priority "now" steers cancel foreground tools.
+        // Move subagents to the background so a steer reaches Claude without waiting for them to finish.
         const backgroundForegroundSubagents = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
           deadline: number,
@@ -12767,7 +12782,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 ).promptEffort,
               ),
               attachments: turnInput.message.attachments,
-              priority: "now",
+              // "now" makes Claude Code cancel the tool calls in flight and report them as a user refusal.
+              priority: "next",
               uuid: steerUuid,
               attachmentsDir,
               fileSystem,
