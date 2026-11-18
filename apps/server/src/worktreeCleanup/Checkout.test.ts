@@ -3,6 +3,7 @@ import { vi } from "vite-plus/test";
 import { GitCommandError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Digest from "effect/crypto/Digest";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { fixture, nodeLayer } from "./fixtures.testkit.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
@@ -23,9 +24,12 @@ it.effect(
       yield* f.write("src/shared.txt", "shared blocks");
       yield* f.write("src/staged.txt", "original staged file");
       yield* f.write("root-kept.txt", "root file stays");
-      yield* f.write(".gitignore", ".scratch/\n.env\n");
+      yield* f.write("infra/relay/source.txt", "relay source");
+      yield* f.write(".vite-hooks/config", "hook configuration");
+      yield* f.write(".gitignore", ".scratch/\n.env\ncache/\n.vite-hooks/_/\n");
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
+      yield* f.command(f.worktree, ["checkout", "-b", "preserved-ref"]);
       yield* f.write("src/dirty.txt", "modified");
       yield* f.write("src/untracked.txt", "untracked");
       yield* f.write(".scratch/note.md", "note");
@@ -39,21 +43,71 @@ it.effect(
       const outside = `${f.base}/outside.txt`;
       yield* f.fs.writeFileString(outside, "outside remains");
       yield* Effect.promise(() => physical.symlink(outside, `${f.worktree}/.scratch/link`));
+      const otherCheckout = `${f.root}/relay.env`;
+      yield* f.fs.writeFileString(otherCheckout, "SYNTHETIC_RELAY=kept");
+      yield* Effect.promise(() =>
+        physical.symlink(otherCheckout, `${f.worktree}/infra/relay/.env`),
+      );
+      yield* f.write(".vite-hooks/_/pre-commit", "synthetic hook");
+      const buildFiles = Array.from({ length: 2048 }, (_, i) => `src/cache/build-${i}`);
+      yield* Effect.forEach(buildFiles, (name) => f.write(name, `synthetic build ${name}`), {
+        concurrency: 16,
+        discard: true,
+      });
+      const digest = yield* Digest.Digest;
+      const protectedNames = [
+        "src/dirty.txt",
+        "src/untracked.txt",
+        ".env",
+        ".scratch/note.md",
+        ".scratch/link",
+        "infra/relay/.env",
+        ".vite-hooks/_/pre-commit",
+        ...buildFiles,
+      ];
+      const hashes = Effect.fn("fixture.protectedHashes")(function* () {
+        const result: Record<string, string> = {};
+        for (const name of protectedNames) {
+          const target = `${f.worktree}/${name}`;
+          const stat = yield* Effect.promise(() => physical.lstat(target));
+          const content = stat.isSymbolicLink()
+            ? new TextEncoder().encode(yield* Effect.promise(() => physical.readlink(target)))
+            : yield* Effect.promise(() => physical.readFile(target));
+          result[name] =
+            `${stat.isSymbolicLink() ? "link" : "file"}:${yield* digest.digestHex(Digest.sha256, content)}`;
+        }
+        return result;
+      });
+      const protectedBefore = yield* hashes();
+      const head = (yield* f.command(f.worktree, ["rev-parse", "HEAD"])).stdout;
+      const branch = (yield* f.command(f.worktree, ["symbolic-ref", "HEAD"])).stdout;
+      const index = (yield* f.command(f.worktree, ["ls-files", "--stage", "-z"])).stdout;
       const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
       yield* Effect.gen(function* () {
         using samples = vi.spyOn(physical, "lstat");
         const checkout = yield* makeCheckout;
         const released = yield* checkout.release(f.worktree, f.root);
-        const removed = ["src/clean.txt", "src/allocated.txt", "src/staged.txt"].map(
-          (name) => `${f.worktree}/${name}`,
-        );
+        expect(
+          (yield* f.command(f.worktree, [
+            "config",
+            "--bool",
+            "core.sparseCheckoutCone",
+          ])).stdout.trim(),
+        ).toBe("false");
+        const removed = [
+          "src/clean.txt",
+          "src/allocated.txt",
+          "src/staged.txt",
+          "infra/relay/source.txt",
+          ".vite-hooks/config",
+        ].map((name) => `${f.worktree}/${name}`);
         const allocations = samples.mock.calls.flatMap(([target], i) => {
           const result = samples.mock.settledResults[i];
           return removed.includes(String(target)) && result?.type === "fulfilled"
             ? [Number(result.value.blocks) * 512]
             : [];
         });
-        expect(allocations).toHaveLength(3);
+        expect(allocations).toHaveLength(5);
         const expectedBytes = allocations.reduce((sum, bytes) => sum + bytes, 0);
         expect(expectedBytes).toBeGreaterThan(0);
         expect(released).toBe(expectedBytes);
@@ -68,10 +122,17 @@ it.effect(
           outside,
         );
         expect(yield* f.fs.readFileString(outside)).toBe("outside remains");
+        expect(yield* hashes()).toEqual(protectedBefore);
+        expect(yield* f.fs.readFileString(otherCheckout)).toBe("SYNTHETIC_RELAY=kept");
         expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
           before,
         );
         yield* checkout.restore(f.worktree);
+        expect((yield* f.command(f.worktree, ["rev-parse", "HEAD"])).stdout).toBe(head);
+        expect((yield* f.command(f.worktree, ["symbolic-ref", "HEAD"])).stdout).toBe(branch);
+        expect((yield* f.command(f.worktree, ["ls-files", "--stage", "-z"])).stdout).toBe(index);
+        expect(yield* hashes()).toEqual(protectedBefore);
+        expect(yield* f.fs.readFileString(otherCheckout)).toBe("SYNTHETIC_RELAY=kept");
         expect(
           (yield* f.command(f.root, ["config", "extensions.worktreeConfig"])).stdout.trim(),
         ).toBe("true");
@@ -90,6 +151,7 @@ it.effect.each([
   "foreign",
   "cone",
   "non-cone",
+  "user-source-patterns",
   "disabled-sparse",
   "assume-unchanged",
   "merge",
@@ -119,12 +181,12 @@ it.effect.each([
       yield* f.fs.makeDirectory(project);
       yield* f.command(project, ["init"]);
     }
-    if (scenario === "cone" || scenario === "non-cone")
+    if (scenario === "cone" || scenario === "non-cone" || scenario === "user-source-patterns")
       yield* f.command(f.worktree, [
         "sparse-checkout",
         "set",
         scenario === "cone" ? "--cone" : "--no-cone",
-        "src",
+        ...(scenario === "user-source-patterns" ? ["/*", "!/*/"] : ["src"]),
       ]);
     if (scenario === "disabled-sparse") {
       yield* f.fs.makeDirectory(`${admin}/info`, { recursive: true });
@@ -159,12 +221,14 @@ it.effect.each([
     yield* Effect.gen(function* () {
       const checkout = yield* makeCheckout;
       expect((yield* checkout.release(target, project).pipe(Effect.result))._tag).toBe("Failure");
-      if (scenario === "cone" || scenario === "non-cone") {
+      if (scenario === "cone" || scenario === "non-cone" || scenario === "user-source-patterns") {
         const before = (yield* f.command(f.worktree, ["sparse-checkout", "list"])).stdout;
         yield* checkout.restore(f.worktree);
         expect((yield* f.command(f.worktree, ["sparse-checkout", "list"])).stdout).toBe(before);
       }
-      expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("content");
+      if (scenario === "user-source-patterns")
+        expect(yield* f.fs.exists(`${f.worktree}/src/clean`)).toBe(false);
+      else expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("content");
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
 );
@@ -332,6 +396,7 @@ it.effect.each([
   "stderr-limit",
   "unterminated-list",
   "file-limit",
+  "protected-file-limit",
   "byte-limit",
   "windows",
 ] as const)("fails closed before mutation: %s", (failure) =>
@@ -342,6 +407,10 @@ it.effect.each([
     yield* f.command(f.worktree, ["add", "."]);
     yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
     yield* f.write(".scratch/note", "protected");
+    if (failure === "protected-file-limit") {
+      yield* f.write(".scratch/second", "protected");
+      yield* f.write(".scratch/third", "protected");
+    }
     const driver = GitVcsDriver.GitVcsDriver.of({
       ...f.git,
       execute: (input) => {
@@ -376,7 +445,7 @@ it.effect.each([
     }).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
       Effect.provideService(CheckoutLimits, {
-        entries: failure === "file-limit" ? 1 : 100_000,
+        entries: failure === "file-limit" ? 1 : failure === "protected-file-limit" ? 2 : 100_000,
         bytes: failure === "byte-limit" ? 0 : 1_000_000,
       }),
       Effect.provideService(HostProcess.Platform, failure === "windows" ? "win32" : platform),
@@ -459,6 +528,8 @@ it.effect.each(
     ["rev-parse", "--show-toplevel"],
     ["rev-parse", "--absolute-git-dir"],
     ["rev-parse", "--git-common-dir"],
+    ["rev-parse", "--verify", "--quiet", "HEAD"],
+    ["symbolic-ref", "--quiet", "HEAD"],
     ["config", "--bool", "core.sparseCheckout"],
     ["ls-files", "-v", "-z"],
     ["submodule", "status", "--recursive"],
@@ -506,7 +577,7 @@ it.effect.each(
 );
 
 it.effect.each(["nested-ignored", "nested-ignored-case", "deleted"] as const)(
-  "refuses before Git can discard local state: %s",
+  "preserves nested ignored files and refuses unstaged deletions: %s",
   (scenario) =>
     Effect.gen(function* () {
       const f = yield* fixture;
@@ -514,15 +585,13 @@ it.effect.each(["nested-ignored", "nested-ignored-case", "deleted"] as const)(
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
       const directory = scenario === "nested-ignored-case" ? "SRC" : "src";
-      if (scenario === "nested-ignored-case")
-        yield* f.fs.rename(`${f.worktree}/src`, `${f.worktree}/SRC`);
       if (scenario !== "deleted") yield* f.write(`${directory}/cache/local`, "irreplaceable");
       else yield* f.fs.remove(`${f.worktree}/src/clean`);
       const before = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
       yield* Effect.gen(function* () {
         const checkout = yield* makeCheckout;
         expect((yield* checkout.release(f.worktree, f.root).pipe(Effect.result))._tag).toBe(
-          "Failure",
+          scenario === "deleted" ? "Failure" : "Success",
         );
         if (scenario !== "deleted")
           expect(yield* f.fs.readFileString(`${f.worktree}/${directory}/cache/local`)).toBe(

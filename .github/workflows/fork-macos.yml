@@ -31,6 +31,7 @@ jobs:
       - uses: ./.github/actions/setup-deps
       - run: echo '.scratch/' >> .git/info/exclude
       - run: vp test run apps/server/src/worktreeCleanup/Checkout.test.ts apps/server/src/worktreeCleanup/CheckoutSweep.test.ts apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts apps/server/src/terminal/Manager.test.ts apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts apps/server/src/git/GitWorkflowService.test.ts
+      - run: vp test run apps/server/src/vcs/GitVcsDriver.test.ts -t 'sparse checkpoint preserves two captures'
 
   preview_calibration:
     name: Fork Browser Calibration (macOS)

@@ -647,9 +647,19 @@ it.effect("checkpoint recovery preserves interruption and removes the private in
 
 it.effect.each(
   [false, true].flatMap((nested) =>
-    (["sparse", "flags", "manual-skip", "missing", "non-cone-missing"] as const).map(
-      (indexState) => ({ nested, indexState }),
-    ),
+    (
+      [
+        "sparse",
+        "flags",
+        "manual-skip",
+        "missing",
+        "non-cone",
+        "non-cone-flags",
+        "non-cone-manual-skip",
+        "non-cone-missing",
+        "non-cone-root-missing",
+      ] as const
+    ).map((indexState) => ({ nested, indexState })),
   ),
 )(
   "sparse checkpoint preserves two captures (nested=$nested, index=$indexState)",
@@ -662,7 +672,10 @@ it.effect.each(
       const driver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
         Effect.provideService(VcsProcess.VcsProcess, {
           run: (input) => {
-            if (input.args.includes("read-tree") && input.args.includes("index.sparse=true"))
+            if (
+              input.args.includes("read-tree") &&
+              (input.args.includes("index.sparse=true") || input.args.includes("-u"))
+            )
               freshReadTrees++;
             return liveProcess.run(input);
           },
@@ -686,21 +699,29 @@ it.effect.each(
       yield* git(["add", "."]);
       yield* git(["commit", "-m", "sparse fixture"]);
       yield* git(["sparse-checkout", "set", "--cone", "--sparse-index", "scope/in", "elsewhere"]);
-      if (indexState === "non-cone-missing")
-        yield* git(["sparse-checkout", "set", "--no-cone", "/scope/in/", "/elsewhere/"]);
+      const rootOnly = indexState === "non-cone-root-missing";
+      if (indexState.startsWith("non-cone"))
+        yield* git([
+          "sparse-checkout",
+          "set",
+          "--no-cone",
+          ...(rootOnly ? ["/*", "!/*/"] : ["/scope/in/", "/elsewhere/"]),
+        ]);
       yield* write("scope/in/edit", "staged\n");
       yield* write("elsewhere/file", "staged outside\n");
-      yield* git(["add", "."]);
+      yield* git(["add", ...(rootOnly ? ["--sparse"] : []), "."]);
       if (indexState === "flags")
         yield* git(["update-index", "--assume-unchanged", "scope/in/delete"]);
-      if (indexState === "manual-skip")
+      if (indexState === "manual-skip" || indexState === "non-cone-manual-skip")
         yield* git(["update-index", "--skip-worktree", "scope/in/delete"]);
+      if (indexState === "non-cone-flags")
+        yield* git(["update-index", "--assume-unchanged", "scope/out/deep/absent"]);
       yield* git(["config", "sparse.expectFilesOutsideOfPatterns", "true"]);
       yield* write("scope/in/edit", "working\n");
       yield* write("scope/out/present", "modified skipped\n");
       yield* write("scope/out/new file", "new outside cone\n");
       yield* write("elsewhere/file", "working outside\n");
-      yield* fs.remove(path.join(cwd, "scope/in/delete"));
+      yield* fs.remove(path.join(cwd, "scope/in/delete"), { force: true });
       const indexPath = path.join(cwd, ".git/index");
       if (indexState.endsWith("missing")) yield* fs.remove(indexPath);
       const originalIndex = yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null));
@@ -716,14 +737,6 @@ it.effect.each(
           cwd: captureCwd,
           checkpointRef: ref,
         });
-        if (indexState === "non-cone-missing") {
-          assert.strictEqual((yield* capture.pipe(Effect.flip))._tag, "VcsProcessExitError");
-          assert.isFalse(
-            yield* driver.checkpoints.hasCheckpointRef({ cwd: captureCwd, checkpointRef: ref }),
-          );
-          assert.isFalse(yield* fs.exists(indexPath));
-          break;
-        }
         yield* capture;
         for (const [name, content] of [
           ["scope/out/deep/absent", "original\n"],
@@ -738,7 +751,8 @@ it.effect.each(
           assert.strictEqual((yield* git(["show", `${ref}:${name}`])).stdout, content);
         }
         const files = (yield* git(["ls-tree", "-rz", "--name-only", ref])).stdout.split("\0");
-        assert.notInclude(files, "scope/in/delete");
+        if (rootOnly) assert.include(files, "scope/in/delete");
+        else assert.notInclude(files, "scope/in/delete");
         if (turn === 2) assert.notInclude(files, "scope/out/new file");
         assert.deepEqual(
           yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null)),
@@ -750,7 +764,15 @@ it.effect.each(
           "working outside\n",
         );
       }
-      assert.strictEqual(freshReadTrees, indexState === "missing" ? 2 : 0);
+      assert.strictEqual(
+        freshReadTrees,
+        indexState.endsWith("missing") || indexState === "non-cone-flags" ? 2 : 0,
+      );
+      assert.isEmpty(
+        (yield* fs.readDirectory(path.join(cwd, ".git"))).filter((name) =>
+          name.startsWith("styal-checkpoint-"),
+        ),
+      );
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 

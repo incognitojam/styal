@@ -21,6 +21,8 @@ const Journal = Schema.Struct({
   phase: Schema.Literals(["releasing", "released", "restoring"]),
   status: Schema.String,
   index: Schema.String,
+  head: Schema.optionalKey(Schema.String),
+  branch: Schema.optionalKey(Schema.String),
   files: Schema.Record(Schema.String, Schema.String),
   recoveryFiles: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 });
@@ -186,6 +188,8 @@ export const makeCheckout = Effect.gen(function* () {
     return {
       status,
       index: yield* crypto.digestHex(Digest.sha256, new TextEncoder().encode(index)),
+      head: yield* command(root, ["rev-parse", "--verify", "--quiet", "HEAD"], [0, 1]),
+      branch: yield* command(root, ["symbolic-ref", "--quiet", "HEAD"], [0, 1]),
       files,
     };
   });
@@ -197,6 +201,8 @@ export const makeCheckout = Effect.gen(function* () {
     if (
       before.status !== after.status ||
       before.index !== after.index ||
+      (before.head !== undefined && before.head !== after.head) ||
+      (before.branch !== undefined && before.branch !== after.branch) ||
       Object.entries(before.files).some(([name, hash]) => after.files[name] !== hash)
     )
       return yield* fail(
@@ -440,32 +446,6 @@ export const makeCheckout = Effect.gen(function* () {
       const current = yield* snapshot(root);
       if (Object.values(current.files).includes("missing"))
         return yield* fail("Worktree has an unstaged deletion; sources kept.");
-      const ignored = yield* command(root, [
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "-z",
-      ]);
-      if (ignored && !ignored.endsWith("\0")) return yield* fail("Incomplete ignored file list.");
-      const trackedDirectories = new Set(
-        trackedPaths
-          .split("\0")
-          .filter((name) => name.includes("/"))
-          .map((name) => name.split("/")[0]!.normalize("NFC").toLowerCase()),
-      );
-      if (
-        ignored
-          .split("\0")
-          .some(
-            (name) =>
-              name.includes("/") &&
-              trackedDirectories.has(name.split("/")[0]!.normalize("NFC").toLowerCase()),
-          )
-      )
-        return yield* fail(
-          "Ignored files inside tracked source folders could be removed by Git; sources kept.",
-        );
       if (current.status.split("\0").some((entry) => entry.startsWith(" A ")))
         return yield* fail("Worktree has intent-to-add changes; sources kept.");
       return current;
@@ -489,13 +469,15 @@ export const makeCheckout = Effect.gen(function* () {
       if (
         before.status !== final.status ||
         before.index !== final.index ||
+        before.head !== final.head ||
+        before.branch !== final.branch ||
         Object.entries(before.files).some(([name, hash]) => final.files[name] !== hash) ||
         Object.keys(before.files).length !== Object.keys(final.files).length
       )
         return yield* fail("Worktree files changed during inspection; sources kept.");
       yield* beforeChange;
       mutationStarted = true;
-      yield* command(root, ["sparse-checkout", "set", "--cone"]);
+      yield* command(root, ["sparse-checkout", "set", "--no-cone", "--stdin"], [0], "/*\n!/*/\n");
       yield* step("release-set");
       yield* verify(root, before);
       const estimatedBytes = yield* io(async () => {
