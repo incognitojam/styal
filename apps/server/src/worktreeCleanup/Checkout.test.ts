@@ -6,6 +6,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { fixture, nodeLayer } from "./fixtures.testkit.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import { CheckoutLimits, makeCheckout } from "./Checkout.ts";
+import { makeDeletion } from "./Deletion.ts";
 
 it.effect(
   "un-checks-out clean sources, preserving dirty, untracked and ignored files, and restores exactly",
@@ -138,44 +139,107 @@ it.effect.each([
   }).pipe(Effect.provide(nodeLayer)),
 );
 
-it.effect.each(["staged", "moved-branch", "deleted-branch", "created-file", "detached"] as const)(
-  "preserves changes across release and restore: %s",
-  (scenario) =>
+it.effect.each([
+  "staged",
+  "moved-branch",
+  "deleted-branch",
+  "created-file",
+  "detached",
+  "symlink",
+  "unmerged",
+] as const)("preserves changes across release and restore: %s", (scenario) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.write("src/clean", "original");
+    yield* f.write("docs/clean", "source");
+    yield* f.command(f.worktree, ["add", "."]);
+    yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
+    if (scenario !== "detached") yield* f.command(f.worktree, ["checkout", "-b", "feature"]);
+    if (scenario === "staged") {
+      yield* f.write("src/clean", "staged");
+      yield* f.command(f.worktree, ["add", "."]);
+    }
+    if (scenario === "symlink") {
+      yield* f.fs.remove(`${f.worktree}/src/clean`);
+      yield* f.fs.symlink("../.gitignore", `${f.worktree}/src/clean`);
+    }
+    if (scenario === "unmerged") {
+      yield* f.write("src/clean", "stashed");
+      yield* f.command(f.worktree, ["stash"]);
+      yield* f.write("src/clean", "conflict");
+      yield* f.command(f.worktree, ["commit", "-am", "fixture: conflicting change"]);
+      const pop = yield* f.git.execute({
+        operation: "fixture",
+        cwd: f.worktree,
+        args: ["stash", "pop"],
+        allowNonZeroExit: true,
+      });
+      expect(pop.exitCode).toBe(1);
+    }
+    const contentBefore = yield* f.fs.readFileString(`${f.worktree}/src/clean`);
+    yield* Effect.gen(function* () {
+      const checkout = yield* makeCheckout;
+      yield* checkout.release(f.worktree, f.root);
+      if (scenario === "moved-branch")
+        yield* f.command(f.root, ["update-ref", "refs/heads/feature", "main"]);
+      if (scenario === "deleted-branch")
+        yield* f.command(f.root, ["update-ref", "-d", "refs/heads/feature"]);
+      if (scenario === "created-file") yield* f.write("src/clean", "new edit");
+      const status = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
+      yield* checkout.restore(f.worktree);
+      expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
+        status,
+      );
+      expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe(
+        scenario === "created-file" ? "new edit" : contentBefore,
+      );
+      if (scenario === "symlink")
+        expect(yield* f.fs.readLink(`${f.worktree}/src/clean`)).toBe("../.gitignore");
+      expect(yield* f.fs.readFileString(`${f.worktree}/docs/clean`)).toBe("source");
+      if (scenario === "detached") {
+        const head = yield* f.git.execute({
+          operation: "fixture",
+          cwd: f.worktree,
+          args: ["symbolic-ref", "-q", "HEAD"],
+          allowNonZeroExit: true,
+        });
+        expect(head.exitCode).toBe(1);
+      }
+    }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
+  }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.effect.each(["ignored", "untracked", "regenerable"] as const)(
+  "accepts removal of a local file after a verified release, including another recovery stop: %s",
+  (kind) =>
     Effect.gen(function* () {
       const f = yield* fixture;
-      yield* f.write("src/clean", "original");
+      yield* f.write("src/clean", "source");
       yield* f.command(f.worktree, ["add", "."]);
-      yield* f.command(f.worktree, ["commit", "-m", "fixture: sources"]);
-      if (scenario !== "detached") yield* f.command(f.worktree, ["checkout", "-b", "feature"]);
-      if (scenario === "staged") {
-        yield* f.write("src/clean", "staged");
-        yield* f.command(f.worktree, ["add", "."]);
-      }
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      const target =
+        kind === "ignored" ? ".scratch/note" : kind === "untracked" ? "note" : "dist/output";
+      yield* f.write(target, "local");
       yield* Effect.gen(function* () {
         const checkout = yield* makeCheckout;
         yield* checkout.release(f.worktree, f.root);
-        if (scenario === "moved-branch")
-          yield* f.command(f.root, ["update-ref", "refs/heads/feature", "main"]);
-        if (scenario === "deleted-branch")
-          yield* f.command(f.root, ["update-ref", "-d", "refs/heads/feature"]);
-        if (scenario === "created-file") yield* f.write("src/clean", "new edit");
-        const status = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
+        if (kind === "regenerable") {
+          const deletion = yield* makeDeletion;
+          const selected = yield* deletion.inspect(f.worktree, ["dist/"]);
+          expect(selected).toEqual([`${f.worktree}/dist`]);
+          for (const path of selected) yield* deletion.remove(f.worktree, path);
+        } else yield* f.fs.remove(`${f.worktree}/${target}`);
+        const stopped = yield* makeCheckout.pipe(
+          Effect.provideService(CheckoutLimits, {
+            entries: 100_000,
+            bytes: 1_000_000,
+            step: (step) => (step === "restore-recorded" ? Effect.die("stop") : Effect.void),
+          }),
+        );
+        yield* stopped.restore(f.worktree).pipe(Effect.exit);
         yield* checkout.restore(f.worktree);
-        expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
-          status,
-        );
-        expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe(
-          scenario === "staged" ? "staged" : scenario === "created-file" ? "new edit" : "original",
-        );
-        if (scenario === "detached") {
-          const head = yield* f.git.execute({
-            operation: "fixture",
-            cwd: f.worktree,
-            args: ["symbolic-ref", "-q", "HEAD"],
-            allowNonZeroExit: true,
-          });
-          expect(head.exitCode).toBe(1);
-        }
+        expect(yield* f.fs.exists(`${f.worktree}/${target}`)).toBe(false);
+        expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
       }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
     }).pipe(Effect.provide(nodeLayer)),
 );
@@ -525,14 +589,20 @@ it.effect.each([
   }).pipe(Effect.provide(nodeLayer)),
 );
 
-it.effect.each(["release-recorded", "release-set", "restore-recorded", "restore-disabled"])(
-  "refuses a new deletion after a stop at %s without resurrecting it",
-  (stopped) =>
+it.effect.each(
+  ["release-recorded", "release-set", "restore-recorded", "restore-disabled"].flatMap((stopped) =>
+    [".gitignore", "src/dirty"].map((target) => ({ stopped, target })),
+  ),
+)(
+  "refuses a new deletion of $target after a stop at $stopped without resurrecting it",
+  ({ stopped, target }) =>
     Effect.gen(function* () {
       const f = yield* fixture;
       yield* f.write("src/clean", "source");
+      yield* f.write("src/dirty", "original");
       yield* f.command(f.worktree, ["add", "."]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      yield* f.write("src/dirty", "local edit");
       yield* Effect.gen(function* () {
         const normal = yield* makeCheckout;
         const interrupted = yield* makeCheckout.pipe(
@@ -548,20 +618,20 @@ it.effect.each(["release-recorded", "release-set", "restore-recorded", "restore-
           yield* normal.release(f.worktree, f.root);
           yield* interrupted.restore(f.worktree).pipe(Effect.exit);
         }
-        yield* f.fs.remove(`${f.worktree}/.gitignore`);
+        yield* f.fs.remove(`${f.worktree}/${target}`);
         const status = (yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout;
         for (const _attempt of [1, 2]) {
           const result = yield* normal.restore(f.worktree).pipe(Effect.result);
           expect(result._tag).toBe("Failure");
-          if (result._tag === "Failure") expect(result.failure.message).toContain(".gitignore");
-          expect(yield* f.fs.exists(`${f.worktree}/.gitignore`)).toBe(false);
+          if (result._tag === "Failure") expect(result.failure.message).toContain(target);
+          expect(yield* f.fs.exists(`${f.worktree}/${target}`)).toBe(false);
           expect((yield* f.command(f.worktree, ["status", "--porcelain=v1", "-z"])).stdout).toBe(
             status,
           );
         }
-        yield* f.command(f.worktree, ["add", ".gitignore"]);
+        yield* f.command(f.worktree, ["rm", "--cached", "--sparse", "--", target]);
         yield* normal.restore(f.worktree);
-        expect(yield* f.fs.exists(`${f.worktree}/.gitignore`)).toBe(false);
+        expect(yield* f.fs.exists(`${f.worktree}/${target}`)).toBe(false);
         expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
       }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
     }).pipe(Effect.provide(nodeLayer)),

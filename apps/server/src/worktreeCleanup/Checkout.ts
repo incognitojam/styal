@@ -258,16 +258,17 @@ export const makeCheckout = Effect.gen(function* () {
       Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
     );
     yield* identity(root, admin);
-    const entries = yield* command(root, ["ls-files", "--stage", "-z"]);
+    const entries = yield* command(root, ["ls-files", "-t", "--stage", "-z"]);
     if (entries && !entries.endsWith("\0")) return yield* fail("Incomplete checkout index.");
     const indexed = entries.split("\0").filter(Boolean);
     if (indexed.length > limits.entries)
       return yield* fail("Worktree checkout inspection exceeded its file limit.");
     const checked = new Set<string>();
     for (const entry of indexed) {
+      if (!entry.startsWith("S ")) continue;
       const name = entry.slice(entry.indexOf("\t") + 1);
       if (
-        !/^[0-9]{6} [0-9a-f]+ 0\t/.test(entry) ||
+        !/^S [0-9]{6} [0-9a-f]+ 0\t/.test(entry) ||
         path.isAbsolute(name) ||
         name.split("/").some((part) => part === ".." || part === ".git")
       )
@@ -287,8 +288,8 @@ export const makeCheckout = Effect.gen(function* () {
         if (
           (!leaf && !stat.isDirectory()) ||
           (leaf &&
-            !entry.startsWith("160000 ") &&
-            (stat.isDirectory() || (stat.isSymbolicLink() && !entry.startsWith("120000 "))))
+            !entry.startsWith("S 160000 ") &&
+            (stat.isDirectory() || (stat.isSymbolicLink() && !entry.startsWith("S 120000 "))))
         )
           return yield* fail(
             `Local path "${relative}" blocks source checkout. Move it aside and retry.`,
@@ -299,21 +300,30 @@ export const makeCheckout = Effect.gen(function* () {
     const originals = journal.recoveryFiles ?? journal.files;
     const before = yield* snapshot(root, Object.keys(originals));
     const records = before.status.split("\0");
+    const stagedDeletions = new Set<string>();
     for (let i = 0; i < records.length - 1; i++) {
       const record = records[i]!;
       if (record[1] === "D")
         return yield* fail(
           `Tracked file "${record.slice(3)}" was deleted. Stage or undo the deletion before retrying checkout.`,
         );
+      if (record[0] === "D") stagedDeletions.add(record.slice(3));
       if (/^[RC]|^.[RC]/.test(record)) i++;
     }
     for (const name of Object.keys(originals)) {
-      if (before.files[name] === "missing")
+      if (
+        before.files[name] === "missing" &&
+        journal.phase !== "released" &&
+        !stagedDeletions.has(name)
+      )
         return yield* fail(
           `Protected file "${name}" is missing. Restore it before retrying checkout.`,
         );
     }
-    yield* save(admin, { ...before, recoveryFiles: originals, phase: "restoring" });
+    const recoveryFiles = Object.fromEntries(
+      Object.entries(before.files).filter(([, hash]) => hash !== "missing"),
+    );
+    yield* save(admin, { ...before, recoveryFiles, phase: "restoring" });
     yield* step("restore-recorded");
     yield* command(root, ["sparse-checkout", "disable"]);
     yield* step("restore-disabled");
