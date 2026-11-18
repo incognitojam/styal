@@ -686,6 +686,13 @@ export function workEntriesViewedSources(
   return [...documents.values(), ...pages.values()];
 }
 
+/** `text` without any of `characters` at its end; a backward scan, linear in a long run. */
+function withoutTrailing(text: string, characters: string): string {
+  let end = text.length;
+  while (end > 0 && characters.includes(text[end - 1]!)) end -= 1;
+  return text.slice(0, end);
+}
+
 /** Host, path and query of an http(s) URL; the scheme, fragment and trailing slash do not count. */
 function viewedSourceUrlKey(url: string): string | null {
   let parsed: URL;
@@ -695,7 +702,7 @@ function viewedSourceUrlKey(url: string): string | null {
     return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  return `${parsed.host}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
+  return `${parsed.host}${withoutTrailing(parsed.pathname, "/")}${parsed.search}`;
 }
 
 /** Message text without fenced code blocks and code spans, which show URLs as text. */
@@ -763,7 +770,7 @@ function linkedUrlKeys(text: string): Set<string> {
       }
     }
     scannedTo = end;
-    const key = viewedSourceUrlKey(prose.slice(match.index, end).replace(/[.,;:!?*_~]+$/, ""));
+    const key = viewedSourceUrlKey(withoutTrailing(prose.slice(match.index, end), ".,;:!?*_~"));
     if (key !== null) keys.add(key);
   }
   return keys;
