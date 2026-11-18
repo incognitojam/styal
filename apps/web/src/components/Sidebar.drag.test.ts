@@ -1051,19 +1051,36 @@ describe("project-grouped drag projection", () => {
 
     it.each([
       // A's folder opens above B, with a header-sized gap above the row.
-      { order: ["A", "B"], shift: 25 },
+      { order: ["A", "B"], collapsed: [], shift: 25 },
+      // A's folder was left collapsed, so it opens closed: only its header.
+      { order: ["A", "B"], collapsed: ["A"], shift: -58 },
       // A project with no folder takes no row.
-      { order: ["B"], shift: -83 },
-    ])("a row whose folder is not showing previews where it lands ($order)", ({ order, shift }) => {
-      const withPin = [pinnedHeader, pin("pa", "A"), divider, header("B"), row("b1", "B"), ...tail];
-      const result = preview(
-        { items: withPin, settledOrder: [], settledExpanded: true, folders: folders(order) },
-        "pa",
-        "b1",
-      );
-      expect(result.get(headerB)?.y).toBe(shift);
-      expect(result.get("b1")?.y).toBe(shift);
-    });
+      { order: ["B"], collapsed: [], shift: -83 },
+    ])(
+      "a row whose folder is not showing previews where it lands ($order, collapsed $collapsed)",
+      ({ order, collapsed, shift }) => {
+        const withPin = [
+          pinnedHeader,
+          pin("pa", "A"),
+          divider,
+          header("B"),
+          row("b1", "B"),
+          ...tail,
+        ];
+        const result = preview(
+          {
+            items: withPin,
+            settledOrder: [],
+            settledExpanded: true,
+            folders: folders(order, [], collapsed),
+          },
+          "pa",
+          "b1",
+        );
+        expect(result.get(headerB)?.y).toBe(shift);
+        expect(result.get("b1")?.y).toBe(shift);
+      },
+    );
   });
 
   describe("with a grouped Working shelf", () => {

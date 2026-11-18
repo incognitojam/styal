@@ -1561,6 +1561,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const folderGroups = boringSidebarEnabled
     ? scopedProjectGroups.length === 0
       ? // An archived project keeps a folder for its active threads, below the rest.
@@ -2437,9 +2438,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   : [],
               ),
             ),
+            // Folders not showing yet open with their saved state.
             collapsed: new Set(
-              projectFolders.flatMap((folder) =>
-                folder.collapsed ? [folder.group.projectKey] : [],
+              folderGroups.flatMap((group) =>
+                resolveProjectExpanded(projectExpandedById, sidebarFolderExpansionKeys(group))
+                  ? []
+                  : [group.projectKey],
               ),
             ),
           },

@@ -354,13 +354,14 @@ export function createSidebarSortingStrategy(input: {
       const result: SidebarListItem[] = [];
       for (const group of folders.order) {
         // A collapsed folder hides a thread dropped into it, unless it is the open thread.
-        const folderRows = (rowsByGroup.get(group) ?? []).filter(
+        const groupRows = rowsByGroup.get(group) ?? [];
+        const folderRows = groupRows.filter(
           (row) =>
             row.key !== active.key ||
             !folders.collapsed.has(group) ||
             row.key === input.routeThreadKey,
         );
-        if (folderRows.length > 0 || folders.kept.has(group)) {
+        if (groupRows.length > 0 || folders.kept.has(group)) {
           result.push({ kind: "project-header", group }, ...folderRows);
         }
       }
