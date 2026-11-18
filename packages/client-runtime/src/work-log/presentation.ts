@@ -706,21 +706,40 @@ function viewedSourceUrlKey(url: string): string | null {
 }
 
 /** Message text without fenced code blocks and code spans, which show URLs as text. */
+/** A line's leading fence delimiter (up to three spaces, then a backtick or tilde run) and the rest. */
+function fenceDelimiter(line: string) {
+  let start = 0;
+  while (start < 3 && line[start] === " ") start += 1;
+  const char = line[start];
+  if (char !== "`" && char !== "~") return null;
+  let end = start;
+  while (line[end] === char) end += 1;
+  return { char, length: end - start, rest: line.slice(end) };
+}
+
 function withoutCode(text: string): string {
   const prose: string[] = [];
   let fence: { readonly char: string; readonly length: number } | null = null;
   for (const line of text.split("\n")) {
+    const delimiter = fenceDelimiter(line);
     if (fence !== null) {
-      const close = /^ {0,3}(`+|~+)[ \t]*$/.exec(line)?.[1];
-      if (close !== undefined && close[0] === fence.char && close.length >= fence.length) {
+      if (
+        delimiter !== null &&
+        delimiter.char === fence.char &&
+        delimiter.length >= fence.length &&
+        delimiter.rest.trim() === ""
+      ) {
         fence = null;
       }
       continue;
     }
-    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     // A backtick fence's info string cannot contain a backtick; such a line is inline code.
-    if (open && !(open[1]![0] === "`" && open[2]!.includes("`"))) {
-      fence = { char: open[1]![0]!, length: open[1]!.length };
+    if (
+      delimiter !== null &&
+      delimiter.length >= 3 &&
+      !(delimiter.char === "`" && delimiter.rest.includes("`"))
+    ) {
+      fence = { char: delimiter.char, length: delimiter.length };
       continue;
     }
     prose.push(line);
