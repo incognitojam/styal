@@ -114,7 +114,7 @@ it.each(["resume", "draft", "question"] as const)(
     );
     const action = { resume: "Resume thread", draft: "Submit message", question: "Submit" }[mode];
     expect(screen.getByRole("button", { name: "Stop generation" }).query()).toBeNull();
-    expect(target()).toBe(screen.getByRole("button", { name: action, exact: true }).element());
+    expect(screen.getByRole("button", { name: action, exact: true }).element()).toBeDisabled();
     await act(() => {
       for (let i = 0; i < 20; i++) target()?.click();
     });
@@ -124,6 +124,7 @@ it.each(["resume", "draft", "question"] as const)(
     expect(props.onSubmitMessage).not.toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByRole("button", { name: action, exact: true }).element()).toBeEnabled();
     await act(() => target()?.click());
     expect(
       { resume: props.onResume, draft: props.onSubmitMessage, question: submit }[mode],

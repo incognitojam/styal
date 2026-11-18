@@ -241,6 +241,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             if (stopPhase === "landed") event.preventDefault();
           }}
           disabled={
+            stopPhase === "landed" ||
             !canOperateThread ||
             isEnvironmentUnavailable ||
             isSendDisabled ||
@@ -334,6 +335,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         else onSubmitMessage?.(event);
       }}
       disabled={
+        stopPhase === "landed" ||
         isSendBusy ||
         isSendDisabled ||
         isEnvironmentUnavailable ||
