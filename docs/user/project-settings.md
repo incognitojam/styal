@@ -330,6 +330,13 @@ started them, and the page's status line counts them. A thread comes back to the
 needs an approval or an answer, fails, or when you open it, pin it or send it a message
 yourself. They finish without a Done notification, and stay in search and the command palette.
 
+When you open the page after at least half an hour away, the end of the chat lists what happened
+since you last looked at it on any of your devices: threads that failed or hit a usage limit, the
+chat's reports, threads that finished and you haven't opened, and pull requests that merged. Open
+questions stay in **Needs you**. Long lists fold into groups with **Show all**. If the chat's earlier
+history isn't loaded, **Load earlier** fetches it so older reports can be listed. The list is not
+saved: it stays until you leave the page, and next time shows only what came after.
+
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
 

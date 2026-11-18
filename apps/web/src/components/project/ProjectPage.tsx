@@ -1,4 +1,8 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  type CapturedSinceLastVisit,
+  captureSinceLastVisit,
+} from "@t3tools/client-runtime/project-since-last-visit";
 import { projectCoordinatorPatch } from "@t3tools/client-runtime/state/project-coordinators";
 import { projectCoordinatorThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { Navigate, useNavigate } from "@tanstack/react-router";
@@ -16,6 +20,7 @@ import {
 } from "../../state/entities";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
+import { environmentThreadShells } from "../../state/threads";
 import { useEnvironmentShellStatus } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
@@ -64,6 +69,26 @@ function ProjectChat({ page }: { page: ProjectPageState }) {
   const sentRef = draftSession?.promotedTo ?? draftRedirect;
   const sentShell = useQuietThreadShell(sentRef);
   const chat = chatShell !== null && chatShell.deletedAt == null ? chatRef : null;
+  // Taken from the first live chat shell this view sees, before showing the chat moves its read
+  // mark; a cached snapshot would miss what happened since it was saved.
+  const [sinceLastVisit, setSinceLastVisit] = useState<CapturedSinceLastVisit | null | undefined>();
+  if (sinceLastVisit === undefined && chat !== null && shellLive) {
+    const members = new Set(page.group.memberProjects.map((m) => `${m.environmentId}:${m.id}`));
+    setSinceLastVisit(
+      captureSinceLastVisit(
+        sinceLastVisit,
+        {
+          chat: chatShell,
+          chatRef: chat,
+          threads: appAtomRegistry
+            .get(environmentThreadShells.threadShellsAtom)
+            .filter((thread) => members.has(`${thread.environmentId}:${thread.projectId}`)),
+        },
+        // oxlint-disable-next-line react/purity -- read once per page view, when the capture is taken
+        Date.now(),
+      ),
+    );
+  }
   // The draft's thread this page named as the chat, until the settings stream names it too.
   const [named, setNamed] = useState<ScopedThreadRef | null>(null);
   if (named !== null && chatThreadId === named.threadId) setNamed(null);
@@ -160,6 +185,7 @@ function ProjectChat({ page }: { page: ProjectPageState }) {
         threadId={show.ref.threadId}
         routeKind="server"
         projectChat={projectChat}
+        sinceLastVisit={sinceLastVisit ?? null}
       />
     ) : null;
   return (
