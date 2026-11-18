@@ -957,16 +957,27 @@ describe("project-grouped drag projection", () => {
       section: "pinned",
       group,
     });
+    const folders = (order: string[], kept: string[] = [], collapsed: string[] = []) => ({
+      order,
+      kept: new Set(kept),
+      collapsed: new Set(collapsed),
+    });
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));
     const headerC = sidebarListItemId(header("C"));
+    const tail = [settledHeader, marker("settled-placeholder")];
 
     it("previews a pinned row in its own folder at its latest-message slot", () => {
       const withPin = [pinnedHeader, pin("pa", "A"), divider, ...items.slice(2)];
-      const input = { items: withPin, settledOrder: [], settledExpanded: true };
       // Hovered over B, but folders list by latest message: pa lands between a1 and a2.
       const result = preview(
-        { ...input, keptFolders: new Set<string>(), activeOrder: ["a1", "pa", "a2", "b1", "b2"] },
+        {
+          items: withPin,
+          settledOrder: [],
+          settledExpanded: true,
+          folders: folders(["A", "B"]),
+          activeOrder: ["a1", "pa", "a2", "b1", "b2"],
+        },
         "pa",
         "b1",
       );
@@ -985,15 +996,14 @@ describe("project-grouped drag projection", () => {
         header("B"),
         header("C"),
         row("c1", "C"),
-        settledHeader,
-        marker("settled-placeholder"),
+        ...tail,
       ];
       const result = preview(
         {
           items: withFolders,
           settledOrder: [],
           settledExpanded: true,
-          keptFolders: new Set(["B"]),
+          folders: folders(["A", "B", "C"], ["B"]),
         },
         "a1",
         "p",
@@ -1004,6 +1014,55 @@ describe("project-grouped drag projection", () => {
       // a1 moved above p; B then C close up under the Active boundary.
       expect(result.get(headerB)?.y).toBe(-25);
       expect(result.get("c1")?.y).toBe(-25);
+    });
+
+    it.each([
+      { route: null, shift: -83 },
+      { route: "pb", shift: 0 },
+    ])(
+      "a row dropped into a collapsed folder opens a slot only as the open thread ($route)",
+      ({ route, shift }) => {
+        const withCollapsed = [
+          pinnedHeader,
+          pin("pb", "B"),
+          divider,
+          header("A"),
+          row("a1", "A"),
+          header("B"),
+          header("C"),
+          row("c1", "C"),
+          ...tail,
+        ];
+        const result = preview(
+          {
+            items: withCollapsed,
+            settledOrder: [],
+            settledExpanded: true,
+            routeThreadKey: route,
+            folders: folders(["A", "B", "C"], ["B"], ["B"]),
+          },
+          "pb",
+          "c1",
+        );
+        expect(result.get(headerB)?.y).toBe(-83);
+        expect(result.get(headerC)?.y).toBe(shift);
+      },
+    );
+
+    it.each([
+      // A's folder opens above B, with a header-sized gap above the row.
+      { order: ["A", "B"], shift: 25 },
+      // A project with no folder takes no row.
+      { order: ["B"], shift: -83 },
+    ])("a row whose folder is not showing previews where it lands ($order)", ({ order, shift }) => {
+      const withPin = [pinnedHeader, pin("pa", "A"), divider, header("B"), row("b1", "B"), ...tail];
+      const result = preview(
+        { items: withPin, settledOrder: [], settledExpanded: true, folders: folders(order) },
+        "pa",
+        "b1",
+      );
+      expect(result.get(headerB)?.y).toBe(shift);
+      expect(result.get("b1")?.y).toBe(shift);
     });
   });
 

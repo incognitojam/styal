@@ -1561,6 +1561,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const folderGroups = boringSidebarEnabled
+    ? scopedProjectGroups.length === 0
+      ? // An archived project keeps a folder for its active threads, below the rest.
+        [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
+      : scopedProjectGroups
+    : null;
   const keepEmptyFolder = (group: SidebarProjectSnapshot) =>
     scopedProjectGroups.length > 0 || (group.pinned && !group.archived);
   const {
@@ -1617,12 +1623,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threads: listedThreads,
     delegatedUnderParent,
     routeRowThreadKey,
-    folderGroups: boringSidebarEnabled
-      ? scopedProjectGroups.length === 0
-        ? // An archived project keeps a folder for its active threads, below the rest.
-          [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
-        : scopedProjectGroups
-      : null,
+    folderGroups,
     keepEmptyFolders: keepEmptyFolder,
   });
 
@@ -2425,15 +2426,23 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    ...(hasProjectFolders
+    ...(hasProjectFolders && folderGroups !== null
       ? {
-          keptFolders: new Set(
-            projectFolders.flatMap((folder) =>
-              folder.hiddenThreads.length > 0 || keepEmptyFolder(folder.group)
-                ? [folder.group.projectKey]
-                : [],
+          folders: {
+            order: folderGroups.map((group) => group.projectKey),
+            kept: new Set(
+              projectFolders.flatMap((folder) =>
+                folder.hiddenThreads.length > 0 || keepEmptyFolder(folder.group)
+                  ? [folder.group.projectKey]
+                  : [],
+              ),
             ),
-          ),
+            collapsed: new Set(
+              projectFolders.flatMap((folder) =>
+                folder.collapsed ? [folder.group.projectKey] : [],
+              ),
+            ),
+          },
         }
       : {}),
     boundaryLabelHeight: SIDEBAR_DRAG_LABEL_HEIGHT,

@@ -189,9 +189,14 @@ export function createSidebarSortingStrategy(input: {
   cardHeight?: number;
   slimHeight?: number;
   boundaryLabelHeight?: number;
-  /** Set while folders render: folders that stay with no row on screen. Other
-      folders leave with their last row, and rows never reorder within one. */
-  keptFolders?: ReadonlySet<string>;
+  /** Set while folders render. Rows never reorder within a folder; a folder
+      leaves with its last row unless it is kept. */
+  folders?: {
+    /** Every project that can have a folder, in folder order. */
+    order: readonly string[];
+    kept: ReadonlySet<string>;
+    collapsed: ReadonlySet<string>;
+  };
 }): SortingStrategy {
   if (input.enabled === false) return () => stationary;
   const { items } = input;
@@ -268,8 +273,13 @@ export function createSidebarSortingStrategy(input: {
     let groupedCardHeight: number | undefined;
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
+    let folderHeaderHeight: number | undefined;
     for (const [index, item] of items.entries()) {
-      if (item.kind === "project-header" || item.kind === "working-project-header") continue;
+      if (item.kind === "project-header") {
+        folderHeaderHeight = Math.max(folderHeaderHeight ?? 0, rects[index]?.height ?? 0);
+        continue;
+      }
+      if (item.kind === "working-project-header") continue;
       if (item.kind === "marker") {
         if (isShelfHeader(item)) {
           const height = rects[index]?.height;
@@ -333,24 +343,33 @@ export function createSidebarSortingStrategy(input: {
       }
       return result;
     };
-    // Each folder keeps its rows in place; a row without a folder gets one once the drop lands.
-    const inFolders = (rows: readonly ThreadItem[], keptFolders: ReadonlySet<string>) => {
+    // Folders follow the folder order, so a folder the drop opens shows in its place.
+    const inFolders = (rows: readonly ThreadItem[], folders: NonNullable<typeof input.folders>) => {
       const rowsByGroup = new Map<string | undefined, ThreadItem[]>();
-      for (const row of rows)
-        rowsByGroup.set(row.group, [...(rowsByGroup.get(row.group) ?? []), row]);
-      const result: SidebarListItem[] = [];
-      for (const item of items) {
-        if (item.kind !== "project-header") continue;
-        const folderRows = rowsByGroup.get(item.group) ?? [];
-        rowsByGroup.delete(item.group);
-        if (folderRows.length > 0 || keptFolders.has(item.group)) result.push(item, ...folderRows);
+      for (const row of rows) {
+        const groupRows = rowsByGroup.get(row.group);
+        if (groupRows) groupRows.push(row);
+        else rowsByGroup.set(row.group, [row]);
       }
-      return [...result, ...[...rowsByGroup.values()].flat()];
+      const result: SidebarListItem[] = [];
+      for (const group of folders.order) {
+        // A collapsed folder hides a thread dropped into it, unless it is the open thread.
+        const folderRows = (rowsByGroup.get(group) ?? []).filter(
+          (row) =>
+            row.key !== active.key ||
+            !folders.collapsed.has(group) ||
+            row.key === input.routeThreadKey,
+        );
+        if (folderRows.length > 0 || folders.kept.has(group)) {
+          result.push({ kind: "project-header", group }, ...folderRows);
+        }
+      }
+      return result;
     };
     const section = (name: "active" | "settled") => {
       // Folders draw in place of the active placeholder.
-      if (name === "active" && input.keptFolders !== undefined)
-        projected.push(...inFolders(groups.active, input.keptFolders));
+      if (name === "active" && input.folders !== undefined)
+        projected.push(...inFolders(groups.active, input.folders));
       else if (groups[name].length === 0) marker(`${name}-placeholder`);
       else if (name === "active" && target.activeGroupOrder !== undefined)
         projected.push(...withProjectHeaders(groups.active));
@@ -392,14 +411,17 @@ export function createSidebarSortingStrategy(input: {
           ? cardHeight
           : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;
-      return item.kind === "marker" &&
-        (item.marker === "pinned-header" || item.marker === "pinned-divider")
-        ? labelHeight
-        : item.kind === "marker" && item.marker.endsWith("placeholder")
-          ? slimHeight
-          : moved
-            ? fallback
-            : (rect?.height ?? fallback);
+      // A folder the drop opens has no header yet; it takes a measured header's height.
+      return item.kind === "project-header" && rect === undefined
+        ? (folderHeaderHeight ?? slimHeight)
+        : item.kind === "marker" &&
+            (item.marker === "pinned-header" || item.marker === "pinned-divider")
+          ? labelHeight
+          : item.kind === "marker" && item.marker.endsWith("placeholder")
+            ? slimHeight
+            : moved
+              ? fallback
+              : (rect?.height ?? fallback);
     });
     const firstShelf = items.findIndex(isShelfHeader);
     const shelfRect = rects[firstShelf];
