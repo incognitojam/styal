@@ -16,11 +16,17 @@ import { makeThreadFixture } from "../test-fixtures";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useProjectPinOrder } from "../hooks/useProjectPinOrder";
+import { readLocalApi } from "../localApi";
+import { useUiStateStore } from "../uiStateStore";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
 import { useConnectedEnvironmentIds } from "../state/environments";
-import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import {
+  readEnvironmentScope,
+  useEnvironmentScope,
+  useEnvironmentsWithScope,
+} from "../state/session";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
@@ -42,6 +48,7 @@ vi.mock(import("../hooks/useProjectPinOrder"), async (original) => {
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./sidebar/SidebarThreadRow", { spy: true });
 vi.mock("../state/session", { spy: true });
+vi.mock("../localApi", { spy: true });
 vi.mock(import("../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
   const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
@@ -348,6 +355,144 @@ describe("sidebar drag reorder", () => {
         scenario.pinned,
       );
       expect(getClientSettings().sidebarProjectSortOrder).toBe(scenario.sort);
+    }
+  });
+});
+
+describe("sidebar folder menu", () => {
+  // The folder header menu offers what the grouped project header menu does.
+  it.each([
+    { choose: "filter-project", archived: false, result: "the sidebar filters to the project" },
+    { choose: "archive-project", archived: false, result: "the project is archived" },
+    { choose: "unarchive-project", archived: true, result: "an archived project comes back" },
+    // Archived projects cannot be a filter, so their folder does not offer one.
+    { choose: null, archived: true, result: "an archived folder offers no filter" },
+    { choose: "copy-path:1", archived: false, result: "the second checkout's path is copied" },
+  ] as const)("choosing $choose: $result", async (scenario) => {
+    using _settings = clientSettings("boring");
+    using stack = new DisposableStack();
+    const show = vi.fn().mockResolvedValue(scenario.choose);
+    vi.mocked(readLocalApi).mockReturnValue({ contextMenu: { show } } as never);
+    stack.defer(() => vi.mocked(readLocalApi).mockReset());
+    using copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const originalPinOrder = vi.mocked(useProjectPinOrder).getMockImplementation()!;
+    stack.defer(() => vi.mocked(useProjectPinOrder).mockImplementation(originalPinOrder));
+    const archiveProject = vi.fn().mockResolvedValue({ _tag: "Success" });
+    const unarchiveProject = vi.fn().mockResolvedValue({ _tag: "Success" });
+    vi.mocked(useProjectPinOrder).mockImplementation(() => ({
+      ...originalPinOrder(),
+      archiveProject,
+      unarchiveProject,
+    }));
+    stack.defer(() => useUiStateStore.setState({ sidebarProjectScopeKeys: [] }));
+    vi.mocked(readEnvironmentScope).mockReturnValue(true);
+    // One repository checked out on two machines makes one folder with two paths.
+    const remoteEnvironmentId = EnvironmentId.make("remote");
+    const identity = {
+      canonicalKey: "github.com/example/alpha",
+      locator: { source: "git-remote", remoteName: "origin", remoteUrl: "git@example.com:alpha" },
+    } as const;
+    const archivedAt = scenario.archived ? "2026-01-02T00:00:00.000Z" : null;
+    const local = { ...project("alpha"), repositoryIdentity: identity, archivedAt };
+    const remote = {
+      ...project("alpha-remote"),
+      archivedAt,
+      environmentId: remoteEnvironmentId,
+      workspaceRoot: "/srv/alpha",
+      repositoryIdentity: identity,
+    };
+    const beta = project("beta");
+    mockNewThread([local, remote, beta]);
+    vi.mocked(useQuietThreadShells).mockReturnValue(
+      [local, beta].map((owner) =>
+        makeThreadFixture({
+          id: ThreadId.make(`${owner.title}-thread`),
+          environmentId,
+          projectId: owner.id,
+          title: `${owner.title} thread`,
+        }),
+      ),
+    );
+    // Both machines can pin and archive projects.
+    const organizing = { environment: { capabilities: { projectOrganization: true } } } as never;
+    vi.mocked(useServerConfigs).mockReturnValue(
+      new Map([
+        [environmentId, organizing],
+        [remoteEnvironmentId, organizing],
+      ]),
+    );
+    vi.mocked(useConnectedEnvironmentIds).mockReturnValue([environmentId, remoteEnvironmentId]);
+    vi.mocked(useEnvironmentsWithScope).mockReturnValue(
+      new Set([environmentId, remoteEnvironmentId]),
+    );
+    stack.defer(() => vi.mocked(useEnvironmentsWithScope).mockRestore());
+    vi.mocked(useEnvironmentScope).mockReturnValue(true);
+    await using screen = await renderSidebar();
+
+    const folderNames = () =>
+      [...screen.container.querySelectorAll('[data-testid="sidebar-project-folder"]')].map(
+        (folder) => folder.textContent,
+      );
+    const folder = [
+      ...screen.container.querySelectorAll<HTMLElement>(
+        '[data-testid="sidebar-project-folder"] button[aria-expanded]',
+      ),
+    ].find((button) => button.textContent?.includes("alpha"))!;
+    await act(() =>
+      folder.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 20,
+          clientY: 20,
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(show).toHaveBeenCalledOnce());
+    const items: ReadonlyArray<{ id: string; children?: ReadonlyArray<{ id: string }> }> =
+      show.mock.calls[0]![0];
+    expect(items.map((item) => item.id)).toEqual(
+      expect.arrayContaining([
+        scenario.archived ? "unarchive-project" : "archive-project",
+        "copy-path",
+      ]),
+    );
+    expect(items.some((item) => item.id === "filter-project")).toBe(!scenario.archived);
+    expect(
+      items.find((item) => item.id === "copy-path")?.children?.map((child) => child.id),
+    ).toEqual(["copy-path:0", "copy-path:1"]);
+
+    if (scenario.choose === "filter-project") {
+      // Beta's folder leaves; choosing Show all projects from the same menu brings it back.
+      await vi.waitFor(() =>
+        expect(folderNames().some((name) => name?.includes("beta"))).toBe(false),
+      );
+      show.mockResolvedValue("filter-project");
+      await act(() =>
+        folder.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 20,
+            clientY: 20,
+          }),
+        ),
+      );
+      await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
+      expect(
+        show.mock.calls[1]![0].find((item: { id: string }) => item.id === "filter-project").label,
+      ).toBe("Show all projects");
+      await vi.waitFor(() =>
+        expect(folderNames().some((name) => name?.includes("beta"))).toBe(true),
+      );
+    } else if (scenario.choose === "archive-project") {
+      await vi.waitFor(() => expect(archiveProject).toHaveBeenCalledOnce());
+      expect(archiveProject.mock.calls[0]![0].memberProjects).toHaveLength(2);
+    } else if (scenario.choose === "unarchive-project") {
+      await vi.waitFor(() => expect(unarchiveProject).toHaveBeenCalledOnce());
+      expect(archiveProject).not.toHaveBeenCalled();
+    } else if (scenario.choose === "copy-path:1") {
+      await vi.waitFor(() => expect(copy).toHaveBeenCalledWith("/srv/alpha"));
     }
   });
 });

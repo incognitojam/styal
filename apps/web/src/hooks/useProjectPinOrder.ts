@@ -92,6 +92,10 @@ export function useProjectPinOrder() {
     return AsyncResult.success(undefined);
   };
 
+  /** Brings an archived project back to project pickers. */
+  const unarchiveProject = (group: OrganizedGroup): Promise<GroupResult> =>
+    organize(group, { archived: false }, `Failed to unarchive ${group.displayName}`);
+
   /** Archives from the header menu with an Undo toast, since the way back is in Settings. */
   const archiveProject = async (group: OrganizedGroup): Promise<GroupResult> => {
     const result = await organize(
@@ -109,7 +113,7 @@ export function useProjectPinOrder() {
           children: "Undo",
           onClick: () => {
             toastManager.close(toastId);
-            void organize(group, { archived: false }, `Failed to unarchive ${group.displayName}`);
+            void unarchiveProject(group);
           },
         },
         data: { hideCopyButton: true },
@@ -118,5 +122,5 @@ export function useProjectPinOrder() {
     return result;
   };
 
-  return { setProjectPinned, reorderPinnedProjects, archiveProject };
+  return { setProjectPinned, reorderPinnedProjects, archiveProject, unarchiveProject };
 }
