@@ -64,7 +64,10 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { reportRecipientId } from "@t3tools/client-runtime/state/project-coordinators";
+import {
+  reportRecipientId,
+  shownReportRecipientId,
+} from "@t3tools/client-runtime/state/project-coordinators";
 import { useThreadShell } from "../../state/entities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
@@ -559,15 +562,19 @@ function ThreadRouteContent(
       : scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
   // The title it had at delegation, until this client sees the parent itself.
   const delegatedFromThread = useThreadShell(delegatedFromRef);
-  const reportsToId =
+  const recipientId =
     selectedThread === null
       ? null
       : reportRecipientId(selectedThread, routeEnvironmentRuntime?.serverConfig?.settings);
   const reportsToThread = useThreadShell(
-    selectedThread === null || reportsToId === null
+    selectedThread === null || recipientId === null
       ? null
-      : scopeThreadRef(selectedThread.environmentId, reportsToId),
+      : scopeThreadRef(selectedThread.environmentId, recipientId),
   );
+  const reportsToId =
+    selectedThread === null
+      ? null
+      : shownReportRecipientId(selectedThread, recipientId, reportsToThread?.projectId ?? null);
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,

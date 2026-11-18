@@ -113,7 +113,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { type AnyRouter, useRouter } from "@tanstack/react-router";
+import { type AnyRouter, useParams, useRouter } from "@tanstack/react-router";
+import { useProjectPages } from "./project/useProjectPages";
 
 import {
   isAtomCommandInterrupted,
@@ -374,6 +375,7 @@ const sidebarProviderEntriesAtom = Atom.make((get) => {
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
+const EMPTY_KEY_SET: ReadonlySet<string> = new Set();
 
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
@@ -419,6 +421,8 @@ interface SidebarThreadPartitionInput {
   readonly connectedEnvironmentIds: readonly EnvironmentId[];
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  /** Threads that stay in the list while working instead of folding into the Working shelf. */
+  readonly keepOutOfWorkingShelf: ReadonlySet<string>;
   /** Boring mode: folders list active threads by the user's latest message. */
   readonly sortActiveBySend: boolean;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
@@ -508,6 +512,8 @@ function useSidebarThreads(input: {
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
   readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
+  /** Project chats: in the flat list they stay where the user saw them while they work. */
+  readonly projectChatKeys: ReadonlySet<string>;
 }) {
   const {
     projectScopeKey,
@@ -569,6 +575,7 @@ function useSidebarThreads(input: {
     connectedEnvironmentIds,
     optimisticDrop,
     workingShelfEnabled,
+    keepOutOfWorkingShelf: projectGrouping === null ? input.projectChatKeys : EMPTY_KEY_SET,
     sortActiveBySend: folderGroups !== null,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
@@ -710,12 +717,27 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   } = input;
   const preciseNow = new Date().toISOString();
   const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
-  const inboxObservation = inboxReturns.observe(workingShelfEnabled ? threads : null);
+  // Rows kept out of the Working shelf never return from it, so they keep their own order.
+  const inboxObservation = inboxReturns.observe(
+    workingShelfEnabled
+      ? input.keepOutOfWorkingShelf.size === 0
+        ? threads
+        : threads.filter(
+            (thread) =>
+              !input.keepOutOfWorkingShelf.has(
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+              ),
+          )
+      : null,
+  );
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
   const working: EnvironmentThreadShell[] = [];
   const inbox = (thread: EnvironmentThreadShell, manuallyMoved = false) =>
     workingShelfEnabled &&
+    !input.keepOutOfWorkingShelf.has(
+      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+    ) &&
     (manuallyMoved ? isThreadWorking(thread) : inboxObservation.isWorking(thread))
       ? working
       : active;
@@ -1296,6 +1318,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ? asLaunchingThread(thread)
             : thread,
         );
+  const projectPages = useProjectPages();
+  const projectPageByChatKey = new Map(
+    [...projectPages.values()].flatMap((page) =>
+      page.chatThreadKey === null ? [] : [[page.chatThreadKey, page] as const],
+    ),
+  );
+  // A string first, so the set keeps its identity while the chats stay the same.
+  const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
+  const projectChatKeys =
+    projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
+  const routeProjectKey = useParams({
+    strict: false,
+    select: (params) => params.projectKey ?? null,
+  });
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
@@ -1603,7 +1639,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
-    orderedThreadKeys,
+    orderedThreadKeys: listedThreadKeys,
     threadByKey,
     settledThreadKeys,
     snoozedThreadKeys,
@@ -1631,7 +1667,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeRowThreadKey,
     folderGroups,
     keepEmptyFolders: keepEmptyFolder,
+    projectChatKeys,
   });
+  // Grouped by project, a project's header stands for its chat, so the chat has no row there.
+  const isProjectChatUnderHeader = (threadKey: string, section: SidebarSection) =>
+    groupThreadsByProject &&
+    !singleProjectScope &&
+    section === "active" &&
+    projectPageByChatKey.has(threadKey);
+  const orderedThreadKeys = listedThreadKeys.filter(
+    (threadKey) =>
+      !isProjectChatUnderHeader(threadKey, sectionByThreadKey.get(threadKey) ?? "active"),
+  );
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1753,11 +1800,21 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     return mapping;
   })();
 
+  const openProjectPage = (projectKey: string) => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    return router.navigate({ to: "/projects/$projectKey", params: { projectKey } });
+  };
+
   const navigateToThread = (threadRef: ScopedThreadRef) => {
     if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
       clearSelection();
     }
     setSelectionAnchor(scopedThreadKey(threadRef));
+    // A project's chat lives on its project page.
+    const projectPage = projectPageByChatKey.get(scopedThreadKey(threadRef));
+    if (projectPage) return openProjectPage(projectPage.group.projectKey);
     if (isMobile) {
       setOpenMobile(false);
     }
@@ -2289,6 +2346,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         activeGroup = row.group;
         items.push({ kind: "project-header", group: row.group });
       }
+      if (row.kind === "thread" && isProjectChatUnderHeader(row.key, "active")) continue;
       items.push(row);
     }
     if (activeGroup !== undefined && !pinnedDividerPlaced) {
@@ -3986,6 +4044,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
+                        const projectPage = projectPageByChatKey.get(threadKey);
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = folderRow
@@ -4056,7 +4115,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 : null
                             }
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
-                            isActive={routeRowThreadKey === threadKey}
+                            isActive={
+                              routeRowThreadKey === threadKey ||
+                              (projectPage !== undefined &&
+                                routeProjectKey === projectPage.group.projectKey)
+                            }
+                            {...(projectPage
+                              ? { projectChatStatusLine: projectPage.statusLine }
+                              : {})}
                             revealRef={
                               routeRowThreadKey === threadKey ? revealActiveRow : undefined
                             }
@@ -4175,6 +4241,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               group={item.group}
                               project={group ?? null}
                               label={group?.displayName ?? "Unknown project"}
+                              {...(group && projectPages.has(group.projectKey)
+                                ? {
+                                    onOpen: () => void openProjectPage(group.projectKey),
+                                    selected: routeProjectKey === group.projectKey,
+                                  }
+                                : {})}
                               pinned={
                                 item.kind === "project-header" &&
                                 pinnedProjectGroupKeys.includes(item.group)

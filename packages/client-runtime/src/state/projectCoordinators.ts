@@ -8,15 +8,38 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
-/** `environmentId:threadId` for each project coordinator in one environment's settings. */
+/**
+ * `environmentId:projectId:threadId` for each project coordinator in one environment's settings.
+ * A thread matches by its own project, since a named thread may later exist in another one.
+ */
 export function projectCoordinatorKeys(
   environmentId: EnvironmentId,
   settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">,
 ): string[] {
   if (!settings.projectCoordinatorsEnabled) return [];
-  return Object.values(settings.projectCoordinators).map(
-    (coordinator) => `${environmentId}:${coordinator.threadId}`,
+  return Object.entries(settings.projectCoordinators).map(
+    ([projectId, coordinator]) => `${environmentId}:${projectId}:${coordinator.threadId}`,
   );
+}
+
+/**
+ * The recipient to show for a thread: a project coordinator listed in another project receives
+ * nothing from the server, so none is shown. `recipientProjectId` is null while it is not listed.
+ */
+export function shownReportRecipientId(
+  thread: {
+    readonly projectId: ProjectId;
+    readonly reportTo?: OrchestrationV2ThreadReportTarget | null | undefined;
+  },
+  recipientId: ThreadId | null,
+  recipientProjectId: ProjectId | null,
+): ThreadId | null {
+  return recipientId !== null &&
+    thread.reportTo?.source === "project-coordinator" &&
+    recipientProjectId !== null &&
+    recipientProjectId !== thread.projectId
+    ? null
+    : recipientId;
 }
 
 /** Makes `threadId` its project's coordinator, or clears the project's coordinator with null. */

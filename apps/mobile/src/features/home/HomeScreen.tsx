@@ -613,7 +613,9 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={item.item.variant}
         hasQueuedMessages={item.hasQueuedMessages}
         hasUnsentDraft={item.hasUnsentDraft}
-        isProjectCoordinator={coordinatorThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
+        isProjectCoordinator={coordinatorThreadKeys.has(
+          `${thread.environmentId}:${thread.projectId}:${thread.id}`,
+        )}
         projectCoordinatorsEnabled={coordinatorEnvironmentIds.has(thread.environmentId)}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}
