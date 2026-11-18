@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
+import { ChevronDownIcon, PinIcon, SquarePenIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
@@ -17,7 +17,6 @@ import {
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 
 const FOLDER_DOT_CLASS_NAME = {
   attention: "bg-warning",
@@ -33,6 +32,9 @@ const FOLDER_DOT_LABEL = {
   working: ", working",
 } as const;
 
+/** Unscaled height of a folder header: its top gap and its 32px row. */
+export const SIDEBAR_FOLDER_HEADER_HEIGHT = 40;
+
 /** The folder's sidebar tree row; its thread rows name it as their parent. */
 export function sidebarFolderRowId(projectKey: string) {
   return `folder:${projectKey}`;
@@ -47,6 +49,8 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   group: SidebarProjectSnapshot;
   collapsed: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
+  pinned: boolean;
+  draggable: boolean;
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
   onContextMenu: (group: SidebarProjectSnapshot, position: { x: number; y: number }) => void;
@@ -54,10 +58,10 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   const { group, collapsed, hiddenThreads } = props;
   const rowId = sidebarFolderRowId(group.projectKey);
   const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
-  // A drop target, so the folder moves with its rows while a thread is dragged.
-  const { setNodeRef, transform, transition } = useSortable({
+  // Moves with its rows while a thread is dragged; dragging it reorders projects.
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sidebarListItemId({ kind: "project-header", group: group.projectKey }),
-    disabled: SIDEBAR_SORTABLE_DRAG_DISABLED,
+    disabled: { draggable: !props.draggable },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
   const dot = collapsed
@@ -77,14 +81,18 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
     <li
       ref={setNodeRef}
       data-testid="sidebar-project-folder"
-      className="group/project-folder relative list-none pt-2 first:pt-0"
+      className={cn(
+        "group/project-folder relative list-none pt-2 first:pt-0",
+        isDragging && "z-20",
+      )}
       style={{
         transform: CSS.Translate.toString(transform),
         transition,
-        visibility: transform?.scaleY === 0 ? "hidden" : undefined,
+        visibility: !isDragging && transform?.scaleY === 0 ? "hidden" : undefined,
       }}
     >
       <button
+        {...listeners}
         type="button"
         data-sidebar-row={rowId}
         aria-expanded={!collapsed}
@@ -93,9 +101,15 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           event.preventDefault();
           props.onContextMenu(group, { x: event.clientX, y: event.clientY });
         }}
-        className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className={cn(
+          "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          isDragging && "bg-sidebar-row-hover",
+        )}
       >
         <ProjectFavicon project={group} className="size-4 shrink-0" />
+        {props.pinned ? (
+          <PinIcon aria-label="Pinned" className="-ml-1 size-3 shrink-0 text-muted-foreground" />
+        ) : null}
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {group.displayName}
         </span>

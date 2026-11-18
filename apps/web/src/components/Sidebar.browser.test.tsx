@@ -15,6 +15,7 @@ import { openCommandPalette } from "../commandPaletteBus";
 import { makeThreadFixture } from "../test-fixtures";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useProjectPinOrder } from "../hooks/useProjectPinOrder";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useServerConfigs, useQuietThreadShells } from "../state/entities";
@@ -33,6 +34,10 @@ vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock(import("../hooks/useThreadActions"), async (original) => {
   const actual = await original();
   return { ...actual, useThreadActions: vi.fn(actual.useThreadActions) };
+});
+vi.mock(import("../hooks/useProjectPinOrder"), async (original) => {
+  const actual = await original();
+  return { ...actual, useProjectPinOrder: vi.fn(actual.useProjectPinOrder) };
 });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./sidebar/SidebarThreadRow", { spy: true });
@@ -136,11 +141,40 @@ describe("sidebar header new thread", () => {
 });
 
 describe("sidebar drag reorder", () => {
+  // The dashed Active target shows while Active would be left empty, folders or not.
   it.each([
-    { mode: "normal", folders: false, drag: "first", onto: "second", action: "reorder" },
-    { mode: "boring", folders: false, drag: "first", onto: "second", action: "reorder" },
-    { mode: "boring", folders: true, drag: "first", onto: "second", action: "reorder" },
-    { mode: "boring", folders: true, drag: "open", onto: "first", action: "pin" },
+    {
+      mode: "normal",
+      folders: false,
+      drag: "first",
+      onto: "second",
+      action: "reorder",
+      activeTarget: true,
+    },
+    {
+      mode: "boring",
+      folders: false,
+      drag: "first",
+      onto: "second",
+      action: "reorder",
+      activeTarget: true,
+    },
+    {
+      mode: "boring",
+      folders: true,
+      drag: "first",
+      onto: "second",
+      action: "reorder",
+      activeTarget: false,
+    },
+    {
+      mode: "boring",
+      folders: true,
+      drag: "open",
+      onto: "first",
+      action: "pin",
+      activeTarget: true,
+    },
   ] as const)(
     "$mode sidebar, folders=$folders: dragging $drag onto $onto does $action",
     async (scenario) => {
@@ -204,10 +238,15 @@ describe("sidebar drag reorder", () => {
       await act(() => document.dispatchEvent(pointer("pointermove", startY + 10)));
 
       expect(row!.classList.contains("z-20")).toBe(true);
-      expect(
-        screen.container.querySelector('[data-testid="sidebar-active-placeholder"]') !== null,
-      ).toBe(!scenario.folders);
       await act(() => document.dispatchEvent(pointer("pointermove", endY)));
+      const placeholder = screen.container.querySelector<HTMLElement>(
+        '[data-testid="sidebar-active-placeholder"]',
+      );
+      expect(
+        placeholder !== null &&
+          placeholder.style.visibility !== "hidden" &&
+          placeholder.querySelector(".border-dashed") !== null,
+      ).toBe(scenario.activeTarget);
       await act(() => document.dispatchEvent(pointer("pointerup", endY)));
       if (scenario.action === "reorder") {
         await vi.waitFor(() =>
@@ -227,6 +266,90 @@ describe("sidebar drag reorder", () => {
       }
     },
   );
+
+  // Pinning keeps the project sort setting; moving an unpinned folder by hand switches it to Manual.
+  it.each([
+    // The divider's label opens above beta, so a drop on beta's top edge would pin instead.
+    { drag: "beta", onto: "alpha", offset: 4, pinned: ["beta", "alpha"], sort: "updated_at" },
+    { drag: "gamma", onto: "beta", offset: 20, pinned: null, sort: "manual" },
+  ] as const)("dragging the $drag folder onto $onto", async (scenario) => {
+    using _settings = clientSettings("boring");
+    using stack = new DisposableStack();
+    const originalPinOrder = vi.mocked(useProjectPinOrder).getMockImplementation()!;
+    stack.defer(() => vi.mocked(useProjectPinOrder).mockImplementation(originalPinOrder));
+    const reorderPinnedProjects = vi.fn().mockResolvedValue({ _tag: "Success" });
+    vi.mocked(useProjectPinOrder).mockImplementation(() => ({
+      ...originalPinOrder(),
+      reorderPinnedProjects,
+    }));
+    vi.mocked(readEnvironmentScope).mockReturnValue(true);
+    const alpha = { ...project("alpha"), pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "a0" };
+    const beta = project("beta");
+    const gamma = project("gamma");
+    mockNewThread([alpha, beta, gamma]);
+    // By activity, beta's folder comes before gamma's.
+    const activeAt = { alpha: "2026-01-03", beta: "2026-01-02", gamma: "2026-01-01" } as const;
+    vi.mocked(useQuietThreadShells).mockReturnValue(
+      [alpha, beta, gamma].map((owner) =>
+        makeThreadFixture({
+          id: ThreadId.make(`${owner.title}-thread`),
+          environmentId,
+          projectId: owner.id,
+          title: `${owner.title} thread`,
+          createdAt: `${activeAt[owner.title as keyof typeof activeAt]}T00:00:00.000Z`,
+          updatedAt: `${activeAt[owner.title as keyof typeof activeAt]}T00:00:00.000Z`,
+        }),
+      ),
+    );
+    vi.mocked(useServerConfigs).mockReturnValue(new Map([[environmentId, {} as never]]));
+    vi.mocked(useConnectedEnvironmentIds).mockReturnValue([environmentId]);
+    vi.mocked(useEnvironmentScope).mockReturnValue(true);
+    await using screen = await renderSidebar();
+
+    const folderButton = (title: string) =>
+      [
+        ...screen.container.querySelectorAll<HTMLElement>(
+          '[data-testid="sidebar-project-folder"] button[aria-expanded]',
+        ),
+      ].find((button) => button.textContent?.includes(title))!;
+    const dragged = folderButton(scenario.drag);
+    const fromRect = dragged.getBoundingClientRect();
+    const ontoRect = folderButton(scenario.onto).getBoundingClientRect();
+    const pointer = (type: string, clientY: number) =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: fromRect.left + fromRect.width / 2,
+        clientY,
+      });
+    const startY = fromRect.top + fromRect.height / 2;
+    const endY = ontoRect.top + scenario.offset;
+    await act(() => dragged.dispatchEvent(pointer("pointerdown", startY)));
+    await act(() => document.dispatchEvent(pointer("pointermove", startY - 10)));
+    await act(() => document.dispatchEvent(pointer("pointermove", endY)));
+    await expect
+      .element(screen.getByText("Pinned projects above", { exact: true }))
+      .toBeInTheDocument();
+    await act(() => document.dispatchEvent(pointer("pointerup", endY)));
+
+    if (scenario.pinned === null) {
+      await vi.waitFor(() =>
+        expect(getClientSettings().sidebarProjectSortOrder).toBe(scenario.sort),
+      );
+      expect(reorderPinnedProjects).not.toHaveBeenCalled();
+    } else {
+      await vi.waitFor(() => expect(reorderPinnedProjects).toHaveBeenCalledOnce());
+      const [orderedGroups] = reorderPinnedProjects.mock.calls[0]!;
+      expect(orderedGroups.map((group: { displayName: string }) => group.displayName)).toEqual(
+        scenario.pinned,
+      );
+      expect(getClientSettings().sidebarProjectSortOrder).toBe(scenario.sort);
+    }
+  });
 });
 
 function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShell {
