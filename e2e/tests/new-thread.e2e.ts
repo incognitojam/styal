@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, holdRequests, openApp, sendMessage } from "../support/browser.ts";
+import {
+  type App,
+  holdRequests,
+  newThreadInProjectButton,
+  openApp,
+  sendMessage,
+} from "../support/browser.ts";
 import { type Environment, PROJECT_NAME, startEnvironment } from "../support/environment.ts";
 
 describe("start a new thread", () => {
@@ -32,7 +38,7 @@ describe("start a new thread", () => {
     const releaseDraftRoute = await holdRequests(page, /\/_chat\.draft\._draftId-[^/]*\.js$/);
     await page.reload();
     await userMessages.filter({ hasText: "First task" }).waitFor();
-    await page.getByRole("button", { name: `New thread in ${PROJECT_NAME}`, exact: true }).click();
+    await newThreadInProjectButton(page, PROJECT_NAME).click();
     await page.waitForURL(/\/draft\/[^/]+$/);
 
     await composer.click();

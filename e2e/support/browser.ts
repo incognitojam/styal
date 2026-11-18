@@ -234,15 +234,16 @@ export async function addEnvironment(page: Page, pairingUrl: string): Promise<vo
 }
 
 /**
- * Opens a project's draft with its New thread button, or with the sidebar's New thread button
- * when `projectName` is omitted, and waits for its composer to replace the previous thread's.
+ * Opens a project's draft with the thread header's New thread button, or with the sidebar's New
+ * thread button when `projectName` is omitted, and waits for its composer to replace the previous
+ * thread's.
  */
 export async function startNewThread(app: App, projectName?: string): Promise<void> {
   const { page, composer } = app;
   const previousUrl = page.url();
   const previousEditor = await composer.elementHandle();
   const button = projectName
-    ? page.getByRole("button", { name: `New thread in ${projectName}`, exact: true })
+    ? newThreadInProjectButton(page, projectName)
     : page
         .getByRole("navigation", { name: "Threads" })
         .getByRole("button", { name: "New thread", exact: true });
@@ -255,6 +256,13 @@ export async function startNewThread(app: App, projectName?: string): Promise<vo
   }
   await composer.waitFor();
   await previousEditor?.dispose();
+}
+
+/** The thread header's New thread button; a project folder's button has the same name. */
+export function newThreadInProjectButton(page: Page, projectName: string) {
+  return page
+    .getByRole("navigation", { name: "Thread breadcrumb" })
+    .getByRole("button", { name: `New thread in ${projectName}`, exact: true });
 }
 
 /** Waits until the chat shows `shown` and no longer shows `hidden`. */
@@ -294,8 +302,7 @@ export async function addProject(page: Page, path: string): Promise<void> {
   // focus a frame later, so typing the path key by key can drop keys. Fill it in one input event.
   await page.getByRole("dialog").locator("input:focus").fill(`${path}/`);
   await page.getByRole("button", { name: "Add (Enter)" }).click();
-  const name = path.split("/").at(-1);
-  await page.getByRole("button", { name: `New thread in ${name}` }).waitFor();
+  await newThreadInProjectButton(page, path.split("/").at(-1) ?? path).waitFor();
 }
 
 /**
