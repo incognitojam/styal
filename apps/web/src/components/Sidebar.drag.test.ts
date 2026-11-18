@@ -1000,6 +1000,26 @@ describe("project-grouped drag projection", () => {
     expect(tops.get(headerB)!.top + result.get(headerB)!.y).toBe(tops.get(headerA)!.top);
   });
 
+  it("keeps trailing projects last when a project is lifted over them", () => {
+    // Z is archived: A dropped on it lands after B, above Z.
+    const withTrailing = [...items.slice(0, -2), header("Z"), row("z1", "Z"), ...items.slice(-2)];
+    const headerA = sidebarListItemId(header("A"));
+    const headerZ = sidebarListItemId(header("Z"));
+    const result = preview(
+      {
+        items: withTrailing,
+        settledOrder: [],
+        settledExpanded: true,
+        trailingProjectGroups: new Set(["Z"]),
+      },
+      headerA,
+      headerZ,
+    );
+    // A's two rows collapse: B and its rows move up, then A's slot, then Z below it.
+    expect(result.get(headerZ)?.y).toBe(-166);
+    expect(result.get("z1")?.y).toBe(-166);
+  });
+
   it("keeps a row hovered over another project in its own project", () => {
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));

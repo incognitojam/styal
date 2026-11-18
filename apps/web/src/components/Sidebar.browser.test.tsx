@@ -267,7 +267,12 @@ describe("sidebar drag reorder", () => {
     },
   );
 
-  it("pins a project by dragging its folder header above the pinned projects divider", async () => {
+  // Pinning keeps the project sort setting; moving an unpinned folder by hand switches it to Manual.
+  it.each([
+    // The divider's label opens above beta, so a drop on beta's top edge would pin instead.
+    { drag: "beta", onto: "alpha", offset: 4, pinned: ["beta", "alpha"], sort: "updated_at" },
+    { drag: "gamma", onto: "beta", offset: 20, pinned: null, sort: "manual" },
+  ] as const)("dragging the $drag folder onto $onto", async (scenario) => {
     using _settings = clientSettings("boring");
     using stack = new DisposableStack();
     const originalPinOrder = vi.mocked(useProjectPinOrder).getMockImplementation()!;
@@ -280,14 +285,19 @@ describe("sidebar drag reorder", () => {
     vi.mocked(readEnvironmentScope).mockReturnValue(true);
     const alpha = { ...project("alpha"), pinnedAt: "2026-01-01T00:00:00.000Z", pinOrderKey: "a0" };
     const beta = project("beta");
-    mockNewThread([alpha, beta]);
+    const gamma = project("gamma");
+    mockNewThread([alpha, beta, gamma]);
+    // By activity, beta's folder comes before gamma's.
+    const activeAt = { alpha: "2026-01-03", beta: "2026-01-02", gamma: "2026-01-01" } as const;
     vi.mocked(useQuietThreadShells).mockReturnValue(
-      [alpha, beta].map((owner) =>
+      [alpha, beta, gamma].map((owner) =>
         makeThreadFixture({
           id: ThreadId.make(`${owner.title}-thread`),
           environmentId,
           projectId: owner.id,
           title: `${owner.title} thread`,
+          createdAt: `${activeAt[owner.title as keyof typeof activeAt]}T00:00:00.000Z`,
+          updatedAt: `${activeAt[owner.title as keyof typeof activeAt]}T00:00:00.000Z`,
         }),
       ),
     );
@@ -302,9 +312,9 @@ describe("sidebar drag reorder", () => {
           '[data-testid="sidebar-project-folder"] button[aria-expanded]',
         ),
       ].find((button) => button.textContent?.includes(title))!;
-    const betaButton = folderButton("beta");
-    const fromRect = betaButton.getBoundingClientRect();
-    const alphaRect = folderButton("alpha").getBoundingClientRect();
+    const dragged = folderButton(scenario.drag);
+    const fromRect = dragged.getBoundingClientRect();
+    const ontoRect = folderButton(scenario.onto).getBoundingClientRect();
     const pointer = (type: string, clientY: number) =>
       new PointerEvent(type, {
         bubbles: true,
@@ -317,8 +327,8 @@ describe("sidebar drag reorder", () => {
         clientY,
       });
     const startY = fromRect.top + fromRect.height / 2;
-    const endY = alphaRect.top + 4;
-    await act(() => betaButton.dispatchEvent(pointer("pointerdown", startY)));
+    const endY = ontoRect.top + scenario.offset;
+    await act(() => dragged.dispatchEvent(pointer("pointerdown", startY)));
     await act(() => document.dispatchEvent(pointer("pointermove", startY - 10)));
     await act(() => document.dispatchEvent(pointer("pointermove", endY)));
     await expect
@@ -326,12 +336,19 @@ describe("sidebar drag reorder", () => {
       .toBeInTheDocument();
     await act(() => document.dispatchEvent(pointer("pointerup", endY)));
 
-    await vi.waitFor(() => expect(reorderPinnedProjects).toHaveBeenCalledOnce());
-    const [orderedGroups] = reorderPinnedProjects.mock.calls[0]!;
-    expect(orderedGroups.map((group: { displayName: string }) => group.displayName)).toEqual([
-      "beta",
-      "alpha",
-    ]);
+    if (scenario.pinned === null) {
+      await vi.waitFor(() =>
+        expect(getClientSettings().sidebarProjectSortOrder).toBe(scenario.sort),
+      );
+      expect(reorderPinnedProjects).not.toHaveBeenCalled();
+    } else {
+      await vi.waitFor(() => expect(reorderPinnedProjects).toHaveBeenCalledOnce());
+      const [orderedGroups] = reorderPinnedProjects.mock.calls[0]!;
+      expect(orderedGroups.map((group: { displayName: string }) => group.displayName)).toEqual(
+        scenario.pinned,
+      );
+      expect(getClientSettings().sidebarProjectSortOrder).toBe(scenario.sort);
+    }
   });
 });
 

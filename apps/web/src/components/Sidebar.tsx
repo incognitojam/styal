@@ -167,7 +167,7 @@ import { useSidebarProjectGroupSources } from "../hooks/useSidebarProjectGroups"
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useCopyThreadTranscript } from "../hooks/useCopyThreadTranscript";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -1071,6 +1071,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const boringSidebarEnabled = useClientSettings((settings) => settings.boringSidebarEnabled);
+  const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   // Boring mode's folders take the place of the project headers.
   const groupThreadsByProject =
     useClientSettings((s) => s.sidebarThreadGrouping === "project") && !boringSidebarEnabled;
@@ -1565,7 +1566,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const orderFolders = (groups: readonly SidebarProjectSnapshot[]) =>
-    orderSidebarFolderGroups(groups, pinnedProjectGroupKeys, orderedProjectGroupKeys);
+    orderSidebarFolderGroups(groups, pinnedProjectGroupKeys);
   const folderGroups = boringSidebarEnabled
     ? scopedProjectGroups.length === 0
       ? // An archived project keeps a folder for its active threads, below the rest.
@@ -2425,6 +2426,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
   };
   const sortableIds = sidebarListItems.map(sidebarListItemId);
+  // Archived folders stay below the rest.
+  const archivedFolderGroups = new Set(
+    (projectFolders ?? []).flatMap((folder) =>
+      folder.group.archived ? [folder.group.projectKey] : [],
+    ),
+  );
   const folderByGroup = new Map(
     (projectFolders ?? []).map((folder) => [folder.group.projectKey, folder] as const),
   );
@@ -2444,7 +2451,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
     enabled: !isContextDrag,
-    ...(hasProjectFolders ? { projectHeaderHeight: SIDEBAR_FOLDER_HEADER_HEIGHT } : {}),
+    ...(hasProjectFolders
+      ? {
+          projectHeaderHeight: SIDEBAR_FOLDER_HEADER_HEIGHT,
+          trailingProjectGroups: archivedFolderGroups,
+        }
+      : {}),
     ...(projectFolders !== null && folderGroups !== null
       ? {
           folders: {
@@ -2526,8 +2538,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // projects divider pins or unpins the project, and moving it among the
   // pinned projects saves the pin order, which every device shares.
   const handleProjectHeaderDragEnd = (group: string, overId: string) => {
-    const drop = resolveSidebarProjectDrop(sidebarListItems, group, overId);
+    const drop = resolveSidebarProjectDrop(
+      sidebarListItems,
+      group,
+      overId,
+      // Built here: sharing the render-time set makes the compiler treat this handler as render code.
+      new Set(
+        (projectFolders ?? []).flatMap((folder) =>
+          folder.group.archived ? [folder.group.projectKey] : [],
+        ),
+      ),
+    );
     if (drop === null) return;
+    // Unpinned folders follow the project sort setting; a drop that sets another order switches it to Manual.
+    const droppedUnpinned = drop.order.slice(drop.pinnedCount);
+    const sortedUnpinned = projectGroups.flatMap((projectGroup) =>
+      droppedUnpinned.includes(projectGroup.projectKey) ? [projectGroup.projectKey] : [],
+    );
+    if (
+      hasProjectFolders &&
+      projectSortOrder !== "manual" &&
+      droppedUnpinned.join("\0") !== sortedUnpinned.join("\0")
+    ) {
+      void updateClientSettings({ sidebarProjectSortOrder: "manual" });
+    }
     const nextOrder = new Set([
       ...drop.order.flatMap(
         (key) =>

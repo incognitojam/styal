@@ -192,6 +192,8 @@ export function createSidebarSortingStrategy(input: {
   boundaryLabelHeight?: number;
   /** Unscaled height of a project header; 32px unless folders render. */
   projectHeaderHeight?: number;
+  /** Projects that stay below the rest when a project header moves. */
+  trailingProjectGroups?: ReadonlySet<string>;
   /** Set while folders render. Rows never reorder within a folder; a folder
       leaves with its last row unless it is kept. */
   folders?: {
@@ -215,7 +217,12 @@ export function createSidebarSortingStrategy(input: {
     active: Extract<SidebarListItem, { kind: "project-header" }>,
   ) {
     const over = items[overIndex] ?? active;
-    const drop = resolveSidebarProjectDrop(items, active.group, sidebarListItemId(over));
+    const drop = resolveSidebarProjectDrop(
+      items,
+      active.group,
+      sidebarListItemId(over),
+      input.trailingProjectGroups,
+    );
     if (!drop || !rects[0]) return [];
     const rowsByGroup = new Map<string, SidebarListItem[]>();
     const before: SidebarListItem[] = [];
@@ -232,11 +239,17 @@ export function createSidebarSortingStrategy(input: {
       { kind: "project-header", group },
       ...(group === active.group ? [] : (rowsByGroup.get(group) ?? [])),
     ]);
+    const trailing = [...(input.trailingProjectGroups ?? [])].flatMap((group): SidebarListItem[] =>
+      rowsByGroup.has(group)
+        ? [{ kind: "project-header", group }, ...(rowsByGroup.get(group) ?? [])]
+        : [],
+    );
     const projected = [
       ...before,
       ...blocks.slice(0, drop.pinnedCount).flat(),
       ...(divider ? [divider] : []),
       ...blocks.slice(drop.pinnedCount).flat(),
+      ...trailing,
       ...after,
     ];
     // The divider is zero height at rest; its label opens while dragging,
