@@ -917,8 +917,21 @@ it.effect("shells flag a latest run triggered by a provider background wake", ()
     const threadId = yield* addRolledBackRecoveryCandidate("background-wake");
     const initial = yield* store.getThreadProjection(threadId);
     const at = initial.updatedAt;
+    const reportTo = { threadId: ThreadId.make("coordinator") };
+    const delegatedFrom = {
+      environmentId: EnvironmentId.make("other"),
+      threadId: reportTo.threadId,
+      title: "Coordinator",
+    };
+    yield* store.apply({
+      id: EventId.make("event:background-wake:report-target"),
+      type: "thread.metadata-updated",
+      threadId,
+      occurredAt: at,
+      payload: { ...initial.thread, reportTo, delegatedFrom },
+    });
     let ordinal = 1;
-    for (const [id, source, outcome, expected] of [
+    for (const [id, source, outcome, expected, createdBy = "agent", creationSource = "server"] of [
       ["background-task", { kind: "background_task" }, "updated", true],
       ["monitor", { kind: "monitor" }, "updated", true],
       ["command", { kind: "command" }, "updated", true],
@@ -927,6 +940,11 @@ it.effect("shells flag a latest run triggered by a provider background wake", ()
       ["subagent", { kind: "subagent" }, "updated", false],
       ["delegated", { kind: "delegated_task", taskIds: [] }, "updated", false],
       ["steered", { kind: "background_task" }, "updated", false],
+      ["steered-server", { kind: "background_task" }, "updated", false],
+      ["person-web", null, "updated", false, "user", "web"],
+      ["person-mobile", null, "updated", false, "user", "mobile"],
+      ["agent-send", null, "updated", false, "agent", "mcp"],
+      ["recovery", null, "updated", false, "user", "server"],
     ] as const) {
       const messageId = MessageId.make(`message:background-wake:${id}`);
       yield* store.apply({
@@ -939,15 +957,17 @@ it.effect("shells flag a latest run triggered by a provider background wake", ()
           threadId,
           runId: null,
           nodeId: null,
-          createdBy: "agent",
-          creationSource: "server",
+          createdBy,
+          creationSource,
           role: "user",
           text: id,
           attachments: [],
           streaming: false,
           createdAt: at,
           updatedAt: at,
-          notification: { source, outcome, summary: "Background activity updated" },
+          ...(source === null
+            ? {}
+            : { notification: { source, outcome, summary: "Background activity updated" } }),
           ...(id === "delegated"
             ? {
                 delegatedCompletion: {
@@ -974,19 +994,19 @@ it.effect("shells flag a latest run triggered by a provider background wake", ()
           completedAt: at,
         },
       });
-      if (id === "steered") {
+      if (id.startsWith("steered")) {
         yield* store.apply({
-          id: EventId.make("event:background-wake:steered:follow-up"),
+          id: EventId.make(`event:background-wake:${id}:follow-up`),
           type: "message.updated",
           threadId,
           occurredAt: at,
           payload: {
-            id: MessageId.make("message:background-wake:steered:follow-up"),
+            id: MessageId.make(`message:background-wake:${id}:follow-up`),
             threadId,
-            runId: RunId.make("run:background-wake:steered"),
+            runId: RunId.make(`run:background-wake:${id}`),
             nodeId: null,
             createdBy: "user",
-            creationSource: "web",
+            creationSource: id === "steered-server" ? "server" : "web",
             role: "user",
             text: "also fix X",
             attachments: [],
@@ -1005,8 +1025,43 @@ it.effect("shells flag a latest run triggered by a provider background wake", ()
         [expected, expected],
         id,
       );
+      const agent = !id.startsWith("steered") && createdBy === "agent";
+      const awareness = (yield* store.getAgentAwarenessSnapshot(threadId)).threads[0];
+      assert.deepEqual(awareness?.reportTo, reportTo);
+      assert.deepEqual(awareness?.delegatedFrom, delegatedFrom);
+      const snapshot = (yield* store.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      assert.deepEqual(
+        [...shells, awareness, snapshot].map((shell) => shell?.latestRunStartedByAgent),
+        [agent, agent, agent, agent],
+        id,
+      );
       yield* assertShellIndexCoversShells();
     }
+    const { statements, tracer } = traceSqlStatements();
+    yield* store.getAgentAwarenessSnapshot().pipe(Effect.withTracer(tracer));
+    const query = statements.find((statement) =>
+      statement.includes("AS latest_run_started_by_agent"),
+    )!;
+    const sql = yield* SqlClient.SqlClient;
+    const plan = (yield* sql.unsafe<{ readonly detail: string }>(
+      `EXPLAIN QUERY PLAN ${query}`,
+    )).map((row) => row.detail);
+    assert.isTrue(
+      plan.some((detail) =>
+        /SEARCH prompt USING INDEX sqlite_autoindex_orchestration_v2_projection_messages/.test(
+          detail,
+        ),
+      ),
+      plan.join("\n"),
+    );
+    assert.isTrue(
+      plan.some((detail) =>
+        /SEARCH steer USING INDEX orchestration_v2_projection_messages_run_idx/.test(detail),
+      ),
+      plan.join("\n"),
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 

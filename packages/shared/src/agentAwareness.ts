@@ -76,6 +76,9 @@ export interface ProjectThreadAwarenessV2Input {
     | "activityRunStatus"
     | "id"
     | "lineage"
+    | "latestRunStartedByAgent"
+    | "reportTo"
+    | "delegatedFrom"
     | "latestRunBackgroundWake"
     | "latestRunStopRequested"
     | "modelSelection"
@@ -102,6 +105,12 @@ export function projectThreadAwarenessV2(
     return null;
   }
   if (phase === "completed" && thread.latestRunStopRequested === true) return null;
+  if (
+    phase === "completed" &&
+    thread.latestRunStartedByAgent === true &&
+    (thread.reportTo != null || thread.delegatedFrom != null)
+  )
+    return null;
   // Resolve the phase first so live or waiting work stays visible after settlement.
   const runStatus = thread.activityRunStatus ?? thread.status;
   if (

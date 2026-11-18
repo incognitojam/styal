@@ -1152,6 +1152,7 @@ type ShellThreadRow = {
   readonly latest_run_requested_at: string | null;
   readonly latest_run_started_at: string | null;
   readonly latest_run_completed_at: string | null;
+  readonly latest_run_started_by_agent: number;
   readonly latest_run_stop_requested: number;
   readonly latest_run_background_wake: number;
   readonly active_run_id: string | null;
@@ -1164,6 +1165,7 @@ type ShellThreadRow = {
   readonly blocking_run_requested_at: string | null;
   readonly blocking_run_started_at: string | null;
   readonly blocking_run_completed_at: string | null;
+  readonly blocking_run_started_by_agent: number;
   readonly blocking_run_stop_requested: number;
   readonly blocking_run_background_wake: number;
   readonly blocking_failure_payload_json: string | null;
@@ -1891,6 +1893,18 @@ export function threadShellFromProjection(
       ? {}
       : { delegatedFrom: projection.thread.delegatedFrom }),
     ...(projection.thread.reportTo === undefined ? {} : { reportTo: projection.thread.reportTo }),
+    latestRunStartedByAgent:
+      latestRun != null &&
+      projection.messages.some(
+        (message) =>
+          message.id === latestRun.userMessageId &&
+          message.role === "user" &&
+          message.createdBy === "agent",
+      ) &&
+      !projection.messages.some(
+        (message) =>
+          message.runId === latestRun.id && message.role === "user" && message.createdBy === "user",
+      ),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -2052,6 +2066,7 @@ type ShellThreadState = {
   readonly latestRunRequestedAt: DateTime.Utc | null;
   readonly latestRunStartedAt: DateTime.Utc | null;
   readonly latestRunCompletedAt: DateTime.Utc | null;
+  readonly latestRunStartedByAgent: boolean;
   readonly latestRunStopRequested: boolean;
   readonly latestRunBackgroundWake: boolean;
   readonly activeRunId: RunId | null;
@@ -2232,6 +2247,7 @@ function shellFromState(input: {
     latestRunStartedAt: input.state.latestRunStartedAt,
     latestRunCompletedAt: input.state.latestRunCompletedAt,
     latestRunStopRequested: input.state.latestRunStopRequested,
+    latestRunStartedByAgent: input.state.latestRunStartedByAgent,
     latestRunBackgroundWake: input.state.latestRunBackgroundWake,
     activeRunId: input.state.activeRunId,
     blockedOnThreadWait: input.state.blockedOnThreadWait,
@@ -7113,6 +7129,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       )`;
     };
 
+    // Mirrors the agent prompt and user steering check in threadShellFromProjection.
+    const isAgentShellRun = (alias: string) => {
+      const run = sql.literal(alias);
+      return sql`(
+        EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages prompt
+          WHERE prompt.message_id = json_extract(${run}.payload_json, '$.userMessageId')
+            AND prompt.role = 'user'
+            AND json_extract(prompt.payload_json, '$.createdBy') = 'agent'
+          ) AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages steer
+          WHERE steer.run_id = ${run}.run_id AND steer.role = 'user'
+            AND json_extract(steer.payload_json, '$.createdBy') = 'user'
+          )
+      )`;
+    };
+
     const selectShellThreadRows = Effect.fn("ProjectionStore.selectShellThreadRows")(function* (
       threadId?: ThreadId,
       {
@@ -7164,6 +7197,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE stop_request.thread_id = t.thread_id AND stop_request.run_id = presented.run_id
                   AND stop_request.type = 'run_interrupt_request'
               ) AS latest_run_stop_requested,
+              ${isAgentShellRun("presented")} AS latest_run_started_by_agent,
               ${isBackgroundWakeShellRun("presented")} AS latest_run_background_wake,
               active.run_id AS active_run_id,
               active.status AS active_run_status,
@@ -7222,6 +7256,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 WHERE stop_request.thread_id = t.thread_id AND stop_request.run_id = blocked.run_id
                   AND stop_request.type = 'run_interrupt_request'
               ) AS blocking_run_stop_requested,
+              ${isAgentShellRun("blocked")} AS blocking_run_started_by_agent,
               ${isBackgroundWakeShellRun("blocked")} AS blocking_run_background_wake,
               (
                 SELECT item.payload_json
@@ -8045,6 +8080,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           row.latest_run_completed_at === null
             ? null
             : DateTime.makeUnsafe(row.latest_run_completed_at);
+        let latestRunStartedByAgent = row.latest_run_started_by_agent === 1;
         let latestRunStopRequested = row.latest_run_stop_requested === 1;
         let latestRunBackgroundWake = row.latest_run_background_wake === 1;
         if (row.blocking_run_id !== null && row.blocking_failure_payload_json !== null) {
@@ -8059,6 +8095,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           if (blocksQueue && blockingFailure !== null) {
             terminalFailureItem = blockingFailure;
             latestRunId = RunId.make(row.blocking_run_id);
+            latestRunStartedByAgent = row.blocking_run_started_by_agent === 1;
             latestRunStopRequested = row.blocking_run_stop_requested === 1;
             latestRunBackgroundWake = row.blocking_run_background_wake === 1;
             latestRunStatus = "failed";
@@ -8105,6 +8142,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           latestRunRequestedAt,
           latestRunStartedAt,
           latestRunCompletedAt,
+          latestRunStartedByAgent,
           latestRunStopRequested,
           latestRunBackgroundWake,
           activeRunId: row.active_run_id === null ? null : RunId.make(row.active_run_id),
@@ -8387,6 +8425,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               activityRunStatus: state.activityRunStatus,
               latestRunCompletedAt: state.latestRunCompletedAt,
               latestRunStopRequested: state.latestRunStopRequested,
+              latestRunStartedByAgent: state.latestRunStartedByAgent,
+              reportTo: state.thread.reportTo,
+              delegatedFrom: state.thread.delegatedFrom,
               latestRunBackgroundWake: state.latestRunBackgroundWake,
               pendingRuntimeRequest: state.pendingRuntimeRequest,
               pendingBackgroundTasks: state.pendingBackgroundTasks,
