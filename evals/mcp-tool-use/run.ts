@@ -1855,8 +1855,8 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
 
 const BOUND = /^([<>]=)(-?\d+(?:\.\d+)?)$/;
 /**
- * Partial match: `~text` is a case-insensitive substring, `<=N` / `>=N` bound a number, and `null`
- * matches a missing or null value.
+ * Partial match: `~text` is a case-insensitive substring, `re:pattern` a case-insensitive regex,
+ * `<=N` / `>=N` bound a number, and `null` matches a missing or null value.
  */
 const matches = (expected: unknown, actual: unknown): boolean => {
   if (expected === null) return actual === undefined || actual === null;
@@ -1867,6 +1867,9 @@ const matches = (expected: unknown, actual: unknown): boolean => {
   }
   if (typeof expected === "string" && expected.startsWith("~")) {
     return valueText(actual).toLowerCase().includes(expected.slice(1).toLowerCase());
+  }
+  if (typeof expected === "string" && expected.startsWith("re:")) {
+    return new RegExp(expected.slice(3), "i").test(valueText(actual));
   }
   if (Array.isArray(expected)) {
     return (

@@ -68,13 +68,17 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
   assert.deepEqual(
     failed(
       {
-        calls: [{ tool: "Bash", args: { command: "~sleep" } }],
+        calls: [
+          { tool: "Bash", args: { command: "~sleep" } },
+          { tool: "Bash", args: { command: "re:^sleep \\d+$" } },
+          { tool: "Bash", args: { command: "re:^60" } },
+        ],
         notCalls: ["Agent"],
         shellMustNot: ["sleep"],
       },
       { calls, text: "", stopReason: "end_turn" },
     ),
-    ["notCalls Agent", "shellMustNot /sleep/"],
+    ['calls Bash {"command":"re:^60"}', "notCalls Agent", "shellMustNot /sleep/"],
   );
   const distinctCalls = ["application key", "application secret", "consumer key"].map((label) => ({
     tool: "request_secret",
