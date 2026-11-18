@@ -1190,6 +1190,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                     "read-tree",
                     "--reset",
                     "-u",
+                    "--no-recurse-submodules",
                     "HEAD",
                   ],
                   env: { ...commitEnv, GIT_WORK_TREE: temporaryTree },

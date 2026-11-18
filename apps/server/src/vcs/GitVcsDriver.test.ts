@@ -658,6 +658,8 @@ it.effect.each(
         "non-cone-manual-skip",
         "non-cone-missing",
         "non-cone-root-missing",
+        "non-cone-submodule",
+        "non-cone-submodule-missing",
       ] as const
     ).map((indexState) => ({ nested, indexState })),
   ),
@@ -697,6 +699,7 @@ it.effect.each(
       );
       const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-sparse-" });
       const { git } = yield* makeCheckpointFixture(driver, cwd);
+      const populated = indexState.includes("submodule");
       const write = Effect.fn(function* (name: string, contents: string) {
         yield* fs.makeDirectory(path.dirname(path.join(cwd, name)), { recursive: true });
         yield* fs.writeFileString(path.join(cwd, name), contents);
@@ -710,10 +713,20 @@ it.effect.each(
       ]) {
         yield* write(name, "original\n");
       }
+      if (populated) {
+        const upstream = path.join(cwd, ".git", "submodule-fixture");
+        yield* git(["init", "-b", "main", upstream]);
+        yield* git(["-C", upstream, "config", "user.name", "Fixture"]);
+        yield* git(["-C", upstream, "config", "user.email", "fixture@example.invalid"]);
+        yield* fs.writeFileString(path.join(upstream, "file"), "base\n");
+        yield* git(["-C", upstream, "add", "."]);
+        yield* git(["-C", upstream, "commit", "-m", "fixture: submodule"]);
+        yield* git(["-c", "protocol.file.allow=always", "submodule", "add", upstream, "lib"]);
+      }
       yield* git(["add", "."]);
       yield* git(["commit", "-m", "sparse fixture"]);
       yield* git(["sparse-checkout", "set", "--cone", "--sparse-index", "scope/in", "elsewhere"]);
-      const rootOnly = indexState === "non-cone-root-missing";
+      const rootOnly = indexState === "non-cone-root-missing" || populated;
       if (indexState.startsWith("non-cone"))
         yield* git([
           "sparse-checkout",
@@ -733,6 +746,19 @@ it.effect.each(
         yield* git(["config", "core.checkStat", "minimal"]);
         yield* git(["config", "core.trustctime", "false"]);
       }
+      if (populated) {
+        yield* git(["config", "submodule.recurse", "true"]);
+        yield* git(["-C", "lib", "config", "user.name", "Fixture"]);
+        yield* git(["-C", "lib", "config", "user.email", "fixture@example.invalid"]);
+        yield* git(["-C", "lib", "checkout", "-b", "local-work"]);
+        yield* write("lib/file", "local commit\n");
+        yield* git(["-C", "lib", "commit", "-am", "fixture: local submodule work"]);
+        yield* write("lib/file", "staged only\n");
+        yield* git(["-C", "lib", "add", "file"]);
+        yield* write("lib/file", "working copy\n");
+        if (!indexState.endsWith("missing"))
+          yield* git(["update-index", "--assume-unchanged", "scope/out/deep/absent"]);
+      }
       yield* git(["config", "sparse.expectFilesOutsideOfPatterns", "true"]);
       yield* write("scope/in/edit", "working\n");
       yield* write("scope/out/present", "modified skipped\n");
@@ -742,6 +768,14 @@ it.effect.each(
       const indexPath = path.join(cwd, ".git/index");
       if (indexState.endsWith("missing")) yield* fs.remove(indexPath);
       const originalIndex = yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null));
+      const moduleFiles = populated ? ["HEAD", "index", "config"] : [];
+      const moduleBefore = yield* Effect.forEach(moduleFiles, (name) =>
+        fs.readFile(path.join(cwd, ".git/modules/lib", name)),
+      );
+      const moduleHead = populated
+        ? (yield* git(nested ? ["rev-parse", "HEAD:lib"] : ["-C", "lib", "rev-parse", "HEAD"]))
+            .stdout
+        : null;
       const captureCwd = nested ? path.join(cwd, "scope") : cwd;
       for (const turn of [1, 2]) {
         const ref = CheckpointRef.make(`refs/t3/checkpoints/sparse/${turn}`);
@@ -755,6 +789,19 @@ it.effect.each(
           checkpointRef: ref,
         });
         yield* capture;
+        if (populated) {
+          assert.deepEqual(
+            yield* Effect.forEach(moduleFiles, (name) =>
+              fs.readFile(path.join(cwd, ".git/modules/lib", name)),
+            ),
+            moduleBefore,
+          );
+          assert.strictEqual(
+            yield* fs.readFileString(path.join(cwd, "lib/file")),
+            "working copy\n",
+          );
+          assert.strictEqual((yield* git(["rev-parse", `${ref}:lib`])).stdout, moduleHead);
+        }
         for (const [name, content] of [
           ["scope/out/deep/absent", "original\n"],
           ["scope/out/present", "modified skipped\n"],
@@ -786,7 +833,7 @@ it.effect.each(
       }
       assert.strictEqual(
         freshReadTrees,
-        indexState.endsWith("missing") || indexState === "non-cone-flags" ? 2 : 0,
+        indexState.endsWith("missing") || indexState === "non-cone-flags" || populated ? 2 : 0,
       );
       assert.isEmpty(
         (yield* fs.readDirectory(path.join(cwd, ".git"))).filter((name) =>
