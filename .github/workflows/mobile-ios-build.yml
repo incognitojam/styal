@@ -19,7 +19,16 @@ name: Mobile iOS Build
 # uploads nothing.
 on:
   workflow_call:
+    outputs:
+      finished:
+        value: ${{ jobs.ota.outputs.finished }}
     inputs:
+      ota-published:
+        type: boolean
+        default: false
+      recover-only:
+        type: boolean
+        default: false
       publish:
         type: boolean
         default: false
@@ -45,7 +54,7 @@ env:
 jobs:
   build:
     name: Build production iOS app
-    if: github.repository == 'incognitojam/styal'
+    if: github.repository == 'incognitojam/styal' && !inputs.recover-only
     # The only image with the Xcode release eas.json pins for EAS builders.
     runs-on: xcode-27
     timeout-minutes: 180
@@ -56,6 +65,7 @@ jobs:
     permissions:
       contents: write
     outputs:
+      submitted: ${{ steps.submit.outputs.submitted }}
       commit: ${{ steps.meta.outputs.commit }}
       fingerprint: ${{ steps.meta.outputs.fingerprint }}
       version: ${{ steps.ipa.outputs.version }}
@@ -175,46 +185,37 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Built $version ($build_number), runtime version $runtime_version."
 
-      # Waits until EAS has handed the build to App Store Connect. Apple's
-      # processing afterwards is not awaited; it reports failures by email.
-      - name: Submit to TestFlight
+      # Persist the reservation and ID; later runs resume a slow submission.
+      - id: submit
+        name: Submit to TestFlight
         if: inputs.publish
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           IPA: ${{ steps.ipa.outputs.path }}
-        run: node ../../.github/scripts/submit-ios.cjs
-
-      - name: Record the build
-        if: inputs.publish
-        env:
           VERSION: ${{ steps.ipa.outputs.version }}
           BUILD_NUMBER: ${{ steps.ipa.outputs.build-number }}
           FINGERPRINT: ${{ steps.meta.outputs.fingerprint }}
           COMMIT: ${{ steps.meta.outputs.commit }}
-        run: |
-          tag="ios-${VERSION}-${BUILD_NUMBER}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" "$COMMIT" -m "styal for iOS ${VERSION} (${BUILD_NUMBER})" -m "runtime-version: ${FINGERPRINT}"
-          git push origin "refs/tags/$tag"
-          echo ":white_check_mark: ios: built and submitted ${VERSION} (${BUILD_NUMBER}) to TestFlight, recorded as \`$tag\` (fingerprint \`$FINGERPRINT\`)" >> "$GITHUB_STEP_SUMMARY"
+        run: node ../../.github/scripts/submit-ios.cjs
 
-  # A separate job on Linux, where Mobile EAS Production publishes every other
-  # update, so the update is published from a clean checkout.
+  # Queue waits and recovery run on Linux, with the same tag-write authority as the build.
   ota:
     name: Publish the iOS OTA update
     needs: build
-    if: inputs.publish
+    if: ${{ !cancelled() && inputs.publish && (inputs.recover-only || needs.build.outputs.submitted == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 360
+    outputs:
+      finished: ${{ steps.resume.outputs.finished }}
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.build.outputs.commit }}
+          ref: ${{ needs.build.outputs.commit || inputs.ref || github.sha }}
+          fetch-depth: 0
           sparse-checkout: |
             /*
             !/.repos/
@@ -248,13 +249,24 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas env:pull production --non-interactive
 
-      # eas update computes the runtime version itself, so check it lands on
-      # the app's before publishing anything.
-      - name: Publish the iOS OTA update
+      - id: resume
+        name: Wait for submissions and record confirmed uploads
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
+        run: |
+          FINGERPRINT="$(eas fingerprint:generate --platform ios --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash')"
+          export FINGERPRINT
+          node ../../.github/scripts/submit-ios.cjs --reconcile
+
+      # eas update computes the runtime version itself, so check it lands on
+      # the app's before publishing anything.
+      - name: Publish the iOS OTA update
+        if: steps.resume.outputs.finished == 'true' && !inputs.ota-published
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ needs.build.outputs.fingerprint || inputs.expected-fingerprint || steps.resume.outputs.fingerprint }}
           OTA_MESSAGE: ${{ inputs.ota-message || format('Production OTA ({0})', needs.build.outputs.commit) }}
         run: |
           runtime_version="$(eas fingerprint:generate --platform ios --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash')"
@@ -268,4 +280,4 @@ jobs:
             --platform ios \
             --message "$OTA_MESSAGE" \
             --non-interactive
-          echo ":white_check_mark: ios: published the OTA update for ${{ needs.build.outputs.version }} (${{ needs.build.outputs.build-number }})" >> "$GITHUB_STEP_SUMMARY"
+          echo ":white_check_mark: ios: published the OTA update for runtime $runtime_version" >> "$GITHUB_STEP_SUMMARY"

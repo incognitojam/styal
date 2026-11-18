@@ -79,9 +79,20 @@ Run **Mobile EAS Production** with `mode=build` and the desired platform. Select
 `all` runs an iOS build with TestFlight submission and an Android APK build.
 
 **Mobile iOS Build** runs `eas build --local` on GitHub's `xcode-27` macOS image
-with Xcode 27.1, submits the build to TestFlight with `eas submit`, records it as
-an annotated `ios-<version>-<build>` tag carrying its runtime version, then
-publishes an iOS over-the-air update. Mobile EAS Production calls it.
+with Xcode 27.1 and schedules the TestFlight submission once. Before uploading,
+it reserves an `ios-pending-<version>-<build>` tag with the build number, commit,
+and fingerprint; an `ios-submission-<version>-<build>` tag holds the Expo
+submission ID. The macOS job returns immediately after scheduling. A Linux job
+shares a five-hour wait budget across outstanding submissions, then leaves queued
+submissions pending without failing the build. Subsequent production runs check
+the same submission, record
+only `FINISHED` uploads as annotated `ios-<version>-<build>` tags carrying the
+runtime version, and resume OTA publishing. Apple processing is not awaited.
+While a submission is pending, automatic builds avoid another iOS binary for
+the same fingerprint; native drift can still build the necessary new binary.
+Manual builds conservatively resume existing submissions first. Existing matching
+binaries can still receive OTAs. `ERRORED`, `CANCELED`, missing IDs, and unreadable status fail loudly
+and preserve the reservation for investigation. Mobile EAS Production calls it.
 Dispatching it directly builds and verifies the app with the `production-verify`
 profile, which leaves the build number alone, and submits nothing. The build
 needs the GitHub variable `APPLE_TEAM_ID` so eas-cli can sign in to App Store
@@ -129,6 +140,32 @@ for the latest build; for iOS, the `ios-*` tags and the EAS records of builds
 made before the move. A failed build is retried on the next relevant push. The workflow publishes an over-the-air
 update only when a finished build matches the current native fingerprint. Native changes require a compatible
 new binary; a JavaScript update cannot replace native code.
+
+### Recover an already uploaded iOS build
+
+Do not rebuild or resubmit a binary just because the workflow timed out. A
+maintainer must first verify its successful submission on expo.dev and the same
+version/build in App Store Connect. The workflow logs supply the exact source
+commit, version, build number, and verified runtime fingerprint (the `Built ...`
+line). Do not infer the fingerprint from today's checkout.
+
+For an upload from before pending tags existed, fetch the source commit and
+create an annotated `ios-<version>-<build>` tag pointing to it, with subject
+`styal for iOS <version> (<build>)` and a separate paragraph containing exactly
+`runtime-version: <fingerprint>`. Push only that tag to the fork. Repeat for each
+confirmed upload that needs recording. This records delivery without scheduling
+another upload. The next relevant main push publishes an OTA if its fingerprint
+matches; an authorized manual **Mobile EAS Production** `mode=update`,
+`platform=ios` can publish sooner. Recording a tag itself does not publish an OTA.
+
+For newer reserved uploads, let the next production run read the saved ID. If
+scheduling returned ambiguously and no ID tag exists, inspect Expo and App Store
+Connect first, then create `ios-submission-<version>-<build>` at the reserved
+commit with the verified submission ID as its entire annotation. Never clear a
+reservation to retry until you have established that no upload can still finish.
+Terminal failed submissions retain their tags and require maintainer investigation;
+remove their reservation and ID tags only after verifying that retrying is safe.
+No recovery or production dispatch is automatic outside the normal workflow.
 
 ## Verify a release
 

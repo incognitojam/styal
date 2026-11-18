@@ -83,7 +83,7 @@ jobs:
       actions: read
       contents: read
     outputs:
-      run: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.changed == 'true' }}
+      run: ${{ github.event_name == 'workflow_dispatch' || steps.changed.outputs.changed == 'true' || steps.pending.outputs.pending == 'true' }}
     steps:
       - name: Checkout
         if: github.event_name == 'push'
@@ -110,9 +110,22 @@ jobs:
             pnpm-workspace.yaml
             .easignore
             .github/workflows/mobile-eas-production.yml
+            .github/workflows/mobile-ios-build.yml
+            .github/scripts/submit-ios.cjs
             .github/workflows/mobile-android-build.yml
             .github/scripts/publish-android-release.sh
             .github/actions/changed-since-last-deploy
+
+      - id: pending
+        if: github.event_name == 'push'
+        name: Keep checking reserved iOS uploads
+        run: |
+          for tag in $(git tag -l 'ios-pending-*'); do
+            if ! git show-ref --verify --quiet "refs/tags/${tag/ios-pending-/ios-}"; then
+              echo "pending=true" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
 
   production:
     needs: changes
@@ -127,6 +140,8 @@ jobs:
       android-build: ${{ steps.reconcile.outputs.android-build == 'true' || (steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.platform != 'ios') }}
       android-fingerprint: ${{ steps.reconcile.outputs.android-fingerprint }}
       ios-build: ${{ steps.reconcile.outputs.ios-build == 'true' || (steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.platform != 'android') }}
+      ios-ota-published: ${{ steps.reconcile.outputs.ios-ota-published }}
+      ios-recover: ${{ steps.reconcile.outputs.ios-recover == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && steps.ios-pending.outputs.pending == 'true') }}
       ios-fingerprint: ${{ steps.reconcile.outputs.ios-fingerprint }}
       source-sha: ${{ steps.source.outputs.sha }}
       ota-message: ${{ steps.reconcile.outputs.ota-message }}
@@ -297,6 +312,18 @@ jobs:
           done
           exit "$failed"
 
+      - id: ios-pending
+        name: Find iOS uploads awaiting confirmation
+        if: steps.expo-token.outputs.present == 'true'
+        run: |
+          pending=false
+          for tag in $(git tag -l 'ios-pending-*'); do
+            if ! git show-ref --verify --quiet "refs/tags/${tag/ios-pending-/ios-}"; then
+              pending=true
+            fi
+          done
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+
       - name: Publish OTA update (manual)
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'update'
         working-directory: apps/mobile
@@ -341,6 +368,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GH_TOKEN: ${{ github.token }}
+          IOS_PENDING: ${{ steps.ios-pending.outputs.pending }}
           T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
           failed=0
@@ -389,6 +417,9 @@ jobs:
                 --emit-metadata \
                 --non-interactive; then
                 echo ":white_check_mark: $platform: OTA published to production (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
+                if [ "$platform" = ios ]; then
+                  echo "ios-ota-published=true" >> "$GITHUB_OUTPUT"
+                fi
                 # The next target's export replaces dist; keep this one for the map upload.
                 rm -rf "dist-$platform" && mv dist "dist-$platform"
               else
@@ -397,6 +428,18 @@ jobs:
               fi
             else
               skipped+=("$platform \`$hash\`")
+            fi
+
+            matching_pending=false
+            if [ "$platform" = ios ] && [ "$IOS_PENDING" = true ]; then
+              matching_pending="$(FINGERPRINT="$hash" node ../../.github/scripts/submit-ios.cjs --pending)"
+            fi
+            if [ "$matching_pending" = true ]; then
+              echo "ios-recover=true" >> "$GITHUB_OUTPUT"
+              echo "ios-build=true" >> "$GITHUB_OUTPUT"
+              echo "ios-fingerprint=$hash" >> "$GITHUB_OUTPUT"
+              echo ":hourglass: ios: resuming submission without building or uploading" >> "$GITHUB_STEP_SUMMARY"
+              continue
             fi
 
             reason=""
@@ -412,6 +455,11 @@ jobs:
             fi
 
             if [ -z "$reason" ]; then
+              if [ "$platform" = ios ] && [ "$IOS_PENDING" = true ]; then
+                echo "ios-build=true" >> "$GITHUB_OUTPUT"
+                echo "ios-recover=true" >> "$GITHUB_OUTPUT"
+                echo "ios-fingerprint=$hash" >> "$GITHUB_OUTPUT"
+              fi
               if [ "$finished" -eq 0 ]; then
                 echo ":hourglass: $platform: production build for fingerprint \`$hash\` is in progress — OTA resumes on the next merge after it finishes" >> "$GITHUB_STEP_SUMMARY"
               fi
@@ -456,6 +504,8 @@ jobs:
       contents: write
     uses: ./.github/workflows/mobile-ios-build.yml
     with:
+      recover-only: ${{ needs.production.outputs.ios-recover == 'true' }}
+      ota-published: ${{ needs.production.outputs.ios-ota-published == 'true' }}
       publish: true
       ref: ${{ needs.production.outputs.source-sha }}
       expected-fingerprint: ${{ needs.production.outputs.ios-fingerprint }}
@@ -480,13 +530,14 @@ jobs:
           SKIPPED: ${{ needs.production.outputs.skipped }}
           ANDROID_BUILD: ${{ needs.android-build.result }}
           IOS_BUILD: ${{ needs.ios-build.result }}
+          IOS_FINISHED: ${{ needs.ios-build.outputs.finished }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # A successful build publishes its OTA update itself.
           if [ "$ANDROID_BUILD" = success ]; then
             SKIPPED="$(printf '%s\n' "$SKIPPED" | grep -v '^android ' || true)"
           fi
-          if [ "$IOS_BUILD" = success ]; then
+          if [ "$IOS_BUILD" = success ] && [ "$IOS_FINISHED" = true ]; then
             SKIPPED="$(printf '%s\n' "$SKIPPED" | grep -v '^ios ' || true)"
           fi
           title="Mobile OTA updates are blocked by native changes"
