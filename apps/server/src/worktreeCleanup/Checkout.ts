@@ -18,6 +18,8 @@ export class CheckoutLimits extends Context.Reference<{
 
 const Journal = Schema.Struct({
   bytes: Schema.optionalKey(Schema.Number),
+  availableBefore: Schema.optionalKey(Schema.Number),
+  availableAfter: Schema.optionalKey(Schema.Number),
   phase: Schema.Literals(["releasing", "released", "restoring"]),
   status: Schema.String,
   index: Schema.String,
@@ -47,8 +49,9 @@ export const makeCheckout = Effect.gen(function* () {
     root: string,
     args: readonly string[],
     allowed = [0],
+    stdin?: string,
   ) {
-    const result = yield* git(root, args).pipe(
+    const result = yield* git(root, args, stdin).pipe(
       Effect.mapError(() => fail("Git could not complete worktree checkout verification.")),
     );
     if (!allowed.includes(result.exitCode) || result.stdoutTruncated || result.stderrTruncated)
@@ -198,6 +201,13 @@ export const makeCheckout = Effect.gen(function* () {
     const tracked = (yield* command(root, ["ls-files", "-t", "-z"])).split("\0").filter(Boolean);
     if (tracked.some((entry) => entry.startsWith("S ")))
       return yield* fail("Checkout still contains absent sparse files.");
+    yield* io(() =>
+      fs
+        .unlink(path.join(admin, "info", "sparse-checkout"))
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        }),
+    );
     yield* io(() => fs.unlink(journalPath(admin)));
     yield* step("restore-finished");
   }, Effect.uninterruptible);
@@ -270,15 +280,22 @@ export const makeCheckout = Effect.gen(function* () {
     const modules = yield* command(root, ["submodule", "status", "--recursive"]);
     if (modules.split("\n").some((line) => line && !line.startsWith("-")))
       return yield* fail("Worktree has populated submodules.");
-    const lfs = yield* command(root, ["config", "--get-regexp", "^filter\\.lfs\\."], [0, 1]);
-    const attrs = yield* command(root, ["ls-files", "-z"]);
-    for (const name of attrs
-      .split("\0")
-      .filter((name) => name === ".gitattributes" || name.endsWith("/.gitattributes"))) {
-      const text = yield* command(root, ["show", `:${name}`]);
-      if (/filter\s*=\s*lfs/.test(text)) return yield* fail("Worktree uses Git LFS.");
+    const trackedPaths = yield* command(root, ["ls-files", "-z"]);
+    if (trackedPaths && !trackedPaths.endsWith("\0"))
+      return yield* fail("Incomplete tracked file list.");
+    for (const cached of [[], ["--cached"]]) {
+      const attributes = yield* command(
+        root,
+        ["check-attr", ...cached, "-z", "--stdin", "filter"],
+        [0],
+        trackedPaths,
+      );
+      const fields = attributes.split("\0");
+      if (attributes && (!attributes.endsWith("\0") || (fields.length - 1) % 3 !== 0))
+        return yield* fail("Incomplete Git attribute list.");
+      if (fields.some((value, index) => index % 3 === 2 && value === "lfs"))
+        return yield* fail("Worktree uses Git LFS.");
     }
-    if (lfs) return yield* fail("Repository has Git LFS configured.");
     const before = yield* snapshot(root);
     const available = yield* io(() => fs.statfs(root));
     yield* save(admin, { ...before, phase: "releasing" });
@@ -297,7 +314,10 @@ export const makeCheckout = Effect.gen(function* () {
     yield* step("release-finished");
     const after = yield* io(() => fs.statfs(root));
     const bytes = Math.max(0, after.bavail * after.bsize - available.bavail * available.bsize);
-    yield* save(admin, { ...before, phase: "released", bytes });
+    yield* save(admin, { ...before, phase: "released", bytes,
+      availableBefore: available.bavail * available.bsize,
+      availableAfter: after.bavail * after.bsize,
+    });
     return bytes;
   }, Effect.uninterruptible);
   const state = Effect.fn("WorktreeCleanup.checkoutState")(function* (root: string) {

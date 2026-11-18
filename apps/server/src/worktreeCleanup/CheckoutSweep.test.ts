@@ -6,6 +6,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   ProjectId,
@@ -140,6 +141,7 @@ it.effect.each([
   "parent",
   "unsettle",
   "unsettle-during-inspection",
+  "aliased-thread",
   "setting-off",
   "windows",
   "unmanaged",
@@ -154,6 +156,21 @@ it.effect.each([
     yield* f.command(f.worktree, ["add", "."]);
     yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
     const original = f.threads()[0]!;
+    if (blocker === "aliased-thread") {
+      const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+      const alias = `${f.base}/worktree-alias`;
+      yield* Effect.promise(() => physical.symlink(f.worktree, alias));
+      f.setThreads([
+        original,
+        {
+          ...original,
+          id: ThreadId.make("active-alias"),
+          worktreePath: alias,
+          settledAt: null,
+          settledOverride: "active",
+        },
+      ]);
+    }
     if (blocker === "active")
       f.setThreads([{ ...original, settledAt: null, settledOverride: "active" }]);
     if (blocker === "run")

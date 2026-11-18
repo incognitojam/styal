@@ -407,7 +407,8 @@ function CleanupSection() {
       enabled(resolveWorktreeCleanup(settings, null)) ||
       Object.values(settings.projectSettingsOverrides).some(
         (override) =>
-          override.worktreeCleanup?.mode === "custom" && enabled(override.worktreeCleanup.rules),
+          override.releaseWorktreeSources === true ||
+          (override.worktreeCleanup?.mode === "custom" && enabled(override.worktreeCleanup.rules)),
       )
     );
   });

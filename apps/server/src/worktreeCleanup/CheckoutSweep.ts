@@ -118,6 +118,20 @@ export const makeCheckoutSweep = Effect.gen(function* () {
               return null;
             }
           }
+          for (const thread of all) {
+            if (!thread.worktreePath || thread.deletedAt !== null || thread.worktreePath === root)
+              continue;
+            const canonical = yield* fs.realPath(thread.worktreePath).pipe(
+              Effect.catchIf(
+                (error) => error.reason._tag === "NotFound",
+                () => Effect.succeed(null),
+              ),
+            );
+            if (canonical === root) {
+              reason = "Another thread uses an aliased spelling of this worktree";
+              return null;
+            }
+          }
           const now = yield* Clock.currentTimeMillis;
           const byId = new Map(all.map((thread) => [thread.id, thread]));
           for (const thread of threads) {
@@ -148,14 +162,15 @@ export const makeCheckoutSweep = Effect.gen(function* () {
             id: string;
             cwd: string;
           }>`SELECT json_extract(payload_json, '$.id') AS id, json_extract(payload_json, '$.cwd') AS cwd FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
-          for (const row of rows)
-            if (
-              (row.cwd === root || row.cwd.startsWith(`${root}${path.sep}`)) &&
-              (yield* sessions.isLive(row.id as Parameters<typeof sessions.isLive>[0]))
-            ) {
+          for (const row of rows) {
+            if (!(yield* sessions.isLive(row.id as Parameters<typeof sessions.isLive>[0])))
+              continue;
+            const cwd = yield* fs.realPath(row.cwd);
+            if (cwd === root || cwd.startsWith(`${root}${path.sep}`)) {
               reason = "Live provider session";
               return null;
             }
+          }
           return { project, threads };
         });
         const before = yield* eligible();

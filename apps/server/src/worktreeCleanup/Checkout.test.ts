@@ -114,8 +114,7 @@ it.effect.each([
         `${admin}/${markers[scenario as keyof typeof markers]}`,
         "fixture",
       );
-    if (scenario === "lfs")
-      yield* f.command(f.worktree, ["config", "filter.lfs.process", "fixture"]);
+    if (scenario === "lfs") yield* f.write(".gitattributes", "* filter=lfs\n");
     if (scenario === "submodule") {
       yield* f.command(f.worktree, [
         "-c",
@@ -353,9 +352,9 @@ it.effect.each(
     ["config", "--bool", "core.sparseCheckout"],
     ["ls-files", "-v", "-z"],
     ["submodule", "status", "--recursive"],
-    ["config", "--get-regexp", "^filter\\.lfs\\."],
+    ["check-attr", "-z", "--stdin", "filter"],
     ["ls-files", "-z"],
-    ["show", ":.gitattributes"],
+    ["check-attr", "--cached", "-z", "--stdin", "filter"],
     ["ls-files", "--stage", "-z"],
     ["diff-files", "--name-only", "-z"],
     ["ls-files", "--others", "--exclude-standard", "-z"],
