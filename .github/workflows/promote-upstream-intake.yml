@@ -283,7 +283,7 @@ jobs:
     name: Wait for readiness and main's required checks
     needs: validate
     runs-on: ubuntu-24.04
-    timeout-minutes: 190
+    timeout-minutes: 200
     permissions:
       actions: read
       checks: read
@@ -300,7 +300,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ needs.validate.outputs.candidate_sha }}
           PROMOTION_LANE: ${{ needs.validate.outputs.lane }}
-          READINESS_CHECKS: ${{ github.event_name == 'workflow_dispatch' && '1' || '301' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -309,13 +308,20 @@ jobs:
             exit 0
           fi
           echo "Waiting for Intake ready on $CANDIDATE_SHA before requesting approval." >> "$GITHUB_STEP_SUMMARY"
-          for ((attempt=1; attempt<=READINESS_CHECKS; attempt++)); do
-            if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$CANDIDATE_SHA/status?per_page=100" |
+          deadline=$(( $(date +%s) + 150 * 60 ))
+          while (( (remaining = deadline - $(date +%s)) > 0 )); do
+            request_timeout=$(( remaining < 60 ? remaining : 60 ))
+            if timeout --signal=KILL "${request_timeout}s" gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$CANDIDATE_SHA/status?per_page=100" |
               jq -e --arg sha "$CANDIDATE_SHA" 'any(.[]; .sha == $sha and any(.statuses[]; .context == "Intake ready" and .state == "success"))' > /dev/null; then
-              echo "Coordinator ready: Intake ready succeeded on $CANDIDATE_SHA." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
+              if (( $(date +%s) < deadline )); then
+                echo "Coordinator ready: Intake ready succeeded on $CANDIDATE_SHA." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
             fi
-            if ((attempt < READINESS_CHECKS)); then sleep 30; fi
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then break; fi
+            remaining=$(( deadline - $(date +%s) ))
+            if (( remaining <= 0 )); then break; fi
+            sleep "$(( remaining < 30 ? remaining : 30 ))"
           done
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "Dry run: Intake ready is missing or unsuccessful on $CANDIDATE_SHA; continuing to main's required checks without requesting approval." >> "$GITHUB_STEP_SUMMARY"

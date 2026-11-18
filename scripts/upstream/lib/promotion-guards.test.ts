@@ -178,9 +178,7 @@ it("waits for exact-SHA readiness before manual approval and bypasses it for aut
   assert.include(workflow.jobs.promote.if, "needs.required_checks.result == 'success'");
   assert.include(workflow.jobs.promote.if, "github.event_name == 'workflow_run'");
   assert.equal(job.permissions.statuses, "read");
-  assert.isAtLeast(job["timeout-minutes"], 190);
-  assert.include(step.env.READINESS_CHECKS, "301");
-  assert.include(step.env.READINESS_CHECKS, "workflow_dispatch");
+  assert.isAtLeast(job["timeout-minutes"], 200);
   const checks = job.steps.find(
     (entry: { name?: string }) => entry.name === "Wait for main's required checks on the candidate",
   );
@@ -196,20 +194,44 @@ it("waits for exact-SHA readiness before manual approval and bypasses it for aut
     NodeFS.writeFileSync(
       NodePath.join(directory, "gh"),
       `#!/usr/bin/env node
+import fs from 'node:fs';
 const path = process.argv.at(-1);
+const clock = process.env.FIXTURE_CLOCK;
+const now = Number(fs.readFileSync(clock, 'utf8'));
+const elapsed = process.env.FIXTURE === 'late-ready' ? 9000 : process.env.FIXTURE === 'slow-missing' ? (now === 0 ? 8950 : 20) : 0;
+fs.writeFileSync(clock, String(now + elapsed));
 if (path !== 'repos/incognitojam/styal/commits/${sha}/status?per_page=100') process.exit(2);
-const statuses = process.env.FIXTURE === 'missing' ? [] : [{ context: 'Intake ready', state: process.env.FIXTURE === 'pending' ? 'pending' : 'success' }];
+const statuses = ['missing', 'slow-missing'].includes(process.env.FIXTURE) ? [] : [{ context: 'Intake ready', state: process.env.FIXTURE === 'pending' ? 'pending' : 'success' }];
 console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '${sha}', statuses }]));
 `,
       { mode: 0o755 },
     );
-    NodeFS.writeFileSync(NodePath.join(directory, "sleep"), "#!/bin/sh\nexit 2\n", { mode: 0o755 });
+    NodeFS.writeFileSync(NodePath.join(directory, "date"), '#!/bin/sh\ncat "$FIXTURE_CLOCK"\n', {
+      mode: 0o755,
+    });
+    NodeFS.writeFileSync(
+      NodePath.join(directory, "sleep"),
+      `#!/usr/bin/env node
+import fs from 'node:fs';
+const clock = process.env.FIXTURE_CLOCK;
+const elapsed = process.env.FIXTURE === 'slow-missing' ? Number(process.argv[2]) : 9000;
+fs.writeFileSync(clock, String(Number(fs.readFileSync(clock, 'utf8')) + elapsed));
+`,
+      { mode: 0o755 },
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(directory, "timeout"),
+      '#!/bin/sh\nshift\necho "$1" >> "$FIXTURE_BUDGETS"\nshift\nexec "$@"\n',
+      { mode: 0o755 },
+    );
     for (const [event, lane, fixture, expected] of [
       ["workflow_run", "manual", "missing", 1],
       ["workflow_run", "manual", "old", 1],
       ["workflow_run", "manual", "pending", 1],
       ["workflow_run", "manual", "ready", 0],
       ["workflow_run", "automatic", "missing", 0],
+      ["workflow_run", "manual", "late-ready", 1],
+      ["workflow_run", "manual", "slow-missing", 1],
       ["workflow_dispatch", "manual", "missing", 0],
       ["workflow_dispatch", "manual", "old", 0],
       ["workflow_dispatch", "manual", "pending", 0],
@@ -217,6 +239,10 @@ console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '$
     ] as const) {
       const summary = NodePath.join(directory, "summary");
       NodeFS.writeFileSync(summary, "");
+      const clock = NodePath.join(directory, "clock");
+      const budgets = NodePath.join(directory, "budgets");
+      NodeFS.writeFileSync(clock, "0");
+      NodeFS.writeFileSync(budgets, "");
       const result = NodeChildProcess.spawnSync("bash", ["-c", step.run], {
         cwd: root,
         encoding: "utf8",
@@ -227,12 +253,17 @@ console.log(JSON.stringify([{ sha: process.env.FIXTURE === 'old' ? '${old}' : '$
           GITHUB_EVENT_NAME: event,
           CANDIDATE_SHA: sha,
           PROMOTION_LANE: lane,
-          READINESS_CHECKS: "1",
           FIXTURE: fixture,
+          FIXTURE_CLOCK: clock,
+          FIXTURE_BUDGETS: budgets,
           GITHUB_STEP_SUMMARY: summary,
         },
       });
       assert.equal(result.status, expected, `${event}/${lane}/${fixture}: ${result.stderr}`);
+      if (fixture === "slow-missing") {
+        assert.equal(NodeFS.readFileSync(clock, "utf8"), "9000");
+        assert.equal(NodeFS.readFileSync(budgets, "utf8"), "60s\n20s\n");
+      }
       assert.include(
         NodeFS.readFileSync(summary, "utf8"),
         expected === 1
