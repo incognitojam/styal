@@ -698,10 +698,18 @@ function viewedSourceUrlKey(url: string): string | null {
   return `${parsed.host}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
 }
 
-/** Keys of the http(s) URLs written in a message, bare or as Markdown links. */
+/**
+ * Keys of the http(s) URLs a message shows as links, bare or in Markdown. URLs inside code render
+ * as text, not links, so code spans and fenced blocks are skipped.
+ */
 function linkedUrlKeys(text: string): Set<string> {
   const keys = new Set<string>();
-  for (const match of text.matchAll(/https?:\/\/[^\s<>()[\]{}"'`]+/gi)) {
+  const prose = text
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm, "")
+    .replace(/(`+)[^`]*?\1/g, "");
+  // Balanced parentheses stay in the URL (Foo_(bar)); an unbalanced ")" closes a Markdown link.
+  const urls = /https?:\/\/(?:[^\s<>()[\]{}"'`]|\([^\s<>()[\]{}"'`]*\))+/gi;
+  for (const match of prose.matchAll(urls)) {
     const key = viewedSourceUrlKey(match[0].replace(/[.,;:!?*_~]+$/, ""));
     if (key !== null) keys.add(key);
   }

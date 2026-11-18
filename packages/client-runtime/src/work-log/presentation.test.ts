@@ -800,6 +800,8 @@ describe("viewed sources", () => {
       { kind: "page", url: "https://docs.example.com/menus" },
       { kind: "page", url: "https://ui.example.org/sidebar" },
       { kind: "page", url: "https://help.example.io/export" },
+      { kind: "page", url: "https://wiki.example.org/Retention_(policy)" },
+      { kind: "page", url: "https://wiki.example.org/Retention_" },
     ] as const;
     const linked = assistantLinkedUrlKeysByRunId(
       [
@@ -807,6 +809,12 @@ describe("viewed sources", () => {
           role: "assistant",
           runId: "run-1",
           text: "See [the guide](https://docs.example.com/menus/) and **https://ui.example.org/sidebar**.",
+        },
+        {
+          role: "assistant",
+          runId: "run-1",
+          // Code shows a URL as text, so its page keeps its chip.
+          text: "Run `curl https://help.example.io/export`:\n\n```sh\ncurl https://help.example.io/export\n```\nSee https://wiki.example.org/Retention_(policy).",
         },
         { role: "assistant", runId: "run-2", text: "https://help.example.io/export" },
         { role: "user", runId: "run-1", text: "https://help.example.io/export" },
@@ -821,6 +829,7 @@ describe("viewed sources", () => {
     ).toEqual([
       { kind: "document", path: "/repo/spec.pdf" },
       { kind: "page", url: "https://help.example.io/export" },
+      { kind: "page", url: "https://wiki.example.org/Retention_" },
     ]);
     expect(linked.has("run-2")).toBe(false);
   });
