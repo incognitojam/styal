@@ -19,7 +19,7 @@ list_shipped_paths() {
       */scripts/*|scripts/*) continue ;;
       apps/web/*|apps/desktop/*|apps/mobile/*|apps/server/*|packages/*/*|patches/*) ;;
       native/browser-secret/*|native/resource-monitor/*|native/kde-snap-shot/*|native/hyprland-snap-shot/*|native/libghostty-vt/*) ;;
-      assets/prod/*|assets/nightly/*|third-party-licenses/spdx/*|third-party-licenses.config.json) ;;
+      assets/prod/*|assets/nightly/*|third-party-licenses/spdx/*|third-party-licenses/*.NOTICE|third-party-licenses.config.json) ;;
       package.json|pnpm-lock.yaml|pnpm-workspace.yaml|styal-version.json|LICENSE) ;;
       *) continue ;;
     esac

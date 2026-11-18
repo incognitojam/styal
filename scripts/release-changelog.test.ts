@@ -325,6 +325,7 @@ it.each([
   { paths: ["assets/nightly/nightly-windows.ico"], shipped: true },
   { paths: ["third-party-licenses/spdx/MIT.json"], shipped: true },
   { paths: ["third-party-licenses.config.json"], shipped: true },
+  { paths: ["third-party-licenses/sharp-libvips-1.3.4.NOTICE"], shipped: true },
   { paths: ["native/browser-secret/test.c"], shipped: false },
   { paths: ["native/kde-snap-shot/src/transport_tests.rs"], shipped: false },
   { paths: ["native/hyprland-snap-shot/src/transport_tests.rs"], shipped: false },
