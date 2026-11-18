@@ -116,6 +116,8 @@ function layerExecutorFor(input: {
         detach: () => record("detach"),
         otherWorkingThreads: () => Effect.succeed([]),
         releaseUnlessBusy: () => Effect.succeed(true),
+        retireInstances: () => Effect.void,
+        holdSession: () => Effect.void,
         subscribePromptSuggestion: () => Stream.empty,
       }),
     ),

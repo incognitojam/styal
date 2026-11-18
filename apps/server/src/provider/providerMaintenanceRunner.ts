@@ -41,6 +41,7 @@ import {
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { AnalyticsService } from "../telemetry/AnalyticsService.ts";
 import {
@@ -358,6 +359,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
   const installGate = yield* ProviderInstallGate.ProviderInstallGate;
+  const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const analytics = yield* AnalyticsService;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const managedUpdatesOn = settingsService.getSettings.pipe(
@@ -479,6 +481,40 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         message: "Waiting for another provider update to finish.",
       }),
     ).pipe(Effect.asVoid);
+
+    // A running process can outlive its install: some installers delete the old version's
+    // folder, and the process then fails to start its helpers. Every instance on the same
+    // install gets a fresh process on its next turn.
+    const retireReplacedSessions = Effect.fn("ProviderMaintenanceRunner.retireReplacedSessions")(
+      function* () {
+        const providers = yield* providerRegistry.getProviders;
+        const sharing = yield* Effect.filter(providers, (candidate) =>
+          candidate.instanceId === instanceId
+            ? Effect.succeed(true)
+            : providerRegistry
+                .getProviderMaintenanceCapabilitiesForInstance(
+                  candidate.instanceId,
+                  candidate.driver,
+                )
+                .pipe(
+                  Effect.map(
+                    (candidateCapabilities) =>
+                      candidateCapabilities.update?.lockKey === update.lockKey &&
+                      candidateCapabilities.packageName === capabilities.packageName,
+                  ),
+                ),
+        );
+        yield* providerSessions.retireInstances({
+          instanceIds: [...new Set(sharing.map((candidate) => candidate.instanceId))],
+        });
+      },
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Provider sessions were not restarted after an update", {
+          instanceId,
+          cause,
+        }),
+      ),
+    );
 
     const runProviderUpdate = Effect.fn("ProviderMaintenanceRunner.runProviderUpdate")(
       function* () {
@@ -743,10 +779,10 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const stillOutdated =
               targetVersion === undefined &&
               verifiedProviders.some((verifiedProvider) => isOutdatedProvider(verifiedProvider));
-            return yield* finish(
+            const succeeded = !couldNotVerify && !brokenProvider && !stillOutdated;
+            const finished = yield* finish(
               makeUpdateState({
-                status:
-                  couldNotVerify || brokenProvider || stillOutdated ? "unchanged" : "succeeded",
+                status: succeeded ? "succeeded" : "unchanged",
                 startedAt,
                 finishedAt,
                 message: brokenProvider
@@ -774,6 +810,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                       ? "unchanged_after_install"
                       : null,
             );
+            // Still under the install gate, so no turn reaches the old process first.
+            if (succeeded) yield* retireReplacedSessions();
+            return finished;
           },
         );
 

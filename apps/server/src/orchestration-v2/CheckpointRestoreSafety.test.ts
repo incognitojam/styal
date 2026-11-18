@@ -149,6 +149,7 @@ it.effect.each([
           }),
           Layer.mock(EventSinkV2)({ write: () => Effect.succeed([]) }),
           Layer.mock(ProviderSessionManagerV2)({
+            holdSession: () => Effect.void,
             open: () =>
               Effect.succeed({
                 rollbackThread: () =>
