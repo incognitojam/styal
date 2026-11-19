@@ -1348,14 +1348,6 @@ export default function FilePreviewPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      {!attachment && !isHostFile ? (
-        <SourceCheckoutNotice
-          environmentId={environmentId}
-          cwd={cwd}
-          context="files"
-          onCheckedOut={file.refresh}
-        />
-      ) : null}
       {breadcrumbPath !== null && breadcrumbTrail !== null ? (
         <div className={FILE_SURFACE_SUBHEADER_CLASS} data-surface-subheader>
           <ScrollArea
@@ -1441,6 +1433,15 @@ export default function FilePreviewPanel({
             </FileSurfaceAction>
           ) : null}
         </div>
+      ) : null}
+      {!attachment && !isHostFile ? (
+        <SourceCheckoutNotice
+          environmentId={environmentId}
+          cwd={cwd}
+          context="files"
+          className="shrink-0 border-b py-1.5"
+          onCheckedOut={file.refresh}
+        />
       ) : null}
       {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
         <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">

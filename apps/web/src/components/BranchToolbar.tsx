@@ -723,12 +723,6 @@ export const BranchToolbar = memo(function BranchToolbar({
     return (
       <div className="flex w-full flex-col" data-thread-panel-run-context>
         {panelSection !== "branch" ? (
-          <SourceCheckoutNotice
-            environmentId={environmentId}
-            cwd={activeWorktreePath ?? activeProject.workspaceRoot}
-          />
-        ) : null}
-        {panelSection !== "branch" ? (
           <RunContextSelector
             displayMode="panel"
             workspaceRoot={activeProject.workspaceRoot}
@@ -751,6 +745,13 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+          />
+        ) : null}
+        {panelSection !== "branch" ? (
+          <SourceCheckoutNotice
+            layout="panel"
+            environmentId={environmentId}
+            cwd={activeWorktreePath ?? activeProject.workspaceRoot}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -900,6 +901,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     <>
       {contextStrip}
       <SourceCheckoutNotice
+        className="px-3.5 pt-1"
         environmentId={environmentId}
         cwd={activeWorktreePath ?? activeProject.workspaceRoot}
       />

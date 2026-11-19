@@ -6,9 +6,15 @@ import { gitEnvironment } from "../state/git";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
+import { AppActivityIndicator } from "./ui/AppActivityIndicator";
+import { SymbolView } from "./ui/AppSymbol";
 import { AppText } from "./ui/AppText";
 import { Button } from "./ui/Button";
-import { StyalMark } from "./StyalMark";
+
+const CONTEXT_HINT = {
+  files: "Tracked files open after checkout.",
+  skills: "Project skills load after checkout.",
+} as const;
 
 export function SourceCheckoutNotice(props: {
   environmentId: EnvironmentId;
@@ -21,49 +27,59 @@ export function SourceCheckoutNotice(props: {
   const action = useAtomValue(gitEnvironment.sourceCheckoutAction({ environmentId, cwd }));
   const allowed = useAtomValue(gitEnvironment.checkOutSources.permissionAtom(environmentId));
   const checkOut = useAtomCommand(gitEnvironment.checkOutSources);
-  if (!status.data?.sourceCheckout) return null;
+  const state = status.data?.sourceCheckout;
+  if (!state) return null;
   return (
-    <View className="gap-2 px-4 py-2" accessibilityLiveRegion="polite">
-      <View className="flex-row flex-wrap items-center gap-2">
-        <View accessible accessibilityLabel="Only in styal">
-          <StyalMark height={14} colorClassName="accent-foreground-muted" />
+    <View className="gap-1 px-4 py-1" accessibilityLiveRegion="polite">
+      <View className="min-h-10 flex-row items-center gap-2.5">
+        {action.pending ? (
+          <AppActivityIndicator size="small" colorClassName="accent-foreground-muted" />
+        ) : (
+          <SymbolView name="tray.and.arrow.down" size={16} tintColorClassName="accent-icon-muted" />
+        )}
+        <View className="min-w-0 flex-1">
+          <AppText textRole="footnote" className="text-foreground-secondary">
+            {action.pending
+              ? "Checking out source files…"
+              : state === "released"
+                ? "Source files released"
+                : "Source checkout interrupted"}
+          </AppText>
+          {props.context && !action.pending ? (
+            <AppText textRole="caption" className="text-foreground-muted">
+              {CONTEXT_HINT[props.context]}
+            </AppText>
+          ) : null}
         </View>
-        <AppText className="text-sm text-foreground">
-          {action.pending
-            ? "Checking out source files…"
-            : status.data.sourceCheckout === "released"
-              ? "Source files released"
-              : "Source checkout interrupted"}
-        </AppText>
-        <Button
-          label="Check out again"
-          size="compact"
-          tone="secondary"
-          disabled={!allowed}
-          loading={action.pending}
-          onPress={async () => {
-            const result = await checkOut({ environmentId, input: { cwd } });
-            status.refresh();
-            if (result._tag === "Success") props.onCheckedOut?.();
-          }}
-        />
+        {action.pending ? null : (
+          <Button
+            label="Check out again"
+            size="compact"
+            tone="text"
+            disabled={!allowed}
+            onPress={async () => {
+              const result = await checkOut({ environmentId, input: { cwd } });
+              status.refresh();
+              if (result._tag === "Success") props.onCheckedOut?.();
+            }}
+          />
+        )}
       </View>
-      {props.context ? (
-        <AppText className="text-xs text-foreground-muted">
-          {props.context === "skills"
-            ? "Project skills are available after checking out source files."
-            : "Check out again to open tracked source files."}
-        </AppText>
-      ) : null}
-      {!action.pending && status.data?.sourceCheckout === "recovery-required" ? (
-        <AppText className="text-xs text-foreground-muted">
-          Source checkout was interrupted. Check out again to recover.
-        </AppText>
-      ) : null}
       {action.error ? (
-        <AppText className="text-sm text-danger" accessibilityRole="alert">
-          {action.error}
-        </AppText>
+        <View className="flex-row items-start gap-2.5 pb-1">
+          <SymbolView
+            name="exclamationmark.triangle"
+            size={16}
+            tintColorClassName="accent-danger-foreground"
+          />
+          <AppText
+            textRole="footnote"
+            className="min-w-0 flex-1 text-danger-foreground"
+            accessibilityRole="alert"
+          >
+            {action.error}
+          </AppText>
+        </View>
       ) : null}
     </View>
   );
