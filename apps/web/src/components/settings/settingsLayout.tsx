@@ -321,6 +321,7 @@ export function SettingsRow({
   mixed: mixedOverride,
   forkFeature,
   managed,
+  unsupported,
   children,
   className,
   ...rowProps
@@ -340,6 +341,8 @@ export function SettingsRow({
   forkFeature?: SettingsForkFeature;
   /** Why an administrator's policy turns this row's control off, from the contract's denial helpers. */
   managed?: string | undefined;
+  /** Why the target machine cannot run what this row's control turns on, such as its platform. */
+  unsupported?: string | undefined;
   children?: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
@@ -401,8 +404,10 @@ export function SettingsRow({
   );
   const overridingProjects = isProjectScope ? [] : projectOverrides(context, scopedKeys);
   const renderedReset =
-    unavailable || managedBy !== undefined || managed !== undefined ? null : isProjectScope &&
-      scopedKeys.length > 0 ? (
+    unavailable ||
+    managedBy !== undefined ||
+    managed !== undefined ||
+    unsupported !== undefined ? null : isProjectScope && scopedKeys.length > 0 ? (
       source === "project" || source === "mixed" ? (
         <SettingResetButton
           label={typeof title === "string" ? title : "override"}
@@ -438,24 +443,26 @@ export function SettingsRow({
       ? inertControl(managed)
       : managedBy !== undefined && control
         ? inertControl(`Managed by ${managedBy}.`)
-        : unavailable && control
-          ? inertControl(
-              !canWriteSettings
-                ? `This connection lacks permission to change settings on ${
-                    context
-                      ? context.connectedEnvironments
-                          .filter((target) => !writableIds.has(target.environmentId))
-                          .map((target) => target.label)
-                          .join(", ") || "the selected environment"
-                      : (primaryEnvironment?.label ?? "the primary environment")
-                  }.`
-                : context
-                  ? "Reconnect the selected environment to change this setting."
-                  : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
-            )
-          : environmentWide && control
-            ? inertControl("Environment-wide setting. Select an environment to change it.")
-            : control;
+        : unsupported !== undefined && control
+          ? inertControl(unsupported)
+          : unavailable && control
+            ? inertControl(
+                !canWriteSettings
+                  ? `This connection lacks permission to change settings on ${
+                      context
+                        ? context.connectedEnvironments
+                            .filter((target) => !writableIds.has(target.environmentId))
+                            .map((target) => target.label)
+                            .join(", ") || "the selected environment"
+                        : (primaryEnvironment?.label ?? "the primary environment")
+                    }.`
+                  : context
+                    ? "Reconnect the selected environment to change this setting."
+                    : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+              )
+            : environmentWide && control
+              ? inertControl("Environment-wide setting. Select an environment to change it.")
+              : control;
   const customized =
     context !== null &&
     settingKeys.some((key) =>
