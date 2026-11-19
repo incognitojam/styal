@@ -3668,6 +3668,7 @@ export default function ChatView(props: ChatViewProps) {
                         }
                       : null
                   }
+                  startedThreadsList={projectChat !== undefined}
                   pendingApprovals={pendingApprovals}
                   heldApprovalRequestIds={heldApprovalRequestIds}
                   respondingRequestIds={respondingRequestIds}

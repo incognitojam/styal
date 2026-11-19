@@ -324,6 +324,12 @@ questions and report questions, oldest first, each with its thread's name. Click
 there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the
 page can't answer, such as a subagent's request, offers **Open thread**.
 
+Threads the chat launches to report back to it stay off the sidebar while they work or after
+they finish; the chat lists the ones still working or waiting on you right after the reply that
+started them, and the page's status line counts them. A thread comes back to the sidebar when it
+needs an approval or an answer, fails, or when you open it, pin it or send it a message
+yourself. They finish without a Done notification, and stay in search and the command palette.
+
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
 

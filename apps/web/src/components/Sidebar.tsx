@@ -110,6 +110,7 @@ import {
 } from "react";
 import { type AnyRouter, useParams, useRouter } from "@tanstack/react-router";
 import { useProjectPages } from "./project/useProjectPages";
+import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
 
 import {
   isAtomCommandInterrupted,
@@ -1275,6 +1276,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
   const projectChatKeys =
     projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
+  // Threads a project chat started are on its page until they need you, or while open.
+  const onProjectPageOnly = (thread: EnvironmentThreadShell) =>
+    staysOnProjectPage(thread, reportingChatKeys) && threadShellKey(thread) !== routeRowThreadKey;
+  const reportingChatKeys = new Set(
+    listedThreads.flatMap((thread) =>
+      projectChatKeys.has(threadShellKey(thread)) && projectChatTakesReports(thread)
+        ? [threadShellKey(thread)]
+        : [],
+    ),
+  );
   // On the chat's own thread URL, the header that stands for the chat is the active location.
   // Only while the chat has no row of its own: an active chat, which its header stands for.
   const isRouteChat = (projectKey: string) => {
@@ -1595,7 +1606,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
-    threads: listedThreads,
+    threads: listedThreads.filter((thread) => !onProjectPageOnly(thread)),
     delegatedUnderParent,
     routeRowThreadKey,
     folderGroups,
@@ -1603,6 +1614,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectChatKeys,
   });
   const orderedThreadKeys = listedThreadKeys;
+  // Search still finds the threads that stay on a project page.
+  const searchCandidates = [
+    ...searchableThreads,
+    ...filterSidebarV2VisibleThreads(
+      listedThreads.filter(onProjectPageOnly),
+      scopedProjectKeys,
+      delegatedUnderParent,
+    ),
+  ];
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1611,7 +1631,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threadSearch.matches.length === 0
       ? null
       : new Map(
-          searchableThreads.map((thread) => [
+          searchCandidates.map((thread) => [
             threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
             thread,
           ]),
@@ -1643,7 +1663,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   if (messageOrder !== shownMessageOrder) setShownMessageOrder(messageOrder);
   const { titleMatches: threadTitleResults, contentMatches: threadContentResults } =
-    searchSidebarThreads(searchableThreads, threadSearchQuery, new Set(messageOrder.keys));
+    searchSidebarThreads(searchCandidates, threadSearchQuery, new Set(messageOrder.keys));
   const threadSearchResults = [...threadTitleResults, ...threadContentResults];
   // Only rows listed for their messages show one, and open find on it.
   const threadSearchMatchByKey = new Map(

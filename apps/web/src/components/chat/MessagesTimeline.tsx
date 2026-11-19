@@ -144,6 +144,7 @@ import {
   McpAppTimelineRow,
 } from "./TimelineAssistantRows";
 import { V2EventTimelineRow } from "./TimelineV2EventRow";
+import { StartedThreadsTimelineRow } from "./StartedThreadsRow";
 import { startTimelinePositionRestore } from "./useTimelinePositionRestore";
 import {
   attachTimelineViewport,
@@ -290,6 +291,8 @@ interface MessagesTimelineProps {
     threadId: OrchestrationV2TurnItem["threadId"],
     environmentId?: EnvironmentId,
   ) => void;
+  /** On a project page: each turn's started threads in one live list. */
+  startedThreadsList?: boolean;
   renderHtmlRender?: TimelineRowSharedState["renderHtmlRender"];
   turnItemSource?: TimelineRowSharedState["turnItemSource"];
   /**
@@ -413,6 +416,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onOpenToolDiff,
   onOpenTurnDiff,
   onOpenThread,
+  startedThreadsList = false,
   renderHtmlRender,
   turnItemSource,
   parentThreadLink = null,
@@ -789,6 +793,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
     toolCallVisibility,
     revealedMessageId,
+    startedThreadsList,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
@@ -1701,6 +1706,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
+      {row.kind === "started-threads" ? <StartedThreadsTimelineRow row={row} /> : null}
     </div>
   );
 });
