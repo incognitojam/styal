@@ -15,7 +15,6 @@ import {
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 type ReportMessage = {
   id: MessageId;
@@ -202,7 +201,6 @@ export function PinnedReport(props: {
   readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
 }) {
   const ctx = use(CoordinatorReportsContext);
-  const voice = useGlobalVoiceInput();
   const report = ctx?.reports.find((entry) => entry.message.id === props.id);
   if (!ctx || !report) return null;
   const tag = report.message.report!;
@@ -216,12 +214,7 @@ export function PinnedReport(props: {
         <Button label="Close" size="compact" tone="text" onPress={props.onClose} />
       </View>
       {report.state === "open" ? (
-        <ReportAnswerBlock
-          pinned
-          report={report}
-          // Hidden where dictation can't start, and while a recording is under way.
-          onReplyByVoice={voice.isAvailable && !voice.isBusy ? props.onReplyByVoice : undefined}
-        />
+        <ReportAnswerBlock pinned report={report} onReplyByVoice={props.onReplyByVoice} />
       ) : (
         <View className="flex-row items-center gap-2 p-3 pt-0">
           <Text className="flex-1 text-foreground">

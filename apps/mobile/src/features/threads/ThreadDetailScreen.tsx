@@ -469,7 +469,11 @@ function ThreadDetailBody(
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
   const openInspector = useOpenThreadInspector();
-  const { session: voiceInputSession } = useGlobalVoiceInput();
+  const {
+    session: voiceInputSession,
+    isAvailable: voiceAvailable,
+    isBusy: voiceBusy,
+  } = useGlobalVoiceInput();
   const reportedModelSelection = useThreadReportedModelSelection(props.selectedThreadDetailRef);
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
@@ -1823,10 +1827,16 @@ function ThreadDetailBody(
                           id={pinnedReportId}
                           onClose={() => setOpened(null)}
                           onShowLatest={(id) => openReport(id, opened?.returnTo ?? null)}
-                          onReplyByVoice={(reply) => {
-                            // A recording already under way keeps its own reply target.
-                            if (composerDictationRef.current?.start()) props.onReportReply?.(reply);
-                          }}
+                          // Hidden where dictation can't start, and while a recording is under way.
+                          onReplyByVoice={
+                            voiceAvailable && !voiceBusy
+                              ? (reply) => {
+                                  if (composerDictationRef.current?.start()) {
+                                    props.onReportReply?.(reply);
+                                  }
+                                }
+                              : undefined
+                          }
                         />
                       </CoordinatorReportsContext>
                     ) : null}
