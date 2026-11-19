@@ -1166,7 +1166,7 @@ export function useComposerSend(input: ComposerSendInput) {
     });
     if (reportReplyClaim.kind === "refused") {
       sendInFlightRef.current = false;
-      setThreadError(threadIdForSend, "This report already has an answer on its way.");
+      setThreadError(threadIdForSend, "This report already has a response.");
       return;
     }
     const reportReply = reportReplyClaim.kind === "claimed" ? reportReplyClaim.handle : null;

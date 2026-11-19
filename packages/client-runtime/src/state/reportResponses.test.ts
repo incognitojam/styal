@@ -75,6 +75,19 @@ it("refuses a response to a report the thread already shows answered", async () 
         },
       },
       { id: MessageId.make("first"), role: "user", text: "Start it", reportAnswer: ref },
+      // A newer version replaces it on screen; the answer to version 1 still stands.
+      {
+        id: MessageId.make("report-2"),
+        role: "assistant",
+        text: "Report",
+        report: {
+          key: "shed",
+          title: "Shed",
+          version: 2,
+          question: "Start?",
+          answers: ["Start it"],
+        },
+      },
     ],
     thread: {},
   } as unknown as Option.Option.Value<ReportResponseThreadState["data"]>;

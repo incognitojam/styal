@@ -82,7 +82,7 @@ export function approvalRedirectNotice(input: {
 
 /**
  * Whether a send claims its report reply. A send to several models uses its own messages, so it
- * makes no claim; a report that already has an answer on its way refuses a second one.
+ * makes no claim; a report that already has a response refuses a second one.
  */
 export function claimComposerReportReply<Handle>(input: {
   readonly hasReportReply: boolean;

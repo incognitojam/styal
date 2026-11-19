@@ -6,7 +6,6 @@ import type {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom, type AtomRegistry } from "effect/reactivity";
-import { coordinatorReports } from "../coordinatorReports.ts";
 import {
   acknowledgeReportResponse,
   claimReportResponse,
@@ -118,15 +117,14 @@ export function createReportResponses(
     response: ReportResponse,
   ): ReportResponseHandle | null => {
     const known = Option.getOrNull(registry.get(threads.stateAtom(thread)).data);
+    const same = (ref: { messageId: string; key: string; version: number }) =>
+      ref.messageId === response.ref.messageId &&
+      ref.key === response.ref.key &&
+      ref.version === response.ref.version;
     if (
       known !== null &&
-      coordinatorReports(known.messages, known.thread.reportDismissals ?? []).some(
-        ({ message, state }) =>
-          message.id === response.ref.messageId &&
-          message.report?.key === response.ref.key &&
-          message.report.version === response.ref.version &&
-          (state === "answered" || state === "dismissed"),
-      )
+      (known.messages.some((message) => message.reportAnswer && same(message.reportAnswer)) ||
+        (known.thread.reportDismissals ?? []).some(same))
     )
       return null;
     const key = threadKey(thread);
