@@ -29,7 +29,7 @@ import { environmentServerConfigsAtom, serverEnvironment } from "../../state/ser
 import { environmentThreadShells, olderSettledThreads } from "../../state/threads";
 import { useEnvironmentShellStatus } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
+import { buildThreadRouteParams, isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
 import ChatView from "../ChatView";
 import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
@@ -270,6 +270,15 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         to: "/settings/projects",
         search: { project: page.group.projectKey, machine: undefined },
       }),
+    onOpenThread:
+      chat === null
+        ? null
+        : () =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(chat),
+              search: { view: "thread" },
+            }),
   } as const;
 
   const view =
