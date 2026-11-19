@@ -55,6 +55,7 @@ import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatches";
 import { useThreadListV2 } from "../threads/useThreadListV2";
+import { useProjectChats } from "../projects/projectChats";
 import { useThreadListNow } from "../threads/use-thread-list-now";
 import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollRestoration";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
@@ -390,8 +391,9 @@ export function HomeScreen(props: HomeScreenProps) {
       }),
     [projects, selectedEnvironmentId, projectGroupingMode],
   );
+  const projectChats = useProjectChats();
   const projectGrouping = useMobileThreadGroupingByProject()
-    ? buildHomeThreadProjectGrouping(projectScopes)
+    ? buildHomeThreadProjectGrouping(projectScopes, projectChats.byScopeKey)
     : null;
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = (() => {
@@ -525,6 +527,12 @@ export function HomeScreen(props: HomeScreenProps) {
     if (swipeEnabled) activateVisibleRows(threadListV2Items);
   }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
 
+  const projectChatOf = (thread: EnvironmentThreadShell) =>
+    projectChats.byChatKey.get(scopedThreadKey(thread.environmentId, thread.id));
+  const openProjectChat = (chatThreadKey: string | null) => {
+    const chat = chatThreadKey === null ? undefined : projectChats.byChatKey.get(chatThreadKey);
+    return chat === undefined ? undefined : () => selectThread(chat.chat);
+  };
   const renderV2Item = ({ item }: { readonly item: ThreadListV2ListItem }) => {
     if (item.type === "v2-pending") {
       const pendingScopeKey = scopedProjectKey(
@@ -569,6 +577,8 @@ export function HomeScreen(props: HomeScreenProps) {
           project={item.project}
           pinned={item.pinned}
           pane={primaryColumn ? "sidebar" : "screen"}
+          statusLine={item.statusLine}
+          onOpenProject={openProjectChat(item.chatThreadKey)}
         />
       );
     }
@@ -617,6 +627,8 @@ export function HomeScreen(props: HomeScreenProps) {
           `${thread.environmentId}:${thread.projectId}:${thread.id}`,
         )}
         projectCoordinatorsEnabled={coordinatorEnvironmentIds.has(thread.environmentId)}
+        projectChatTitle={projectChatOf(thread)?.title}
+        projectChatStatusLine={projectChatOf(thread)?.statusLine}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}
         wokeAt={item.item.wokeAt}

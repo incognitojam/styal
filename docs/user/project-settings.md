@@ -302,7 +302,9 @@ Turn on **Project coordinators** in **Settings → Labs** to let one thread coor
 Choose it from **Coordinator** in the project's settings, or with **Make project coordinator** in
 the thread's menu on web, desktop or mobile. **Stop being coordinator** or **None** clears it.
 
-The coordinator is told to hand work to other threads instead of doing it itself. Threads started in
+With every session, the coordinator gets instructions to hand changes to other threads instead of
+making them itself, unless you ask it to. Claude, Codex, Cursor, Grok and OpenCode receive them, as
+they do the project's Additional instructions. Threads started in
 the project on the same machine report to it, including threads you start: it hears when one fails,
 stays stuck on an approval or question, or finishes its first turn with nothing else pending. A
 thread the coordinator launched with reports on reports once, and threads you keep talking to stay
@@ -324,6 +326,14 @@ project's folder, without a worktree, and makes it the coordinator. When the pro
 than one machine, choose the machine under the composer before sending; it starts on the machine
 where the project was last active. The chat stays on that machine, and only threads on it report
 to the chat. A machine with project coordinators off is named there instead of offered.
+
+On mobile, a project with a chat shows it as the project's row in the thread list: the project's
+name and how many of its threads are working or need you. With **Group threads by project** on,
+tap the project's header instead; the chat has no row of its own there. The chat opens with the
+project's name as its title, how many threads are working, and its machine. **New thread** starts
+a thread in the project, and the menu holds **Project settings**, the files and the terminal. A
+notification about the chat, and a `styal://projects/<environment>/<project>` link, open it too.
+Starting a project's first chat still happens on web or desktop.
 
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it

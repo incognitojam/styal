@@ -50,7 +50,10 @@ import {
 } from "../threadNotifications";
 import { type SystemNotificationHandle, showSystemNotification } from "../systemNotifications";
 import { resolveBackgroundThreadRequest } from "./backgroundThreadAnnouncement";
-import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
+import {
+  resolveThreadListStatus,
+  type ThreadListStatus,
+} from "@t3tools/client-runtime/state/thread-list-status";
 import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
 import { environmentServerConfigsAtom } from "../state/server";
 import {
@@ -73,7 +76,7 @@ interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
   readonly subagentRequest: PendingSubagentRequest | null;
   readonly thread: EnvironmentThreadShell;
-  readonly status: SidebarThreadStatus;
+  readonly status: ThreadListStatus;
 }
 
 type ToastId = ReturnType<typeof toastManager.add>;
@@ -346,7 +349,7 @@ export function startThreadNotifications(
         continue;
       }
       const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
-      let status = resolveSidebarThreadStatus(thread);
+      let status = resolveThreadListStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const needsAttention =
         status === "input" ||

@@ -31,11 +31,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
-import {
-  PROJECT_COORDINATOR_ENDED_NOTE,
-  PROJECT_COORDINATOR_NOTE,
-  reportRecipient,
-} from "./ProjectCoordinator.ts";
+import { reportRecipient } from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { answerNotesText, checkThreadReport } from "./ThreadReports.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -790,7 +786,6 @@ it.effect("a thread a person starts under a coordinator reports its first result
         yield* create(personThreadId, undefined, { byPerson: true });
         const first = yield* send(personThreadId, "Fix the README", { sender: "user" });
         assert.include(first.message.text, launcherId, "the first turn names the coordinator");
-        assert.notInclude(first.message.text, PROJECT_COORDINATOR_NOTE);
         yield* endTurn(first, "completed");
         const delivered = yield* reports();
         assert.equal(delivered.length, 1);
@@ -820,26 +815,16 @@ it.effect("a thread the coordinator launched with reportBack reports to it once"
   ),
 );
 
-it.effect("clearing the coordinator stops reports and tells it once", () =>
+it.effect("clearing the coordinator stops reports", () =>
   harness(
     "coordinator-cleared",
     ({ create, setCoordinator, send, endTurn, reports }) =>
       Effect.gen(function* () {
-        const coordinating = yield* send(launcherId, "Plan the release");
-        assert.include(coordinating.message.text, PROJECT_COORDINATOR_NOTE);
-        yield* endTurn(coordinating, "completed");
-        const again = yield* send(launcherId, "What is next?");
-        assert.notInclude(again.message.text, PROJECT_COORDINATOR_NOTE, "said once");
-        yield* endTurn(again, "completed");
-
         yield* create(personThreadId, undefined, { byPerson: true });
         yield* setCoordinator(null);
         const turn = yield* send(personThreadId, "Fix the README", { sender: "user" });
         yield* endTurn(turn, "failed");
         assert.equal((yield* reports()).length, 0);
-
-        const ended = yield* send(launcherId, "Anything else?");
-        assert.include(ended.message.text, PROJECT_COORDINATOR_ENDED_NOTE);
       }),
     { coordinator: true },
   ),

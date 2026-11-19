@@ -78,9 +78,12 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as ProviderInstance;
 
-const layerWithPolicy = (policy?: ManagedPolicySummary) =>
+const layerWithPolicy = (
+  policy?: ManagedPolicySummary,
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
+) =>
   RuntimePolicy.layerFromProjectStore.pipe(
-    Layer.provide(ServerSettings.layerTest({}, policy)),
+    Layer.provide(ServerSettings.layerTest(settings, policy)),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
@@ -220,3 +223,45 @@ it.layer(
     }),
   );
 });
+
+it.effect(
+  "a project's coordinator gets its instructions in every session, other threads do not",
+  () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const thread = makeThread({ now, worktreePath: "/project-worktree" });
+      const resolve = (settings: Parameters<typeof ServerSettings.layerTest>[0]) =>
+        RuntimePolicy.RuntimePolicyV2.pipe(
+          Effect.flatMap((policy) => policy.resolve({ thread, modelSelection })),
+          Effect.map((resolved) => resolved.additionalInstructions),
+          Effect.provide(layerWithPolicy(undefined, settings)),
+        );
+      const coordinating = yield* resolve({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: { threadId: thread.id } },
+      });
+      assert.isTrue(coordinating?.startsWith("Use the synthetic project conventions.\n\n"));
+      assert.include(coordinating, "## Coordinating this project");
+      assert.notInclude(coordinating, "t3_report", "reports are off");
+      assert.include(
+        yield* resolve({
+          projectCoordinatorsEnabled: true,
+          coordinatorReportsEnabled: true,
+          projectCoordinators: { [projectId]: { threadId: thread.id } },
+        }),
+        "t3_report",
+      );
+      for (const settings of [
+        {
+          projectCoordinatorsEnabled: true,
+          projectCoordinators: { [projectId]: { threadId: ThreadId.make("thread:other") } },
+        },
+        {
+          projectCoordinatorsEnabled: false,
+          projectCoordinators: { [projectId]: { threadId: thread.id } },
+        },
+      ]) {
+        assert.equal(yield* resolve(settings), "Use the synthetic project conventions.");
+      }
+    }),
+);
