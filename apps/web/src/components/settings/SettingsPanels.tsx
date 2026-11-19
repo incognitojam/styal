@@ -339,7 +339,7 @@ function AboutVersionSection() {
         title={<AboutVersionTitle />}
         description={
           updateState && isDesktopUpdateFailed(updateState) ? (
-            <span className="inline-flex items-start gap-1.5 text-warning-foreground">
+            <span className="flex items-start gap-1.5 text-warning-foreground">
               <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
               <span>{description}</span>
             </span>

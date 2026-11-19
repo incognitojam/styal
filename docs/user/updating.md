@@ -17,8 +17,8 @@ it will update.
 While it runs, the button widens to show progress. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
 it to see every machine. The desktop app restarts once each server has started
-its own restart. A manually requested update adds no restart countdown. A server still restarting
-finishes on its own, and the button keeps showing it after the desktop app
+its own restart. A manually requested update adds no restart countdown. A server
+still restarting finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
 Each server checks that it can install the release before it restarts. If the
@@ -178,8 +178,8 @@ The desktop app checks for updates automatically. Choose **Download** in the
 sidebar or **Settings → About** when you are ready; it checks the latest release
 again before downloading. Progress and retries appear in the same places.
 A finished download stays ready while later checks run. **Restart to Install**
-checks for a newer release and lets you install the downloaded version or return
-to Download. It never starts another download.
+installs that version without another update check or download. After restarting,
+a newer release is offered through **Download**.
 
 Downloaded updates also install when you quit, ready for your next launch.
 On macOS, closing the last window leaves the app running; choose **Quit** to

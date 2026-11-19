@@ -32,7 +32,6 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -388,7 +387,6 @@ export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const desktopState = yield* DesktopState.DesktopState;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
-  const electronDialog = yield* ElectronDialog.ElectronDialog;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -406,7 +404,6 @@ export const make = Effect.gen(function* () {
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
-  const refreshedOfferRef = yield* Ref.make(Option.none<DesktopUpdateState>());
   // The release a track switch's database check cleared. A build crosses to another track only
   // through such a switch, and never below that release: version order alone cannot tell whether
   // a Stable knows a Nightly's migrations.
@@ -572,7 +569,6 @@ export const make = Effect.gen(function* () {
   const runUpdaterCheck = Effect.fn("desktop.updates.runUpdaterCheck")(function* (
     allowDowngrade: boolean,
   ) {
-    yield* Ref.set(refreshedOfferRef, Option.none());
     const restoreDowngrade = yield* electronUpdater.allowDowngrade;
     if (allowDowngrade) yield* electronUpdater.setAllowDowngrade(true);
     return yield* electronUpdater.checkForUpdates.pipe(
@@ -637,36 +633,34 @@ export const make = Effect.gen(function* () {
         );
   });
 
-  const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(function* (
-    refresh = true,
-  ) {
-    const admission = yield* Effect.scoped(
-      admitAfterCheck(
-        Effect.gen(function* () {
-          const state = yield* Ref.get(updateStateRef);
-          if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
-            return "refused" as const;
-          }
-          const activeAction = yield* Ref.get(activeUpdateActionRef);
-          if (Option.isSome(activeAction)) {
-            return activeAction.value === "check"
-              ? ("wait-for-check" as const)
+  const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(
+    function* () {
+      const admission = yield* Effect.scoped(
+        admitAfterCheck(
+          Effect.gen(function* () {
+            const state = yield* Ref.get(updateStateRef);
+            if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
+              return "refused" as const;
+            }
+            const activeAction = yield* Ref.get(activeUpdateActionRef);
+            if (Option.isSome(activeAction)) {
+              return activeAction.value === "check"
+                ? ("wait-for-check" as const)
+                : ("refused" as const);
+            }
+            return (yield* tryStartUpdateAction("download"))
+              ? ("admitted" as const)
               : ("refused" as const);
-          }
-          return (yield* tryStartUpdateAction("download"))
-            ? ("admitted" as const)
-            : ("refused" as const);
-        }),
-      ),
-    );
-    if (admission === "refused") {
-      return { accepted: false, completed: false };
-    }
+          }),
+        ),
+      );
+      if (admission === "refused") {
+        return { accepted: false, completed: false };
+      }
 
-    const offered = yield* Ref.get(updateStateRef);
-    let state = offered;
-    return yield* Effect.gen(function* () {
-      if (refresh) {
+      const offered = yield* Ref.get(updateStateRef);
+      let state = offered;
+      return yield* Effect.gen(function* () {
         // electron-updater downloads what its last check found, which can be hours old.
         yield* logUpdaterInfo("checking for updates", { reason: "download" });
         yield* runUpdaterCheck(
@@ -681,66 +675,60 @@ export const make = Effect.gen(function* () {
               }),
           }),
         );
-      }
-      state = yield* Ref.get(updateStateRef);
-      if (state.status !== "available") {
-        return { accepted: true, completed: false };
-      }
-      if (
-        state.availableVersion !== null &&
-        !(yield* nativeStaging.releaseSuperseded(state.availableVersion))
-      ) {
-        return { accepted: false, completed: false };
-      }
-      yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
-      yield* electronUpdater.setDisableDifferentialDownload(
-        isArm64HostRunningIntelBuild(environment.runtimeInfo),
-      );
-      yield* logUpdaterInfo("downloading update");
-      yield* electronUpdater.downloadUpdate;
-      return { accepted: true, completed: true };
-    }).pipe(
-      Effect.catchTags({
-        ElectronUpdaterDownloadUpdateError: Effect.fn("desktop.updates.handleDownloadFailure")(
-          function* (error) {
-            const cause = describeUpdateErrorCause(error.cause);
+        state = yield* Ref.get(updateStateRef);
+        if (state.status !== "available") {
+          return { accepted: true, completed: false };
+        }
+        yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
+        yield* electronUpdater.setDisableDifferentialDownload(
+          isArm64HostRunningIntelBuild(environment.runtimeInfo),
+        );
+        yield* logUpdaterInfo("downloading update");
+        yield* electronUpdater.downloadUpdate;
+        return { accepted: true, completed: true };
+      }).pipe(
+        Effect.catchTags({
+          ElectronUpdaterDownloadUpdateError: Effect.fn("desktop.updates.handleDownloadFailure")(
+            function* (error) {
+              const cause = describeUpdateErrorCause(error.cause);
+              yield* updateState((current) =>
+                reduceDesktopUpdateStateOnDownloadFailure(current, `${error.message} ${cause}`),
+              );
+              yield* logUpdaterError(error.message, {
+                errorTag: error._tag,
+                cause,
+                channel: error.channel,
+              });
+              return { accepted: true, completed: false };
+            },
+          ),
+        }),
+        Effect.onInterrupt(() =>
+          updateState((current) => (current.status === "downloading" ? state : current)).pipe(
+            Effect.asVoid,
+          ),
+        ),
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.failCause(cause);
+          }
+          const error = new DesktopUpdateUnexpectedActionError({ action: "download", cause });
+          return Effect.gen(function* () {
             yield* updateState((current) =>
-              reduceDesktopUpdateStateOnDownloadFailure(current, `${error.message} ${cause}`),
+              reduceDesktopUpdateStateOnDownloadFailure(current, error.message),
             );
             yield* logUpdaterError(error.message, {
               errorTag: error._tag,
-              cause,
-              channel: error.channel,
+              cause: describeUpdateErrorCause(error.cause),
+              action: error.action,
             });
             return { accepted: true, completed: false };
-          },
-        ),
-      }),
-      Effect.onInterrupt(() =>
-        updateState((current) => (current.status === "downloading" ? state : current)).pipe(
-          Effect.asVoid,
-        ),
-      ),
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.failCause(cause);
-        }
-        const error = new DesktopUpdateUnexpectedActionError({ action: "download", cause });
-        return Effect.gen(function* () {
-          yield* updateState((current) =>
-            reduceDesktopUpdateStateOnDownloadFailure(current, error.message),
-          );
-          yield* logUpdaterError(error.message, {
-            errorTag: error._tag,
-            cause: describeUpdateErrorCause(error.cause),
-            action: error.action,
           });
-          return { accepted: true, completed: false };
-        });
-      }),
-      Effect.ensuring(finishUpdateAction("download")),
-    );
-  });
+        }),
+        Effect.ensuring(finishUpdateAction("download")),
+      );
+    },
+  );
 
   const updateRestartMarkerDir = environment.path.join(environment.baseDir, "runtime");
   const updateRestartMarkerPath = environment.path.join(
@@ -1014,103 +1002,7 @@ export const make = Effect.gen(function* () {
     expectedVersion?: string,
     consent: DesktopInstallConsent = expectedVersion === undefined ? "ask" : "confirmed",
   ) {
-    if (yield* Ref.get(desktopState.quitting)) {
-      return {
-        accepted: false,
-        completed: false,
-        failed: false,
-        state: yield* Ref.get(updateStateRef),
-      };
-    }
-    const retained = yield* Ref.get(updateStateRef);
-    let installVersion = expectedVersion;
-    if (
-      retained.downloadedVersion !== null &&
-      (expectedVersion === undefined || retained.downloadedVersion === expectedVersion) &&
-      (yield* tryStartUpdateAction("check"))
-    ) {
-      installVersion = retained.downloadedVersion;
-      const proceed = yield* Effect.gen(function* () {
-        yield* checkForUpdates(
-          "install",
-          "held",
-          retained.channel !== desktopUpdateChannelOf(environment.appVersion),
-        );
-        const refreshed = yield* Ref.get(refreshedOfferRef);
-        yield* setState({ ...retained, message: null, errorContext: null });
-        if (
-          consent === "ask" &&
-          expectedVersion === undefined &&
-          Option.isSome(refreshed) &&
-          refreshed.value.availableVersion !== null &&
-          compareSemverVersions(refreshed.value.availableVersion, installVersion ?? "") > 0
-        ) {
-          const owner = yield* electronWindow.currentMainOrFirst;
-          const choice = yield* electronDialog
-            .showMessageBox(
-              {
-                type: "question",
-                title: "Update styal",
-                message: `Install ${retained.downloadedVersion} or switch to ${refreshed.value.availableVersion}?`,
-                detail: `${refreshed.value.availableVersion} came out after ${retained.downloadedVersion} finished downloading.\n\nInstall ${retained.downloadedVersion} now, or switch to ${refreshed.value.availableVersion}. Switching drops the downloaded ${retained.downloadedVersion}; ${refreshed.value.availableVersion} downloads only when you choose Download.`,
-                buttons: [
-                  `Install ${retained.downloadedVersion}`,
-                  `Switch to ${refreshed.value.availableVersion}`,
-                  "Cancel",
-                ],
-                defaultId: 0,
-                cancelId: 2,
-                noLink: true,
-              },
-              Option.getOrUndefined(owner),
-            )
-            .pipe(
-              Effect.map((result) => result.response),
-              Effect.catch((error) => logUpdaterWarning(error.message).pipe(Effect.as(2))),
-            );
-          if (choice === 1) {
-            if (!(yield* nativeStaging.releaseSuperseded(refreshed.value.availableVersion))) {
-              yield* electronDialog
-                .showMessageBox(
-                  {
-                    type: "warning",
-                    title: "Update styal",
-                    message: `Keeping ${retained.downloadedVersion}`,
-                    detail: `styal couldn't set aside the update it already prepared for ${retained.downloadedVersion}, so ${retained.downloadedVersion} is still the update ready to install. Install ${retained.downloadedVersion} now; styal will offer ${refreshed.value.availableVersion} afterwards.`,
-                    buttons: ["OK"],
-                  },
-                  Option.getOrUndefined(owner),
-                )
-                .pipe(Effect.ignore);
-              return false;
-            }
-            yield* setState({
-              ...refreshed.value,
-              status: "available",
-              downloadedVersion: null,
-              downloadPercent: null,
-              errorContext: null,
-              canRetry: false,
-              message: null,
-            });
-          }
-          return choice === 0;
-        }
-        return true;
-      }).pipe(
-        Effect.onInterrupt(() => setState(retained)),
-        Effect.ensuring(finishUpdateAction("check")),
-      );
-      if (!proceed) {
-        return {
-          accepted: false,
-          completed: false,
-          failed: false,
-          state: yield* Ref.get(updateStateRef),
-        };
-      }
-    }
-    const result = yield* installDownloadedUpdate(installVersion, consent);
+    const result = yield* installDownloadedUpdate(expectedVersion, consent);
     return {
       accepted: result.accepted,
       completed: result.completed,
@@ -1187,7 +1079,6 @@ export const make = Effect.gen(function* () {
             releaseNotes,
             omittedReleaseCount,
           );
-          yield* Ref.set(refreshedOfferRef, Option.some(offered));
           yield* setState(
             state.downloadedVersion !== null
               ? reduceDesktopUpdateStateOnNoUpdate(state, checkedAt)

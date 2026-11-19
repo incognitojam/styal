@@ -121,8 +121,14 @@ export function isDesktopUpdateFailed(state: DesktopUpdateState): boolean {
   return (
     state.errorContext === "download" ||
     state.errorContext === "install" ||
-    (state.notAppliedVersion !== undefined &&
-      getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion)
+    isDesktopUpdateNotApplied(state)
+  );
+}
+
+function isDesktopUpdateNotApplied(state: DesktopUpdateState): boolean {
+  return (
+    state.notAppliedVersion !== undefined &&
+    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
   );
 }
 
@@ -142,23 +148,17 @@ export function getDesktopUpdateSettingsDescription(state: DesktopUpdateState): 
   if (action === "install" && state.errorContext === "install") {
     return withMessage(`Could not install version ${downloaded}`, state.message);
   }
+  if (action !== "none" && isDesktopUpdateNotApplied(state)) {
+    return `Version ${state.notAppliedVersion} did not install.`;
+  }
   if (state.status === "downloading") {
     return available ? `Downloading version ${available}.` : "Downloading an update.";
   }
   if (state.status === "checking" && downloaded) {
     return `Version ${downloaded} is ready to install. Checking for a newer one…`;
   }
-  const alsoAvailable = available && available !== downloaded ? available : null;
-  if (action === "install" && downloaded) {
-    return alsoAvailable
-      ? `Version ${downloaded} is ready to install. Version ${alsoAvailable} is also available.`
-      : `Version ${downloaded} is ready to install.`;
-  }
-  if (action === "download" && available) {
-    return downloaded && downloaded !== available
-      ? `Version ${available} is available. Version ${downloaded} is ready to install.`
-      : `Version ${available} is available.`;
-  }
+  if (action === "install" && downloaded) return `Version ${downloaded} is ready to install.`;
+  if (action === "download" && available) return `Version ${available} is available.`;
   return null;
 }
 
@@ -177,49 +177,48 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
   return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
 
+/** The sidebar button's tooltip and release-notes heading: a summary line, then any updater message. */
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   const detail = state.message?.trim() ? `\n${state.message.trim()}` : "";
   if (state.status === "checking" && state.downloadedVersion !== null) {
-    return `Update ${state.downloadedVersion} downloaded. Checking for newer updates…`;
+    return `Version ${state.downloadedVersion} is ready to install. Checking for a newer one…`;
   }
   if (
     (state.status === "available" || state.status === "error") &&
     state.errorContext === "download" &&
     state.availableVersion
   ) {
-    return `Download failed for ${state.availableVersion}. Click to retry.${detail}`;
+    return `Could not download version ${state.availableVersion}. Click to retry.${detail}`;
   }
   if (
     (state.status === "downloaded" || state.status === "error") &&
     state.errorContext === "install" &&
     state.downloadedVersion
   ) {
-    return `Install failed for ${state.downloadedVersion}. Click to retry.${detail}`;
+    return `Could not install version ${state.downloadedVersion}. Click to retry.${detail}`;
   }
   if (
-    state.notAppliedVersion !== undefined &&
     (state.status === "available" || state.status === "downloaded") &&
-    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+    isDesktopUpdateNotApplied(state)
   ) {
-    return `Update ${state.notAppliedVersion} did not apply. Click to retry.`;
+    return `Version ${state.notAppliedVersion} did not install. Click to retry.`;
   }
   if (state.status === "available") {
-    return `Update ${state.availableVersion ?? "available"} ready to download`;
+    return state.availableVersion
+      ? `Version ${state.availableVersion} is available. Click to download.`
+      : "An update is available. Click to download.";
   }
   if (state.status === "downloading") {
-    const version = state.availableVersion ? ` ${state.availableVersion}` : "";
+    const version = state.availableVersion ? `version ${state.availableVersion}` : "an update";
     const progress =
       typeof state.downloadPercent === "number" ? ` (${Math.floor(state.downloadPercent)}%)` : "";
-    return `Downloading update${version}${progress}`;
+    return `Downloading ${version}${progress}`;
   }
-  if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
-  }
+  const ready = state.downloadedVersion ?? state.availableVersion;
+  const readyLine = `${ready ? `Version ${ready}` : "An update"} is ready to install. Click to restart.`;
+  if (state.status === "downloaded") return readyLine;
   if (state.status === "error") {
-    if (state.downloadedVersion) {
-      return `Update ${state.downloadedVersion} downloaded. Click to restart and install.`;
-    }
-    return state.message ?? "Update failed";
+    return state.downloadedVersion ? readyLine : (state.message ?? "Update failed");
   }
   return "Up to date";
 }

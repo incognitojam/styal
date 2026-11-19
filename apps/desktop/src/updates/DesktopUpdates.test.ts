@@ -530,7 +530,7 @@ describe("DesktopUpdates", () => {
 
           const checkResult = yield* updates.check("manual");
           assert.isFalse(checkResult.checked);
-          assert.equal(harness.checkCount(), 1);
+          assert.equal(harness.checkCount(), 0);
 
           yield* Deferred.succeed(releaseInstall, undefined);
           const installResult = yield* Fiber.join(installFiber);
@@ -706,23 +706,14 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect.each(["install-downloaded", "show-newer", "cancel", "check-failed"] as const)(
-    "keeps a finished download under the user's control after %s",
-    (choice) => {
+  it.effect(
+    "installs the finished version without checking or asking about a newer release",
+    () => {
       let published = "1.2.4";
-      let checkFails = false;
       let installedVersion: string | null | undefined;
       const harness = makeHarness({
-        chooseInstallUpdate: choice === "show-newer" ? 1 : choice === "cancel" ? 2 : 0,
-        checkForUpdates: Effect.suspend(() =>
-          checkFails
-            ? Effect.fail(
-                new ElectronUpdater.ElectronUpdaterCheckForUpdatesError({
-                  channel: null,
-                  cause: new Error("offline"),
-                }),
-              )
-            : Effect.sync(() => harness.emit("update-available", { version: published })),
+        checkForUpdates: Effect.sync(() =>
+          harness.emit("update-available", { version: published }),
         ),
         downloadUpdate: Effect.sync(() =>
           harness.emit("update-downloaded", { version: published }),
@@ -738,22 +729,12 @@ describe("DesktopUpdates", () => {
           yield* updates.check("poll");
           yield* updates.download;
           yield* flushCallbacks;
-          assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
           published = "1.2.5";
-          checkFails = choice === "check-failed";
           const checksBefore = harness.checkCount();
-          const result = yield* updates.install;
-          assert.equal(harness.checkCount(), checksBefore + 1);
+          assert.isTrue((yield* updates.install).accepted);
+          assert.equal(harness.checkCount(), checksBefore);
           assert.equal(harness.downloadCount(), 1);
-          if (choice === "install-downloaded" || choice === "check-failed") {
-            assert.isTrue(result.accepted);
-            assert.equal(installedVersion, "1.2.4");
-          } else {
-            assert.isFalse(result.accepted);
-            assert.equal(harness.quitAndInstalls(), 0);
-            assert.equal(result.state.status, choice === "show-newer" ? "available" : "downloaded");
-          }
-          assert.lengthOf(harness.installChoices, choice === "check-failed" ? 0 : 1);
+          assert.equal(installedVersion, "1.2.4");
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     },

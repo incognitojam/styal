@@ -60,63 +60,21 @@ describe("macOS background staging", () => {
     );
   });
 
-  it.effect("replaces a staged update only after an explicit newer Download", () => {
+  it.effect("installs the staged version even after a check finds a newer release", () => {
     const harness = makeHarness({
       stagesInBackground: true,
-      chooseInstallUpdate: 1,
       checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
-      downloadUpdate: Effect.sync(() => harness.emit("update-downloaded", { version: "1.2.5" })),
     });
-    return run(harness, (updates, quit) =>
+    return run(harness, (updates) =>
       Effect.gen(function* () {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
-        assert.equal(harness.squirrel.stageCount, 1);
-
-        assert.isTrue((yield* updates.check("poll")).checked);
-        yield* flushCallbacks;
+        yield* updates.check("poll");
+        assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+        assert.isTrue((yield* updates.install).accepted);
         assert.equal(harness.squirrel.discardCount, 0);
         assert.equal(harness.downloadCount(), 0);
-        assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
-        assert.isFalse((yield* updates.install).accepted);
-        assert.isTrue((yield* updates.download).completed);
-        yield* flushCallbacks;
-        assert.equal(harness.squirrel.discardCount, 1);
-        assert.equal(harness.downloadCount(), 1);
-        assert.equal(harness.squirrel.stageCount, 2);
-        assert.equal((yield* updates.getState).downloadedVersion, "1.2.5");
-
-        assert.isTrue(yield* quit);
-        assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.5"]);
-      }),
-    );
-  });
-
-  it.effect("keeps the staged update when it cannot be discarded for a newer release", () => {
-    const harness = makeHarness({
-      stagesInBackground: true,
-      chooseInstallUpdate: 1,
-      discardNativeUpdateFailure: "job-removal",
-      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
-    });
-    return run(harness, (updates, quit) =>
-      Effect.gen(function* () {
-        harness.emit("update-downloaded", { version: "1.2.4" });
-        yield* flushCallbacks;
-
-        assert.isTrue((yield* updates.check("poll")).checked);
-        yield* flushCallbacks;
-        assert.equal(harness.downloadCount(), 0);
-        const state = yield* updates.getState;
-        assert.equal(state.status, "downloaded");
-        assert.equal(state.downloadedVersion, "1.2.4");
-
-        assert.isFalse((yield* updates.install).accepted);
-        const retained = yield* updates.getState;
-        assert.equal(retained.status, "downloaded");
-        assert.equal(retained.downloadedVersion, "1.2.4");
-        assert.equal(harness.installChoices.at(-1)?.type, "warning");
-        assert.isTrue(yield* quit);
+        assert.equal(harness.squirrel.stageCount, 1);
         assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.4"]);
       }),
     );

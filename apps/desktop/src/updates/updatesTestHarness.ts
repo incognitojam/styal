@@ -13,7 +13,6 @@ import * as Option from "effect/Option";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -25,7 +24,6 @@ import { makeNativeUpdatesFakes, type NativeUpdatesFakeOptions } from "./nativeU
 export const flushCallbacks = Effect.yieldNow;
 
 export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
-  readonly chooseInstallUpdate?: number;
   readonly confirmShutdown?: Effect.Effect<boolean>;
   readonly installWait?: Effect.Effect<void>;
   readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
@@ -67,10 +65,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
   const installSteps: string[] = [];
-  const installChoices: Array<
-    Parameters<ElectronDialog.ElectronDialog["Service"]["showMessageBox"]>[0]
-  > = [];
-
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
     eventListeners.add(listener);
@@ -325,23 +319,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const layerFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
 
   const layer = DesktopUpdates.layer.pipe(
-    Layer.provide(
-      Layer.succeed(ElectronDialog.ElectronDialog, {
-        pickFolder: Effect.fn("updates.test.pickFolder")(() =>
-          Effect.die("unexpected folder picker"),
-        ),
-        pickFiles: Effect.fn("updates.test.pickFiles")(() => Effect.die("unexpected file picker")),
-        showErrorBox: Effect.fn("updates.test.showErrorBox")(() =>
-          Effect.die("unexpected error box"),
-        ),
-        showMessageBox: Effect.fn("updates.test.showMessageBox")((options_) =>
-          Effect.sync(() => {
-            installChoices.push(options_);
-            return { response: options.chooseInstallUpdate ?? 0, checkboxChecked: false };
-          }),
-        ),
-      }),
-    ),
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
         confirm: Effect.fn("DesktopShutdownGuard.confirm")(function () {
@@ -372,7 +349,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   return {
     installs,
-    installChoices,
     autoInstallOnAppQuit: () => autoInstallOnAppQuit,
     layer,
     checkCount: () => checkCount,

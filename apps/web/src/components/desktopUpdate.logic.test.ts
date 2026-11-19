@@ -69,7 +69,7 @@ describe("desktop update button state", () => {
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
     expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Retry Download");
     expect(getDesktopUpdateButtonTooltip(state)).toBe(
-      "Download failed for 1.1.0. Click to retry.\nnetwork timeout",
+      "Could not download version 1.1.0. Click to retry.\nnetwork timeout",
     );
     expect(getDesktopUpdateSettingsDescription(state)).toBe(
       "Could not download version 1.1.0: network timeout",
@@ -93,7 +93,7 @@ describe("desktop update button state", () => {
       expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
       expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Retry Install");
       expect(getDesktopUpdateButtonTooltip(state)).toBe(
-        "Install failed for 1.1.0. Click to retry.\nshutdown timeout",
+        "Could not install version 1.1.0. Click to retry.\nshutdown timeout",
       );
       expect(getDesktopUpdateSettingsDescription(state)).toBe(
         "Could not install version 1.1.0: shutdown timeout",
@@ -101,28 +101,6 @@ describe("desktop update button state", () => {
       expect(isDesktopUpdateFailed(state)).toBe(true);
     },
   );
-
-  it("names both versions when a newer release is offered beside a downloaded one", () => {
-    const base: DesktopUpdateState = {
-      ...baseState,
-      availableVersion: "1.2.0",
-      downloadedVersion: "1.1.0",
-      downloadPercent: 100,
-    };
-    expect(getDesktopUpdateSettingsDescription({ ...base, status: "downloaded" })).toBe(
-      "Version 1.1.0 is ready to install. Version 1.2.0 is also available.",
-    );
-    expect(getDesktopUpdateSettingsDescription({ ...base, status: "available" })).toBe(
-      "Version 1.2.0 is available. Version 1.1.0 is ready to install.",
-    );
-    expect(
-      getDesktopUpdateSettingsDescription({
-        ...base,
-        availableVersion: "1.1.0",
-        status: "downloaded",
-      }),
-    ).toBe("Version 1.1.0 is ready to install.");
-  });
 
   it("keeps install action available after a background updater error", () => {
     const state: DesktopUpdateState = {
@@ -137,7 +115,7 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
     expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Restart to Install");
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to restart and install");
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to restart.");
   });
 
   it("prefers a newly available release over a stale downloaded version", () => {
@@ -148,6 +126,18 @@ describe("desktop update button state", () => {
       downloadedVersion: "1.1.0",
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
+  });
+
+  it("names a downloaded update that did not install as failed", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      availableVersion: "1.1.0",
+      downloadedVersion: "1.1.0",
+      notAppliedVersion: "1.1.0",
+    };
+    expect(isDesktopUpdateFailed(state)).toBe(true);
+    expect(getDesktopUpdateSettingsDescription(state)).toBe("Version 1.1.0 did not install.");
   });
 
   it("keeps the downloaded update visible while checking without offering install", () => {
@@ -161,7 +151,7 @@ describe("desktop update button state", () => {
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(getDesktopUpdateButtonTooltip(state)).toBe(
-      "Update 1.1.0 downloaded. Checking for newer updates…",
+      "Version 1.1.0 is ready to install. Checking for a newer one…",
     );
     expect(getDesktopUpdateSettingsDescription(state)).toBe(
       "Version 1.1.0 is ready to install. Checking for a newer one…",
@@ -193,7 +183,7 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(isDesktopUpdateButtonDisabled(state)).toBe(true);
     expect(getDesktopUpdateSettingsDescription(state)).toBe("Downloading version 1.1.0.");
-    expect(getDesktopUpdateButtonTooltip(state)).toBe("Downloading update 1.1.0 (42%)");
+    expect(getDesktopUpdateButtonTooltip(state)).toBe("Downloading version 1.1.0 (42%)");
   });
 });
 
