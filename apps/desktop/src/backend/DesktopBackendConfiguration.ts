@@ -89,6 +89,7 @@ const WSL_FORWARDED_ENV_NAMES = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "T3CODE_TELEMETRY_ENABLED",
+  "T3CODE_EVENT_PRUNING",
   "T3CODE_GITHUB_APP_CLIENT_ID",
   // Otherwise the WSL server keeps exporting to endpoints from the bootstrap.
   "T3CODE_OTEL_SDK_DISABLED",
@@ -807,8 +808,26 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
-    const shellEnvironmentPrepared = yield* shellEnvironment.installIntoProcess;
-    return yield* resolvePrimaryStartConfig({
+    const hostEnvironment = yield* HostProcess.Environment;
+    const discoverPruning =
+      environment.platform !== "win32" && !hostEnvironment.T3CODE_EVENT_PRUNING;
+    // The pruning preference must be known before the backend opens its database.
+    const discovery = yield* discoverPruning
+      ? Effect.gen(function* () {
+          const prepared = yield* shellEnvironment.awaitDiscovery;
+          const ownShell = yield* shellEnvironment.awaitUserShellDiscovery;
+          return { prepared, ownShell };
+        }).pipe(Effect.catchCause(() => Effect.succeed({ prepared: false, ownShell: false })))
+      : shellEnvironment.installIntoProcess.pipe(
+          Effect.map((prepared) => ({ prepared, ownShell: true })),
+        );
+    const shellEnvironmentPrepared = discovery.prepared;
+    const disablePruning = discoverPruning && !discovery.ownShell;
+    if (disablePruning)
+      yield* Effect.logWarning(
+        "Login-shell discovery was unavailable; history pruning is disabled for this desktop start.",
+      );
+    const primary = yield* resolvePrimaryStartConfig({
       ...shared,
       resourceMonitorPath,
       cliPath,
@@ -818,6 +837,9 @@ export const make = Effect.gen(function* () {
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
     );
+    return disablePruning
+      ? { ...primary, env: { ...primary.env, T3CODE_EVENT_PRUNING: "0" } }
+      : primary;
   });
 
   // Resolve on each restart so toggling wsl-only takes effect without recreating the pool.

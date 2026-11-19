@@ -5,6 +5,8 @@ import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapTo
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -280,6 +282,71 @@ describe("DesktopBackendConfiguration", () => {
         );
       }),
     ),
+  );
+
+  it.effect.each(["configured", "unavailable", "defect", "interrupted"] as const)(
+    "resolves primary startup safely after shell discovery: %s",
+    (mode) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.makeDirectory(`${import.meta.dirname}/../../../../.scratch`, { recursive: true });
+        const baseDir = yield* fs.makeTempDirectoryScoped({
+          directory: `${import.meta.dirname}/../../../../.scratch`,
+          prefix: "pruning-shell-",
+        });
+        const discovery = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const finished = yield* Deferred.make<void>();
+        const env: NodeJS.ProcessEnv = {};
+        yield* Effect.gen(function* () {
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const startup = yield* configuration.resolvePrimary.pipe(
+            Effect.tap(() => Deferred.succeed(finished, undefined)),
+            Effect.forkChild,
+          );
+          const first = yield* Effect.raceFirst(
+            Deferred.await(discovery).pipe(Effect.as("discovery")),
+            Deferred.await(finished).pipe(Effect.as("configuration")),
+          );
+          assert.equal(first, "discovery");
+          assert.isUndefined(startup.pollUnsafe());
+          yield* Deferred.succeed(release, undefined);
+          const config = yield* Fiber.join(startup);
+          assert.equal(env.T3CODE_EVENT_PRUNING, mode === "configured" ? "0" : undefined);
+          if (mode !== "configured") assert.equal(config.env.T3CODE_EVENT_PRUNING, "0");
+          assert.equal(config.bootstrap.shellEnvironmentPrepared, mode === "configured");
+        }).pipe(
+          Effect.provide(
+            DesktopBackendConfiguration.layer.pipe(
+              Layer.provide(
+                Layer.succeed(DesktopShellEnvironment.DesktopShellEnvironment, {
+                  installIntoProcess: Effect.succeed(false),
+                  awaitDiscovery: Deferred.succeed(discovery, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                    Effect.andThen(
+                      Effect.suspend(() => {
+                        if (mode === "defect") return Effect.die("synthetic discovery defect");
+                        if (mode === "interrupted") return Effect.interrupt;
+                        if (mode === "configured") env.T3CODE_EVENT_PRUNING = "0";
+                        return Effect.succeed(mode === "configured");
+                      }),
+                    ),
+                  ),
+                  awaitUserShellDiscovery: Effect.succeed(mode === "configured"),
+                  updates: Stream.empty,
+                }),
+              ),
+              Layer.provide(DesktopState.layer),
+              Layer.provideMerge(layerServerExposure),
+              Layer.provideMerge(DesktopAppSettings.layerTest()),
+              Layer.provideMerge(DesktopWslEnvironment.layerTest()),
+              Layer.provideMerge(DesktopWslServerTree.layerTest()),
+              Layer.provideMerge(layerEnvironment(baseDir)),
+            ),
+          ),
+          Effect.provideService(HostProcess.Environment, env),
+        );
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("resolvePrimary gives a pull request preview server its own home", () =>
@@ -816,10 +883,11 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(config.httpBaseUrl.href, "http://172.27.0.99:5050/");
         assert.equal(config.env.OPENAI_API_KEY, "openai-key");
         assert.equal(config.env.ANTHROPIC_API_KEY, "anthropic-key");
+        assert.equal(config.env.T3CODE_EVENT_PRUNING, "0");
         assert.equal(config.env.T3CODE_OTLP_PROTOCOL, "http/protobuf");
         assert.equal(
           config.env.WSLENV,
-          "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY:T3CODE_OTLP_HEADERS:T3CODE_OTLP_PROTOCOL",
+          "GOPATH/p:OPENAI_API_KEY/u:EMPTY::AZURE_DEVOPS_EXT_PAT/u:ANTHROPIC_API_KEY:T3CODE_EVENT_PRUNING:T3CODE_OTLP_HEADERS:T3CODE_OTLP_PROTOCOL",
         );
       }).pipe(
         Effect.provide(
@@ -843,6 +911,7 @@ describe("DesktopBackendConfiguration", () => {
           ANTHROPIC_API_KEY: "anthropic-key",
           T3CODE_OTLP_HEADERS: 'authorization="Bearer%20my-token"',
           T3CODE_OTLP_PROTOCOL: "http/protobuf",
+          T3CODE_EVENT_PRUNING: "0",
         }),
       );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
