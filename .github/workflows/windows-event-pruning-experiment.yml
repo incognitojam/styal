@@ -1,0 +1,43 @@
+name: Windows event pruning experiment
+on:
+  push:
+    branches: [ci-experiment/windows-event-pruning]
+permissions:
+  contents: read
+concurrency:
+  group: windows-event-pruning-experiment
+  cancel-in-progress: true
+jobs:
+  experiment:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+      - run: vp install
+      - name: Runner and disk
+        shell: pwsh
+        run: |
+          Get-Volume | Select-Object DriveLetter, FileSystem, Size, SizeRemaining
+          Get-PhysicalDisk | Select-Object FriendlyName, MediaType, Size
+          Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled
+      - name: Real server experiment
+        shell: pwsh
+        env:
+          EVENT_PRUNING_EXPERIMENT_ROOT: ${{ runner.temp }}/windows-event-pruning
+        run: node apps/server/scripts/windows-event-pruning.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-event-pruning-summary
+          path: ${{ runner.temp }}/windows-event-pruning/summary.txt
+          if-no-files-found: ignore
