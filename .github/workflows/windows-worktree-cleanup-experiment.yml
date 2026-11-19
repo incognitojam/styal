@@ -50,4 +50,4 @@ jobs:
       - name: B - git action restore suites
         if: always() && steps.lift.outcome == 'success'
         working-directory: apps/server
-        run: vp test run src/git/GitManager.test.ts src/git/GitWorkflowService.test.ts --reporter=verbose
+        run: vp test run src/git/GitWorkflowService.test.ts -t "restores source before committing" --reporter=verbose

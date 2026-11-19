@@ -75,10 +75,10 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
         Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
       );
       const inspected = yield* deletion.inspect(target, ["node_modules"]).pipe(Effect.result);
-      yield* Effect.log("EXPERIMENT", mode, "inspect", inspected);
+      yield* Effect.logWarning("EXPERIMENT", mode, "inspect", inspected);
       if (inspected._tag === "Success") {
         for (const entry of inspected.success) {
-          yield* Effect.log(
+          yield* Effect.logWarning(
             "EXPERIMENT",
             mode,
             "remove",
@@ -86,25 +86,63 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
           );
         }
       }
+      yield* Effect.logWarning(
+        "EXPERIMENT",
+        mode,
+        "explicit-remove",
+        yield* deletion.remove(target, `${target}/node_modules`).pipe(Effect.result),
+      );
+      yield* Effect.logWarning(
+        "EXPERIMENT",
+        mode,
+        "allocation",
+        yield* Effect.promise(async () => {
+          const stat = await physical.lstat(`${f.worktree}/src/source.txt`);
+          return { blocks: stat.blocks, size: stat.size, nlink: stat.nlink };
+        }),
+      );
       expect(yield* f.fs.readFileString(`${outside}/sentinel`)).toBe("untouched");
+      const native = yield* Effect.promise(() => physical.realpath(f.worktree));
+      yield* Effect.logWarning("EXPERIMENT", mode, "paths", {
+        mixed: f.worktree,
+        native,
+        git: (yield* f.command(f.worktree, ["rev-parse", "--show-toplevel"])).stdout,
+      });
+      yield* Effect.logWarning(
+        "EXPERIMENT",
+        mode,
+        "native-inspect",
+        yield* deletion.inspect(native, ["node_modules"]).pipe(Effect.result),
+      );
       const checkout = yield* makeCheckout.pipe(
         Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
       );
       const released = yield* checkout.release(target, f.root).pipe(Effect.result);
-      yield* Effect.log("EXPERIMENT", mode, "release", released);
-      yield* Effect.log(
+      yield* Effect.logWarning("EXPERIMENT", mode, "release", released);
+      yield* Effect.logWarning(
+        "EXPERIMENT",
+        mode,
+        "native-release",
+        yield* checkout.release(native, f.root).pipe(Effect.result),
+      );
+      yield* Effect.logWarning(
         "EXPERIMENT",
         mode,
         "source-present-after-release",
         yield* f.fs.exists(`${f.worktree}/src/source.txt`),
       );
-      yield* Effect.log(
+      yield* Effect.logWarning(
         "EXPERIMENT",
         mode,
         "worktreeConfig",
-        (yield* f.command(f.worktree, ["config", "--get", "extensions.worktreeConfig"])).stdout,
+        (yield* f.git.execute({
+          operation: "fixture",
+          cwd: f.worktree,
+          args: ["config", "--get", "extensions.worktreeConfig"],
+          allowNonZeroExit: true,
+        })).stdout,
       );
-      yield* Effect.log(
+      yield* Effect.logWarning(
         "EXPERIMENT",
         mode,
         "restore",
@@ -119,14 +157,14 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
           args: ["sparse-checkout", "set", "--no-cone", "--stdin"],
           stdin: "/*\n!/*/\n",
         });
-        yield* Effect.log(
+        yield* Effect.logWarning(
           "EXPERIMENT",
           mode,
           "direct-git-source-present",
           yield* f.fs.exists(`${f.worktree}/src/source.txt`),
         );
         yield* f.command(f.worktree, ["sparse-checkout", "disable"]);
-        yield* Effect.log(
+        yield* Effect.logWarning(
           "EXPERIMENT",
           mode,
           "direct-git-status-after-restore",
