@@ -14,7 +14,7 @@ import {
   cloneUrlProtocol,
 } from "@t3tools/shared/cloneUrl";
 import { ArrowRightIcon, TriangleAlertIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Schema } from "effect";
 import { create } from "zustand";
 
@@ -84,13 +84,16 @@ const useRequest = create<{
   session: number;
   /** When the request was made; one click only trusts checks answered after it. */
   openedAt: number;
-  /** Kept with the request, not the dialog, which can remount while its clone is being sent. */
-  starting: boolean;
+  // Kept with the request, not the dialog, which can remount while its clone request is out.
+  /** Set while the clone request is out: cancels it, and stops a second start meanwhile. */
+  abandon: (() => void) | null;
+  error: string | null;
 }>(() => ({
   request: null,
   session: 0,
   openedAt: 0,
-  starting: false,
+  abandon: null,
+  error: null,
 }));
 
 let endRequestWithProject: (() => void) | null = null;
@@ -119,7 +122,7 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
       onCancel: () => close(session),
     });
   }
-  useRequest.setState({ request, session, openedAt: Date.now(), starting: false });
+  useRequest.setState({ request, session, openedAt: Date.now(), abandon: null, error: null });
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
@@ -240,8 +243,8 @@ function AddProjectToMachineDialog({
     .filter((file) => selectedFiles.has(file.path))
     .reduce((total, file) => total + file.byteLength, 0);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const submitting = useRequest((state) => state.abandon !== null);
+  const error = useRequest((state) => state.error);
   const [waitedTooLong, setWaitedTooLong] = useState(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: slow checks open the dialog instead of leaving the click unanswered
   useEffect(() => {
@@ -318,25 +321,24 @@ function AddProjectToMachineDialog({
   };
 
   // Shared by the Clone button and one click, so one request can never start two clones.
-  // Cancelling while the clone request is out lets go of it; a clone that starts anyway goes.
-  const abandon = useRef<(() => void) | null>(null);
   const startClone = useStableCallback(async () => {
-    if (!project || !target || useRequest.getState().starting) return;
-    useRequest.setState({ starting: true });
+    if (!project || !target || useRequest.getState().abandon) return;
     let abandoned = false;
-    abandon.current = () => {
+    // Cancelling while the clone request is out lets go of it; a clone that starts anyway goes.
+    const abandon = () => {
       abandoned = true;
       const add = readPreparingAdd();
       setPreparingAdd(add && { ...add, cancelled: true });
       close(session);
     };
+    useRequest.setState({ abandon, error: null });
     const preparing = readPreparingAdd();
     if (preparing) {
       setPreparingAdd({
         ...preparing,
         title: addingTitle(target.label),
         sending: true,
-        onCancel: abandon.current,
+        onCancel: abandon,
       });
     }
     // The server may clone for a project it already had instead; only a new one is ours to remove.
@@ -357,18 +359,15 @@ function AddProjectToMachineDialog({
         files: files.filter((file) => selectedFiles.has(file.path)).map((file) => file.path),
       });
     } catch (cause) {
-      useRequest.setState({ starting: false });
-      abandon.current = null;
       if (preparing) setPreparingAdd(null);
       if (abandoned && isNoAnswer(cause)) {
         announceCancelledAdd("failed", project.title, target.label);
       }
-      if (abandoned) return;
-      setError(cause instanceof Error ? cause.message : "Could not start the clone.");
-      setSubmitting(false);
+      if (abandoned || useRequest.getState().session !== session) return;
+      const message = cause instanceof Error ? cause.message : "Could not start the clone.";
+      useRequest.setState({ abandon: null, error: message });
       return;
     }
-    abandon.current = null;
     const clonedRef = scopeProjectRef(target.environmentId, projectId);
     if (abandoned) {
       const projectTitle = project.title;
@@ -384,16 +383,14 @@ function AddProjectToMachineDialog({
     openClonedProject(clonedRef);
   });
   // Closing the dialog while its clone request is out cancels that clone too.
-  const dismiss = () => (abandon.current ? abandon.current() : close());
+  const dismiss = () => (useRequest.getState().abandon ?? close)();
 
   const submit = async () => {
     if (!project || !target || submitting) return;
     if (destinationPath.trim().length === 0) {
-      setError("Choose a folder on the other machine.");
+      useRequest.setState({ error: "Choose a folder on the other machine." });
       return;
     }
-    setSubmitting(true);
-    setError(null);
     await startClone();
   };
 

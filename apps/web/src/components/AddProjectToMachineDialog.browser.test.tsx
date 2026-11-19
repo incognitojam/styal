@@ -386,7 +386,7 @@ describe("AddProjectToMachineDialog", () => {
     },
   );
 
-  it("starts one clone even when the dialog remounts while it is being sent", async () => {
+  it("keeps a remounted dialog on its clone request: one start, and its error shows", async () => {
     scene.setup({ environments: [SOURCE], query: scene.answered });
     let failStart: (cause: unknown) => void = () => undefined;
     scene.add.mockImplementation(
@@ -400,22 +400,49 @@ describe("AddProjectToMachineDialog", () => {
     await using screen = await render(<AddProjectToMachineDialogHost />);
 
     await act(() =>
-      openAddProjectToMachine({
-        projectRef,
-        targetEnvironmentId: EnvironmentId.make("machine-a"),
-        quick: true,
-        draftId: DraftId.make("draft-10"),
-      }),
+      openAddProjectToMachine({ projectRef, targetEnvironmentId: EnvironmentId.make("machine-a") }),
     );
-    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledOnce());
-    // As when the route changes to one that renders the host afresh.
+    await clickButton("Clone to machine-a");
+    // As when the root route swaps the tree that renders the host.
     await screen.rerender(<></>);
     await screen.rerender(<AddProjectToMachineDialogHost />);
 
-    expect(readPreparingAdd()?.sending).toBe(true);
+    await expect.element(screen.getByRole("button", { name: "Starting…" })).toBeDisabled();
     expect(scene.add).toHaveBeenCalledOnce();
-    await act(() => failStart(new Error("Stopped by the test.")));
-    expect(readPreparingAdd()).toBeNull();
+    await act(() => failStart(new Error("machine-a refused the clone.")));
+    await expect.element(screen.getByText("machine-a refused the clone.")).toBeInTheDocument();
+  });
+
+  it("cancels the clone from a dialog that remounted while its request is out", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.answered });
+    scene.discard.mockResolvedValue("removed");
+    let finishAdd: (projectId: ProjectId) => void = () => undefined;
+    scene.add.mockImplementation(
+      () =>
+        new Promise<ProjectId>((resolve) => {
+          finishAdd = resolve;
+        }),
+    );
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+
+    await act(() =>
+      openAddProjectToMachine({ projectRef, targetEnvironmentId: EnvironmentId.make("machine-a") }),
+    );
+    await clickButton("Clone to machine-a");
+    await screen.rerender(<></>);
+    await screen.rerender(<AddProjectToMachineDialogHost />);
+    await clickButton("Cancel");
+
+    const requested = (scene.add.mock.calls[0] as [{ projectId: ProjectId }])[0].projectId;
+    await act(() => finishAdd(requested));
+    await vi.waitFor(() =>
+      expect(scene.discard).toHaveBeenCalledWith(
+        scopeProjectRef(EnvironmentId.make("machine-a"), requested),
+        true,
+      ),
+    );
   });
 
   it("says a cancelled add may still be there when its start went unanswered", async () => {
