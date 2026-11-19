@@ -72,6 +72,8 @@ describe("coordinator reports", () => {
       reportAcceptsAnswer(coordinatorReports([open], [], [pending]), pending.reportAnswer),
     ).toBe(false);
     expect(reportAcceptsAnswer(coordinatorReports([open], []), pending.reportAnswer)).toBe(true);
+    // A report this client hasn't loaded is left to the server.
+    expect(reportAcceptsAnswer([], pending.reportAnswer)).toBe(true);
     const answered = { id: "reply", role: "user", ...pending };
     expect(coordinatorReports([open, answered], [], [pending])[0]?.state).toBe("answered");
   });
