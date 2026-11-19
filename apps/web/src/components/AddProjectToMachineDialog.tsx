@@ -326,6 +326,8 @@ function AddProjectToMachineDialog({
         setPreparingAdd(draftId, null);
       }
     };
+    // The server may clone for a project it already had instead; only a new one is ours to remove.
+    const requestedProjectId = newProjectId();
     let projectId: ProjectId;
     try {
       projectId = await addProjectToMachine({
@@ -335,7 +337,7 @@ function AddProjectToMachineDialog({
           project.workspaceRoot,
         ),
         target: { environmentId: target.environmentId, label: target.label },
-        projectId: newProjectId(),
+        projectId: requestedProjectId,
         title: project.title,
         remoteUrl,
         destinationPath: destinationPath.trim(),
@@ -352,7 +354,7 @@ function AddProjectToMachineDialog({
     endSendingRow();
     const clonedRef = scopeProjectRef(target.environmentId, projectId);
     if (abandoned) {
-      void discardStartedClone(clonedRef);
+      void discardStartedClone(clonedRef, projectId === requestedProjectId);
       return;
     }
     close(session);

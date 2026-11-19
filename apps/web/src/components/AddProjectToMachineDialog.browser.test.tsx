@@ -321,10 +321,12 @@ describe("AddProjectToMachineDialog", () => {
     await act(() => readPreparingAdd(draftId)?.onCancel?.());
     expect(readPreparingAdd(draftId)).toBeNull();
 
-    await act(() => finishAdd(ProjectId.make("cloned-1")));
+    // The server answered with a project it already had, so only the clone is stopped.
+    await act(() => finishAdd(ProjectId.make("existing-1")));
     await vi.waitFor(() =>
       expect(scene.discard).toHaveBeenCalledWith(
-        scopeProjectRef(EnvironmentId.make("machine-a"), ProjectId.make("cloned-1")),
+        scopeProjectRef(EnvironmentId.make("machine-a"), ProjectId.make("existing-1")),
+        false,
       ),
     );
     await expect.element(screen.getByText("Add to another machine")).not.toBeInTheDocument();

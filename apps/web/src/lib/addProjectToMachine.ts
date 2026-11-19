@@ -127,13 +127,20 @@ const usePreparingAdds = create<{ adds: Readonly<Record<string, PreparingAdd>> }
   adds: {},
 }));
 
-/** For an add cancelled while its request was out: stop the clone that started and remove its project. */
-export async function discardStartedClone(ref: ScopedProjectRef): Promise<void> {
+/**
+ * For an add cancelled while its request was out: stop the clone that started, and remove its
+ * project when the add created it rather than reusing one the machine already had.
+ */
+export async function discardStartedClone(
+  ref: ScopedProjectRef,
+  createdByThisAdd: boolean,
+): Promise<void> {
   const target = { environmentId: ref.environmentId, input: { projectId: ref.projectId } };
   await runAtomCommand(appAtomRegistry, sourceControlEnvironment.cancelProjectClone, target, {
     label: "Cancel clone",
     reportFailure: false,
   });
+  if (!createdByThisAdd) return;
   await runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
     label: "Remove cancelled clone",
     reportFailure: false,
