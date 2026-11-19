@@ -57,6 +57,8 @@ import { Toggle, ToggleGroup } from "./ui/toggle-group";
 interface AddProjectToMachineRequest {
   readonly projectRef: ScopedProjectRef;
   readonly targetEnvironmentId: EnvironmentId | null;
+  /** The draft that moves to the new machine; defaults to the draft the route shows. */
+  readonly draftId?: DraftId | undefined;
 }
 
 const useRequest = create<{ request: AddProjectToMachineRequest | null; session: number }>(() => ({
@@ -162,7 +164,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   // over with whatever was typed in it.
   const openClonedProject = (targetRef: ScopedProjectRef) => {
     const drafts = useComposerDraftStore.getState();
-    const draftId = routeDraftId as DraftId | undefined;
+    const draftId = request.draftId ?? (routeDraftId as DraftId | undefined);
     const draft = draftId ? drafts.getDraftSession(draftId) : null;
     if (
       draftId &&
