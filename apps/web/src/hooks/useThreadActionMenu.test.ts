@@ -18,6 +18,7 @@ function deferred<T>() {
 }
 
 const state = vi.hoisted(() => ({
+  navigate: vi.fn(),
   granted: new Set<string>(),
   effects: [] as string[],
   completed: deferred<void>(),
@@ -40,7 +41,12 @@ vi.mock("react", () => ({
   useMemo: (factory: () => unknown) => factory(),
 }));
 vi.mock("@tanstack/react-router", () => ({
-  useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),
+  useRouter: () => ({
+    navigate: async (options: unknown) => {
+      state.navigate(options);
+      recordEffect("project-settings");
+    },
+  }),
 }));
 vi.mock("../state/session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
@@ -163,6 +169,7 @@ const createMenu = (options: { readonly onFind?: (threadRef: typeof target) => v
 beforeEach(() => {
   state.granted = new Set(["primary"]);
   state.effects = [];
+  state.navigate.mockReset();
   state.completed = deferred<void>();
   state.show.mockReset().mockResolvedValue(null);
 });
@@ -181,6 +188,16 @@ describe("thread menu permissions", () => {
       expect(state.effects).toEqual([]);
     },
   );
+
+  it("opens project settings directly instead of the coordinator page", async () => {
+    state.show.mockResolvedValue("project-settings");
+    createMenu().openMenu(position);
+    await state.completed.promise;
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/settings/projects",
+      search: { project: "project", machine: undefined },
+    });
+  });
 
   it("offers find only to a header that can open it, without task permission", async () => {
     createMenu().openMenu(position);
