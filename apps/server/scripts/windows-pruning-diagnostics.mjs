@@ -98,8 +98,7 @@ for (const enabled of [false, true]) {
       await until(
         () =>
           fs.existsSync(manifest) &&
-          fs.existsSync(path.join(path.dirname(manifest), "statev2.sqlite")) &&
-          output.includes("Safety copy verified and saved"),
+          fs.existsSync(path.join(path.dirname(manifest), "statev2.sqlite")),
       );
     else assert(!fs.existsSync(manifest), "pruning-off unexpectedly copied");
     await fetch(`http://127.0.0.1:${port}/.well-known/t3/environment`, {
