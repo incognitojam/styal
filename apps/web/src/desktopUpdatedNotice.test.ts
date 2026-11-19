@@ -13,16 +13,24 @@ describe("decideDesktopUpdatedNotice", () => {
       announce: "1.3.0",
       record: true,
     });
-    expect(decideDesktopUpdatedNotice("1.2.0", "1.2.1-nightly.20261021.4")).toEqual({
-      announce: "1.2.1-nightly.20261021.4",
-      record: true,
-    });
     // Numeric prerelease segments compare as numbers, not text.
     expect(
       decideDesktopUpdatedNotice("1.2.1-nightly.20261021.9", "1.2.1-nightly.20261021.10").announce,
     ).toBe("1.2.1-nightly.20261021.10");
-    // The release a nightly was leading up to is newer than that nightly.
-    expect(decideDesktopUpdatedNotice("1.2.1-nightly.20261021.4", "1.2.1").announce).toBe("1.2.1");
+  });
+
+  it.each([
+    ["0.1.9-pr.904.3133", "0.1.9-pr.904.3134"],
+    ["0.1.9-pr.903.3133", "0.1.9-pr.904.3134"],
+    ["0.1.8", "0.1.9-pr.904.3134"],
+    ["0.1.9-pr.904.3134", "0.1.9"],
+    ["1.2.0", "1.2.1-nightly.20261021.4"],
+    ["1.2.1-nightly.20261021.4", "1.2.1"],
+    ["1.2.1-nightly.20261021.10", "1.2.1-nightly.20261021.9"],
+    ["1.2.0-dev.1", "1.2.0-dev.2"],
+    ["1.2.0", "1.3.0-dev.1"],
+  ])("silently records an ineligible transition from %s to %s", (previous, current) => {
+    expect(decideDesktopUpdatedNotice(previous, current)).toEqual({ announce: null, record: true });
   });
 
   it("records a first run silently", () => {

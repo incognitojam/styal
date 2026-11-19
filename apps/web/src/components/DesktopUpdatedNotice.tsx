@@ -59,7 +59,7 @@ export function DesktopUpdatedNotice() {
   const currentVersion = useDesktopUpdateState()?.currentVersion ?? null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the desktop update notice using persisted version storage and window attention listeners
   useEffect(() => {
-    if (!currentVersion) return;
+    if (import.meta.env.DEV || !currentVersion) return;
     return startDesktopUpdatedNotice({
       currentVersion,
       store: lastSeenVersionStore,
