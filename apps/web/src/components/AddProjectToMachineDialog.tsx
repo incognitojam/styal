@@ -136,8 +136,11 @@ function AddProjectToMachineDialog({
   ).filter((t) => request.onlyTargets?.includes(t.environmentId) ?? true);
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
   const chosenTarget = targets.find((t) => t.environmentId === targetId) ?? null;
-  // One click goes only to the machine that was clicked; if it drops, the dialog asks instead.
-  const target = request.quick ? chosenTarget : (chosenTarget ?? targets[0] ?? null);
+  // Once the dialog has shown, only its Clone button starts the clone.
+  const [asked, setAsked] = useState(false);
+  // One click goes only to the machine that was clicked; if it drops, the dialog asks instead,
+  // offering the machines that remain.
+  const target = request.quick && !asked ? chosenTarget : (chosenTarget ?? targets[0] ?? null);
   const source = environments.find((env) => env.environmentId === request.projectRef.environmentId);
   const sourceUrl = projectCloneSourceUrl(project);
   const [protocol, setProtocol] = useState<CloneProtocol | null>(() => cloneUrlProtocol(sourceUrl));
@@ -215,8 +218,6 @@ function AddProjectToMachineDialog({
             : "loading",
       })
     : "ask";
-  // Once the dialog has shown, only its Clone button starts the clone.
-  const [asked, setAsked] = useState(false);
   if ((quickDecision === "ask" || error !== null) && !asked) setAsked(true);
   const decision = asked ? "ask" : quickDecision;
 
