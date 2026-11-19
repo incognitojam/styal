@@ -1088,7 +1088,10 @@ export default function ChatView(props: ChatViewProps) {
     title: string;
   } | null>(null);
   const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
-  const reportAnswerMessages = reportAnswers(serverProjection?.messages ?? []);
+  const reportAnswerMessages = reportAnswers([
+    ...(serverProjection?.messages ?? []),
+    ...optimisticUserMessages,
+  ]);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
         (serverProjection?.messages ?? []).map((message) => ({

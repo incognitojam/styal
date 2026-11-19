@@ -1195,6 +1195,7 @@ export function useComposerSend(input: ComposerSendInput) {
       id: messageIdForSend,
       role: "user",
       text: outgoingMessageText,
+      ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
       ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
       ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
       runId: null,
