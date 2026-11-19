@@ -112,5 +112,6 @@ export function notificationForActivity(
     deepLink: activity.deepLink,
     phase: activity.phase,
     updatedAt: activity.updatedAt,
+    ...(activity.attentionIds === undefined ? {} : { attentionIds: activity.attentionIds }),
   });
 }

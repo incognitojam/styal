@@ -1,3 +1,4 @@
+import { hasNewThreadAttention } from "@t3tools/shared/agentAwareness";
 import type {
   RelayAgentActivityAggregateRow,
   RelayAgentActivityAggregateState,
@@ -95,15 +96,20 @@ export function alertAllowedForPhase(
 // A missing baseline is a replay, not a transition that should buzz the phone.
 export function attentionTransitionRows(input: TransitionInput) {
   if (input.previousAggregate === null) return [];
-  const previouslyAttention = new Set(
-    input.previousAggregate.activities.filter((row) => isAttentionPhase(row.phase)).map(rowKey),
+  const previous = new Map(
+    input.previousAggregate.activities
+      .filter((row) => isAttentionPhase(row.phase))
+      .map((row) => [rowKey(row), row]),
   );
-  return input.nextAggregate.activities.filter(
-    (row) =>
+  return input.nextAggregate.activities.filter((row) => {
+    const prior = previous.get(rowKey(row));
+    return (
       isAttentionPhase(row.phase) &&
-      !previouslyAttention.has(rowKey(row)) &&
-      alertAllowedNow(input.preferences, row),
-  );
+      (prior === undefined ||
+        hasNewThreadAttention(prior.attentionIds ?? [], row.attentionIds ?? [])) &&
+      alertAllowedNow(input.preferences, row)
+    );
+  });
 }
 
 function newlyTerminalRows(
@@ -202,7 +208,7 @@ function epochMillis(value: string | undefined): number {
  * nobody has opened it since. Resolving it or reading it at the computer drops it.
  */
 export function delayedAlertIsDue(input: {
-  readonly raised: Pick<RelayAgentActivityState, "phase" | "updatedAt">;
+  readonly raised: Pick<RelayAgentActivityState, "phase" | "updatedAt" | "attentionIds">;
   readonly current: RelayAgentActivityState | null;
   readonly preferences: RelayAgentAwarenessPreferences | null;
   readonly nowMs: number;
@@ -211,6 +217,8 @@ export function delayedAlertIsDue(input: {
   if (
     current === null ||
     current.phase !== input.raised.phase ||
+    (input.raised.attentionIds !== undefined &&
+      !input.raised.attentionIds.some((id) => current.attentionIds?.includes(id))) ||
     input.preferences?.notificationsEnabled !== true ||
     !alertAllowedForPhase(input.preferences, current.phase) ||
     isExpiredAgentActivityState(current, input.nowMs)

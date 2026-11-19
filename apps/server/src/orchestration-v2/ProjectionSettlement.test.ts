@@ -399,6 +399,15 @@ it.effect(
           );
         }
       }
+      const reportAwareness = (yield* store.getAgentAwarenessSnapshot(reportThread)).threads[0]!;
+      assert.equal(reportAwareness.openReportQuestionCount, 1);
+      assert.deepEqual(
+        reportAwareness.openReportQuestionIds,
+        (yield* store.getThreadShell(reportThread))!.openReportQuestionIds,
+      );
+      assert.deepEqual(reportAwareness.openReportQuestionIds, [
+        MessageId.make("message:settlement:report"),
+      ]);
       const candidates = yield* store.getSettlementCandidates();
       assert.isFalse(candidates.some((thread) => thread.id === reportThread));
       const shell = yield* store.getShellSnapshot({ location: "active" });

@@ -27,6 +27,7 @@ export type AgentAwarenessPhase =
 
 export interface SubagentRequestAwareness {
   readonly requestId: RuntimeRequestId;
+  readonly requestIds?: readonly RuntimeRequestId[];
   /** The child's own update time, which moves whenever its request changes. */
   readonly updatedAt: DateTime.Utc;
 }
@@ -50,6 +51,41 @@ export function subagentAwaitsApproval(
   );
 }
 
+export function threadAttentionSubjects(
+  thread: Pick<
+    OrchestrationV2ThreadShell,
+    | "pendingRuntimeRequest"
+    | "workflowRuns"
+    | "openReportQuestionCount"
+    | "latestOpenReportQuestionAt"
+    | "openReportQuestionIds"
+  >,
+): readonly string[] {
+  return [
+    ...(thread.pendingRuntimeRequest && thread.pendingRuntimeRequest.kind !== "auth_refresh"
+      ? [thread.pendingRuntimeRequest.id]
+      : []),
+    ...(thread.workflowRuns ?? [])
+      .filter((run) => run.review !== undefined)
+      .map((run) => `workflow:${run.host}/${run.repository}#${run.runId}`),
+    ...(thread.openReportQuestionIds ??
+      ((thread.openReportQuestionCount ?? 0) > 0
+        ? [
+            thread.latestOpenReportQuestionAt == null
+              ? "report"
+              : `report:${DateTime.formatIso(thread.latestOpenReportQuestionAt)}`,
+          ]
+        : [])),
+  ].sort();
+}
+
+export function hasNewThreadAttention(
+  previous: readonly string[],
+  next: readonly string[],
+): boolean {
+  return next.some((id) => !previous.includes(id));
+}
+
 export interface AgentAwarenessState {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -61,6 +97,7 @@ export interface AgentAwarenessState {
   readonly modelTitle: string;
   readonly updatedAt: string;
   readonly deepLink: string;
+  readonly attentionIds?: readonly string[];
 }
 
 function buildAgentAwarenessDeepLink(input: {
@@ -87,6 +124,9 @@ export interface ProjectThreadAwarenessV2Input {
     | "modelSelection"
     | "pendingBackgroundTasks"
     | "pendingRuntimeRequest"
+    | "openReportQuestionCount"
+    | "openReportQuestionIds"
+    | "latestOpenReportQuestionAt"
     | "settledOverride"
     | "status"
     | "title"
@@ -150,6 +190,15 @@ export function projectThreadAwarenessV2(
         ? thread.updatedAt
         : DateTime.max(thread.updatedAt, subagentRequest.updatedAt),
     ),
+    ...(phase === "waiting_for_input" || phase === "waiting_for_approval"
+      ? {
+          attentionIds: [
+            ...threadAttentionSubjects(thread),
+            ...(subagentRequest?.requestIds ??
+              (subagentRequest ? [subagentRequest.requestId] : [])),
+          ],
+        }
+      : {}),
     deepLink: buildAgentAwarenessDeepLink({ environmentId, threadId: thread.id }),
   };
 }
@@ -169,6 +218,7 @@ function resolveThreadAwarenessPhaseV2(
   // The parent can finish its own turn while a delegated child keeps working,
   // so a child's request outranks the parent's run status.
   if (childAwaitsApproval) return "waiting_for_approval";
+  if ((thread.openReportQuestionCount ?? 0) > 0) return "waiting_for_input";
   switch (thread.activityRunStatus ?? thread.status) {
     case "preparing":
     case "starting":
