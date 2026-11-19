@@ -11,6 +11,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 
 it.effect("Windows experiment: actual descriptor, refusal and ordinary worktree", () =>
   Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) !== "win32") return;
     const f = yield* fixture;
     const descriptor = yield* Effect.gen(function* () {
       return yield* (yield* ServerEnvironment.ServerEnvironment).getDescriptor;

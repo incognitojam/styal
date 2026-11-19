@@ -14,11 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          persist-credentials: false
+          persist-credentials: true
           sparse-checkout: |
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+      - name: Remove unused reference gitlinks from runner index
+        shell: pwsh
+        run: |
+          git ls-files --stage | ForEach-Object { if ($_ -match '^160000 [^\t]+\t(.+)$') { git update-index --force-remove -- $Matches[1] } }
       - name: Runner versions
         shell: pwsh
         run: |
@@ -27,6 +31,7 @@ jobs:
           git config --show-origin --get-regexp 'core\.(autocrlf|longpaths|symlinks)|extensions.worktreeConfig'
           node --version
       - uses: ./.github/actions/setup-deps
+        id: deps
         with:
           filters: |
             @styal/cli...
@@ -36,7 +41,7 @@ jobs:
         run: vp test run src/worktreeCleanup/WindowsExperiment.test.ts src/worktreeCleanup/Sweep.test.ts src/worktreeCleanup/Checkout.test.ts src/worktreeCleanup/CheckoutSweep.test.ts src/environment/ServerEnvironment.test.ts -t 'windows|Windows|Windows experiment' --reporter=verbose
       - name: Lift guards in runner workspace only
         id: lift
-        if: always()
+        if: always() && steps.deps.outcome == 'success'
         run: node apps/server/scripts/windows-cleanup-experiment.mjs
       - name: B - existing real repository suites with guards lifted
         if: always() && steps.lift.outcome == 'success'
