@@ -112,6 +112,12 @@ describe("HTML in native Markdown", () => {
     expect(markdownWithHtml(markdown)).not.toContain("<img");
   });
 
+  it("collects table, list and inline screenshots in reading order, each once", () => {
+    const markdown =
+      "| Before | After |\n| --- | --- |\n| ![a](a.png) | ![b](b.png) |\n| ![c](c.png) | ![a](a.png) |\n\n- ![d](d.png)\n\nSee ![e](e.png) and ![b](b.png).";
+    expect(markdownImageSources(markdown)).toEqual(["a.png", "b.png", "c.png", "d.png", "e.png"]);
+  });
+
   it("removes bot metadata and details wrappers while keeping the content", () => {
     const markdown =
       "<!-- generated bot metadata -->\n<details>\n<summary>Walkthrough</summary>\n\n## Changes\n\nText\n\n</details>";

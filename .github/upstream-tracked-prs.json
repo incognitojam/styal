@@ -275,6 +275,10 @@
         "base": "ac5dd1ff47d3d9d3807b9641d1b4b1cdf761c04f",
         "head": "1bee2e2224c9188ef50308acab92415eb1b79ed8"
       }
+    },
+    {
+      "pr": 37117,
+      "reason": "Fork PR ported this by hand, without an Upstream-PR trailer, because ThreadFeed.tsx conflicts with earlier pending upstream PRs (35008, 35036, 35408 and others): a tap on a markdown image the native renderer draws (table cells, list items, images after text) opens the viewer with its message's images. When chronological intake reaches it, its cherry-pick should change no code, because both hunks and the test mock line are already in place; check that rather than assume it. Remove this entry once recorded."
     }
   ]
 }
