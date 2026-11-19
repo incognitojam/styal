@@ -39,6 +39,7 @@ import {
 } from "./BranchToolbarBranchSelector";
 import {
   AddTargetLabel,
+  AddWithOptionsLabel,
   BranchToolbarEnvironmentSelector,
 } from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
@@ -395,8 +396,9 @@ const RunContextSelector = memo(function RunContextSelector({
                         <AddTargetLabel target={target} />
                       </MenuItem>
                     ))}
-                    <MenuSeparator />
-                    <MenuItem onClick={() => onAddToMachine(null)}>Options…</MenuItem>
+                    <MenuItem onClick={() => onAddToMachine(null)}>
+                      <AddWithOptionsLabel />
+                    </MenuItem>
                   </MenuSubPopup>
                 </MenuSub>
               ) : null}

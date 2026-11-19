@@ -29,11 +29,12 @@ import {
   COPYABLE_FILE_MAX_BYTES,
   addProjectToMachine,
   isDefaultCopiedFile,
+  setPreparingAdd,
 } from "../lib/addProjectToMachine";
 import { formatBytes } from "../lib/formatBytes";
 import { newProjectId } from "../lib/utils";
 import { readProject, subscribeProject, useProject } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { readEnvironment, useEnvironments } from "../state/environments";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -74,6 +75,9 @@ const useRequest = create<{ request: AddProjectToMachineRequest | null; session:
 
 let endRequestWithProject: (() => void) | null = null;
 
+/** How long one click waits on its checks before the dialog opens to show them. */
+const QUICK_ADD_WAIT_MS = 3_000;
+
 /** Opens the dialog that clones a project onto another connected machine. */
 export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   if (readProject(request.projectRef) === null) return;
@@ -83,8 +87,15 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   endRequestWithProject = subscribeProject(request.projectRef, (project) => {
     if (project === null) close();
   });
+  if (request.quick && request.targetEnvironmentId) {
+    setPreparingAdd(request.projectRef, {
+      title: addingTitle(readEnvironment(request.targetEnvironmentId)?.label),
+    });
+  }
   useRequest.setState((state) => ({ request, session: state.session + 1 }));
 }
+
+const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
 
 function close() {
   endRequestWithProject?.();
@@ -152,8 +163,16 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: slow checks open the dialog instead of leaving the click unanswered
+  useEffect(() => {
+    if (!request.quick) return;
+    const timer = setTimeout(() => setWaitedTooLong(true), QUICK_ADD_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [request.quick]);
   const decision = request.quick
     ? quickAddDecision({
+        waitedTooLong,
         defaultCopies: !canListFiles
           ? "unsupported"
           : ignoredFiles.error
@@ -251,7 +270,14 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     quickStarted.current = true;
     void startClone();
   }, [startNow, startClone]);
-  if (request.quick && decision !== "ask" && error === null) return null;
+  const showDialog = !request.quick || decision === "ask" || error !== null;
+  const preparingTitle = showDialog ? null : addingTitle(target?.label);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shows the quick add in the source composer's banner, which this hidden dialog does not render
+  useEffect(() => {
+    setPreparingAdd(request.projectRef, preparingTitle === null ? null : { title: preparingTitle });
+    return () => setPreparingAdd(request.projectRef, null);
+  }, [preparingTitle, request.projectRef]);
+  if (!showDialog) return null;
 
   return (
     <Dialog

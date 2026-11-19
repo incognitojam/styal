@@ -114,6 +114,24 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
   setFileCopy(scopedProjectKey(ref), null);
 }
 
+/** One-click adds still checking whether to ask, keyed by the source's scoped project key. */
+const usePreparingAdds = create<{
+  adds: Readonly<Record<string, { readonly title: string }>>;
+}>(() => ({ adds: {} }));
+
+/** The source composer shows the clone's row from the click, before the clone exists. */
+export function setPreparingAdd(ref: ScopedProjectRef, add: { readonly title: string } | null) {
+  const key = scopedProjectKey(ref);
+  usePreparingAdds.setState(({ adds }) => {
+    const { [key]: _previous, ...rest } = adds;
+    return { adds: add === null ? rest : { ...rest, [key]: add } };
+  });
+}
+
+export function usePreparingAdd(ref: ScopedProjectRef | null): { readonly title: string } | null {
+  return usePreparingAdds((state) => (ref ? (state.adds[scopedProjectKey(ref)] ?? null) : null));
+}
+
 /**
  * Clones onto another machine, then relays the chosen ignored files, since the
  * two servers never talk. Resolves with the cloning project once its clone is

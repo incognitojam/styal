@@ -6,7 +6,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { PlusIcon, ScaleIcon } from "lucide-react";
+import { PlusIcon, ScaleIcon, SlidersHorizontalIcon } from "lucide-react";
 import { memo } from "react";
 
 import type { AddProjectTarget } from "../hooks/useAddProjectTargets";
@@ -178,19 +178,13 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         </SelectGroup>
         {onAddToMachine ? (
           <SelectGroup>
-            <SelectGroupLabel>
-              <span className="inline-flex items-center gap-1.5">
-                <PlusIcon aria-hidden="true" className="size-3" />
-                Add to another machine
-              </span>
-            </SelectGroupLabel>
             {addTargets.map((target) => (
               <SelectItem key={target.environmentId} value={addValue(target.environmentId)}>
                 <AddTargetLabel target={target} />
               </SelectItem>
             ))}
             <SelectItem value={ADD_OPTIONS_VALUE}>
-              <span className={ADD_TO_MACHINE_LABEL_CLASS}>Options…</span>
+              <AddWithOptionsLabel />
             </SelectItem>
           </SelectGroup>
         ) : null}
@@ -199,17 +193,27 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   );
 });
 
-/** A machine to add the project to, with the folder the clone lands in. */
+/** Adding the project to one machine, with the folder the clone lands in. */
 export function AddTargetLabel({ target }: { target: AddProjectTarget }) {
   return (
     <span className="flex min-w-0 flex-col">
-      <span className="flex min-w-0 items-center gap-1.5">
-        <EnvironmentMachineIcon kind={target.machine} className="size-3" />
-        <span className="min-w-0 truncate">{target.label}</span>
+      <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+        <PlusIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">Add to {target.label}</span>
       </span>
       <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
         {target.destinationPath}
       </span>
+    </span>
+  );
+}
+
+/** Opens the dialog to pick the machine, folder, protocol and files to copy. */
+export function AddWithOptionsLabel() {
+  return (
+    <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+      <SlidersHorizontalIcon aria-hidden="true" className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">Add with options…</span>
     </span>
   );
 }

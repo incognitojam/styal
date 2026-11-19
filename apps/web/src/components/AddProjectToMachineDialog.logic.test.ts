@@ -15,6 +15,15 @@ describe("quickAddDecision", () => {
     ["loading", "missing", "wait"],
     [0, "loading", "wait"],
   ] as const)("copies %s, folder %s: %s", (defaultCopies, destination, expected) => {
-    expect(quickAddDecision({ defaultCopies, destination })).toBe(expected);
+    expect(quickAddDecision({ defaultCopies, destination, waitedTooLong: false })).toBe(expected);
+  });
+
+  it("asks once the checks take too long, and never starts on a guess", () => {
+    expect(
+      quickAddDecision({ defaultCopies: "loading", destination: "missing", waitedTooLong: true }),
+    ).toBe("ask");
+    expect(
+      quickAddDecision({ defaultCopies: 0, destination: "missing", waitedTooLong: true }),
+    ).toBe("start");
   });
 });

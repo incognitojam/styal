@@ -9,11 +9,15 @@ export function quickAddDecision(input: {
   /** Ignored files ticked by default, or why the count is not known. */
   readonly defaultCopies: number | "unsupported" | "loading" | "failed";
   readonly destination: "missing" | "exists" | "loading" | "failed";
+  /** The checks took too long; the dialog shows them loading instead of nothing happening. */
+  readonly waitedTooLong: boolean;
 }): QuickAddDecision {
   const { defaultCopies, destination } = input;
   if (defaultCopies === "failed" || destination === "failed") return "ask";
   if (typeof defaultCopies === "number" && defaultCopies > 0) return "ask";
   if (destination === "exists") return "ask";
-  if (defaultCopies === "loading" || destination === "loading") return "wait";
+  if (defaultCopies === "loading" || destination === "loading") {
+    return input.waitedTooLong ? "ask" : "wait";
+  }
   return "start";
 }

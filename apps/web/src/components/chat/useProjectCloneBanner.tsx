@@ -14,7 +14,11 @@ import {
   projectCloneProgressSummary,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
-import { dismissProjectFileCopy, useProjectFileCopy } from "../../lib/addProjectToMachine";
+import {
+  dismissProjectFileCopy,
+  usePreparingAdd,
+  useProjectFileCopy,
+} from "../../lib/addProjectToMachine";
 import { type ComposerBannerStackItem } from "./ComposerBannerStack";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -49,15 +53,27 @@ export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null)
   };
   const runProjectCloneActionStable = useStableCallback(runProjectCloneAction);
   const activeProjectFileCopy = useProjectFileCopy(activeProjectRef);
+  const preparingAdd = usePreparingAdd(activeProjectRef);
   const projectCloneSendBlockReason =
-    activeProjectClone?.phase === "running"
-      ? "Cloning repository"
-      : activeProjectClone !== null && activeProjectClone.phase !== "done"
-        ? "Repository not cloned"
-        : activeProjectFileCopy?.phase === "copying"
-          ? "Copying files"
-          : null;
+    preparingAdd !== null
+      ? "Adding to another machine"
+      : activeProjectClone?.phase === "running"
+        ? "Cloning repository"
+        : activeProjectClone !== null && activeProjectClone.phase !== "done"
+          ? "Repository not cloned"
+          : activeProjectFileCopy?.phase === "copying"
+            ? "Copying files"
+            : null;
   const projectCloneBannerItem = (() => {
+    if (preparingAdd !== null && activeProjectRef) {
+      return {
+        id: `project-clone-preparing:${activeProjectRef.projectId}`,
+        variant: "info",
+        icon: <DownloadIcon />,
+        title: preparingAdd.title,
+        description: "Preparing…",
+      };
+    }
     if (activeProjectFileCopy?.phase === "failed" && activeProjectRef) {
       return {
         id: `project-file-copy:${activeProjectRef.projectId}`,
