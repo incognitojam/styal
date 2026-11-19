@@ -114,8 +114,7 @@ describe("native ShipIt cleanup", () => {
       Effect.gen(function* () {
         setup({ denied: systemTarget });
         const error = yield* make.discard().pipe(Effect.flip);
-        expect(error.message).toContain("permissions");
-        expect(error.message).toContain("does not disable update checks or downloads");
+        expect(error.message).toContain(`launchctl print ${systemTarget} failed`);
         setup();
         yield* make.discard();
       }),
