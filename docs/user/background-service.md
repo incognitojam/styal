@@ -209,7 +209,9 @@ it.
 
 ## Safety copy before history pruning
 
-History pruning is off by default. To turn it on early, start the server with `T3CODE_EVENT_PRUNING=1` in its environment. This also applies to desktop and background-service server processes. Without it, styal makes no pruning copy, checks no copy disk space, and shows no copy progress screen.
+History pruning is on by default. To turn it off, set `T3CODE_EVENT_PRUNING=0` or `false` in the server's environment before starting it. Unset or empty uses the default. With pruning off, styal makes no pruning copy, checks no copy disk space, and shows no copy progress screen.
+
+The switch is temporary and will be removed two weeks after default-on reaches users. Set it in the server's terminal environment, the [service environment](#configure-the-service-environment) for a background service, or the remote host's `~/.profile` for SSH. A desktop-only user must quit the app and launch its executable directly from a terminal with the variable set; Dock/app-launcher starts do not load it from shell profiles, and a WSL backend needs it in the Linux server's environment rather than the Windows desktop. Development servers default to off during this temporary window; use `T3CODE_EVENT_PRUNING=1` explicitly only for an isolated pruning test.
 
 Before deleting older internal history events, styal saves a verified copy of `statev2.sqlite` in `backups/pre-event-prune/` beside the database (normally `~/.styal/userdata/backups/pre-event-prune/`). Imported and migrated thread history remains readable after pruning. The first startup can take longer on a disk that cannot clone files: styal copies the database before opening it for normal use, and shows progress while you wait. The copy needs free disk space equal to the database size plus the larger of 1 GiB or 10%. If there is not enough space, styal starts normally without pruning and checks again at the next startup.
 
