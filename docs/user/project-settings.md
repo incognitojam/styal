@@ -360,7 +360,8 @@ lists fold into groups with **Show all**. If the chat's earlier history isn't lo
 fetches it so older reports can be listed, and the list says when threads that settled long ago
 weren't checked. Each thread counts only its latest turn. The list appears when the page opens and
 goes away once you check, here or on another device. While it shows, **Needs you** below it is
-folded to its heading; open either one to fold the other.
+folded to its heading unless it holds a single item; open either one to fold the other. Replying
+to a report folds both, to leave the reply room.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.

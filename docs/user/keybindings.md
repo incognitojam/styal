@@ -200,7 +200,8 @@ unread. Among threads of the same kind, the one that has waited longest opens fi
 cleared before newer work. The open thread is skipped, so pressing it again moves on. Snoozed and
 settled threads are left out. It is also in the command palette as **Go to next unread thread**.
 While another thread is waiting, a button above the composer shows how many are waiting and the
-status of the next one; clicking it does the same thing.
+status of the next one; clicking it does the same thing. When cards such as **Needs you** sit above
+the composer, the button is in the top card's heading.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
