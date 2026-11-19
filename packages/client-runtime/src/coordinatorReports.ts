@@ -5,7 +5,14 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   type CoordinatorReport,
   type CoordinatorReportReference,
+  type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
+import {
+  reportResponseFailure,
+  reportResponsePending,
+  type PendingReportResponse,
+} from "./reportResponses.ts";
+import { getUserQueuedThreadRuns } from "./state/threadWorkflows.ts";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 export * from "./reportResponses.ts";
@@ -134,4 +141,76 @@ export function createDismissCoordinatorReportCommand<R, E>(
     label: "thread:report:dismiss",
     tag: ORCHESTRATION_V2_WS_METHODS.dismissReport,
   });
+}
+
+/**
+ * How far a report response sent from a "Needs you" list has got: still sending or
+ * dismissing, waiting in the thread's queue behind a running turn, with the agent ("delivered"),
+ * failed, or withdrawn (cancelled in the queue, which leaves the message without its report
+ * reference). While it is on its way, the row keeps its answering shape with the answer marked.
+ */
+export function answeredReportStatus(
+  answered: {
+    readonly report: CoordinatorReport;
+    readonly response: PendingReportResponse<typeof CoordinatorReportReference.Type>;
+  },
+  responses: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReference.Type>>,
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages"> | null,
+):
+  | {
+      readonly status: "sending" | "queued" | "dismissing";
+      readonly chosen: string | null;
+      readonly reply: string | null;
+    }
+  | "delivered"
+  | "failed"
+  | "withdrawn" {
+  const { report, response } = answered;
+  const text =
+    response.kind === "answer" ? (splitReportAnswer(response.text, report) ?? response.text) : null;
+  const offered = text !== null && (report.answers?.includes(text) ?? false);
+  const shape = { chosen: offered ? text : null, reply: offered ? null : text };
+  if (reportResponsePending(responses, response))
+    return { status: response.kind === "dismiss" ? "dismissing" : "sending", ...shape };
+  if (reportResponseFailure(responses, response.ref) !== undefined) return "failed";
+  if (
+    response.kind === "answer" &&
+    projection !== null &&
+    getUserQueuedThreadRuns(projection).some((run) => run.userMessageId === response.messageId)
+  )
+    return { status: "queued", ...shape };
+  if (response.kind === "answer" && projection !== null) {
+    const ref = projection.messages.find(
+      (message) => message.id === response.messageId,
+    )?.reportAnswer;
+    if (
+      ref === undefined ||
+      ref.messageId !== response.ref.messageId ||
+      ref.key !== response.ref.key ||
+      ref.version !== response.ref.version
+    )
+      return "withdrawn";
+  }
+  return "delivered";
+}
+
+/**
+ * The "Needs you" rows: each open need, and each response sent from the page that is still on
+ * its way, kept in its place among them so the list does not move until it is delivered.
+ */
+export function needRowsWithResponses<
+  N extends { readonly key: string; readonly createdAt: string },
+  R,
+>(
+  needs: ReadonlyArray<N>,
+  responding: ReadonlyArray<{ readonly need: N; readonly responding: R }>,
+): Array<{ readonly need: N; readonly responding?: R }> {
+  const keys = new Set(responding.map((row) => row.need.key));
+  return [
+    ...needs.filter((need) => !keys.has(need.key)).map((need) => ({ need })),
+    ...responding,
+  ].sort(
+    (a, b) =>
+      a.need.createdAt.localeCompare(b.need.createdAt) || a.need.key.localeCompare(b.need.key),
+  );
 }

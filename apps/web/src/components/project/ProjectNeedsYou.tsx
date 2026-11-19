@@ -3,6 +3,7 @@ import {
   formatReportAnswer,
   reportResponseFailure,
 } from "@t3tools/client-runtime/coordinator-reports";
+import { answeredReportStatus } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -51,7 +52,6 @@ import { ReportAnswerOptions, ReportFailure } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
-  answeredReportStatus,
   listProjectNeeds,
   openReports,
   type ProjectNeed,
@@ -108,6 +108,17 @@ const answeredThreadsAtom = Atom.family((keys: string) =>
     }
     return threads;
   }),
+);
+
+/**
+ * What each project chat's "Needs you" has sent, by the chat's thread key: the responses still on
+ * their way, and the latest answer for its summary. Kept across visits to the page.
+ */
+export const projectNeedResponsesAtom = Atom.family((_chatKey: string) =>
+  Atom.make<{
+    readonly sent: ReadonlyArray<AnsweredReport>;
+    readonly latest: AnsweredNeed | null;
+  }>({ sent: [], latest: null }).pipe(Atom.keepAlive),
 );
 
 /** How far each response sent from "Needs you" has got, in the order given. */

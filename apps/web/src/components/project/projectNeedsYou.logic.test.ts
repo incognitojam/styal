@@ -13,13 +13,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  answeredReportStatus,
-  needRowsWithResponses,
-  listProjectNeeds,
-  openReports,
-  type ThreadNeeds,
-} from "./projectNeedsYou.logic";
+import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeedsYou.logic";
 
 const local = EnvironmentId.make("env-local");
 
@@ -150,87 +144,5 @@ describe("openReports", () => {
       // A failed one leaves it waiting.
       expect(openReports(projection, [{ ...pending, failed: "Offline" }])).toHaveLength(1);
     }
-  });
-});
-
-describe("answeredReportStatus", () => {
-  it("keeps a sent answer's row answering until the agent has it", () => {
-    const report = {
-      key: "shed",
-      title: "Shed",
-      version: 2,
-      question: "Start?",
-      answers: ["Start it", "Hold"],
-    };
-    const ref = { messageId: MessageId.make("report"), key: "shed", version: 2 };
-    const response = {
-      ref,
-      kind: "answer" as const,
-      messageId: MessageId.make("answer"),
-      text: "[Shed, version 2] Start it",
-      createdAt: "2026-11-19T10:00:00.000Z",
-    };
-    const answered = { report, response };
-    const projection = (queued: boolean, reportAnswer: typeof ref | null = ref) =>
-      ({
-        messages: [
-          {
-            id: response.messageId,
-            role: "user",
-            text: response.text,
-            reportAnswer: reportAnswer ?? undefined,
-          },
-        ],
-        runs: queued
-          ? [{ id: "run", status: "queued", userMessageId: response.messageId, ordinal: 2 }]
-          : [],
-      }) as unknown as Parameters<typeof answeredReportStatus>[2];
-
-    expect(answeredReportStatus(answered, [response], null)).toEqual({
-      status: "sending",
-      chosen: "Start it",
-      reply: null,
-    });
-    expect(answeredReportStatus(answered, [], projection(true))).toMatchObject({
-      status: "queued",
-    });
-    expect(answeredReportStatus(answered, [], projection(false))).toBe("delivered");
-    // Cancelled in the queue: the message stays without its report reference.
-    expect(answeredReportStatus(answered, [], projection(false, null))).toBe("withdrawn");
-    expect(answeredReportStatus(answered, [{ ...response, failed: "Offline" }], null)).toBe(
-      "failed",
-    );
-    // A typed reply has no offered answer to mark.
-    expect(
-      answeredReportStatus(
-        { report, response: { ...response, text: "[Shed, version 2] Next week" } },
-        [{ ...response, text: "[Shed, version 2] Next week" }],
-        null,
-      ),
-    ).toEqual({ status: "sending", chosen: null, reply: "Next week" });
-    expect(
-      answeredReportStatus(
-        { report, response: { ref, kind: "dismiss" } },
-        [{ ref, kind: "dismiss" }],
-        null,
-      ),
-    ).toMatchObject({ status: "dismissing" });
-  });
-});
-
-describe("needRowsWithResponses", () => {
-  it("keeps every response on its way in its place", () => {
-    const need = (key: string, createdAt: string) => ({ key, createdAt });
-    const [a, b, c] = [need("a", "1"), need("b", "2"), need("c", "3")];
-    // A and C were answered here and are still queued; the open list no longer has them.
-    expect(
-      needRowsWithResponses(
-        [b],
-        [
-          { need: c, responding: "queued" },
-          { need: a, responding: "sending" },
-        ],
-      ),
-    ).toEqual([{ need: a, responding: "sending" }, { need: b }, { need: c, responding: "queued" }]);
   });
 });

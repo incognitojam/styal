@@ -77,7 +77,7 @@ export function withPendingReportResponses(
 }
 
 export interface ReportResponseHandle {
-  /** The send went through; the server committed it at `sequence`, when it said. */
+  /** The send went through; the server committed it at `sequence`, when its reply says. */
   readonly acknowledge: (sequence: number | undefined) => void;
   /** The send failed; the report is open again with `message`, and `detail` behind it. */
   readonly fail: (message: string, detail?: string) => void;
@@ -123,6 +123,9 @@ export function createReportResponses(
     if (!claimed) return null;
     let stop: (() => void) | undefined;
     let finished = false;
+    // A success reply without a commit number leaves only a full sync of the thread to compare with.
+    let acknowledgedWithoutSequence = false;
+    let resyncing = false;
     // The first check runs inside `subscribe`, before `stop` is assigned.
     const finish = () => {
       if (finished) return;
@@ -130,6 +133,8 @@ export function createReportResponses(
       queueMicrotask(() => stop?.());
     };
     const check = (state: ReportResponseThreadState) => {
+      if (acknowledgedWithoutSequence && state.status !== "live") resyncing = true;
+      const fullySynced = acknowledgedWithoutSequence && resyncing && state.status === "live";
       const projection = Option.getOrNull(state.data);
       if (state.status === "deleted") update(key, () => NO_RESPONSES);
       else if (projection !== null)
@@ -137,7 +142,7 @@ export function createReportResponses(
           settleReportResponses(current, {
             messageIds: projection.messages.map((message) => message.id),
             dismissals: projection.thread.reportDismissals ?? [],
-            sequence: state.sequence,
+            sequence: fullySynced ? Number.POSITIVE_INFINITY : state.sequence,
           }),
         );
       if (!reportResponsePending(registry.get(pendingReportResponsesAtom).get(key) ?? [], response))
@@ -146,8 +151,10 @@ export function createReportResponses(
     stop = registry.subscribe(threads.stateAtom(thread), check, { immediate: true });
     return {
       acknowledge: (sequence) => {
-        if (sequence === undefined) return;
-        update(key, (current) => acknowledgeReportResponse(current, response, sequence));
+        if (sequence === undefined) acknowledgedWithoutSequence = true;
+        update(key, (current) =>
+          acknowledgeReportResponse(current, response, sequence ?? Number.POSITIVE_INFINITY),
+        );
         if (!finished) check(registry.get(threads.stateAtom(thread)));
       },
       fail: (message, detail) => {

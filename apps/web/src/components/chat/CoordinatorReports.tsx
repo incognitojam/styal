@@ -1,11 +1,19 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
 import { CheckIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
+  needRowsWithResponses,
   pendingReportDismissals,
   reportAnswerDelivery,
   reportAnswerDisplay,
@@ -20,14 +28,15 @@ import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
-  type AnsweredNeed,
   AnsweredNeedRow,
-  type AnsweredReport,
   ProjectNeedRow,
+  projectNeedResponsesAtom,
   useAnsweredReportStatuses,
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
-import { needRowsWithResponses } from "../project/projectNeedsYou.logic";
+import { useAtom } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 
 const NO_PROJECT_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
 
@@ -303,10 +312,12 @@ export function NeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
-  // The latest answer, shown once the agent has it.
-  const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
-  // Every response sent from here, so each keeps its row until the agent has it.
-  const [sent, setSent] = useState<ReadonlyArray<AnsweredReport>>([]);
+  // Kept in a shared store so leaving the page and coming back keeps each response's row.
+  const [{ sent, latest: answered }, setResponses] = useAtom(
+    projectNeedResponsesAtom(
+      threadKey(scopeThreadRef(reviewProps.environmentId, reviewProps.threadId)),
+    ),
+  );
   const needs = useProjectNeeds(project);
   const statuses = useAnsweredReportStatuses(sent);
   const needRows = needRowsWithResponses(
@@ -319,17 +330,21 @@ export function NeedsYou({
   const answeredStatus = answered?.report
     ? (statuses[sent.indexOf(answered.report)] ?? null)
     : null;
-  // Settled responses stop holding their thread's detail open; the latest stays for its summary.
   const outstanding = sent.filter(
     (entry, index) => typeof statuses[index] === "object" || entry === answered?.report,
   );
-  if (outstanding.length !== sent.length) setSent(outstanding);
+  const settled = outstanding.length !== sent.length;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops settled responses from the shared store so their threads stop streaming
+  useEffect(() => {
+    if (settled) setResponses((current) => ({ ...current, sent: outstanding }));
+  });
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needRows.map((row) => ({ kind: "need" as const, ...row })),
   ];
   const waiting = rows.filter((row) => row.kind !== "need" || !row.responding).length;
+  const inFlight = waiting < rows.length;
   const shownAnswered = answeredStatus === null || answeredStatus === "delivered" ? answered : null;
   if (!rows.length && !shownAnswered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
@@ -337,7 +352,8 @@ export function NeedsYou({
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
         <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-          <span>{waiting ? `Needs you · ${waiting}` : "Answered"}</span>
+          {/* "Answered" only once the server has every response sent from here. */}
+          <span>{waiting ? `Needs you · ${waiting}` : inFlight ? "Needs you" : "Answered"}</span>
           {rows.length > 3 ? (
             <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
               {expanded ? "Show less" : `Show all ${rows.length}`}
@@ -360,18 +376,21 @@ export function NeedsYou({
                 need={row.need}
                 open={openNeed === row.need.key}
                 onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer, report) => {
-                  setAnswered({
-                    threadTitle: row.need.thread.title,
-                    answer,
-                    ...(report ? { report } : {}),
-                  });
-                  if (report)
-                    setSent((current) => [
-                      ...current.filter((entry) => entry.need.key !== report.need.key),
-                      report,
-                    ]);
-                }}
+                onAnswered={(answer, report) =>
+                  setResponses((current) => ({
+                    latest: {
+                      threadTitle: row.need.thread.title,
+                      answer,
+                      ...(report ? { report } : {}),
+                    },
+                    sent: report
+                      ? [
+                          ...current.sent.filter((entry) => entry.need.key !== report.need.key),
+                          report,
+                        ]
+                      : current.sent,
+                  }))
+                }
                 {...(row.responding ? { responding: row.responding } : {})}
               />
             ) : (
