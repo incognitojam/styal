@@ -40,6 +40,8 @@ export const CoordinatorReportsContext = createContext<{
   >;
   send: (text: string, ref: ReportReference) => Promise<void>;
   reply: (ref: ReportReference, title: string) => void;
+  /** Stops the composer replying to this report, if it is. */
+  cancelReply: (ref: ReportReference) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
@@ -145,7 +147,10 @@ export function ReportAnswerBar({
             size="xs"
             variant="ghost-muted"
             disabled={sending}
-            onClick={() => setChanging(null)}
+            onClick={() => {
+              setChanging(null);
+              ctx.cancelReply(ref);
+            }}
           >
             Keep answer
           </Button>

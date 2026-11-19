@@ -1504,6 +1504,9 @@ function ThreadDetailBody(
     },
     canOperate: props.canOperateThread && canDismissReport && props.queuedRunEdit === null,
     reply: replyToReport,
+    cancelReply: ({ ref }: ReportReply) => {
+      if (props.reportReply?.ref.messageId === ref.messageId) props.onReportReply?.(null);
+    },
     send: sendReportAnswer,
     dismiss: async ({ ref }: ReportReply) => {
       const result = await dismissReport({

@@ -3700,6 +3700,10 @@ export default function ChatView(props: ChatViewProps) {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
                             scheduleComposerFocus();
                           },
+                          cancelReply: (ref) =>
+                            setReportReply((current) =>
+                              current?.ref.messageId === ref.messageId ? null : current,
+                            ),
                           dismiss: (ref) => {
                             if (activeThreadId)
                               void dismissReport({

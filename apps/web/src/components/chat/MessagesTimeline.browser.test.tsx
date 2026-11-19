@@ -547,6 +547,7 @@ describe("MessagesTimeline messages", () => {
             scroll: (messageId) => setTarget({ messageId }),
             send: async () => {},
             reply: () => {},
+            cancelReply: () => {},
             dismiss: () => {},
             canOperate: true,
           }}
@@ -1557,6 +1558,7 @@ describe("MessagesTimeline attachments", () => {
           scroll: () => {},
           send: async () => {},
           reply: () => {},
+          cancelReply: () => {},
           dismiss: () => {},
           canOperate: true,
         }}

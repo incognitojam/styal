@@ -45,6 +45,8 @@ export const CoordinatorReportsContext = createContext<{
   canOperate: boolean;
   send: (text: string, reply: ReportReply) => Promise<void>;
   reply: (reply: ReportReply) => void;
+  /** Stops the composer replying to this report, if it is. */
+  cancelReply: (reply: ReportReply) => void;
   dismiss: (reply: ReportReply) => Promise<void>;
 } | null>(null);
 
@@ -134,7 +136,10 @@ export function CoordinatorReportMessage({
                 size="compact"
                 tone="text"
                 disabled={sending}
-                onPress={() => setChanging(null)}
+                onPress={() => {
+                  setChanging(null);
+                  ctx.cancelReply(reply);
+                }}
               />
             ) : (
               <Button
