@@ -15,6 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   answeredReportStatus,
+  needRowsWithResponses,
   listProjectNeeds,
   openReports,
   type ThreadNeeds,
@@ -170,9 +171,16 @@ describe("answeredReportStatus", () => {
       createdAt: "2026-11-19T10:00:00.000Z",
     };
     const answered = { report, response };
-    const projection = (queued: boolean) =>
+    const projection = (queued: boolean, reportAnswer: typeof ref | null = ref) =>
       ({
-        messages: [{ id: response.messageId, role: "user", text: response.text }],
+        messages: [
+          {
+            id: response.messageId,
+            role: "user",
+            text: response.text,
+            reportAnswer: reportAnswer ?? undefined,
+          },
+        ],
         runs: queued
           ? [{ id: "run", status: "queued", userMessageId: response.messageId, ordinal: 2 }]
           : [],
@@ -187,6 +195,8 @@ describe("answeredReportStatus", () => {
       status: "queued",
     });
     expect(answeredReportStatus(answered, [], projection(false))).toBe("delivered");
+    // Cancelled in the queue: the message stays without its report reference.
+    expect(answeredReportStatus(answered, [], projection(false, null))).toBe("withdrawn");
     expect(answeredReportStatus(answered, [{ ...response, failed: "Offline" }], null)).toBe(
       "failed",
     );
@@ -205,5 +215,22 @@ describe("answeredReportStatus", () => {
         null,
       ),
     ).toMatchObject({ status: "dismissing" });
+  });
+});
+
+describe("needRowsWithResponses", () => {
+  it("keeps every response on its way in its place", () => {
+    const need = (key: string, createdAt: string) => ({ key, createdAt });
+    const [a, b, c] = [need("a", "1"), need("b", "2"), need("c", "3")];
+    // A and C were answered here and are still queued; the open list no longer has them.
+    expect(
+      needRowsWithResponses(
+        [b],
+        [
+          { need: c, responding: "queued" },
+          { need: a, responding: "sending" },
+        ],
+      ),
+    ).toEqual([{ need: a, responding: "sending" }, { need: b }, { need: c, responding: "queued" }]);
   });
 });

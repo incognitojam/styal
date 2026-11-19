@@ -45,9 +45,23 @@ export function reportResponsePending(
   return pending.some((entry) => entry.failed === undefined && sameReportResponse(entry, response));
 }
 
-/** How many responses in `pending` are still on their way. */
-export function pendingReportResponseCount(pending: readonly PendingReportResponse[]): number {
-  return pending.filter((entry) => entry.failed === undefined).length;
+/**
+ * How many responses in `pending` are still on their way and missing from a view that reflects
+ * commits up to `reflectedThrough`, when that is known.
+ */
+export function pendingReportResponseCount(
+  pending: readonly PendingReportResponse[],
+  reflectedThrough?: number,
+): number {
+  return pending.filter(
+    (entry) =>
+      entry.failed === undefined &&
+      !(
+        reflectedThrough !== undefined &&
+        entry.acknowledgedAt !== undefined &&
+        entry.acknowledgedAt <= reflectedThrough
+      ),
+  ).length;
 }
 
 /** `pending` with `response` added, or null when its report already has a response pending. */

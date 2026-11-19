@@ -22,20 +22,12 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import {
   type AnsweredNeed,
   AnsweredNeedRow,
-  type NeedResponding,
+  type AnsweredReport,
   ProjectNeedRow,
+  useAnsweredReportStatuses,
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
-import { answeredReportStatus, type ProjectNeed } from "../project/projectNeedsYou.logic";
-import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { threadKey } from "@t3tools/client-runtime/state/entities";
-import * as Option from "effect/Option";
-import { Atom } from "effect/reactivity";
-import { threadReportResponsesAtom } from "../../state/coordinatorReports";
-import { environmentThreadDetails } from "../../state/threads";
-
-const NO_THREAD_STATE = Atom.make(null);
+import { needRowsWithResponses } from "../project/projectNeedsYou.logic";
 
 const NO_PROJECT_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
 
@@ -311,41 +303,22 @@ export function NeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
-  // The latest answer only; the rows follow each thread's own pending state.
+  // The latest answer, shown once the agent has it.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
+  // Every response sent from here, so each keeps its row until the agent has it.
+  const [sent, setSent] = useState<ReadonlyArray<AnsweredReport>>([]);
   const needs = useProjectNeeds(project);
-  const answeredReport = answered?.report ?? null;
-  const answeredThread = answeredReport
-    ? scopeThreadRef(answeredReport.need.thread.environmentId, answeredReport.need.thread.id)
-    : null;
-  const answeredResponses = useAtomValue(
-    threadReportResponsesAtom(answeredThread ? threadKey(answeredThread) : ""),
+  const statuses = useAnsweredReportStatuses(sent);
+  const needRows = needRowsWithResponses(
+    needs,
+    sent.flatMap((entry, index) => {
+      const status = statuses[index];
+      return typeof status === "object" ? [{ need: entry.need, responding: status }] : [];
+    }),
   );
-  const answeredState = useAtomValue(
-    answeredThread ? environmentThreadDetails.stateAtom(answeredThread) : NO_THREAD_STATE,
-  );
-  const answeredStatus = answeredReport
-    ? answeredReportStatus(
-        { report: answeredReport.need.report.report, response: answeredReport.response },
-        answeredResponses,
-        answeredState === null ? null : Option.getOrNull(answeredState.data),
-      )
+  const answeredStatus = answered?.report
+    ? (statuses[sent.indexOf(answered.report)] ?? null)
     : null;
-  // A response on its way keeps its row, in place and answering, so nothing on the page moves.
-  const responding =
-    answeredStatus !== null && typeof answeredStatus === "object" ? answeredStatus : null;
-  const needRows: Array<{ need: ProjectNeed; responding?: NeedResponding }> = needs
-    .filter((need) => !(responding && need.key === answeredReport?.need.key))
-    .map((need) => ({ need }));
-  if (responding && answeredReport) {
-    const at = needRows.findIndex(
-      (row) => row.need.createdAt.localeCompare(answeredReport.need.createdAt) > 0,
-    );
-    needRows.splice(at === -1 ? needRows.length : at, 0, {
-      need: answeredReport.need,
-      responding,
-    });
-  }
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
@@ -382,13 +355,18 @@ export function NeedsYou({
                 need={row.need}
                 open={openNeed === row.need.key}
                 onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer, report) =>
+                onAnswered={(answer, report) => {
                   setAnswered({
                     threadTitle: row.need.thread.title,
                     answer,
                     ...(report ? { report } : {}),
-                  })
-                }
+                  });
+                  if (report)
+                    setSent((current) => [
+                      ...current.filter((entry) => entry.need.key !== report.need.key),
+                      report,
+                    ]);
+                }}
                 {...(row.responding ? { responding: row.responding } : {})}
               />
             ) : (

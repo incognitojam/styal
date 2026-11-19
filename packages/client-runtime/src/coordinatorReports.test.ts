@@ -7,6 +7,7 @@ import {
   formatReportAnswer,
   pendingReportAnswers,
   pendingReportDismissals,
+  pendingReportResponseCount,
   reportAnswerDelivery,
   reportAnswerDisplay,
   REPORT_ANSWER_FAILED,
@@ -151,6 +152,9 @@ describe("coordinator reports", () => {
     };
     const sent = acknowledgeReportResponse(claimReportResponse([], answer)!, answer, 10);
     expect(reportResponsePending(sent, answer)).toBe(true);
+    // A thread summary that has reached the acknowledgement already counts the answer.
+    expect(pendingReportResponseCount(sent, 9)).toBe(1);
+    expect(pendingReportResponseCount(sent, 10)).toBe(0);
 
     // Cancelling a queued answer keeps its message but drops its report reference.
     const cancelled = settleReportResponses(sent, { messageIds: ["m1"], dismissals: [] });

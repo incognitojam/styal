@@ -129,7 +129,8 @@ export function listProjectNeeds(
 /**
  * How far a report response sent from the "Needs you" card has got: still sending or
  * dismissing, waiting in the thread's queue behind a running turn, with the agent ("delivered"),
- * or failed. While it is on its way, the row keeps its answering shape with the answer marked.
+ * failed, or withdrawn (cancelled in the queue, which leaves the message without its report
+ * reference). While it is on its way, the row keeps its answering shape with the answer marked.
  */
 export function answeredReportStatus(
   answered: {
@@ -145,7 +146,8 @@ export function answeredReportStatus(
       readonly reply: string | null;
     }
   | "delivered"
-  | "failed" {
+  | "failed"
+  | "withdrawn" {
   const { report, response } = answered;
   const text =
     response.kind === "answer" ? (splitReportAnswer(response.text, report) ?? response.text) : null;
@@ -160,5 +162,38 @@ export function answeredReportStatus(
     getUserQueuedThreadRuns(projection).some((run) => run.userMessageId === response.messageId)
   )
     return { status: "queued", ...shape };
+  if (response.kind === "answer" && projection !== null) {
+    const ref = projection.messages.find(
+      (message) => message.id === response.messageId,
+    )?.reportAnswer;
+    if (
+      ref === undefined ||
+      ref.messageId !== response.ref.messageId ||
+      ref.key !== response.ref.key ||
+      ref.version !== response.ref.version
+    )
+      return "withdrawn";
+  }
   return "delivered";
+}
+
+/**
+ * The "Needs you" rows: each open need, and each response sent from the page that is still on
+ * its way, kept in its place among them so the list does not move until it is delivered.
+ */
+export function needRowsWithResponses<
+  N extends { readonly key: string; readonly createdAt: string },
+  R,
+>(
+  needs: ReadonlyArray<N>,
+  responding: ReadonlyArray<{ readonly need: N; readonly responding: R }>,
+): Array<{ readonly need: N; readonly responding?: R }> {
+  const keys = new Set(responding.map((row) => row.need.key));
+  return [
+    ...needs.filter((need) => !keys.has(need.key)).map((need) => ({ need })),
+    ...responding,
+  ].sort(
+    (a, b) =>
+      a.need.createdAt.localeCompare(b.need.createdAt) || a.need.key.localeCompare(b.need.key),
+  );
 }

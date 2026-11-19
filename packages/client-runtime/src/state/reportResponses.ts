@@ -46,13 +46,15 @@ export const threadReportResponsesAtom = Atom.family((key: string) =>
 
 /**
  * Lowers each thread's open report question count by the responses still on its way from this
- * client, so thread lists and counts drop a question as soon as it is answered. The server's
- * own count takes over once it has the response.
+ * client, so thread lists and counts drop a question as soon as it is answered. A response
+ * the shell has already counted (it reflects the commit the send was acknowledged at) is not
+ * subtracted again.
  */
 export function withPendingReportResponses(
   environmentId: EnvironmentId,
   threads: ReadonlyArray<OrchestrationV2ThreadShell>,
   pending: ReadonlyMap<string, readonly ReportResponse[]>,
+  snapshotSequence?: number,
 ): ReadonlyArray<OrchestrationV2ThreadShell> {
   if (pending.size === 0) return threads;
   let changed = false;
@@ -60,6 +62,7 @@ export function withPendingReportResponses(
     const open = thread.openReportQuestionCount ?? 0;
     const responding = pendingReportResponseCount(
       pending.get(threadKey({ environmentId, threadId: thread.id })) ?? NO_RESPONSES,
+      snapshotSequence,
     );
     if (open === 0 || responding === 0) return thread;
     changed = true;

@@ -238,13 +238,15 @@ export function createEnvironmentThreadShellAtoms(input: {
   };
 
   const environmentThreadsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make((get): ReadonlyArray<OrchestrationV2ThreadShell> =>
-      withPendingReportResponses(
+    Atom.make((get): ReadonlyArray<OrchestrationV2ThreadShell> => {
+      const snapshot = get(input.snapshotAtom(environmentId));
+      return withPendingReportResponses(
         environmentId,
-        get(input.snapshotAtom(environmentId))?.threads ?? EMPTY_THREADS,
+        snapshot?.threads ?? EMPTY_THREADS,
         get(pendingReportResponsesAtom),
-      ),
-    ).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
+        snapshot?.snapshotSequence,
+      );
+    }).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
   );
 
   const environmentThreadIndexAtom = Atom.family((environmentId: EnvironmentId) =>

@@ -51,6 +51,7 @@ import { ReportAnswerOptions, ReportFailure } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
+  answeredReportStatus,
   listProjectNeeds,
   openReports,
   type ProjectNeed,
@@ -86,6 +87,45 @@ const projectNeedsAtom = Atom.family((keys: string) =>
     return needs;
   }),
 );
+
+const answeredThreadsAtom = Atom.family((keys: string) =>
+  Atom.make((get) => {
+    const threads = new Map<
+      string,
+      {
+        readonly responses: ReadonlyArray<ReportResponse>;
+        readonly projection: Parameters<typeof answeredReportStatus>[2];
+      }
+    >();
+    for (const key of keys.split("\n")) {
+      if (!key) continue;
+      threads.set(key, {
+        responses: get(threadReportResponsesAtom(key)),
+        projection: Option.getOrNull(
+          get(environmentThreadDetails.stateAtom(parseThreadKey(key))).data,
+        ),
+      });
+    }
+    return threads;
+  }),
+);
+
+/** How far each response sent from "Needs you" has got, in the order given. */
+export function useAnsweredReportStatuses(answered: ReadonlyArray<AnsweredReport>) {
+  const keyOf = (entry: AnsweredReport) =>
+    threadKey(scopeThreadRef(entry.need.thread.environmentId, entry.need.thread.id));
+  const threads = useAtomValue(
+    answeredThreadsAtom([...new Set(answered.map(keyOf))].toSorted().join("\n")),
+  );
+  return answered.map((entry) => {
+    const thread = threads.get(keyOf(entry));
+    return answeredReportStatus(
+      { report: entry.need.report.report, response: entry.response },
+      thread?.responses ?? [],
+      thread?.projection ?? null,
+    );
+  });
+}
 
 /** What the threads in `threads` wait on, oldest first. */
 export function useProjectNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) {
