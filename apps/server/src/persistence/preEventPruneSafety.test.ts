@@ -296,51 +296,58 @@ it.effect.each(["manifest", "copy"] as const)(
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
-it.effect("disabled pruning makes no copy, disk check, progress report or metadata change", () =>
-  Effect.gen(function* () {
-    const { fs, database, backup } = yield* fixture;
-    let copyWork = 0;
-    let reports = 0;
-    yield* Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-      const metadata = yield* sql`SELECT * FROM orchestration_v2_projection_metadata`;
-      yield* Safety.prepare().pipe(
-        Effect.provideService(Safety.Preparation, {
-          clone: async () => {
-            copyWork++;
-            return false;
-          },
-          freeBytes: async () => {
-            copyWork++;
-            return 0;
-          },
-        }),
-        Effect.provideService(Safety.Progress, () =>
-          Effect.sync(() => {
-            reports++;
+it.effect.each(["0", "false", " 0 ", "off", "unexpected"])(
+  "disabled pruning (%s) makes no copy, disk check, progress report or metadata change",
+  (value) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      let copyWork = 0;
+      let reports = 0;
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
+        const metadata = yield* sql`SELECT * FROM orchestration_v2_projection_metadata`;
+        yield* Safety.prepare().pipe(
+          Effect.provideService(Safety.Preparation, {
+            clone: async () => {
+              copyWork++;
+              return false;
+            },
+            freeBytes: async () => {
+              copyWork++;
+              return 0;
+            },
           }),
+          Effect.provideService(Safety.Progress, () =>
+            Effect.sync(() => {
+              reports++;
+            }),
+          ),
+        );
+        assert.deepEqual(yield* maintenance.pruneEventStore(), {
+          deletedEventCount: 0,
+          deletedReceiptCount: 0,
+          reclaimableBytes: 0,
+        });
+        assert.equal(copyWork, 0);
+        assert.equal(reports, 0);
+        assert.isFalse(yield* fs.exists(backup));
+        assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_projection_metadata`, metadata);
+      }).pipe(
+        Effect.provide(
+          Maintenance.layer.pipe(
+            Layer.provideMerge(NodeSqliteClient.layer({ filename: database })),
+          ),
         ),
       );
-      assert.deepEqual(yield* maintenance.pruneEventStore(), {
-        deletedEventCount: 0,
-        deletedReceiptCount: 0,
-        reclaimableBytes: 0,
-      });
-      assert.equal(copyWork, 0);
-      assert.equal(reports, 0);
-      assert.isFalse(yield* fs.exists(backup));
-      assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_projection_metadata`, metadata);
     }).pipe(
       Effect.provide(
-        Maintenance.layer.pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: database }))),
+        Layer.mergeAll(
+          NodeServices.layer,
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: value } })),
+        ),
       ),
-    );
-  }).pipe(
-    Effect.provide(
-      Layer.mergeAll(NodeServices.layer, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
     ),
-  ),
 );
 
 it.effect("ordinary SQLite callers do not prepare a pruning copy", () =>

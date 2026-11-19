@@ -155,8 +155,8 @@ it.effect("warns how long reclaiming can take and reports each step with its ela
       "each compaction step must print one line with the elapsed time as it starts",
     );
 
-    // With event pruning off (the default), nothing mentions removing events.
-    const withoutPruning = (yield* reclaim({})).join("\n");
+    // The explicit off switch hides event-removal progress.
+    const withoutPruning = (yield* reclaim({ T3CODE_EVENT_PRUNING: "0" })).join("\n");
     assert.notInclude(withoutPruning, "Removing superseded events");
     assert.notInclude(withoutPruning, "superseded events removed");
     assert.include(withoutPruning, "[1:05] Rewriting the database file");

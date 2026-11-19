@@ -233,7 +233,9 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
         const result = yield* maintenance
           .compact(dbPath, (step) => Effect.sync(() => steps.push(step)))
           .pipe(
-            Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+            Effect.provide(
+              ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "0" } })),
+            ),
             Effect.provideService(Clock.Clock, {
               ...clock,
               // Exceed the background budget whenever the compactor checks elapsed time.
