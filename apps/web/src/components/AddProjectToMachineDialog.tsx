@@ -509,8 +509,11 @@ function AddProjectToMachineDialog({
             </div>
 
             {!canListFiles && source ? (
-              <p className="text-muted-foreground text-xs">
-                {source.label} cannot list the files git ignores, so none will be copied.
+              <p className="flex items-start gap-1.5 text-warning-foreground text-xs">
+                <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0" />
+                <span>
+                  {source.label} cannot list the files git ignores, so none will be copied.
+                </span>
               </p>
             ) : null}
             {canListFiles ? (
@@ -549,9 +552,12 @@ function AddProjectToMachineDialog({
                 {ignoredFiles.error ? (
                   <p className="text-destructive-foreground text-xs">{ignoredFiles.error}</p>
                 ) : ignoredFiles.data?.failed ? (
-                  <p className="text-muted-foreground text-xs">
-                    Could not list the files git ignores on {source?.label ?? "this machine"}, so
-                    none will be copied.
+                  <p className="flex items-start gap-1.5 text-warning-foreground text-xs">
+                    <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0" />
+                    <span>
+                      Could not list the files git ignores on {source?.label ?? "this machine"}, so
+                      none will be copied.
+                    </span>
                   </p>
                 ) : files.length === 0 ? (
                   <p className="text-muted-foreground text-xs">
