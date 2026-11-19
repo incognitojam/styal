@@ -33,6 +33,7 @@ vi.mock("./dpop", async (original) => ({
   ) => Effect.suspend(() => state.storage!.transaction(mode, run)),
 }));
 vi.mock("./publicConfig", () => ({
+  hasLegacyClerkConfig: () => false,
   resolveCloudPublicConfig: () => ({ relayUrl: "https://relay.example.test" }),
 }));
 vi.mock("../lib/runtime", () => ({
