@@ -1834,7 +1834,6 @@ export const projectCoordinatorThreadId = (
     ? settings.projectCoordinators[projectId]!.threadId
     : null;
 
-/** How a notification names a thread: by its project's name while it is the project's coordinator. */
 export const threadNotificationName = (
   settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators"> | undefined,
   thread: { readonly id: ThreadId; readonly projectId: ProjectId; readonly title: string },

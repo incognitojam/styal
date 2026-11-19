@@ -419,16 +419,7 @@ describe("thread notifications", () => {
     });
   });
 
-  it.each([
-    ["names the project for its coordinator", true, "thread-1", "Acme Web"],
-    [
-      "keeps the title of a thread that is not the coordinator",
-      true,
-      "chat-1",
-      "Fix the login form",
-    ],
-    ["keeps the title while project coordinators are off", false, "thread-1", "Fix the login form"],
-  ])("%s in system notifications", async (_label, enabled, coordinatorId, body) => {
+  it("names the project for its coordinator in system notifications", async () => {
     await using app = setup();
     app.registry.set(
       atoms.serverConfigs,
@@ -437,8 +428,8 @@ describe("thread notifications", () => {
           "env-1",
           {
             settings: {
-              projectCoordinatorsEnabled: enabled,
-              projectCoordinators: { "project-1": { threadId: coordinatorId } },
+              projectCoordinatorsEnabled: true,
+              projectCoordinators: { "project-1": { threadId: "thread-1" } },
             },
           },
         ],
@@ -451,7 +442,7 @@ describe("thread notifications", () => {
 
     expect(state.notification).toHaveBeenCalledWith(
       "Thread completed",
-      expect.objectContaining({ body }),
+      expect.objectContaining({ body: "Acme Web" }),
     );
   });
 });

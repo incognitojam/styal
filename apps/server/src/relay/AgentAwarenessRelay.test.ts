@@ -19,6 +19,7 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import { RelayAgentActivityState } from "@t3tools/contracts/relay";
+import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts/settings";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -196,6 +197,18 @@ const makeTestRelay = Effect.fnUntraced(function* (
   } = {},
 ) {
   const leases = yield* Ref.make<ReadonlyArray<ClientActivityLease>>([]);
+  const settings = yield* Ref.make(DEFAULT_SERVER_SETTINGS);
+  const settingsChanges = yield* Queue.unbounded<ServerSettings>();
+  const settingsPulls = yield* Queue.unbounded<void>();
+  // Returns once the relay has taken the change and queued what it affects.
+  const changeSettings = Effect.fnUntraced(function* (
+    patch: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">,
+  ) {
+    const next = { ...(yield* Ref.get(settings)), ...patch };
+    yield* Ref.set(settings, next);
+    yield* Queue.offer(settingsChanges, next);
+    yield* Queue.take(settingsPulls);
+  });
   const values = new Map<string, Uint8Array>(
     options.linked === false
       ? []
@@ -353,7 +366,16 @@ const makeTestRelay = Effect.fnUntraced(function* (
     Effect.provide(
       Layer.mergeAll(
         NodeCrypto.layer,
-        ServerSettingsService.layerTest(),
+        Layer.mock(ServerSettingsService)({
+          getSettings: Ref.get(settings),
+          subscribeChanges: Effect.succeed(
+            Stream.fromEffectRepeat(
+              Queue.offer(settingsPulls, undefined).pipe(
+                Effect.andThen(Queue.take(settingsChanges)),
+              ),
+            ),
+          ),
+        }),
         Layer.mock(BackgroundPolicy.BackgroundPolicy)({
           snapshot: Effect.gen(function* () {
             const now = yield* DateTime.now;
@@ -381,7 +403,18 @@ const makeTestRelay = Effect.fnUntraced(function* (
       ),
     ),
   );
-  return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp, leases };
+  return {
+    relay,
+    secrets,
+    secretReads,
+    currentShell,
+    shellReads,
+    publications,
+    catchUp,
+    leases,
+    changeSettings,
+    settingsPulls,
+  };
 });
 
 describe("AgentAwarenessRelay", () => {
@@ -583,6 +616,34 @@ describe("AgentAwarenessRelay", () => {
       assert.equal(publications.length, 2);
       assert.equal(publications[1]?.state?.threadTitle, "Renamed thread");
     }),
+  );
+
+  it.effect(
+    "republishes a thread under its project's name while it is the project's coordinator",
+    () =>
+      Effect.gen(function* () {
+        const { relay, publications, changeSettings, settingsPulls } = yield* makeTestRelay();
+        yield* relay.start();
+        yield* Queue.take(settingsPulls);
+        yield* relay.publishThread(THREAD_ID);
+        assert.equal(publications.at(-1)?.state?.threadTitle, "Thread");
+
+        yield* changeSettings({
+          projectCoordinatorsEnabled: true,
+          projectCoordinators: { [PROJECT_ID]: { threadId: THREAD_ID } },
+        });
+        yield* relay.drain;
+        assert.equal(publications.length, 2);
+        assert.equal(publications.at(-1)?.state?.threadTitle, "Project");
+
+        yield* changeSettings({
+          projectCoordinatorsEnabled: false,
+          projectCoordinators: { [PROJECT_ID]: { threadId: THREAD_ID } },
+        });
+        yield* relay.drain;
+        assert.equal(publications.length, 3);
+        assert.equal(publications.at(-1)?.state?.threadTitle, "Thread");
+      }),
   );
 
   it("counts a desktop or web client as in use only while it is active", () => {

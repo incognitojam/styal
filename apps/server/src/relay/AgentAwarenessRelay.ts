@@ -403,6 +403,15 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   };
 }
 
+const coordinatorThreadIds = (
+  settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">,
+): ReadonlySet<ThreadId> =>
+  new Set(
+    settings.projectCoordinatorsEnabled
+      ? Object.values(settings.projectCoordinators).map((coordinator) => coordinator.threadId)
+      : [],
+  );
+
 function terminalWorkSinceStart(thread: AgentAwarenessThread, startedAt: number): boolean {
   return (
     thread.latestRunCompletedAt != null &&
@@ -996,6 +1005,29 @@ export const make = Effect.gen(function* () {
       yield* forkParked(
         Effect.sleep("1 second").pipe(
           Effect.andThen(publishActiveThreadsWhenConfigured(startupState !== "enabled")),
+        ),
+      );
+      // A thread that becomes or stops being its project's coordinator changes the name it is
+      // published under, though no event of its own says so.
+      const settingsChanges = yield* serverSettings.subscribeChanges;
+      const initialCoordinators = yield* serverSettings.getSettings.pipe(
+        Effect.map(coordinatorThreadIds),
+        Effect.orElseSucceed(() => new Set<ThreadId>()),
+      );
+      yield* forkParked(
+        settingsChanges.pipe(
+          Stream.mapAccum(
+            () => initialCoordinators,
+            (previous, settings) => {
+              const next = coordinatorThreadIds(settings);
+              const changed = [
+                ...[...previous].filter((threadId) => !next.has(threadId)),
+                ...[...next].filter((threadId) => !previous.has(threadId)),
+              ];
+              return [next, changed] as const;
+            },
+          ),
+          Stream.runForEach(enqueueThreadPublish),
         ),
       );
       yield* forkParked(
