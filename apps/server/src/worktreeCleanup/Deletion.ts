@@ -252,6 +252,55 @@ export const makeDeletion = Effect.gen(function* () {
     budgetMs = 600_000,
   ) {
     const deadline = now() + budgetMs;
+    const kept = new WorktreeCleanupError({
+      reason: "run-failed",
+      message: "Git protection changed or could not be verified; regenerable path kept.",
+    });
+    if (!inside(root, target) || now() >= deadline) return yield* kept;
+    const relative = path.relative(root, target).split(path.sep).join("/");
+    // Git pathspecs do not fold Unicode normalization like the macOS protection comparison.
+    const scope = platform === "darwin" ? [] : ["--", `:(literal)${relative}`];
+    const ignored = yield* git(root, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+      "-z",
+      ...scope,
+    ]);
+    const protectedOutput = yield* git(root, [
+      "ls-files",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+      "-z",
+      ...scope,
+    ]);
+    const key = canonical(relative);
+    if (
+      now() >= deadline ||
+      [protectedOutput, ignored].some(
+        (output) =>
+          output.exitCode !== 0 ||
+          output.stdoutTruncated ||
+          output.stderrTruncated ||
+          (output.stdout !== "" && !output.stdout.endsWith("\0")),
+      ) ||
+      protectedOutput.stdout
+        .split("\0")
+        .filter(Boolean)
+        .map(canonical)
+        .some((entry) => entry === key || entry.startsWith(`${key}/`)) ||
+      !ignored.stdout
+        .split("\0")
+        .filter(Boolean)
+        .some((entry) => {
+          const parent = canonical(entry.replace(/\/$/, ""));
+          return parent === key || key.startsWith(`${parent}/`);
+        })
+    )
+      return yield* kept;
     return yield* Effect.tryPromise({
       try: async (signal) => {
         const rootStat = await NodeFSP.lstat(root, { bigint: true });
