@@ -108,9 +108,7 @@ export const listContinuableThreadIds = Effect.fn(
       )
       .map((thread) => thread.id),
   );
-  if (enabledThreadIds.size === 0) return eligible;
-  for (const threadId of yield* projections.getRecoveryThreadIds("runtime")) {
-    if (!enabledThreadIds.has(threadId)) continue;
+  for (const threadId of enabledThreadIds) {
     const projection = yield* projections.getRuntimeRecoveryProjection(threadId);
     if (
       !resolveProjectSettings(current, projection.thread.projectId).settings

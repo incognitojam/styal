@@ -261,19 +261,19 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
-  it.effect("waits for a slow final activity read longer than the client's check", () =>
+  it.effect("waits for a slow final activity read on a busy server", () =>
     Effect.gen(function* () {
       const inspecting = yield* Deferred.make<void>();
       const { selfUpdate, order } = yield* makeHarness({
         activity: Deferred.succeed(inspecting, undefined).pipe(
-          Effect.andThen(Effect.sleep("6 seconds")),
+          Effect.andThen(Effect.sleep("20 seconds")),
           Effect.as(idleActivity),
         ),
       });
       const fiber = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.forkChild);
       yield* Deferred.await(inspecting);
       yield* Effect.yieldNow;
-      yield* TestClock.adjust("6 seconds");
+      yield* TestClock.adjust("20 seconds");
       expect((yield* Fiber.join(fiber)).updateId).toBe("launcher-id");
       expect(order).toContain("accept");
     }),

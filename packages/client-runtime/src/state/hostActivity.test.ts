@@ -5,12 +5,14 @@ import {
   type HostActivity,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 import { Atom, AtomRegistry } from "effect/reactivity";
 
 import {
@@ -48,6 +50,7 @@ const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* () {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
   const runtime = Atom.runtime(
     Layer.mergeAll(
+      Layer.succeed(Clock.Clock, yield* Clock.Clock),
       Layer.mock(Persistence.EnvironmentCacheStore)({}),
       Layer.mock(EnvironmentRegistry.EnvironmentRegistry)({
         entries,
@@ -110,6 +113,7 @@ it.effect("joins a running host check and reads fresh activity after it complete
     const original = h.read();
     expect(yield* Queue.take(h.started)).toBe(LAB);
     const retry = h.read();
+    yield* TestClock.adjust("20 seconds");
     expect(h.reads).toEqual([LAB]);
     yield* Deferred.succeed(h.completion, ACTIVITY);
     const first = yield* Effect.promise(() => original);
