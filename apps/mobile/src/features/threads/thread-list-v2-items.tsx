@@ -334,12 +334,19 @@ export const ThreadListV2ProjectHeaderRow = memo(function ThreadListV2ProjectHea
   readonly project: EnvironmentProject | null;
   readonly pinned: boolean;
   readonly pane?: "screen" | "sidebar";
+  /** Set when the project has a chat, which the header opens. */
+  readonly statusLine?: string | null;
+  readonly onOpenProject?: () => void;
 }) {
   const sidebarPane = props.pane === "sidebar";
+  const label = props.pinned ? `${props.title}, pinned project` : props.title;
   return (
-    <View
-      accessibilityRole="header"
-      accessibilityLabel={props.pinned ? `${props.title}, pinned project` : props.title}
+    <Pressable
+      accessibilityRole={props.onOpenProject ? "button" : "header"}
+      accessibilityLabel={props.statusLine ? `${label}, ${props.statusLine}` : label}
+      accessibilityHint={props.onOpenProject ? "Opens the project's chat" : undefined}
+      disabled={props.onOpenProject === undefined}
+      onPress={props.onOpenProject}
       className={cn("mb-1 mt-3 flex-row items-center gap-1.5", sidebarPane ? "px-3" : "px-5")}
     >
       {props.project ? (
@@ -354,12 +361,21 @@ export const ThreadListV2ProjectHeaderRow = memo(function ThreadListV2ProjectHea
       ) : null}
       <Text
         className={cn(
-          "flex-1 text-sm font-t3-medium",
+          "shrink text-sm font-t3-medium",
           sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-secondary",
         )}
         numberOfLines={1}
       >
         {props.title}
+      </Text>
+      <Text
+        className={cn(
+          "flex-1 text-xs",
+          sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-tertiary",
+        )}
+        numberOfLines={1}
+      >
+        {props.statusLine ?? ""}
       </Text>
       {props.pinned ? (
         <SymbolView
@@ -371,7 +387,7 @@ export const ThreadListV2ProjectHeaderRow = memo(function ThreadListV2ProjectHea
           type="monochrome"
         />
       ) : null}
-    </View>
+    </Pressable>
   );
 });
 
@@ -722,6 +738,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly hasUnsentDraft?: boolean;
   readonly isProjectCoordinator?: boolean;
   readonly projectCoordinatorsEnabled?: boolean;
+  /** Set when the thread is its project's chat: the row shows the project. */
+  readonly projectChatTitle?: string;
+  readonly projectChatStatusLine?: string | null;
   readonly snoozed?: boolean;
   readonly pinned?: boolean;
   readonly wokeAt: string | null;
@@ -812,6 +831,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   } = props;
   const snoozedRow = props.snoozed === true;
   const showProject = props.showProject !== false;
+  const title = props.projectChatTitle ?? thread.title;
   const pinnedRow = props.pinned === true;
   const dormant = useSwipeRowDormant(props.activationKey);
 
@@ -1280,7 +1300,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   // The open thread's own composer is on screen, so its draft needs no marker.
   const showDraftIcon = props.hasUnsentDraft === true && !selected;
   const threadAccessibilityLabel = [
-    thread.title,
+    title,
+    props.projectChatStatusLine,
     providerNameLabel,
     pr?.mergeIntent ? pr.accessibilityLabel : null,
     showDraftIcon ? "unsent draft" : null,
@@ -1326,7 +1347,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               : undefined
           }
         >
-          {thread.title}
+          {title}
         </Text>
         <View className="flex-row items-center gap-1.5" style={{ minHeight: titleLineHeight }}>
           {showDraftIcon ? <UnsentDraftIcon /> : null}
@@ -1439,6 +1460,18 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             numberOfLines={1}
           >
             {thread.authRecovery?.waiting ? "Waiting for sign-in" : thread.runtime.lastError}
+          </Text>
+        ) : props.projectChatStatusLine ? (
+          <Text
+            className={cn(
+              "flex-1 text-xs",
+              selected
+                ? selectedThreadRowColors.mutedForegroundClassName
+                : rowAppearance.tertiaryForegroundClassName,
+            )}
+            numberOfLines={1}
+          >
+            {props.projectChatStatusLine}
           </Text>
         ) : props.environmentLabel ? (
           <View className="min-w-0 flex-1 flex-row items-center gap-1">
@@ -1640,7 +1673,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               )}
               numberOfLines={1}
             >
-              {thread.title}
+              {title}
             </Text>
             {providerNameLabel ? (
               <Text

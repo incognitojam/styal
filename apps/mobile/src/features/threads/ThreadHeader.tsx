@@ -21,6 +21,11 @@ export function ThreadHeader(props: {
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
+  /** Set when this thread is its project's chat: the header then belongs to the project. */
+  readonly project?: {
+    readonly onNewThread: () => void;
+    readonly onOpenSettings: () => void;
+  };
 }) {
   const goBack = useWorkspaceBackNavigation("threads");
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
@@ -40,14 +45,17 @@ export function ThreadHeader(props: {
         },
       ]
     : [];
-  const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  const menus = props.project
+    ? [projectMenu(props.project.onOpenSettings, actions[0], terminalMenu)]
+    : [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (
     <AppBar
       title={props.title}
       subtitle={props.subtitle}
       onBackToList={goBack}
-      onCompose={props.draft ? undefined : startNewTask}
+      // The project's own New thread action replaces split view's generic one.
+      onCompose={props.draft || props.project ? undefined : startNewTask}
       backInSplitView={
         props.onReturnToThread
           ? {
@@ -57,9 +65,53 @@ export function ThreadHeader(props: {
             }
           : undefined
       }
-      actions={actions}
+      actions={
+        props.project
+          ? [
+              {
+                accessibilityLabel: "New thread",
+                icon: "square.and.pencil",
+                onPress: props.project.onNewThread,
+              },
+            ]
+          : actions
+      }
       menus={menus}
       hideBottomBorder
     />
   );
+}
+
+/** The project chat's one menu: settings, then the thread's own files and terminals. */
+function projectMenu(
+  onOpenSettings: () => void,
+  files: AppBarAction | undefined,
+  terminal: AppBarMenu | null,
+): AppBarMenu {
+  return {
+    title: "Project",
+    icon: "ellipsis",
+    items: [
+      {
+        id: "project-settings",
+        title: "Project settings",
+        icon: "gearshape",
+        onPress: onOpenSettings,
+      },
+      ...(files
+        ? [
+            {
+              id: "project-files",
+              title: files.accessibilityLabel,
+              icon: "folder",
+              disabled: files.disabled,
+              onPress: files.onPress,
+            },
+          ]
+        : []),
+      ...(terminal
+        ? [{ id: "project-terminal", title: "Terminal", icon: "terminal", items: terminal.items }]
+        : []),
+    ],
+  };
 }

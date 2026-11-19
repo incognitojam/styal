@@ -969,7 +969,8 @@ interface CursorLiveAgent {
   readonly storeCwd: string;
   readonly session: CursorAgentSdk.CursorAgentSdkSession;
   instructionsPending: boolean;
-  additionalInstructionsPending: string | undefined;
+  /** What the conversation last received; null for a resumed one, which may predate them. */
+  additionalInstructionsSent: string | undefined | null;
 }
 
 export interface CursorAdapterV2Options {
@@ -2315,10 +2316,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             storeCwd,
             session: sdkSession,
             instructionsPending: true,
-            additionalInstructionsPending:
-              openInput.operation === "create"
-                ? openInput.runtimePolicy.additionalInstructions
-                : undefined,
+            additionalInstructionsSent: null,
           } satisfies CursorLiveAgent;
           yield* Ref.set(liveAgent, next);
           return next;
@@ -2369,12 +2367,20 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             return { message: "/compress", prompt: undefined };
           }
           const agentForInstructions = yield* Ref.get(liveAgent);
+          // Sent after opening, since a resumed conversation may predate them, and again when they
+          // change, such as when the thread becomes or stops being its project's coordinator.
+          const additionalInstructions = turnInput.runtimePolicy.additionalInstructions;
+          const sentInstructions = agentForInstructions?.additionalInstructionsSent;
+          // An unknown conversation with none set gets nothing, rather than every resume a revocation.
+          const instructionsBlock =
+            additionalInstructions === sentInstructions ||
+            (additionalInstructions === undefined && sentInstructions === null)
+              ? ""
+              : `<additional_instructions>\n${additionalInstructions ?? "None. Earlier additional instructions no longer apply."}\n</additional_instructions>\n\n`;
           const newText = t3OrchestrationPrompt({
             prompt: yield* providerMessageTextWithAttachmentPaths({
               text:
-                (agentForInstructions?.additionalInstructionsPending !== undefined
-                  ? `<additional_instructions>\n${agentForInstructions.additionalInstructionsPending}\n</additional_instructions>\n\n`
-                  : "") +
+                instructionsBlock +
                 (yield* resolveCursorSkillText(rawText, turnInput.runtimePolicy.cwd ?? undefined)),
               attachments: turnInput.message.attachments,
               resolveAttachmentPath: host.resolveAttachmentPath,
@@ -2428,7 +2434,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           const text = `${userText}\n\n${buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model })}`;
           if (agentForInstructions !== null) {
             agentForInstructions.instructionsPending = false;
-            agentForInstructions.additionalInstructionsPending = undefined;
+            agentForInstructions.additionalInstructionsSent = additionalInstructions;
           }
           return {
             message: images.length === 0 ? text : ({ text, images } satisfies SDKUserMessage),

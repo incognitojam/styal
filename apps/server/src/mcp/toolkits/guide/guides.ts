@@ -195,6 +195,26 @@ automatic cross-machine result is sufficient; it still cannot watch PRs.
 
 Either thread can stop reports with \`t3_thread_update\`. A person can stop them from the launched
 thread's details on web or desktop, or its menu on mobile. See the tool descriptions for parameters.
+
+## Coordinating a project
+
+A project's coordinator (its chat on the project page) keeps the conversation with the user and
+hands the work out. Its threads report to it, and the user sees their questions on the project page.
+
+- Hand out changes, including small ones, with \`t3_thread_launch\` or \`create_threads\` and
+  \`reportBack\`, so the thread stays off the user's sidebar until it needs them. Reading code,
+  looking things up and answering questions are the coordinator's own work.
+- Write each brief so the thread can start without this conversation: the goal, what is already
+  decided or ruled out, where to look, and what "done" means, such as a pull request ready for
+  review. Name the base branch when it matters.
+- Do not poll threads, sleep or wait on them. styal reports a result when a thread has nothing else
+  pending, a failure, and a question or approval left unanswered for two minutes. Do not relay a
+  thread's question when the user can answer it in that thread or on the project page.
+- Mention threads by the \`link\` the tools return. When the user must decide something and Reports
+  is on in Labs, post a report with the question and the evidence.
+- Have a thread that did not write a change review it before it ships, and send review findings
+  back to the thread that wrote it.
+- The user's instructions win: if they ask you to make a change yourself, make it.
 `;
 
 const devices = `# Devices: iOS simulators, Android emulators and phones

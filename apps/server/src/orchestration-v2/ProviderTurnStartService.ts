@@ -47,11 +47,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import {
-  currentProjectCoordinator,
-  projectCoordinatorTurnNote,
-  reportRecipient,
-} from "./ProjectCoordinator.ts";
+import { reportRecipient } from "./ProjectCoordinator.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -86,7 +82,7 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
-import { threadReportNote } from "./ThreadReports.ts";
+import { answerNotesText, threadReportNote } from "./ThreadReports.ts";
 import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -1082,20 +1078,17 @@ export const layer: Layer.Layer<
         projection.thread.reportTo != null && run.ordinal === 1
           ? yield* reportRecipient(coordinatorLookup, projection.thread)
           : null;
-      const coordinatorNote = projectCoordinatorTurnNote({
-        isCoordinator:
-          (yield* currentProjectCoordinator(coordinatorLookup, projection.thread.projectId)) ===
-          projection.thread.id,
-        deliveredContextIds: projection.providerTurns
-          .toSorted(
-            (left, right) =>
-              (left.startedAt === null ? 0 : DateTime.toEpochMillis(left.startedAt)) -
-              (right.startedAt === null ? 0 : DateTime.toEpochMillis(right.startedAt)),
-          )
-          .flatMap((turn) => turn.inlineContextIds ?? []),
-        runId: run.id,
-      });
-      const nextTurnContext = [
+      // Several answers given while the chat was away reach it as one list.
+      const answerNotes = (projection.thread.answerNotes ?? []).filter(
+        (note) => !deliveredContextIds.has(note.id),
+      );
+      const nextTurnContext: ReadonlyArray<{
+        readonly id: string;
+        readonly text: string;
+        readonly occurredAt: string;
+        /** The notes one entry carries, when it is several. */
+        readonly ids?: ReadonlyArray<string>;
+      }> = [
         ...(projection.thread.pullRequests ?? [])
           .filter((link) => link.source !== "stack-dismissed")
           .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext])),
@@ -1103,9 +1096,16 @@ export const layer: Layer.Layer<
           ? []
           : [projection.thread.branchTurnContext]),
         ...(projection.thread.reportDismissals ?? []),
-        ...(coordinatorNote === null
+        ...(answerNotes.length === 0
           ? []
-          : [{ ...coordinatorNote, occurredAt: DateTime.formatIso(yield* DateTime.now) }]),
+          : [
+              {
+                id: answerNotes[0]!.id,
+                ids: answerNotes.map((note) => note.id),
+                occurredAt: answerNotes[0]!.occurredAt,
+                text: answerNotesText(answerNotes.map((note) => note.text)),
+              },
+            ]),
       ]
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
@@ -1982,7 +1982,9 @@ export const layer: Layer.Layer<
               turnInput.message.createdBy === "agent" &&
               turnInput.message.creationSource === "provider"
             );
-          inlineContextIds = sendsPrompt ? nextTurnContext.map((note) => note.id) : [];
+          inlineContextIds = sendsPrompt
+            ? nextTurnContext.flatMap((note) => note.ids ?? [note.id])
+            : [];
           const context = [
             delivery.context,
             sideChatContext,

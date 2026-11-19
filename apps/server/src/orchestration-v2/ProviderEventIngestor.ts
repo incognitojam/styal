@@ -42,6 +42,7 @@ import {
 } from "../telemetry/ProviderUsageAnalytics.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
+import { answerNotesDeliveredEffects } from "./ThreadReports.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -869,7 +870,10 @@ export const layer: Layer.Layer<
             if (events.length === 0) {
               return [];
             }
-            const effects = mentionedTimesCheckEffects(events);
+            const effects = [
+              ...mentionedTimesCheckEffects(events),
+              ...answerNotesDeliveredEffects(events),
+            ];
             const mapWriteError = (cause: unknown) =>
               new ProviderEventPublishError({
                 providerSessionId: input.providerSessionId,

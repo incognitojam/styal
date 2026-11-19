@@ -147,6 +147,7 @@ import {
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
 import { EventSinkV2 } from "./EventSink.ts";
+import { answerNoteEffect } from "./ThreadReports.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -659,6 +660,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.report-target.clear":
     case "thread.report-target.set":
     case "thread.report-target.blocked-report":
+    case "thread.answer-notes.update":
     case "thread.metadata.update":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":
@@ -888,6 +890,8 @@ function legacyPullRequestLink(
 }
 
 const DELEGATED_RESULT_INLINE_BYTES = 16_000;
+/** Answer notes a thread keeps for its next turn; older ones are dropped. */
+const ANSWER_NOTES_KEPT = 10;
 
 function delegatedCompletionWakeDetail(
   taskIds: ReadonlyArray<string>,
@@ -4049,6 +4053,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const dispatchCoordinatorReport = Effect.fn("Orchestrator.dispatchCoordinatorReport")(function* (
     command: Extract<OrchestrationV2ServerCommand, { type: "report.post" | "report.dismiss" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
     const projection = yield* loadProjectionForCommand(command, ["messages", "runs", "nodes"]);
     const now = yield* DateTime.now;
@@ -4089,6 +4094,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ],
         },
       });
+      // Only a person dismisses a report.
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        answerNoteEffect(thread.id, `${message.id}:dismissed`, {
+          answered: { kind: "report", messageId: message.id, answerMessageId: null },
+        }),
+      ]);
       return;
     }
     const run = projection.runs.find((run) => run.status === "running");
@@ -4174,6 +4186,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.report-target.clear"
           | "thread.report-target.set"
           | "thread.report-target.blocked-report"
+          | "thread.answer-notes.update"
           | "thread.metadata.update"
           | "thread.pull-request.link"
           | "thread.pull-request.unlink"
@@ -4854,6 +4867,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: now,
           };
         }
+        case "thread.answer-notes.update": {
+          const { note, delivered } = command;
+          const kept = (thread.answerNotes ?? []).filter(
+            (candidate) => candidate.id !== note?.id && !delivered.includes(candidate.id),
+          );
+          // Not activity: the note waits for the thread's next turn without moving it in lists.
+          return {
+            ...thread,
+            answerNotes: (note === undefined ? kept : [...kept, note]).slice(-ANSWER_NOTES_KEPT),
+          };
+        }
         case "thread.metadata.update": {
           const previousRecovery =
             thread.limitRecovery?.runId === command.limitRecovery?.runId &&
@@ -5360,6 +5384,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.report-target.clear":
         case "thread.report-target.set":
         case "thread.report-target.blocked-report":
+        case "thread.answer-notes.update":
           return "thread.metadata-updated" as const;
         case "thread.runtime-mode.set":
           return "thread.runtime-mode-updated" as const;
@@ -11672,6 +11697,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         });
       }
+      // A server-side answer, such as a stopped turn's, names no one and owes no note.
+      if (
+        command.createdBy === "user" ||
+        (command.createdBy === "agent" && command.senderThreadId !== undefined)
+      ) {
+        yield* Ref.update(effects, (existing) => [
+          ...existing,
+          answerNoteEffect(command.threadId, command.requestId, {
+            answered: { kind: "request", requestId: command.requestId },
+            ...(command.createdBy === "agent" ? { byThreadId: command.senderThreadId } : {}),
+          }),
+        ]);
+      }
       if (runtimeRequest.responseCapability.type === "message") {
         if (resolvedNodeStatus === "cancelled") return;
         let dispatchMode: Extract<
@@ -11848,6 +11886,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           threadId: command.threadId,
           requestId: command.requestId,
           decision: "cancel",
+          ...(command.createdBy === undefined ? {} : { createdBy: command.createdBy }),
         },
         events,
         effects,
@@ -15657,6 +15696,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.report-target.clear":
       case "thread.report-target.set":
       case "thread.report-target.blocked-report":
+      case "thread.answer-notes.update":
       case "thread.mark-unread":
       case "thread.metadata.update":
       case "thread.pull-request.link":
@@ -15695,7 +15735,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "report.post":
       case "report.dismiss":
-        yield* dispatchCoordinatorReport(command, events);
+        yield* dispatchCoordinatorReport(command, events, effects);
         break;
       case "message.dispatch": {
         // Providers own native subagent conversations; messages cannot target them, and adapters ask questions on the parent.
@@ -15726,6 +15766,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               };
         cancelUnsettledEffects = yield* dispatchMessage(dispatched, events, effects);
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
+        if (command.reportAnswer !== undefined && command.createdBy === "user") {
+          const { messageId, reportAnswer } = command;
+          yield* Ref.update(effects, (existing) => [
+            ...existing,
+            answerNoteEffect(thread.id, `${reportAnswer.messageId}:${messageId}`, {
+              answered: {
+                kind: "report",
+                messageId: reportAnswer.messageId,
+                answerMessageId: messageId,
+              },
+            }),
+          ]);
+        }
         break;
       }
       case "notification.delivery.accept":

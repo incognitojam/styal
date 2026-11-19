@@ -361,6 +361,8 @@ export function makeGrokAcpAdapterFlavor(
         : undefined;
     },
     applyModelSelection: applyGrokSessionModelSelection,
+    // Grok takes them as `--rules` at launch.
+    restartRuntimeWhenInstructionsChange: true,
     ownedModelOptionIds: [GROK_REASONING_EFFORT_OPTION_ID],
     makeRuntime:
       options.makeRuntime ??

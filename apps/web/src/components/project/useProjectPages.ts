@@ -18,7 +18,7 @@ import {
   formatProjectStatusLine,
   type ProjectChatHost,
   resolveProjectChatHost,
-} from "./projectPage.logic";
+} from "@t3tools/client-runtime/project-page";
 
 export interface ProjectPage {
   readonly group: SidebarProjectSnapshot;

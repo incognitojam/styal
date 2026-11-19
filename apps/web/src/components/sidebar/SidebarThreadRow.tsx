@@ -2,6 +2,7 @@ import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
 
 import { useAtomMount } from "@effect/atom-react";
 import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
+import { resolveThreadListStatus } from "@t3tools/client-runtime/state/thread-list-status";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
@@ -108,7 +109,6 @@ import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
-  resolveSidebarThreadStatus,
   resolveSidebarThreadAttention,
   isSidebarThreadWoke,
   resolveThreadLastVisitedAt,
@@ -800,7 +800,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     : null;
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  const status = resolveThreadListStatus(thread);
   const isWoke = isSidebarThreadWoke({
     wokeAt: props.wokeAt,
     lastVisitedAt,

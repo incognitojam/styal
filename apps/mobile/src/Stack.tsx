@@ -127,6 +127,7 @@ import {
 } from "./features/settings/SettingsOpenSourceLicensesRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
 import { SettingsProjectOverviewRouteScreen } from "./features/settings/SettingsProjectOverviewRouteScreen";
+import { ProjectRouteScreen } from "./features/projects/ProjectRouteScreen";
 import { UsageLimitAccountScreen } from "./features/usage/UsageLimitsPooled";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsAboutRouteScreen } from "./features/settings/SettingsAboutRouteScreen";
@@ -582,6 +583,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadRouteScreen,
       linking: { path: "threads/:environmentId?/:threadId?", alias: ["new/draft"] },
       options: pageRoute({ duoMinimize: "onScrollUp" }),
+    }),
+    Project: createNativeStackScreen({
+      screen: ProjectRouteScreen,
+      linking: "projects/:environmentId/:projectId",
+      options: pageRoute({ title: "Project" }),
     }),
     NewTaskProject: createNativeStackScreen({
       screen: NewTaskRouteScreen,

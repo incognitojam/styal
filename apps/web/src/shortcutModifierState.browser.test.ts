@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   shortcutModifierStateAfterKeyboardEvent,
+  shortcutModifierStore,
   type ShortcutModifierState,
 } from "./shortcutModifierState";
 
@@ -95,17 +96,51 @@ describe("shortcutModifierState", () => {
     expect(state).toEqual(emptyState());
   });
 
-  it("clears a held modifier when a non-modifier key reports it released", () => {
-    const heldMeta: ShortcutModifierState = {
-      metaKey: true,
-      ctrlKey: false,
-      altKey: false,
-      shiftKey: false,
-    };
-    const state = shortcutModifierStateAfterKeyboardEvent(
-      heldMeta,
-      keyboardEventLike("keydown", { key: "a", metaKey: false }),
-    );
-    expect(state).toEqual(emptyState());
-  });
+  it.each(["a", "Shift", "Control", "Alt"])(
+    "clears a held modifier when %s reports it released",
+    (key) => {
+      const heldMeta: ShortcutModifierState = {
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      };
+      const state = shortcutModifierStateAfterKeyboardEvent(
+        heldMeta,
+        keyboardEventLike("keyup", { key, metaKey: false }),
+      );
+      expect(state).toEqual(emptyState());
+    },
+  );
+
+  it.each(["pointermove", "pointerdown", "focus", "visibilitychange"])(
+    "recovers from a missed modifier release on %s",
+    (type) => {
+      const unsubscribe = shortcutModifierStore.subscribe(() => {});
+      try {
+        for (const key of ["Meta", "Control"]) {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key }));
+          expect(shortcutModifierStore.getSnapshot()).toMatchObject({
+            [key === "Meta" ? "metaKey" : "ctrlKey"]: true,
+          });
+
+          if (type.startsWith("pointer")) {
+            const held = shortcutModifierStore.getSnapshot();
+            window.dispatchEvent(new PointerEvent(type, { metaKey: true, ctrlKey: true }));
+            expect(shortcutModifierStore.getSnapshot()).toBe(held);
+            window.dispatchEvent(new PointerEvent(type));
+          } else {
+            (type === "visibilitychange" ? document : window).dispatchEvent(new Event(type));
+          }
+          expect(shortcutModifierStore.getSnapshot()).toEqual(emptyState());
+          if (type.startsWith("pointer")) {
+            window.dispatchEvent(new PointerEvent(type, { metaKey: true, ctrlKey: true }));
+            expect(shortcutModifierStore.getSnapshot()).toEqual(emptyState());
+          }
+        }
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 });

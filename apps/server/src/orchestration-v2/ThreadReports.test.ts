@@ -203,6 +203,17 @@ it("a client cannot name a report target when it creates a thread", () => {
     { createdBy: "user", creationSource: "web" },
   );
   assert.notProperty(command, "reportTo");
+  // Nor answer as an agent thread, which would hide the answer from the thread it reports to.
+  const answer = withCreationProvenance(
+    {
+      type: "runtime-request.respond",
+      createdBy: "agent",
+      senderThreadId: ThreadId.make("thread:coordinator"),
+    } as never,
+    { createdBy: "user", creationSource: "web" },
+  );
+  assert.deepInclude(answer, { createdBy: "user" });
+  assert.notProperty(answer, "senderThreadId");
 });
 
 it.each(["user_input", "command"] as const)("a sent report routes pending %s input", (kind) => {

@@ -86,6 +86,11 @@ function modelWrites(requestLogPath: string): ReadonlyArray<string> {
 const writesPerSelection = (
   selections: ReadonlyArray<ModelSelection>,
   agentEnvironment: Readonly<Record<string, string>>,
+  /** Additional instructions per step; each launch records the ones it started with. */
+  instructions?: {
+    readonly steps: ReadonlyArray<string | undefined>;
+    readonly launches: Array<string | undefined>;
+  },
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -104,6 +109,7 @@ const writesPerSelection = (
       selfInvocation: yield* resolveSelfInvocation(),
       makeRuntime: (runtimeInput) =>
         Effect.gen(function* () {
+          instructions?.launches.push(runtimeInput.runtimePolicy.additionalInstructions);
           const context = yield* Layer.build(
             AcpSessionRuntime.layer({
               ...runtimeInput,
@@ -122,11 +128,14 @@ const writesPerSelection = (
         }),
     });
     const threadId = ThreadId.make("grok-effort-thread");
-    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      cwd: directory,
-    });
+    const policyAt = (step: number) =>
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: directory,
+        additionalInstructions: instructions?.steps[step],
+      });
+    const runtimePolicy = policyAt(0);
     const [first, ...rest] = selections;
     if (first === undefined) return [];
     const writes: Array<ReadonlyArray<string>> = [];
@@ -194,7 +203,7 @@ const writesPerSelection = (
             attachments: [],
           },
           modelSelection,
-          runtimePolicy,
+          runtimePolicy: policyAt(ordinal),
         }),
       );
       yield* runtime.events.pipe(
@@ -260,6 +269,21 @@ describe("Grok reasoning effort", () => {
         }),
         [["set_config_option model=grok-4.6-fast", "set_config_option reasoning_effort=low"]],
       );
+    }),
+  );
+});
+
+describe("Grok launch rules", () => {
+  it.live("a change to the additional instructions relaunches Grok with them", () =>
+    Effect.gen(function* () {
+      const launches: Array<string | undefined> = [];
+      const coordinator = "Project rules\n\n## Coordinating this project";
+      yield* writesPerSelection(
+        [select("grok-4.6"), select("grok-4.6"), select("grok-4.6"), select("grok-4.6")],
+        { T3_GROK_MOCK_PROTOCOL: "2" },
+        { steps: ["Project rules", "Project rules", coordinator, "Project rules"], launches },
+      );
+      assert.deepEqual(launches, ["Project rules", coordinator, "Project rules"]);
     }),
   );
 });

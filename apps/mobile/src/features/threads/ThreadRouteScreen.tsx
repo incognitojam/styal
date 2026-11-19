@@ -133,6 +133,8 @@ import {
   useWorkspaceBackNavigation,
 } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
+import { useOpenProjectSettings } from "../settings/settings-environment-filter";
+import { useProjectChatHeader } from "../projects/projectChats";
 import {
   InspectorContentScope,
   ThreadInspectorHeader,
@@ -575,7 +577,13 @@ function ThreadRouteContent(
     selectedThread === null
       ? null
       : shownReportRecipientId(selectedThread, recipientId, reportsToThread?.projectId ?? null);
-  const headerSubtitle = [
+  const projectChat = useProjectChatHeader(
+    selectedThread === null
+      ? null
+      : scopeThreadRef(selectedThread.environmentId, selectedThread.id),
+  );
+  const openProjectSettings = useOpenProjectSettings();
+  const threadSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
     threadUsageText,
@@ -589,6 +597,15 @@ function ThreadRouteContent(
   ]
     .filter(Boolean)
     .join(" · ");
+  const headerSubtitle =
+    projectChat === null
+      ? threadSubtitle
+      : [
+          projectChat.working > 0 ? `${projectChat.working} working` : null,
+          selectedEnvironmentConnection?.environmentLabel ?? null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
       ? vcsEnvironment.status({
@@ -1041,8 +1058,29 @@ function ThreadRouteContent(
           header={
             props.inspectorPresentation ? null : (
               <ThreadHeader
-                title={selectedThread.title}
+                title={projectChat?.title ?? selectedThread.title}
                 subtitle={headerSubtitle}
+                project={
+                  projectChat === null
+                    ? undefined
+                    : {
+                        onNewThread: () =>
+                          selectDetail({
+                            name: "Thread",
+                            params: {
+                              draft: {
+                                requestId: uuidv4(),
+                                environmentId: String(selectedThread.environmentId),
+                                projectId: String(projectChat.projectId),
+                              },
+                            },
+                          }),
+                        onOpenSettings: () => {
+                          openProjectSettings(projectChat.scopeKey);
+                          openSettings(navigation, "SettingsProjectOverview");
+                        },
+                      }
+                }
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}
