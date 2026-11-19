@@ -27,8 +27,6 @@ class WorktreeCleanupIoError extends Schema.TaggedError<WorktreeCleanupIoError>(
   { cause: Schema.Defect() },
 ) {}
 
-const inside = (root: string, target: string) => target.startsWith(`${root}/`);
-
 export const makeDeletion = Effect.gen(function* () {
   const NodeFSP = yield* PhysicalFileSystem.PhysicalFileSystem;
   const clock = yield* Clock.Clock;
@@ -41,8 +39,21 @@ export const makeDeletion = Effect.gen(function* () {
     new URL(import.meta.url.endsWith(".ts") ? "../bin.ts" : "./bin.mjs", import.meta.url),
   );
   const canonical = (value: string) =>
-    platform === "darwin" ? value.normalize("NFD").toLowerCase() : value;
+    platform === "darwin"
+      ? value.normalize("NFD").toLowerCase()
+      : platform === "win32"
+        ? value.toLowerCase()
+        : value;
   const path = yield* Path.Path;
+  const inside = (root: string, target: string) => {
+    const relative = path.relative(root, target);
+    return (
+      relative !== "" &&
+      relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative)
+    );
+  };
   const git = yield* makeInspectGit;
   const limits = yield* DeletionLimits;
   const inspect = Effect.fn("WorktreeCleanup.inspect")(function* (

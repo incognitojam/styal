@@ -1,3 +1,4 @@
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -102,7 +103,21 @@ export const fixture = Effect.gen(function* () {
         yield* fs.makeDirectory(file.slice(0, file.lastIndexOf("/")), { recursive: true });
         yield* fs.writeFileString(file, text);
       });
-    return { fs, base, root, worktree, command, write, config, git };
+    return {
+      fs,
+      path,
+      base,
+      root,
+      worktree,
+      command,
+      write,
+      config,
+      git,
+      linkDirectory: Effect.fn("fixture.linkDirectory")(function* (target: string, link: string) {
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        yield* Effect.promise(() => physical.symlink(target, link, "dir"));
+      }),
+    };
   }).pipe(Effect.provide(dependencies));
 });
 export const nodeLayer = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);

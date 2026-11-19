@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Windows evidence installs a real pnpm fixture and hashes its isolated store.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -29,6 +32,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
+import { withWindowsLock } from "./windowsLock.testkit.ts";
 import { makeSweep } from "./Sweep.ts";
 import { DeletionLimits } from "./Deletion.ts";
 import { makeConsume } from "./Stripped.ts";
@@ -171,7 +175,7 @@ it.effect.each(["canonical", "aliased"])(
       yield* Effect.gen(function* () {
         const sweep = yield* makeSweep;
         yield* sweep(f.terminal, report);
-        expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
+        expect(report.map((entry) => entry.path)).toEqual([f.path.join(f.worktree, "dist")]);
         expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
         expect(yield* f.fs.exists(`${f.worktree}/cache/keep`)).toBe(true);
         expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
@@ -202,7 +206,6 @@ it.effect.each([
   "invalid",
   "root",
   "unreferenced",
-  "windows",
   "missing-project",
   "missing-project-record",
   "shared-projects",
@@ -314,7 +317,6 @@ it.effect.each([
           ? Layer.merge(f.layers, Settings.layerTest({ regenerableFileCleanupMigrated: false }))
           : f.layers,
       ),
-      Effect.provideService(HostProcess.Platform, mode === "windows" ? "win32" : "linux"),
     );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
@@ -334,7 +336,7 @@ it.effect("retries an inspection that exhausted its budget without thread or pat
       exhausted = false;
       yield* sweep(f.terminal, report);
       expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
-      expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
+      expect(report.map((entry) => entry.path)).toEqual([f.path.join(f.worktree, "dist")]);
     }).pipe(
       Effect.provide(f.layers),
       Effect.provideService(DeletionLimits, {
@@ -378,7 +380,7 @@ it.effect.each(["/", "/.", "/../quiet", "symlink"])(
       const f = yield* setup;
       yield* f.write("dist/output");
       const alias = `${f.base}/worktrees-link`;
-      if (suffix === "symlink") yield* f.fs.symlink(f.config.worktreesDir, alias);
+      if (suffix === "symlink") yield* f.linkDirectory(f.config.worktreesDir, alias);
       f.setThreads([
         ...f.threads(),
         shell({
@@ -403,7 +405,7 @@ it.effect("serializes leases through a symbolic link to the same checkout", () =
   Effect.gen(function* () {
     const f = yield* setup;
     const alias = `${f.base}/checkout-link`;
-    yield* f.fs.symlink(f.worktree, alias);
+    yield* f.linkDirectory(f.worktree, alias);
     const real = yield* f.fs.realPath(alias);
     const lease = yield* makeWorkspaceLease.pipe(
       // Resolve the real fixture synchronously so lock ordering does not depend on I/O scheduling.
@@ -437,7 +439,7 @@ it.effect("serializes leases through a symbolic link to the same checkout", () =
 it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
   Effect.gen(function* () {
     const f = yield* setup;
-    const other = `${f.config.worktreesDir}/fixture/other`;
+    const other = f.path.join(f.config.worktreesDir, "fixture/other");
     yield* f.command(f.root, ["worktree", "add", "--detach", other]);
     yield* f.write("dist/output");
     yield* f.fs.makeDirectory(`${other}/dist`);
@@ -459,7 +461,10 @@ it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
       const sweep = yield* makeSweep;
       const report: StorageCleanupReportEntry[] = [];
       yield* sweep(f.terminal, report);
-      expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`, `${other}/dist`]);
+      expect(report.map((entry) => entry.path)).toEqual([
+        f.path.join(f.worktree, "dist"),
+        f.path.join(other, "dist"),
+      ]);
       expect(scans).toBe(1);
       expect(patternReads).toBe(1);
     }).pipe(
@@ -493,7 +498,7 @@ it.effect.each(["project-root", "git-directory", "root-link"] as const)(
       }
       if (mode === "root-link") {
         yield* f.fs.rename(f.worktree, `${f.worktree}-target`);
-        yield* f.fs.symlink(`${f.worktree}-target`, f.worktree);
+        yield* f.linkDirectory(`${f.worktree}-target`, f.worktree);
       }
       const inspected: string[] = [];
       yield* Effect.gen(function* () {
@@ -576,8 +581,8 @@ it.effect("keeps a partial selection for a later complete inspection", () =>
       limited = false;
       yield* sweep(f.terminal, report);
       expect(report.map((entry) => entry.path)).toEqual([
-        `${f.worktree}/dist`,
-        `${f.worktree}/node_modules`,
+        f.path.join(f.worktree, "dist"),
+        f.path.join(f.worktree, "node_modules"),
       ]);
     }).pipe(
       Effect.provide(f.layers),
@@ -595,16 +600,19 @@ it.effect("records stripping before permission failures and continues independen
     const f = yield* setup;
     yield* f.write("dist/output");
     yield* f.write("node_modules/output");
+    if ((yield* HostProcess.Platform) === "win32") return;
     yield* f.fs.chmod(`${f.worktree}/dist`, 0o500);
     yield* Effect.addFinalizer(() => f.fs.chmod(`${f.worktree}/dist`, 0o700).pipe(Effect.orDie));
     const report: StorageCleanupReportEntry[] = [];
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
       yield* sweep(f.terminal, report);
-      expect(report.find((entry) => entry.path?.endsWith("/dist"))?.outcome).toBe("failed");
-      expect(report.find((entry) => entry.path?.endsWith("/node_modules"))?.outcome).toBe(
-        "removed",
+      expect(report.find((entry) => entry.path === f.path.join(f.worktree, "dist"))?.outcome).toBe(
+        "failed",
       );
+      expect(
+        report.find((entry) => entry.path === f.path.join(f.worktree, "node_modules"))?.outcome,
+      ).toBe("removed");
       expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       expect(yield* f.fs.exists(`${f.worktree}/node_modules`)).toBe(false);
@@ -658,4 +666,191 @@ it.effect.each(["separate-git-dir", "foreign-owner", "broken-registration", "nes
         expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
       }).pipe(Effect.provide(f.layers));
     }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("cleans regenerable files on Windows", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    yield* f.write("dist/output");
+    const report: StorageCleanupReportEntry[] = [];
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      yield* sweep(f.terminal, report);
+    }).pipe(Effect.provide(f.layers), Effect.provideService(HostProcess.Platform, "win32"));
+    expect(report.map((entry) => entry.outcome)).toEqual(["removed"]);
+    expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect.each(["junction", "directory-symlink", "long-path", "allocated-file"] as const)(
+  "Windows service cleanup preserves outside sentinels: %s",
+  (mode) =>
+    Effect.gen(function* () {
+      if ((yield* HostProcess.Platform) !== "win32") return;
+      const f = yield* setup;
+      const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+      const outside = f.path.join(f.base, "outside");
+      yield* f.fs.makeDirectory(outside);
+      yield* f.fs.writeFileString(f.path.join(outside, "sentinel"), "untouched");
+      const relative =
+        mode === "long-path"
+          ? `node_modules/${"nested-package/".repeat(24)}output`
+          : "node_modules/output";
+      yield* f.write(relative, "x".repeat(1024 * 1024));
+      if (mode === "long-path")
+        expect(f.path.join(f.worktree, relative).length).toBeGreaterThan(260);
+      if (mode === "junction" || mode === "directory-symlink") {
+        const link = f.path.join(f.worktree, "node_modules", "outside");
+        yield* Effect.promise(() =>
+          physical.symlink(outside, link, mode === "junction" ? "junction" : "dir"),
+        );
+        expect((yield* Effect.promise(() => physical.lstat(link))).isSymbolicLink()).toBe(true);
+      }
+      const report: StorageCleanupReportEntry[] = [];
+      yield* Effect.gen(function* () {
+        const sweep = yield* makeSweep;
+        yield* sweep(f.terminal, report);
+      }).pipe(Effect.provide(f.layers));
+      expect(report.map((entry) => entry.outcome)).toEqual(["removed"]);
+      expect(report[0]!.bytes).toBeGreaterThan(0);
+      expect(yield* f.fs.exists(f.path.join(f.worktree, "node_modules"))).toBe(false);
+      expect(yield* f.fs.readFileString(f.path.join(outside, "sentinel"))).toBe("untouched");
+      expect(yield* f.fs.readDirectory(outside)).toEqual(["sentinel"]);
+    }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("Windows locked match fails safely, records stripping, and recovers after setup", () =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) !== "win32") return;
+    const f = yield* setup;
+    yield* f.write("dist/locked", "locked bytes");
+    yield* f.write("node_modules/output");
+    yield* f.write("local.txt", "keep unignored");
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      const report: StorageCleanupReportEntry[] = [];
+      yield* Effect.gen(function* () {
+        yield* withWindowsLock(f.path.join(f.worktree, "dist/locked"));
+        yield* sweep(f.terminal, report);
+        expect(
+          report.find((entry) => entry.path === f.path.join(f.worktree, "dist"))?.outcome,
+        ).toBe("failed");
+        expect(
+          report.find((entry) => entry.path === f.path.join(f.worktree, "node_modules"))?.outcome,
+        ).toBe("removed");
+        expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
+        expect(yield* f.fs.exists(f.path.join(f.worktree, "dist/locked"))).toBe(true);
+      }).pipe(Effect.scoped);
+      expect(yield* f.fs.readFileString(f.path.join(f.worktree, "dist/locked"))).toBe(
+        "locked bytes",
+      );
+      const consume = yield* makeConsume;
+      expect(yield* consume(f.worktree)).toBe(true);
+      const retry = yield* makeSweep;
+      const recovered: StorageCleanupReportEntry[] = [];
+      yield* retry(f.terminal, recovered);
+      expect(recovered.map((entry) => entry.outcome)).toEqual(["removed"]);
+      expect(yield* f.fs.exists(f.path.join(f.worktree, "dist"))).toBe(false);
+      expect(yield* f.fs.readFileString(f.path.join(f.worktree, "local.txt"))).toBe(
+        "keep unignored",
+      );
+    }).pipe(Effect.provide(f.layers));
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("Windows service removes a real pnpm install without changing its store", () =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) !== "win32") return;
+    const f = yield* setup;
+    const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+    const store = f.path.join(f.base, "pnpm-store");
+    yield* f.write(
+      "package.json",
+      JSON.stringify({ private: true, dependencies: { "is-number": "7.0.0" } }),
+    );
+    const output = yield* Effect.promise(
+      () =>
+        new Promise<string>((resolve, reject) => {
+          NodeChildProcess.execFile(
+            "vp",
+            [
+              "install",
+              "--ignore-workspace",
+              "--store-dir",
+              store,
+              "--ignore-scripts",
+              "--no-frozen-lockfile",
+            ],
+            { cwd: f.worktree },
+            (error, stdout, stderr) =>
+              error ? reject(new Error(`${error.message}\n${stdout}\n${stderr}`)) : resolve(stdout),
+          );
+        }),
+    );
+    expect(output).toContain("pnpm");
+    expect(
+      yield* f.fs.readFileString(f.path.join(f.worktree, "node_modules/is-number/package.json")),
+    ).toContain('"version": "7.0.0"');
+    expect(
+      (yield* Effect.promise(() =>
+        physical.lstat(f.path.join(f.worktree, "node_modules/is-number")),
+      )).isSymbolicLink(),
+    ).toBe(true);
+    const snapshot = () =>
+      Effect.promise(async () => {
+        const entries: string[] = [];
+        const visit = async (directory: string): Promise<void> => {
+          for (const name of (await physical.readdir(directory)).sort()) {
+            const file = f.path.join(directory, name);
+            const stat = await physical.lstat(file);
+            if (stat.isDirectory()) await visit(file);
+            else {
+              expect(stat.isFile()).toBe(true);
+              entries.push(
+                `${f.path.relative(store, file)}:${NodeCrypto.createHash("sha256")
+                  .update(await physical.readFile(file))
+                  .digest("hex")}`,
+              );
+            }
+          }
+        };
+        await visit(store);
+        return entries;
+      });
+    const before = yield* snapshot();
+    expect(before.length).toBeGreaterThan(0);
+    const report: StorageCleanupReportEntry[] = [];
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      yield* sweep(f.terminal, report);
+    }).pipe(Effect.provide(f.layers));
+    expect(report.map((entry) => entry.outcome)).toEqual(["removed"]);
+    expect(yield* f.fs.exists(f.path.join(f.worktree, "node_modules"))).toBe(false);
+    expect(yield* snapshot()).toEqual(before);
+    expect(yield* f.fs.exists(f.path.join(f.worktree, "package.json"))).toBe(true);
+    expect(yield* f.fs.exists(f.path.join(f.worktree, "pnpm-lock.yaml"))).toBe(true);
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("Windows keeps a case-only alias of a managed worktree", () =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) !== "win32") return;
+    const f = yield* setup;
+    yield* f.write("dist/output", "keep alias bytes");
+    const alias = f.worktree.toUpperCase();
+    expect(alias).not.toBe(f.worktree);
+    expect(yield* f.fs.realPath(alias)).toBe(f.worktree);
+    f.setThreads([{ ...f.threads()[0]!, worktreePath: alias }]);
+    yield* f.persist();
+    const report: StorageCleanupReportEntry[] = [];
+    yield* Effect.gen(function* () {
+      const sweep = yield* makeSweep;
+      yield* sweep(f.terminal, report);
+    }).pipe(Effect.provide(f.layers));
+    expect(report).toEqual([]);
+    expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
+    expect(yield* f.fs.readFileString(f.path.join(f.worktree, "dist/output"))).toBe(
+      "keep alias bytes",
+    );
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
 );

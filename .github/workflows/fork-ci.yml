@@ -701,10 +701,14 @@ jobs:
             @styal/cli...
             @t3tools/scripts...
 
-      - name: Test Windows cleanup refusals and ordinary worktrees
+      - name: Test Windows regenerable cleanup and source refusals
         shell: pwsh
         working-directory: apps/server
-        run: vp test run src/worktreeCleanup/Windows.test.ts src/worktreeCleanup/Sweep.test.ts src/worktreeCleanup/Checkout.test.ts src/worktreeCleanup/CheckoutSweep.test.ts -t "[Ww]indows" --reporter=verbose
+        run: |
+          node -p "JSON.stringify({node: process.version, uv: process.versions.uv, platform: process.platform})"
+          vp test run src/worktreeCleanup/Deletion.test.ts src/worktreeCleanup/Sweep.test.ts src/worktreeCleanup/Windows.test.ts --reporter=verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          vp test run src/worktreeCleanup/Checkout.test.ts src/worktreeCleanup/CheckoutSweep.test.ts -t "[Ww]indows" --reporter=verbose
 
   test_server_required:
     name: Fork Test (Server)

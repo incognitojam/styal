@@ -7,7 +7,6 @@ import {
   type ProjectId,
 } from "@t3tools/contracts";
 import { makeReadPatterns } from "./PatternSource.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -46,16 +45,11 @@ export const makeSweep = Effect.gen(function* () {
   const deletion = yield* makeDeletion;
   const checkout = yield* makeCheckout;
   const readPatterns = yield* makeReadPatterns;
-  const platform = yield* HostProcess.Platform;
   const checked = new Map<string, string>();
   return Effect.fn("WorktreeCleanup.sweep")(function* (
     hasTerminal: (root: string) => boolean,
     report: StorageCleanupReportEntry[],
   ) {
-    if (platform === "win32") {
-      yield* Effect.logDebug("Regenerable file cleanup is not supported on Windows");
-      return;
-    }
     const patternCache = new Map<ProjectId, readonly string[]>();
     const deadline = (yield* Clock.currentTimeMillis) + 600_000;
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);

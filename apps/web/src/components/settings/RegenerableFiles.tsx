@@ -100,19 +100,17 @@ function CheckoutCleanup({
     setBusy(false);
     return reportHardwareResult(result, "Could not save cleanup setting");
   };
-  // The server skips both cleanups on Windows, so the switches show off and cannot change there.
   const unsupported = windows ? "Not available on Windows." : undefined;
   return (
     <SettingsSection title={label ? `Regenerable files on ${label}` : "Regenerable files"}>
       <SettingsRow
         {...searchableSetting("worktree-clean-regenerable-files")}
         forkFeature="worktree-declared-cleanup"
-        unsupported={unsupported}
         description="Delete matching git-ignored paths in settled worktrees on this machine, at least 24 hours after the last thread activity, settlement or archival. The next turn reruns setup."
         control={
           <Switch
             aria-label="Clean up regenerable files"
-            checked={!windows && migrationComplete && overrides.cleanRegenerableFiles !== false}
+            checked={migrationComplete && overrides.cleanRegenerableFiles !== false}
             disabled={busy || !canSave || !migrationComplete}
             onCheckedChange={(checked) => void update("cleanRegenerableFiles", checked)}
           />
