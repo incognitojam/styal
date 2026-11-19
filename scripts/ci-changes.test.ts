@@ -37,6 +37,7 @@ describe("fork CI change gates", () => {
         "build",
         "test_server",
         "test_device_windows",
+        "test_cleanup_windows",
         "preview_calibration",
         "release_smoke",
       ]) {
@@ -50,6 +51,7 @@ describe("fork CI change gates", () => {
     const output = gates(["apps/web/src/example.ts"]);
     expect(output.test_server).toBe(false);
     expect(output.test_device_windows).toBe(false);
+    expect(output.test_cleanup_windows).toBe(false);
     expect(output.preview_calibration).toBe(true);
     expect(output.release_smoke).toBe(false);
     expect(suites(output)).toEqual(["Web 1/3", "Web 2/3", "Web 3/3", "E2E", "Other"]);
@@ -72,6 +74,20 @@ describe("fork CI change gates", () => {
     expect(output.test_device_windows).toBe(true);
     expect(output.preview_calibration).toBe(false);
     expect(suites(output)).toEqual(["E2E", "Other"]);
+  });
+
+  it("runs Windows cleanup safety only for its inputs", () => {
+    for (const file of [
+      "apps/server/src/worktreeCleanup/Deletion.ts",
+      "apps/server/src/vcs/GitVcsDriverCore.ts",
+      "packages/shared/src/PhysicalFileSystem.ts",
+      "packages/shared/src/shell.ts",
+      "packages/shared/src/regenerableFilePatterns.test.ts",
+      ".github/workflows/fork-ci.yml",
+      ".github/actions/setup-deps/action.yml",
+    ])
+      expect(gates([file]).test_cleanup_windows).toBe(true);
+    expect(gates(["apps/server/src/device/AgentDeviceTarget.ts"]).test_cleanup_windows).toBe(false);
   });
 
   it("runs tests that load the server's source in forks, apart from threaded packages", () => {

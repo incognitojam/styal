@@ -165,7 +165,9 @@ describe("regenerable path deletion", () => {
       run(
         Effect.gen(function* () {
           const f = yield* setup;
-          yield* f.write("cache/café\nfile");
+          yield* f.write(
+            (yield* HostProcess.Platform) === "win32" ? "cache/café file" : "cache/café\nfile",
+          );
           vi.stubEnv("GIT_DIR", `${f.base}/missing`);
           vi.stubEnv("GIT_WORK_TREE", f.base);
           try {

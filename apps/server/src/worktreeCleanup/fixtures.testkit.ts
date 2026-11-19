@@ -1,3 +1,4 @@
+import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -66,6 +67,7 @@ export function shell(
 
 export const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   yield* fs.makeDirectory(`${process.cwd()}/.scratch`, { recursive: true });
   const base = yield* fs.makeTempDirectoryScoped({
     directory: `${process.cwd()}/.scratch`,
@@ -77,7 +79,7 @@ export const fixture = Effect.gen(function* () {
   return yield* Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const git = yield* GitVcsDriver.GitVcsDriver;
-    const root = `${base}/project`;
+    const root = path.join(base, "project");
     yield* fs.makeDirectory(root);
     const command = (cwd: string, args: readonly string[]) =>
       git.execute({ operation: "fixture", cwd, args });
@@ -91,7 +93,7 @@ export const fixture = Effect.gen(function* () {
     );
     yield* command(root, ["add", "."]);
     yield* command(root, ["commit", "-m", "fixture"]);
-    const worktree = `${config.worktreesDir}/fixture/quiet`;
+    const worktree = path.join(config.worktreesDir, "fixture", "quiet");
     yield* fs.makeDirectory(`${config.worktreesDir}/fixture`, { recursive: true });
     yield* command(root, ["worktree", "add", "--detach", worktree]);
     const write = (relative: string, text = "synthetic") =>
