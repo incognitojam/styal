@@ -142,13 +142,15 @@ const setup = Effect.gen(function* () {
 
 const testLayers = Layer.mergeAll(nodeLayer, NodeSqliteClient.layer({ filename: ":memory:" }));
 
-it.effect(
-  "strips once after a day despite an unavailable unrelated project, then consumes the stripped record once",
-  () =>
+it.effect.each(["canonical", "aliased"])(
+  "strips once despite an unavailable unrelated project and consumes the record (%s project root)",
+  (mode) =>
     Effect.gen(function* () {
       const f = yield* setup;
+      const projectRoot = mode === "aliased" ? `${f.base}/project-alias` : f.root;
+      if (mode === "aliased") yield* f.fs.symlink(f.root, projectRoot);
       f.setProjects([
-        f.project,
+        { ...f.project, workspaceRoot: projectRoot },
         { ...f.project, id: ProjectId.make("unavailable"), workspaceRoot: `${f.base}/missing` },
       ]);
       yield* f.command(f.root, ["branch", "-m", "trunk"]);
@@ -608,4 +610,52 @@ it.effect("records stripping before permission failures and continues independen
       expect(yield* f.fs.exists(`${f.worktree}/node_modules`)).toBe(false);
     }).pipe(Effect.provide(f.layers));
   }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect.each(["separate-git-dir", "foreign-owner", "broken-registration", "nested-admin"])(
+  "keeps an unowned or unregistered worktree: %s",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* setup;
+      if (mode === "separate-git-dir") {
+        yield* f.fs.remove(`${f.worktree}/.git`);
+        yield* f.command(f.worktree, ["init", "--separate-git-dir", `${f.base}/private-git`]);
+      } else if (mode === "foreign-owner") {
+        yield* f.command(f.root, ["worktree", "move", f.worktree, `${f.base}/original`]);
+        const foreign = `${f.base}/foreign`;
+        yield* f.fs.makeDirectory(foreign);
+        yield* f.command(foreign, ["init", "-b", "main"]);
+        yield* f.command(foreign, ["config", "user.name", "Fixture"]);
+        yield* f.command(foreign, ["config", "user.email", "fixture@example.invalid"]);
+        yield* f.fs.writeFileString(`${foreign}/.gitignore`, "dist/\n");
+        yield* f.command(foreign, ["add", "."]);
+        yield* f.command(foreign, ["commit", "-m", "fixture"]);
+        yield* f.command(foreign, ["worktree", "add", "--detach", f.worktree]);
+      } else {
+        const admin = (yield* f.command(f.worktree, [
+          "rev-parse",
+          "--absolute-git-dir",
+        ])).stdout.trimEnd();
+        if (mode === "nested-admin") {
+          const nested = `${admin}-group/entry`;
+          yield* f.fs.makeDirectory(`${admin}-group`);
+          yield* f.fs.rename(admin, nested);
+          yield* f.fs.writeFileString(`${f.worktree}/.git`, `gitdir: ${nested}\n`);
+          yield* f.fs.writeFileString(`${nested}/commondir`, "../../..\n");
+          expect(
+            (yield* f.command(f.worktree, ["rev-parse", "--show-toplevel"])).stdout.trimEnd(),
+          ).toBe(f.worktree);
+          expect(
+            (yield* f.command(f.root, ["worktree", "list", "--porcelain", "-z"])).stdout,
+          ).not.toContain(`worktree ${f.worktree}\0`);
+        } else yield* f.fs.writeFileString(`${admin}/gitdir`, `${f.base}/unregistered/.git\n`);
+      }
+      yield* f.write("dist/output");
+      yield* Effect.gen(function* () {
+        const sweep = yield* makeSweep;
+        yield* sweep(f.terminal, []);
+        expect(yield* f.fs.readFileString(`${f.worktree}/dist/output`)).toBe("synthetic");
+        expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
+      }).pipe(Effect.provide(f.layers));
+    }).pipe(Effect.provide(testLayers), Effect.scoped),
 );

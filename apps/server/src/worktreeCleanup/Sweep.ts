@@ -23,6 +23,7 @@ import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { makeDeletion } from "./Deletion.ts";
+import { makeCheckout } from "./Checkout.ts";
 
 const decodeThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
@@ -43,6 +44,7 @@ export const makeSweep = Effect.gen(function* () {
   const sessions = yield* ProviderSessions.ProviderSessionManagerV2;
   const managed = yield* makeIsManagedWorktreePath;
   const deletion = yield* makeDeletion;
+  const checkout = yield* makeCheckout;
   const readPatterns = yield* makeReadPatterns;
   const platform = yield* HostProcess.Platform;
   const checked = new Map<string, string>();
@@ -134,12 +136,9 @@ export const makeSweep = Effect.gen(function* () {
           )
             return null;
           if ((yield* fs.realPath(root)) !== root) return null;
-          const linked =
-            (yield* fs.stat(root)).type === "Directory" &&
-            (yield* fs.stat(path.join(root, ".git"))).type === "File";
-          if (!linked) return null;
           if ((yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`).length)
             return null;
+          yield* checkout.verifyOwnership(root, project.workspaceRoot);
           const sessionRows = yield* sql<{
             payload_json: string;
           }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
