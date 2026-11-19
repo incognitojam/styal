@@ -154,7 +154,7 @@ export function answeredReportStatus(
     readonly response: PendingReportResponse<typeof CoordinatorReportReference.Type>;
   },
   responses: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReference.Type>>,
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages"> | null,
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages" | "thread"> | null,
 ):
   | {
       readonly status: "sending" | "queued" | "dismissing";
@@ -179,6 +179,17 @@ export function answeredReportStatus(
     getUserQueuedThreadRuns(projection).some((run) => run.userMessageId === response.messageId)
   )
     return { status: "queued", ...shape };
+  if (response.kind === "dismiss") {
+    const dismissals = projection.thread.reportDismissals ?? [];
+    return dismissals.some(
+      (ref) =>
+        ref.messageId === response.ref.messageId &&
+        ref.key === response.ref.key &&
+        ref.version === response.ref.version,
+    )
+      ? "delivered"
+      : "withdrawn";
+  }
   if (response.kind === "answer") {
     const ref = projection.messages.find(
       (message) => message.id === response.messageId,

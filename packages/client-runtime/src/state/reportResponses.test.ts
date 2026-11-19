@@ -176,3 +176,35 @@ it("refuses a response to a report the thread already shows answered", async () 
   expect(accepted).toBe(false);
   expect(sent).toBe(0);
 });
+
+it("forgets a response that fails before it is sent once a newer version has replaced its report", () => {
+  const registry = AtomRegistry.make();
+  const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
+  const projection = {
+    messages: [
+      {
+        id: MessageId.make("report-2"),
+        role: "assistant",
+        text: "Report",
+        report: { key: "shed", title: "Shed", version: 2, question: "Start?" },
+      },
+    ],
+    thread: {},
+  } as unknown as Option.Option.Value<ReportResponseThreadState["data"]>;
+  const state = Atom.make<ReportResponseThreadState>({
+    data: Option.some(projection),
+    status: "live",
+    sequence: 5,
+  });
+  const { begin } = createReportResponses(registry, { stateAtom: () => state });
+  const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
+  const handle = begin(thread, {
+    ref,
+    kind: "answer",
+    messageId: MessageId.make("answer"),
+    text: "[Shed, version 1] Start it",
+    createdAt: "2026-11-19T10:00:00.000Z",
+  });
+  handle?.fail("Attachments could not upload");
+  expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
+});

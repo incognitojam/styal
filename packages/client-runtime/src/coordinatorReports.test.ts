@@ -210,6 +210,7 @@ describe("answeredReportStatus", () => {
         runs: queued
           ? [{ id: "run", status: "queued", userMessageId: response.messageId, ordinal: 2 }]
           : [],
+        thread: { reportDismissals: [] },
       }) as unknown as Parameters<typeof answeredReportStatus>[2];
 
     expect(answeredReportStatus(answered, [response], null)).toEqual({
@@ -243,6 +244,19 @@ describe("answeredReportStatus", () => {
         null,
       ),
     ).toMatchObject({ status: "dismissing" });
+    // A dismissal is delivered only once the thread lists it, not when its pending entry goes.
+    const dismissal = { report, response: { ref, kind: "dismiss" as const } };
+    const loaded = projection(false);
+    expect(answeredReportStatus(dismissal, [], loaded)).toBe("withdrawn");
+    expect(
+      answeredReportStatus(dismissal, [], {
+        ...loaded!,
+        thread: {
+          ...loaded!.thread,
+          reportDismissals: [{ ...ref, id: "d", occurredAt: "", text: "" }],
+        },
+      } as Parameters<typeof answeredReportStatus>[2]),
+    ).toBe("delivered");
   });
 });
 

@@ -182,18 +182,20 @@ export function createReportResponses(
             dismissals: projection.thread.reportDismissals ?? [],
             sequence: state.sequence,
           });
-          if (fullySynced && reportResponsePending(next, response))
-            return failReportResponse(
-              next,
-              response.ref,
-              reportResponseFailedMessage(response),
-              "The thread does not show it.",
-            );
+          const judged =
+            fullySynced && reportResponsePending(next, response)
+              ? failReportResponse(
+                  next,
+                  response.ref,
+                  reportResponseFailedMessage(response),
+                  "The thread does not show it.",
+                )
+              : next;
           return reportClosed(projection, response.ref)
-            ? next.filter(
+            ? judged.filter(
                 (entry) => entry.failed === undefined || !sameReportResponse(entry, response),
               )
-            : next;
+            : judged;
         });
       const current = registry.get(pendingReportResponsesAtom).get(key) ?? NO_RESPONSES;
       if (!current.some((entry) => sameReportResponse(entry, response))) finish();
@@ -223,7 +225,9 @@ export function createReportResponses(
         if (!finished) check(registry.get(threads.stateAtom(thread)));
       },
       fail: (detail) => {
-        if (!settled) fail(detail);
+        if (settled) return;
+        fail(detail);
+        if (!finished) check(registry.get(threads.stateAtom(thread)));
       },
     };
   };
