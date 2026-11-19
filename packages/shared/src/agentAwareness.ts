@@ -5,7 +5,9 @@ import {
   type OrchestrationV2ThreadShell,
   type Project,
   type RuntimeRequestId,
+  type ServerSettings,
   type ThreadId,
+  threadNotificationName,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -75,6 +77,7 @@ export interface ProjectThreadAwarenessV2Input {
     OrchestrationV2ThreadShell,
     | "activityRunStatus"
     | "id"
+    | "projectId"
     | "lineage"
     | "latestRunStartedByAgent"
     | "reportTo"
@@ -92,6 +95,9 @@ export interface ProjectThreadAwarenessV2Input {
   >;
   /** The approval a live subagent below this thread is waiting on. */
   readonly pendingSubagentRequest?: SubagentRequestAwareness | null;
+  readonly settings?:
+    | Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">
+    | undefined;
 }
 
 export function projectThreadAwarenessV2(
@@ -132,7 +138,7 @@ export function projectThreadAwarenessV2(
     environmentId,
     threadId: thread.id,
     projectTitle: project.title,
-    threadTitle: thread.title,
+    threadTitle: threadNotificationName(input.settings, thread, () => project.title),
     phase,
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),

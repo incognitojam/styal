@@ -1834,6 +1834,16 @@ export const projectCoordinatorThreadId = (
     ? settings.projectCoordinators[projectId]!.threadId
     : null;
 
+/** How a notification names a thread: by its project's name while it is the project's coordinator. */
+export const threadNotificationName = (
+  settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators"> | undefined,
+  thread: { readonly id: ThreadId; readonly projectId: ProjectId; readonly title: string },
+  projectName: () => string | null,
+): string =>
+  (settings !== undefined && projectCoordinatorThreadId(settings, thread.projectId) === thread.id
+    ? projectName()
+    : null) ?? thread.title;
+
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
 
 type IdleCompactionSettings = Pick<ServerSettings, "compactIdleThreads" | "idleCompaction">;

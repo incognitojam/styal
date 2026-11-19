@@ -7,6 +7,7 @@ import {
   type OrchestrationV2TurnItem,
   type Project,
   type RuntimeRequestId,
+  type ServerSettings,
   type ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -53,6 +54,7 @@ import { EnvironmentSigningKey } from "../cloud/environmentKeys.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
 
 export class AgentAwarenessRelay extends Context.Service<
@@ -349,6 +351,9 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly thread: Option.Option<AgentAwarenessThread>;
   readonly project: Option.Option<Project>;
   readonly pendingSubagentRequest: SubagentRequestAwareness | null;
+  readonly settings:
+    | Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">
+    | undefined;
 }): {
   readonly projectId: string | null;
   readonly state: RelayAgentActivityState | null;
@@ -376,6 +381,7 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
     environmentId: input.environmentId,
     project: input.project.value,
     thread: input.thread.value,
+    settings: input.settings,
   };
   const state = projectThreadAwarenessV2({
     ...awarenessInput,
@@ -441,6 +447,7 @@ export const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+  const serverSettings = yield* ServerSettingsService;
   const random = yield* SecureRandom.SecureRandom;
   const signingKey = yield* EnvironmentSigningKey;
   const scope = yield* Effect.scope;
@@ -609,11 +616,13 @@ export const make = Effect.gen(function* () {
     const project = Option.isSome(thread)
       ? yield* projects.getById(thread.value.projectId)
       : Option.none<Project>();
+    const settings = yield* serverSettings.getSettings.pipe(Effect.orElseSucceed(() => undefined));
     const snapshot = resolveAgentAwarenessRelayPublishSnapshot({
       environmentId,
       thread,
       project,
       pendingSubagentRequest: yield* currentSubagentRequestFor(threadId),
+      settings,
     });
     const publishIdentity = agentAwarenessPublishIdentity(snapshot.state, snapshot.subagentWait);
     const publishedStateByThread = yield* Ref.get(publishedStateByThreadRef);
@@ -681,6 +690,7 @@ export const make = Effect.gen(function* () {
               thread: Option.some({ ...thread.value, settledOverride: null }),
               project,
               pendingSubagentRequest: null,
+              settings,
             })
           : null;
       if (unsettled?.state?.phase === "completed") {

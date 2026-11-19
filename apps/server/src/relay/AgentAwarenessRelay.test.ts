@@ -46,6 +46,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import * as AgentAwarenessRelay from "./AgentAwarenessRelay.ts";
 
 const THREAD_ID = ThreadId.make("relay-thread");
@@ -350,8 +351,9 @@ const makeTestRelay = Effect.fnUntraced(function* (
     }),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
     Effect.provide(
-      Layer.merge(
+      Layer.mergeAll(
         NodeCrypto.layer,
+        ServerSettingsService.layerTest(),
         Layer.mock(BackgroundPolicy.BackgroundPolicy)({
           snapshot: Effect.gen(function* () {
             const now = yield* DateTime.now;

@@ -45,6 +45,15 @@ const atoms = await vi.hoisted(async () => {
   return {
     shell: Atom.make<unknown>(null),
     environmentIds: Atom.make<ReadonlyArray<string>>(["env-1"]),
+    projects: Atom.make<ReadonlyArray<unknown>>([
+      {
+        environmentId: "env-1",
+        id: "project-1",
+        title: "Acme Web",
+        workspaceRoot: "/work/acme-web",
+        repositoryIdentity: null,
+      },
+    ]),
     serverConfigs: Atom.make<ReadonlyMap<string, unknown>>(
       new Map([
         [
@@ -177,6 +186,13 @@ vi.mock(import("../state/presentation"), async (original) => {
     },
   };
 });
+vi.mock(import("../state/projects"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentProjects: { ...actual.environmentProjects, projectsAtom: atoms.projects as never },
+  };
+});
 vi.mock(import("../state/server"), async (original) => ({
   ...(await original()),
   environmentServerConfigsAtom: atoms.serverConfigs as never,
@@ -276,6 +292,7 @@ function setup() {
       state.completedAt = "2026-09-13T10:00:00.000Z";
       await renderCoordinator();
     },
+    registry,
     [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
 }
@@ -400,5 +417,41 @@ describe("thread notifications", () => {
       to: "/$environmentId/$threadId",
       params: { environmentId: "env-1", threadId: "thread-1" },
     });
+  });
+
+  it.each([
+    ["names the project for its coordinator", true, "thread-1", "Acme Web"],
+    [
+      "keeps the title of a thread that is not the coordinator",
+      true,
+      "chat-1",
+      "Fix the login form",
+    ],
+    ["keeps the title while project coordinators are off", false, "thread-1", "Fix the login form"],
+  ])("%s in system notifications", async (_label, enabled, coordinatorId, body) => {
+    await using app = setup();
+    app.registry.set(
+      atoms.serverConfigs,
+      new Map([
+        [
+          "env-1",
+          {
+            settings: {
+              projectCoordinatorsEnabled: enabled,
+              projectCoordinators: { "project-1": { threadId: coordinatorId } },
+            },
+          },
+        ],
+      ]),
+    );
+    state.mode = "notifications";
+    state.focused = false;
+    await app.render();
+    await app.complete();
+
+    expect(state.notification).toHaveBeenCalledWith(
+      "Thread completed",
+      expect.objectContaining({ body }),
+    );
   });
 });
