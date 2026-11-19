@@ -5,8 +5,10 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   addSinceLastVisitEnvironment,
   captureSinceLastVisit,
+  sinceLastVisitGroups,
   sinceLastVisitHistoryGap,
   sinceLastVisitLayout,
+  sinceLastVisitMissingBefore,
   sinceLastVisitReportLines,
   sinceLastVisitThreadLines,
   sinceLastVisitWindow,
@@ -55,6 +57,16 @@ const merged = (number: number, mergedAt: string | null) =>
     number,
     url: `https://github.com/example/harbor/pull/${number}`,
     snapshot: { title: `PR ${number}`, state: mergedAt ? "merged" : "open", mergedAt },
+  }) as unknown as SinceLastVisitThreadShell["pullRequests"][number];
+
+const opened = (number: number, linkedAt: string) =>
+  ({
+    host: "github.com",
+    repository: "example/harbor",
+    number,
+    url: `https://github.com/example/harbor/pull/${number}`,
+    linkedAt,
+    snapshot: { title: `PR ${number}`, state: "open", mergedAt: null },
   }) as unknown as SinceLastVisitThreadShell["pullRequests"][number];
 
 const report = (id: string, key: string, version: number, createdAt: string, state: string) => ({
@@ -156,11 +168,8 @@ describe("captureSinceLastVisit", () => {
         olderSettled: null,
       },
     );
-    expect(both.threadLines.map((line) => line.title)).toEqual([
-      "PR 230",
-      "on-remote",
-      "fix-upload-test",
-    ]);
+    // The turn that merged the pull request is the pull request's line.
+    expect(both.threadLines.map((line) => line.title)).toEqual(["PR 230", "on-remote"]);
     expect([...both.environments]).toEqual([env, remote]);
   });
 
@@ -186,6 +195,20 @@ describe("captureSinceLastVisit", () => {
     expect(add(2, 0)).toBeNull();
   });
 
+  it("says changes may be missing only when the window reaches back past the threads left out", () => {
+    const captured = captureSinceLastVisit(
+      { lastVisitedAt: at(5), opens: null, updatedAt: at(1) },
+      open,
+    )!;
+    expect(sinceLastVisitMissingBefore({ ...captured, unloadedBefore: open - 3 * HOUR })).toBe(
+      open - 3 * HOUR,
+    );
+    expect(sinceLastVisitMissingBefore({ ...captured, unloadedBefore: open - 30 * HOUR })).toBe(
+      null,
+    );
+    expect(sinceLastVisitMissingBefore(captured)).toBe(null);
+  });
+
   it("is empty for a chat never visited, such as one created on this page", () => {
     expect(
       captureSinceLastVisit({ lastVisitedAt: null, opens: null, updatedAt: at(0) }, open),
@@ -194,7 +217,7 @@ describe("captureSinceLastVisit", () => {
 });
 
 describe("sinceLastVisitThreadLines", () => {
-  it("names failures, usage limits, unopened finished threads and merged pull requests, newest first", () => {
+  it("names failures, usage limits, unopened turn ends and merged pull requests, newest first", () => {
     const lines = sinceLastVisitThreadLines(
       [
         thread("arm-benchmark", {
@@ -215,7 +238,7 @@ describe("sinceLastVisitThreadLines", () => {
       ["merged", "PR 212"],
       ["limited", "fuzz-pass"],
       ["failed", "arm-benchmark"],
-      ["finished", "fix-upload-test"],
+      ["ended", "fix-upload-test"],
     ]);
     expect(lines[0]).toMatchObject({ number: 212, threadId: "toml-config" });
     expect(lines[1]).toMatchObject({ resetAt: at(-2) });
@@ -262,6 +285,37 @@ describe("sinceLastVisitThreadLines", () => {
       window.since,
     );
     expect(lines).toEqual([]);
+  });
+
+  it("says what a turn produced: a pull request it opened or merged, or nothing when the chat hears its report", () => {
+    const lines = sinceLastVisitThreadLines(
+      [
+        thread("opens-a-pr", {
+          latestRun: run("completed", at(2)),
+          pullRequests: [opened(230, at(2.1))],
+        }),
+        thread("merges-a-pr", {
+          latestRun: run("completed", at(1.5)),
+          pullRequests: [merged(231, at(1))],
+        }),
+        thread("reports-to-chat", {
+          latestRun: run("completed", at(3)),
+          reportTo: { threadId: chat.threadId },
+        } as Partial<SinceLastVisitThreadShell>),
+        thread("pr-opened-before", {
+          latestRun: run("completed", at(2)),
+          pullRequests: [opened(232, at(8))],
+        }),
+      ],
+      chat,
+      window.since,
+    );
+    expect(lines.map((line) => [line.kind, line.title])).toEqual([
+      ["merged", "PR 231"],
+      ["ended", "pr-opened-before"],
+      ["opened", "PR 230"],
+    ]);
+    expect(lines[2]).toMatchObject({ number: 230, threadId: "opens-a-pr" });
   });
 
   it("lists a pull request that merged on a thread archived since", () => {
@@ -333,14 +387,59 @@ describe("sinceLastVisitHistoryGap", () => {
   });
 });
 
+describe("sinceLastVisitGroups", () => {
+  it("shows a report and the pull request it names as one row, the report's", () => {
+    const threadLines = sinceLastVisitThreadLines(
+      [
+        thread("chip-fix", { pullRequests: [merged(1645, at(1))] }),
+        thread("outline-fix", { pullRequests: [merged(1648, at(0.8))] }),
+        thread("hover-cards", {
+          latestRun: run("completed", at(2)),
+          pullRequests: [opened(1650, at(2))],
+        }),
+      ],
+      chat,
+      window.since,
+    );
+    const reportLine = (id: string, key: string, title: string) => ({
+      kind: "report" as const,
+      id: `report:${id}`,
+      messageId: id,
+      title,
+      reportKey: key,
+      version: 1,
+      at: open - 1.2 * HOUR,
+    });
+    const groups = sinceLastVisitGroups(threadLines, [
+      reportLine("by-key", "pr:1645", "A report answer shows its chip while sending: merged"),
+      reportLine("by-text", "hover-cards", "Hover cards are in review as #1650"),
+    ]);
+    expect(groups.pullRequests.map((line) => line.title)).toEqual(["PR 1648"]);
+    expect(groups.reports).toEqual([
+      expect.objectContaining({
+        messageId: "by-key",
+        pullRequest: expect.objectContaining({ number: 1645, state: "merged" }),
+      }),
+      expect.objectContaining({
+        messageId: "by-text",
+        pullRequest: expect.objectContaining({ number: 1650, state: "opened" }),
+      }),
+    ]);
+  });
+});
+
 describe("sinceLastVisitLayout", () => {
-  const lines = (kind: string, count: number) =>
-    Array.from({ length: count }, (_, index) => ({ kind, title: `${kind} ${index}` }));
-  const summary = (failed: number, reports: number, finished: number, merged: number) => ({
-    failed: lines("failed", failed),
-    reports: lines("report", reports),
-    finished: lines("finished", finished),
-    merged: lines("merged", merged),
+  const lines = (kind: string, count: number, hoursAgo = 1) =>
+    Array.from({ length: count }, (_, index) => ({
+      kind,
+      title: `${kind} ${index}`,
+      at: open - (hoursAgo + index) * HOUR,
+    }));
+  const summary = (failed: number, reports: number, ended: number, pullRequests: number) => ({
+    failed: lines("failed", failed, 3),
+    reports: lines("report", reports, 1.5),
+    pullRequests: lines("merged", pullRequests, 0.5),
+    ended: lines("ended", ended, 2),
   });
   const shape = (layout: ReturnType<typeof sinceLastVisitLayout>) =>
     layout.sections.map((section) => [
@@ -350,15 +449,17 @@ describe("sinceLastVisitLayout", () => {
       section.hidden,
     ]);
 
-  it("lists up to six changes as one ungrouped list, failures first", () => {
+  it("lists up to six changes as one list, newest first", () => {
     const layout = sinceLastVisitLayout(summary(1, 2, 2, 1), new Set());
     expect(layout.total).toBe(6);
     expect(layout.grouped).toBe(false);
-    expect(shape(layout)).toEqual([
-      ["failed", "rows", 1, 0],
-      ["reports", "rows", 2, 0],
-      ["finished", "rows", 2, 0],
-      ["merged", "rows", 1, 0],
+    expect(layout.lines.map((line) => line.title)).toEqual([
+      "merged 0",
+      "report 0",
+      "ended 0",
+      "report 1",
+      "failed 0",
+      "ended 1",
     ]);
   });
 
@@ -369,21 +470,21 @@ describe("sinceLastVisitLayout", () => {
     expect(shape(layout)).toEqual([
       ["failed", "rows", 2, 0],
       ["reports", "rows", 3, 11],
-      ["finished", "names", 4, 19],
-      ["merged", "names", 4, 5],
+      ["pullRequests", "names", 4, 5],
+      ["ended", "names", 4, 19],
     ]);
     expect(
-      shape(sinceLastVisitLayout(summary(2, 14, 23, 9), new Set(["reports", "finished"]))),
+      shape(sinceLastVisitLayout(summary(2, 14, 23, 9), new Set(["reports", "ended"]))),
     ).toEqual([
       ["failed", "rows", 2, 0],
       ["reports", "rows", 14, 0],
-      ["finished", "rows", 23, 0],
-      ["merged", "names", 4, 5],
+      ["pullRequests", "names", 4, 5],
+      ["ended", "rows", 23, 0],
     ]);
   });
 
   it("is empty when nothing happened", () => {
     const layout = sinceLastVisitLayout(summary(0, 0, 0, 0), new Set());
-    expect(layout).toEqual({ total: 0, grouped: false, sections: [] });
+    expect(layout).toEqual({ total: 0, grouped: false, sections: [], lines: [] });
   });
 });

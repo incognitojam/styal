@@ -12,6 +12,7 @@ import {
   sinceLastVisitLayout,
   sinceLastVisitReportLines,
   type SinceLastVisitGroup,
+  sinceLastVisitMissingBefore,
   type SinceLastVisitLine,
   type SinceLastVisitSection,
 } from "@t3tools/client-runtime/project-since-last-visit";
@@ -103,8 +104,8 @@ const chatReportsAtom = Atom.family((threadKey: string) => {
 const GROUP_LABEL: Record<SinceLastVisitGroup, string> = {
   failed: "Failed",
   reports: "Reports",
-  finished: "Finished",
-  merged: "Merged",
+  pullRequests: "Pull requests",
+  ended: "Ended a turn",
 };
 
 /**
@@ -167,10 +168,9 @@ export function ProjectSinceLastVisit({
     </>
   ) : null;
 
+  const missingBefore = sinceLastVisitMissingBefore(captured);
   const unloadedNote =
-    captured.unloadedBefore === null
-      ? null
-      : `Threads settled before ${time(captured.unloadedBefore)} aren't checked.`;
+    missingBefore === null ? null : `Changes before ${time(missingBefore)} may be missing.`;
 
   if (layout.total === 0) {
     return (
@@ -198,7 +198,7 @@ export function ProjectSinceLastVisit({
     });
   };
   const openLine = (event: MouseEvent<HTMLButtonElement>, line: SinceLastVisitLine) => {
-    if (line.kind !== "merged") {
+    if (line.kind !== "merged" && line.kind !== "opened") {
       openThread(line);
       return;
     }
@@ -219,19 +219,38 @@ export function ProjectSinceLastVisit({
         <span className="shrink-0">{layout.total}</span>
       </div>
       <div className="flex flex-col divide-y divide-border/60">
-        {layout.sections.map((section) => (
+        {layout.grouped ? (
+          layout.sections.map((section) => (
+            <SinceLastVisitSectionRows
+              key={section.group}
+              section={section}
+              grouped
+              time={time}
+              timestampFormat={timestampFormat}
+              onOpen={openLine}
+              onExpand={() => expand(section.group)}
+              footer={section.group === "reports" ? loadEarlierControl : null}
+            />
+          ))
+        ) : (
           <SinceLastVisitSectionRows
-            key={section.group}
-            section={section}
-            grouped={layout.grouped}
+            section={{
+              group: "reports",
+              display: "rows",
+              lines: layout.lines,
+              total: layout.total,
+              hidden: 0,
+            }}
+            grouped={false}
             time={time}
             timestampFormat={timestampFormat}
             onOpen={openLine}
-            onExpand={() => expand(section.group)}
-            footer={section.group === "reports" ? loadEarlierControl : null}
+            onExpand={() => {}}
+            footer={null}
           />
-        ))}
-        {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
+        )}
+        {loadEarlierControl &&
+        !(layout.grouped && layout.sections.some((section) => section.group === "reports")) ? (
           <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
         ) : null}
         {unloadedNote ? (
@@ -312,7 +331,9 @@ function SinceLastVisitSectionRows({
               {lineText(line, timestampFormat)}
               {line.kind === "report" ? (
                 <span className="ms-1.5 inline-flex rounded-sm border border-border/70 px-1 text-muted-foreground text-xs">
-                  {line.reportKey} · v{line.version}
+                  {line.pullRequest
+                    ? `#${line.pullRequest.number} ${line.pullRequest.state}`
+                    : `${line.reportKey} · v${line.version}`}
                 </span>
               ) : null}
             </span>
@@ -336,8 +357,20 @@ function LineIcon({ line }: { line: SinceLastVisitLine }) {
       return <HourglassIcon aria-label="Usage limit" className={`${className} text-warning`} />;
     case "report":
       return <FileTextIcon aria-label="Report" className={`${className} text-primary`} />;
-    case "finished":
-      return <CircleCheckIcon aria-label="Finished" className={`${className} text-success`} />;
+    case "ended":
+      return (
+        <CircleCheckIcon
+          aria-label="Ended a turn"
+          className={`${className} text-muted-foreground`}
+        />
+      );
+    case "opened":
+      return (
+        <PULL_REQUEST_STATE_PRESENTATION.open.Icon
+          aria-label="Opened"
+          className={`${className} ${PULL_REQUEST_STATE_PRESENTATION.open.toneClassName}`}
+        />
+      );
     case "merged":
       return (
         <PULL_REQUEST_STATE_PRESENTATION.merged.Icon
@@ -349,7 +382,9 @@ function LineIcon({ line }: { line: SinceLastVisitLine }) {
 }
 
 function lineName(line: SinceLastVisitLine): string {
-  return line.kind === "merged" ? `#${line.number} ${line.title}` : line.title;
+  return line.kind === "merged" || line.kind === "opened"
+    ? `#${line.number} ${line.title}`
+    : line.title;
 }
 
 function lineText(line: SinceLastVisitLine, timestampFormat: TimestampFormat): string {
@@ -360,8 +395,10 @@ function lineText(line: SinceLastVisitLine, timestampFormat: TimestampFormat): s
       return `${line.title} hit a usage limit${
         line.resetAt ? `, resets ${formatDayAwareTimestamp(line.resetAt, timestampFormat)}` : ""
       }`;
-    case "finished":
-      return `${line.title} finished`;
+    case "ended":
+      return `${line.title} ended a turn`;
+    case "opened":
+      return `${lineName(line)} opened`;
     case "merged":
       return `${lineName(line)} merged`;
     case "report":
