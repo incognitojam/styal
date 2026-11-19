@@ -280,8 +280,9 @@ function PullRequestMarkdownContent(props: {
           const url = resolveMediaUrl(image.href);
           const source = pullRequestMediaSource(url, mediaContext);
           if (!source.resource) {
-            // Forge media is fetched with the server's credentials once the project is known.
-            if (sourceControlClients.mediaUrl(url)?.fetchUrl) {
+            // Forge media is fetched with the server's credentials once the project is known, and
+            // a root-relative attachment resolves once the pull request's URL is.
+            if (sourceControlClients.mediaUrl(url)?.fetchUrl || /^\/(?!\/)/.test(url)) {
               throw new Error("Pull request media location is not known yet");
             }
             return /^https?:\/\//i.test(url) ? { uri: url } : null;
