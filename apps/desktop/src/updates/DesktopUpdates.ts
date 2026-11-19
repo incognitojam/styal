@@ -1051,11 +1051,11 @@ export const make = Effect.gen(function* () {
               {
                 type: "question",
                 title: "Update styal",
-                message: `Install ${retained.downloadedVersion}?`,
-                detail: `${refreshed.value.availableVersion} came out after ${retained.downloadedVersion} was downloaded.\n\nShow ${refreshed.value.availableVersion} to see it in Updates, where you can download it. Nothing downloads until you choose Download.`,
+                message: `Install ${retained.downloadedVersion} or switch to ${refreshed.value.availableVersion}?`,
+                detail: `${refreshed.value.availableVersion} came out after ${retained.downloadedVersion} finished downloading.\n\nInstall ${retained.downloadedVersion} now, or switch to ${refreshed.value.availableVersion}. Switching drops the downloaded ${retained.downloadedVersion}; ${refreshed.value.availableVersion} downloads only when you choose Download.`,
                 buttons: [
                   `Install ${retained.downloadedVersion}`,
-                  `Show ${refreshed.value.availableVersion}`,
+                  `Switch to ${refreshed.value.availableVersion}`,
                   "Cancel",
                 ],
                 defaultId: 0,
@@ -1075,8 +1075,8 @@ export const make = Effect.gen(function* () {
                   {
                     type: "warning",
                     title: "Update styal",
-                    message: `Could not prepare update ${refreshed.value.availableVersion}`,
-                    detail: `Version ${retained.downloadedVersion} is downloaded and ready to install. The previous native update could not be cleared.`,
+                    message: `Keeping ${retained.downloadedVersion}`,
+                    detail: `styal couldn't set aside the update it already prepared for ${retained.downloadedVersion}, so ${retained.downloadedVersion} is still the update ready to install. Install ${retained.downloadedVersion} now; styal will offer ${refreshed.value.availableVersion} afterwards.`,
                     buttons: ["OK"],
                   },
                   Option.getOrUndefined(owner),

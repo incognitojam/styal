@@ -407,12 +407,14 @@ function SidebarUpdateControl() {
       className={cn(
         "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
-        tone === "cta"
-          ? cn(
-              "bg-update-surface text-update-foreground",
-              !isInteractionDisabled && "hover:bg-update-surface-hover",
-            )
-          : "bg-sidebar-control-surface text-sidebar-foreground",
+        state && isDesktopUpdateFailed(state)
+          ? "bg-warning/12 text-warning-foreground hover:bg-warning/18"
+          : tone === "cta"
+            ? cn(
+                "bg-update-surface text-update-foreground",
+                !isInteractionDisabled && "hover:bg-update-surface-hover",
+              )
+            : "bg-sidebar-control-surface text-sidebar-foreground",
         isInteractionDisabled && tone === "cta" && "opacity-60",
       )}
       onClick={handleAction}

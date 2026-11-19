@@ -7,7 +7,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
 import { DiscordPresenceStatus } from "./DiscordPresenceStatus";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, TriangleAlertIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -55,6 +55,7 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
+  isDesktopUpdateFailed,
   getDesktopUpdateSettingsButtonLabel,
   getDesktopUpdateSettingsDescription,
   resolveDesktopUpdateButtonAction,
@@ -336,7 +337,16 @@ function AboutVersionSection() {
       <SettingsRow
         id={searchableSetting("app-version").id}
         title={<AboutVersionTitle />}
-        description={description}
+        description={
+          updateState && isDesktopUpdateFailed(updateState) ? (
+            <span className="inline-flex items-start gap-1.5 text-warning-foreground">
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>{description}</span>
+            </span>
+          ) : (
+            description
+          )
+        }
         status={<AboutBuildProvenance />}
         managed={updatesDenial}
         control={
@@ -348,7 +358,7 @@ function AboutVersionSection() {
               <progress
                 aria-label="Update download"
                 // Same system-colour fallback as the Antigravity download bar in ProviderSetupSection.
-                className="block h-1 w-full appearance-none overflow-hidden rounded-full bg-muted forced-colors:border [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary forced-colors:[&::-moz-progress-bar]:bg-[Highlight] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary forced-colors:[&::-webkit-progress-value]:bg-[Highlight]"
+                className="block h-1 w-full appearance-none overflow-hidden rounded-full bg-foreground/15 forced-colors:border [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary forced-colors:[&::-moz-progress-bar]:bg-[Highlight] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-foreground/15 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary forced-colors:[&::-webkit-progress-value]:bg-[Highlight]"
                 // A value is always set: an indeterminate <progress> animates without end.
                 value={downloadPercent ?? 0}
                 max={100}
