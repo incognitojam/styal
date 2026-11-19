@@ -154,6 +154,76 @@ describe("native updater lifecycle", () => {
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     }),
   );
+  it.effect("keeps an accepted quit authoritative through the final activity confirmation", () =>
+    Effect.gen(function* () {
+      const postStageCheck = yield* Deferred.make<void>();
+      const releaseCheck = yield* Deferred.make<void>();
+      let checks = 0;
+      const harness = makeHarness({
+        quitUpdateResponse: 1,
+        confirmShutdown: Effect.suspend(() => {
+          checks += 1;
+          return checks === 2
+            ? Deferred.succeed(postStageCheck, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseCheck)),
+                Effect.as(true),
+              )
+            : Effect.succeed(true);
+        }),
+      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+          const install = yield* updates.install.pipe(Effect.forkScoped);
+          yield* Deferred.await(postStageCheck);
+          assert.isTrue(yield* updates.prepareForQuit());
+          yield* Deferred.succeed(releaseCheck, undefined);
+          const result = yield* Fiber.join(install);
+          assert.isFalse(result.accepted);
+          assert.deepEqual(harness.installSteps, []);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect.each(["stage-fails", "caller-interrupted"] as const)(
+    "does not clear an ordinary quit during late install cleanup: %s",
+    (mode) =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const discarded = yield* Deferred.make<void>();
+        const harness = makeHarness({
+          quitUpdateResponse: 1,
+          nativeStageUnavailable: () => mode === "stage-fails",
+          nativeStageWait: Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+          ),
+          afterNativeDiscard: Deferred.succeed(discarded, undefined).pipe(Effect.asVoid),
+        });
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const updates = yield* DesktopUpdates.DesktopUpdates;
+            const state = yield* DesktopState.DesktopState;
+            yield* updates.configure;
+            harness.emit("update-downloaded", { version: "1.2.4" });
+            yield* flushCallbacks;
+            const install = yield* updates.installPrepared("1.2.4").pipe(Effect.forkScoped);
+            yield* Deferred.await(started);
+            assert.isTrue(yield* updates.prepareForQuit());
+            if (mode === "caller-interrupted") yield* Fiber.interrupt(install);
+            yield* Deferred.succeed(release, undefined);
+            if (mode === "stage-fails") assert.isTrue((yield* Fiber.join(install)).failed);
+            yield* Deferred.await(discarded);
+            assert.isTrue(yield* Ref.get(state.quitting));
+            assert.deepEqual(harness.installSteps, []);
+          }),
+        ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+      }),
+  );
   it.effect.each([false, true])(
     "cleans inherited user jobs even when policy disables updates: %s",
     (disabled) => {
@@ -338,6 +408,7 @@ describe("native updater lifecycle", () => {
             yield* Deferred.succeed(release, undefined);
             assert.isFalse((yield* Fiber.join(install)).accepted);
             assert.isFalse(harness.squirrel.job);
+            assert.isNull((yield* updates.getState).errorContext);
             assert.deepEqual(harness.installSteps, []);
           }),
         ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));

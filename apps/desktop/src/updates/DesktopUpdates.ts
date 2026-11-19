@@ -409,6 +409,7 @@ export const make = Effect.gen(function* () {
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
   const quitRequestedRef = yield* Ref.make(false);
+  const installCommittedQuitRef = yield* Ref.make(false);
   const nativeStagePendingRef = yield* Ref.make(false);
   const nativeStagedRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
@@ -817,10 +818,14 @@ export const make = Effect.gen(function* () {
       })),
     );
 
+  const clearInstallQuit = Ref.getAndSet(installCommittedQuitRef, false).pipe(
+    Effect.flatMap((owned) => (owned ? Ref.set(desktopState.quitting, false) : Effect.void)),
+  );
+
   const resetInstallAction = Effect.all(
     [
       finishUpdateAction("install"),
-      Ref.set(desktopState.quitting, false),
+      clearInstallQuit,
       Ref.set(installRunningBackendsRef, []),
       removeUpdateRestartMarker,
       removeInstallRecord,
@@ -840,9 +845,9 @@ export const make = Effect.gen(function* () {
       status: "available",
       downloadedVersion: null,
       downloadPercent: null,
-      errorContext: "download",
-      canRetry: true,
-      message: current.message ?? "Download the update again before installing.",
+      errorContext: current.message === null ? null : "download",
+      canRetry: current.message !== null,
+      message: current.message,
     }));
   });
 
@@ -856,7 +861,7 @@ export const make = Effect.gen(function* () {
     );
     if (!ownsRecovery) return;
 
-    yield* Ref.set(desktopState.quitting, false);
+    yield* clearInstallQuit;
     yield* removeUpdateRestartMarker;
     yield* removeInstallRecord;
     yield* Effect.gen(function* () {
@@ -1056,7 +1061,26 @@ export const make = Effect.gen(function* () {
               };
             }
           }
-          yield* Ref.set(desktopState.quitting, true);
+          const committed = yield* stateMutex.withPermits(1)(
+            Effect.gen(function* () {
+              const active = yield* Ref.get(activeUpdateActionRef);
+              if (
+                (yield* Ref.get(quitRequestedRef)) ||
+                (yield* Ref.get(desktopState.quitting)) ||
+                Option.isNone(active) ||
+                active.value !== "install"
+              )
+                return false;
+              yield* Ref.set(installCommittedQuitRef, true);
+              yield* Ref.set(desktopState.quitting, true);
+              return true;
+            }),
+          );
+          if (!committed) {
+            if (!(yield* Ref.get(desktopState.quitting))) yield* discardOwnNativeUpdate;
+            yield* finishUpdateAction("install");
+            return { accepted: false, completed: false, failed: false };
+          }
           yield* writeUpdateRestartMarker;
           const { downloadedVersion } = yield* Ref.get(updateStateRef);
           if (downloadedVersion !== null) yield* writeInstallRecord(downloadedVersion);
@@ -1361,7 +1385,10 @@ export const make = Effect.gen(function* () {
       action: DesktopShutdownGuard.ShutdownAction = "quit",
     ) {
       const reserved = yield* stateMutex.withPermits(1)(
-        Ref.getAndSet(quitRequestedRef, true).pipe(Effect.map((previous) => !previous)),
+        Effect.gen(function* () {
+          if (yield* Ref.get(desktopState.quitting)) return false;
+          return !(yield* Ref.getAndSet(quitRequestedRef, true));
+        }),
       );
       if (!reserved) return false;
       return yield* Effect.gen(function* () {

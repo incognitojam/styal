@@ -946,8 +946,8 @@ describe("DesktopUpdates", () => {
         // Quitting does not try the failed version again; the update button does.
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
-        yield* Ref.set((yield* DesktopState.DesktopState).quitting, true);
         assert.isTrue(yield* updates.prepareForQuit());
+        assert.isTrue(yield* Ref.get((yield* DesktopState.DesktopState).quitting));
         assert.deepEqual(harness.installs, []);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1052,8 +1052,8 @@ describe("DesktopUpdates", () => {
             harness.emit("update-downloaded", { version: "1.2.4" });
             yield* flushCallbacks;
           }
-          yield* Ref.set(desktopState.quitting, true);
           assert.isTrue(yield* updates.prepareForQuit());
+          assert.isTrue(yield* Ref.get(desktopState.quitting));
           assert.deepEqual(harness.installs, []);
           assert.isFalse(harness.autoInstallOnAppQuit());
         }),
