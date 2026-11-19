@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   OrchestrationV2ThreadShell,
   Project,
+  ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
 import { ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
@@ -39,6 +40,7 @@ describe("projectThreadAwarenessV2", () => {
     > = {},
   ) => ({
     id: "thread-2" as ThreadId,
+    projectId: "project-1" as ProjectId,
     lineage: {
       rootThreadId: "thread-2" as ThreadId,
       parentThreadId: null,
@@ -366,5 +368,35 @@ describe("projectThreadAwarenessV2", () => {
         }),
       }),
     ).toMatchObject({ phase: "running", headline: "Agent is working" });
+  });
+
+  it.each([
+    ["names the project for its coordinator", true, "thread-2", "t3code"],
+    [
+      "keeps the title of a thread that is not the coordinator",
+      true,
+      "thread-9",
+      "Integrate orchestration",
+    ],
+    [
+      "keeps the title while project coordinators are off",
+      false,
+      "thread-2",
+      "Integrate orchestration",
+    ],
+  ])("%s", (_, projectCoordinatorsEnabled, coordinatorId, threadTitle) => {
+    expect(
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({ status: "completed" }),
+        settings: {
+          projectCoordinatorsEnabled,
+          projectCoordinators: {
+            ["project-1" as ProjectId]: { threadId: coordinatorId as ThreadId },
+          },
+        },
+      })?.threadTitle,
+    ).toBe(threadTitle);
   });
 });
