@@ -24,7 +24,7 @@ import {
   XIcon,
 } from "lucide-react";
 import * as DateTime from "effect/DateTime";
-import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import { use, useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { AttachmentImage } from "~/components/media/AttachmentImage";
 import { useAssetUrls } from "../../assets/assetUrls";
@@ -37,6 +37,11 @@ import { cn } from "~/lib/utils";
 import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
+import {
+  CoordinatorReportsContext,
+  ReportAnswerChip,
+  type ReportAnswer,
+} from "./CoordinatorReports";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
@@ -99,6 +104,7 @@ export function QueuedRunsControl({
   const projection = useThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
   )?.projection;
+  const reportAnswers = use(CoordinatorReportsContext)?.answers;
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
@@ -139,6 +145,7 @@ export function QueuedRunsControl({
       freshContext: run.freshContext === true,
       serverIndex,
       text,
+      answer: reportAnswers?.get(run.userMessageId),
       // A guest's message keeps the guest's words; the owner can cancel it, not rewrite it.
       editable: context?.guest === undefined,
       attachments,
@@ -160,6 +167,7 @@ export function QueuedRunsControl({
       freshContext: false,
       serverIndex: null,
       text: message.text,
+      answer: reportAnswers?.get(message.id),
       editable: true,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
       thumbnails: (message.attachments ?? [])
@@ -259,10 +267,11 @@ export function QueuedRunsControl({
       ) : null}
       <ol className="flex flex-col items-end gap-3" id={queueListId}>
         {visibleItems.map((item, position) => {
-          const previewText = isAttachmentOnlyBootstrapPrompt(item.text)
+          const text = item.answer?.text ?? item.text;
+          const previewText = isAttachmentOnlyBootstrapPrompt(text)
             ? ""
             : assistantCitationsToPlainText(
-                replaceComposerContextReferences(item.text, (reference) =>
+                replaceComposerContextReferences(text, (reference) =>
                   reference.kind === "image" && item.thumbnails.length > 0 ? "" : reference.label,
                 ),
               ).trim();
@@ -279,6 +288,7 @@ export function QueuedRunsControl({
               <QueuedMessage
                 environmentId={props.environmentId}
                 message={item.message}
+                answer={item.answer}
                 previewText={previewText}
                 thumbnails={item.thumbnails}
                 isEditing={isEditing}
@@ -417,6 +427,7 @@ type QueuedRunMessage = NonNullable<ThreadQueueProjection["messages"][number]>;
 function QueuedMessage(props: {
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage | undefined;
+  readonly answer: ReportAnswer | undefined;
   readonly previewText: string;
   readonly thumbnails: ReadonlyArray<QueuedRowThumbnail>;
   readonly isEditing: boolean;
@@ -512,6 +523,15 @@ function QueuedMessage(props: {
                     )}
                   </span>
                 ))}
+              </span>
+            ) : null}
+            {props.answer ? (
+              <span className="flex min-w-0">
+                <ReportAnswerChip
+                  title={props.answer.title}
+                  version={props.answer.version}
+                  messageId={props.answer.messageId}
+                />
               </span>
             ) : null}
             {/* In full, like a sent turn: a queued message is read before it is sent. */}
