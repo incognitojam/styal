@@ -60,7 +60,7 @@ import {
   sentReport,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
-import { PROJECT_COORDINATOR_NOTE } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
+import { projectCoordinatorInstructions } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
 import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
@@ -368,7 +368,7 @@ export const McpToolUseCase = Schema.Struct({
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
     launchedReport: Schema.optional(Schema.Struct({ question: Schema.Boolean })),
-    /** This thread was just made its project's coordinator: T3 puts its note on the prompt. */
+    /** This thread is its project's coordinator: T3 sends its instructions with the session. */
     projectCoordinator: Schema.optional(Schema.Boolean),
     /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
     answerNotes: Schema.optional(Schema.Array(Schema.String)),
@@ -587,7 +587,13 @@ const visibleT3Tools = (options: {
  * `browser` say whether the thread holds the `device` and `preview` capabilities, as agent device
  * and browser access decide.
  */
-const claudeQueryOptions = (model: Model, device = true, browser = true, styalSkill = false) => {
+const claudeQueryOptions = (
+  model: Model,
+  device = true,
+  browser = true,
+  styalSkill = false,
+  additionalInstructions?: string,
+) => {
   // Refs whose text follows a capability read its flag; older ones ignore it.
   const input: Parameters<typeof makeClaudeQueryOptions>[0] & {
     readonly deviceToolsAvailable?: boolean;
@@ -601,13 +607,26 @@ const claudeQueryOptions = (model: Model, device = true, browser = true, styalSk
     deviceToolsAvailable: device,
     ...(styalSkill ? { styalSkillPluginRoot: STYAL_SKILL_PATHS.pluginRoot } : {}),
     browserToolsAvailable: browser,
+    ...(additionalInstructions === undefined ? {} : { additionalInstructions }),
   };
   return makeClaudeQueryOptions(input);
 };
 
 /** Text T3 appends to Claude Code's system prompt. Delegated children get the same text. */
-export const t3SystemAppend = (model: Model, device = true, browser = true, styalSkill = false) => {
-  const { systemPrompt } = claudeQueryOptions(model, device, browser, styalSkill);
+export const t3SystemAppend = (
+  model: Model,
+  device = true,
+  browser = true,
+  styalSkill = false,
+  additionalInstructions?: string,
+) => {
+  const { systemPrompt } = claudeQueryOptions(
+    model,
+    device,
+    browser,
+    styalSkill,
+    additionalInstructions,
+  );
   if (isRecord(systemPrompt) && systemPrompt.type === "preset" && systemPrompt.append) {
     return systemPrompt.append;
   }
@@ -699,6 +718,8 @@ export const buildBase = (
     readonly styalSkill?: boolean;
     /** false: the thread has no agent browser access, so T3's text leaves the browser out. */
     readonly browserAccess?: boolean;
+    /** The thread is its project's coordinator. */
+    readonly coordinator?: boolean;
   },
 ) => {
   const t3 = visibleT3Tools(options);
@@ -724,7 +745,15 @@ export const buildBase = (
   const { model } = options;
   const append = options.nativeSubagent
     ? ""
-    : t3SystemAppend(model, options.deviceAccess, options.browserAccess, options.styalSkill);
+    : t3SystemAppend(
+        model,
+        options.deviceAccess,
+        options.browserAccess,
+        options.styalSkill,
+        options.coordinator === true
+          ? projectCoordinatorInstructions(options.reports === true)
+          : undefined,
+      );
   const modelLine = `You are powered by the model named ${MODELS[model]}. The exact model ID is ${model}.`;
   const joined = systemTexts.join("\n");
   // The capture's home directory names its user. Cases use `/home/user` paths instead.
@@ -798,6 +827,8 @@ const buildCodexBase = (
     readonly deviceAccess?: boolean;
     /** false: the thread has no agent browser access, so T3's text leaves the browser out. */
     readonly browserAccess?: boolean;
+    /** The thread is its project's coordinator. */
+    readonly coordinator?: boolean;
   },
 ): Base => {
   const t3 = visibleT3Tools(options);
@@ -834,6 +865,9 @@ const buildCodexBase = (
   const context = buildCodexAdditionalContext(
     { model: options.model, reasoningEffort: effort },
     { browser: options.browserAccess ?? true, device: options.deviceAccess ?? true },
+    options.coordinator === true
+      ? projectCoordinatorInstructions(options.reports === true)
+      : undefined,
   );
   input.push(
     ...Object.entries(context).map(([key, entry]) => message(`<${key}>${entry.value}</${key}>`)),
@@ -1168,7 +1202,6 @@ export const buildMessages = (sample: Sample) => {
   const userText = withInlineContext(
     [
       branchNote(testCase),
-      testCase.setup.projectCoordinator === true ? PROJECT_COORDINATOR_NOTE : "",
       testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
     ]
       .filter((part) => part !== "")
@@ -2801,6 +2834,7 @@ const main = Effect.gen(function* () {
     browserAccess: boolean,
     links: boolean,
     reports = false,
+    coordinator = false,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2814,6 +2848,7 @@ const main = Effect.gen(function* () {
               reports,
               deviceAccess,
               browserAccess,
+              coordinator,
             }),
           ),
         )
@@ -2829,6 +2864,7 @@ const main = Effect.gen(function* () {
               deviceAccess,
               styalSkill: flags["styal-skill"],
               browserAccess,
+              coordinator,
             });
             return role === "native-subagent"
               ? Effect.promise(() =>
@@ -2839,14 +2875,15 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}:${setup.coordinatorReports === true}`;
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}:${setup.coordinatorReports === true}:${setup.projectCoordinator === true}`;
   const base = yield* buildFor("top", true, true, false);
-  const bases = new Map<string, Base>([["top:true:true:false:false", base]]);
+  const bases = new Map<string, Base>([["top:true:true:false:false:false", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
     if (bases.has(key)) continue;
-    const [role = "top", device, browser, links, reports] = key.split(":") as [
+    const [role = "top", device, browser, links, reports, coordinator] = key.split(":") as [
       McpToolUseCase["setup"]["role"],
+      string,
       string,
       string,
       string,
@@ -2860,6 +2897,7 @@ const main = Effect.gen(function* () {
         browser === "true",
         links === "true",
         reports === "true",
+        coordinator === "true",
       ),
     );
   }

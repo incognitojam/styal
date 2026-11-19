@@ -669,6 +669,15 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       }),
     );
     assert.notEqual(rotatedKey, initialKey);
+    // Becoming a project's coordinator changes the system prompt, which a live query keeps.
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
+        queryPolicy,
+        ClaudeAdapterV2.claudeMcpQueryOverrides({ mcpSession, readOnlySandbox: false }),
+        "## Coordinating this project",
+      ),
+      initialKey,
+    );
   });
 
   it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {

@@ -462,6 +462,52 @@ describe("CursorAdapterV2", () => {
         yield* waitForTerminal;
         assert.notInclude(sentMessages[2]!, "<t3_code_orchestration_instructions>");
         assert.notInclude(sentMessages[2]!, "Synthetic project instructions");
+        // Instructions that change mid-conversation, such as becoming the project's coordinator,
+        // are sent again, and so is their removal.
+        const followUp = (ordinal: number, instructions: string | undefined) =>
+          runtime
+            .startTurn({
+              ...turnInput,
+              runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                ...runtimePolicy,
+                additionalInstructions: instructions,
+              }),
+              runId: RunId.make(`cursor-followup-run-${ordinal}`),
+              runOrdinal: ordinal,
+              providerTurnOrdinal: ordinal,
+            })
+            .pipe(Effect.andThen(waitForTerminal));
+        yield* followUp(10, "Synthetic project instructions\n\n## Coordinating this project");
+        assert.include(
+          sentMessages[3]!,
+          "<additional_instructions>\nSynthetic project instructions\n\n## Coordinating",
+        );
+        yield* followUp(11, "Synthetic project instructions\n\n## Coordinating this project");
+        assert.notInclude(sentMessages[4]!, "<additional_instructions>");
+        yield* followUp(12, undefined);
+        assert.include(sentMessages[5]!, "Earlier additional instructions no longer apply.");
+        // A conversation reopened by a new session may predate the instructions it has now.
+        const reopened = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("cursor-reopened-session"),
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* reopened.startTurn({
+          ...turnInput,
+          runtimePolicy,
+          runId: RunId.make("cursor-reopened-run"),
+          runOrdinal: 13,
+          providerTurnOrdinal: 13,
+        });
+        yield* reopened.events.pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+        );
+        assert.include(
+          sentMessages.at(-1)!,
+          "<additional_instructions>\nSynthetic project instructions\n</additional_instructions>",
+        );
       }).pipe(
         Effect.scoped,
         Effect.provide(

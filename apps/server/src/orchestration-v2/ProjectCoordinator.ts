@@ -2,7 +2,6 @@ import {
   type OrchestrationV2ThreadReportTarget,
   type ProjectId,
   projectCoordinatorThreadId,
-  type RunId,
   type ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -24,7 +23,7 @@ export interface ProjectCoordinatorLookup<SettingsError, ShellError> {
 }
 
 /** The project's coordinator, only while it is a thread of that project that still exists. */
-export const currentProjectCoordinator = Effect.fn("ProjectCoordinator.current")(function* <
+const currentProjectCoordinator = Effect.fn("ProjectCoordinator.current")(function* <
   SettingsError,
   ShellError,
 >(lookup: ProjectCoordinatorLookup<SettingsError, ShellError>, projectId: ProjectId) {
@@ -88,29 +87,19 @@ export const reportRecipient = Effect.fn("ProjectCoordinator.reportRecipient")(f
   return recipient === thread.id ? null : recipient;
 });
 
-const NOTE_ID_PREFIX = "project-coordinator:";
-
-export const PROJECT_COORDINATOR_NOTE =
-  "Note: you coordinate this project. Hand work to other threads with `t3_thread_launch` or `t3_thread_send` instead of doing it yourself. Threads started in this project report to you when they finish or need input.";
-
-export const PROJECT_COORDINATOR_ENDED_NOTE =
-  "Note: you no longer coordinate this project, and its threads stop reporting to you.";
-
 /**
- * The coordinator note a turn owes: one when the thread becomes the coordinator, and one when it
- * stops, judged from the notes earlier turns carried, oldest first.
+ * Sent with every session of a project's coordinator, the way the project's Additional
+ * instructions are, so a context summary cannot drop it. The long form is the orchestration guide.
  */
-export function projectCoordinatorTurnNote(input: {
-  readonly isCoordinator: boolean;
-  readonly deliveredContextIds: Iterable<string>;
-  readonly runId: RunId;
-}): { readonly id: string; readonly text: string } | null {
-  let told = false;
-  for (const id of input.deliveredContextIds) {
-    if (id.startsWith(NOTE_ID_PREFIX)) told = id.startsWith(`${NOTE_ID_PREFIX}set:`);
-  }
-  if (input.isCoordinator === told) return null;
-  return input.isCoordinator
-    ? { id: `${NOTE_ID_PREFIX}set:${input.runId}`, text: PROJECT_COORDINATOR_NOTE }
-    : { id: `${NOTE_ID_PREFIX}ended:${input.runId}`, text: PROJECT_COORDINATOR_ENDED_NOTE };
-}
+export const projectCoordinatorInstructions = (reports: boolean) =>
+  [
+    "## Coordinating this project",
+    "",
+    "You coordinate this project in styal, and threads started in it report to you.",
+    "- Do not edit files or make changes yourself. Hand every change, however small, to another thread with `t3_thread_launch` or `create_threads` and `reportBack`, without waiting to be asked for a thread: here that replaces the rule that those tools are only for threads the user asks for. Give each a brief that stands on its own. Read and answer questions yourself.",
+    "- Do not poll threads or relay their questions: styal reports results, failures and blocked requests to you, and the user answers in the thread or on the project page.",
+    `- Mention threads by their link${reports ? ", put decisions the user must make in a `t3_report`" : ""}, and have another thread review non-trivial changes.`,
+    '- Make a change yourself only when the user says so in as many words, such as "do it yourself" or "not in a thread". A request to fix or change something is not that.',
+    "",
+    "The `orchestration` guide has more.",
+  ].join("\n");
