@@ -6,7 +6,7 @@ import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 
 import * as Effect from "effect/Effect";
-import { Argument, Command } from "effect/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 const canBind = (port: number) =>
   new Promise<boolean>((resolve) => {
@@ -55,15 +55,33 @@ const pickPort = Command.make("pick-port", {
   ),
 );
 
-const probe = (port: number, probeTimeoutMs: number) =>
+const probe = (port: number, probeTimeoutMs: number, readyOnly: boolean) =>
   new Promise<boolean>((resolve) => {
     const request = NodeHttp.get(
       { hostname: "127.0.0.1", port, path: "/", timeout: probeTimeoutMs },
       (response) => {
-        response.resume();
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          if (body.length < 4096) body += chunk;
+        });
         response.once("end", () => {
           const status = response.statusCode ?? 0;
-          resolve(status >= 200 && status < 300);
+          if (status >= 200 && status < 300) return resolve(true);
+          try {
+            const copy = (JSON.parse(body) as { copy?: { phase?: unknown; leaseMs?: unknown } })
+              .copy;
+            resolve(
+              !readyOnly &&
+                status === 503 &&
+                copy?.phase === "copying" &&
+                typeof copy.leaseMs === "number" &&
+                Number.isFinite(copy.leaseMs) &&
+                copy.leaseMs > 0,
+            );
+          } catch {
+            resolve(false);
+          }
         });
       },
     );
@@ -78,12 +96,13 @@ const waitReady = Command.make("wait-ready", {
   port: Argument.Int("port"),
   timeoutMs: Argument.Int("timeout-ms"),
   probeTimeoutMs: Argument.Int("probe-timeout-ms"),
+  readyOnly: Flag.Boolean("ready-only").pipe(Flag.withDefault(false)),
 }).pipe(
-  Command.withHandler(({ port, timeoutMs, probeTimeoutMs }) =>
+  Command.withHandler(({ port, timeoutMs, probeTimeoutMs, readyOnly }) =>
     Effect.promise(async () => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        if (await probe(port, probeTimeoutMs)) return;
+        if (await probe(port, probeTimeoutMs, readyOnly)) return;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       process.exitCode = 1;

@@ -468,59 +468,91 @@ describe("ssh tunnel scripts", () => {
     }),
   );
 
-  it.effect("fails with a readiness error when ssh never connects", () =>
-    Effect.gen(function* () {
-      const tunnelSpawned = yield* Deferred.make<void>();
-      let tunnelKilled = false;
-      const spawner = ChildProcessSpawner.make((command) =>
-        commandArgs(command).includes("-N")
-          ? Deferred.succeed(tunnelSpawned, undefined).pipe(
-              Effect.as(
-                makeRunningProcess(() => {
-                  tunnelKilled = true;
+  it.effect.each(["unreachable", "copying"] as const)(
+    "describes %s when backend readiness fails",
+    (mode) =>
+      Effect.gen(function* () {
+        let copyReported = false;
+        const tunnelSpawned = yield* Deferred.make<void>();
+        let tunnelKilled = false;
+        const spawner = ChildProcessSpawner.make((command) =>
+          commandArgs(command).includes("-N")
+            ? Deferred.succeed(tunnelSpawned, undefined).pipe(
+                Effect.as(
+                  makeRunningProcess(() => {
+                    tunnelKilled = true;
+                  }),
+                ),
+              )
+            : Effect.succeed(makeSuccessfulProcess('{"remotePort":3773}\n')),
+        );
+        const layer = Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(
+            HttpClient.HttpClient,
+            mode === "unreachable"
+              ? hangingHttpClient
+              : HttpClient.make((request) => {
+                  if (copyReported) return Effect.never;
+                  copyReported = true;
+                  return Effect.succeed(
+                    HttpClientResponse.fromWeb(
+                      request,
+                      new Response(
+                        JSON.stringify({
+                          copy: {
+                            phase: "copying",
+                            copiedBytes: 25,
+                            totalBytes: 100,
+                            leaseMs: 60000,
+                          },
+                        }),
+                        { status: 503 },
+                      ),
+                    ),
+                  );
                 }),
-              ),
-            )
-          : Effect.succeed(makeSuccessfulProcess('{"remotePort":3773}\n')),
-      );
-      const layer = Layer.mergeAll(
-        NodeServices.layer,
-        NodeCrypto.layer,
-        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
-        Layer.succeed(
-          NetService.NetService,
-          NetService.NetService.of({
-            ...testNetService,
-            hasListenerOnHost: () => Effect.succeed(false),
-          }),
-        ),
-        SshAuth.SshPasswordPrompt.disabledLayer,
-        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
-      );
-      yield* Effect.gen(function* () {
-        const manager = yield* SshTunnel.SshEnvironmentManager;
-        const ensure = yield* Effect.forkChild(
-          Effect.result(
-            manager.ensureEnvironment({
-              alias: "devbox",
-              hostname: "devbox",
-              username: null,
-              port: null,
+          ),
+          Layer.succeed(
+            NetService.NetService,
+            NetService.NetService.of({
+              ...testNetService,
+              hasListenerOnHost: () => Effect.succeed(mode === "copying"),
             }),
           ),
+          SshAuth.SshPasswordPrompt.disabledLayer,
+          SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
         );
-        yield* Deferred.await(tunnelSpawned);
-        yield* TestClock.adjust(Duration.minutes(2));
-        const result = yield* Fiber.join(ensure);
-        assert.isTrue(Result.isFailure(result));
-        if (Result.isFailure(result)) {
-          assert.instanceOf(result.failure, SshReadinessError);
-          assert.include(result.failure.message, "SSH connection to devbox did not come up");
-        }
-        assert.isTrue(tunnelKilled);
-      }).pipe(Effect.provide(layer), Effect.scoped);
-    }),
+        yield* Effect.gen(function* () {
+          const manager = yield* SshTunnel.SshEnvironmentManager;
+          const ensure = yield* Effect.forkChild(
+            Effect.result(
+              manager.ensureEnvironment({
+                alias: "devbox",
+                hostname: "devbox",
+                username: null,
+                port: null,
+              }),
+            ),
+          );
+          yield* Deferred.await(tunnelSpawned);
+          yield* TestClock.adjust(Duration.minutes(2));
+          const result = yield* Fiber.join(ensure);
+          assert.isTrue(Result.isFailure(result));
+          if (Result.isFailure(result)) {
+            assert.instanceOf(result.failure, SshReadinessError);
+            assert.include(
+              result.failure.message,
+              mode === "unreachable"
+                ? "SSH connection to devbox did not come up"
+                : "safety copy was in progress (25%)",
+            );
+          }
+          assert.isTrue(tunnelKilled);
+        }).pipe(Effect.provide(layer), Effect.scoped);
+      }),
   );
 
   it.effect.each([
@@ -708,6 +740,79 @@ describe("ssh tunnel scripts", () => {
           Effect.provide(layer),
           Effect.scoped,
         );
+      }),
+  );
+
+  it.live.each(["copying", "expired", "unrelated"] as const)(
+    "remote launch hands off %s startup without killing an active copy",
+    (mode) =>
+      Effect.sync(() => {
+        const scratch = NodePath.resolve(import.meta.dirname, "../../../.scratch");
+        NodeFS.mkdirSync(scratch, { recursive: true });
+        const home = NodeFS.mkdtempSync(NodePath.join(scratch, "pruning-ssh-launch-"));
+        const pidFile = NodePath.join(home, "server-pid");
+        try {
+          const serverScript = NodePath.join(home, "synthetic-server.cjs");
+          NodeFS.writeFileSync(
+            serverScript,
+            `
+const fs = require("node:fs"), http = require("node:http"), path = require("node:path");
+const flag = name => process.argv[process.argv.indexOf(name) + 1];
+const port = Number(flag("--port")), base = flag("--base-dir");
+const server = http.createServer((_, response) => {
+  fs.writeFileSync(${JSON.stringify(NodePath.join(home, "server-answered"))}, "yes");
+  response.writeHead(503, {"content-type":"application/json"});
+  response.end(JSON.stringify(${mode === "unrelated" ? "{}" : ` { starting:true, copy:{phase:"copying",copiedBytes:1,totalBytes:100,leaseMs:${mode === "copying" ? 60000 : 0}} }`}));
+});
+server.listen(port, "127.0.0.1", () => {
+  fs.mkdirSync(path.join(base,"userdata"), {recursive:true});
+  fs.writeFileSync(path.join(base,"userdata","server-runtime.json"), JSON.stringify({pid:process.pid,port,origin:"http://127.0.0.1:"+port}));
+  fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+});
+`,
+          );
+          let script = SshTunnel.buildRemoteLaunchScript({
+            nodeScriptPath: serverScript,
+          }).replaceAll('"$WAIT_COUNT" -lt 20', '"$WAIT_COUNT" -lt 1');
+          if (mode !== "copying")
+            script = script.replaceAll('wait_ready "60000"', 'wait_ready "1000"');
+          const result = NodeChildProcess.spawnSync("sh", ["-s", "--", "synthetic-copy"], {
+            input: script,
+            encoding: "utf8",
+            env: { ...process.env, HOME: home },
+          });
+          if (mode === "copying") {
+            assert.equal(result.status, 0, result.stderr);
+            const pid = Number(NodeFS.readFileSync(pidFile, "utf8"));
+            assert.doesNotThrow(() => process.kill(pid, 0));
+            assert.equal(JSON.parse(result.stdout.trim()).serverKind, "managed");
+            const runtimeFile = NodePath.join(home, ".styal/userdata/server-runtime.json");
+            const runtime = JSON.parse(NodeFS.readFileSync(runtimeFile, "utf8"));
+            NodeFS.writeFileSync(runtimeFile, JSON.stringify({ ...runtime, pid: process.pid }));
+            const reconnect = NodeChildProcess.spawnSync("sh", ["-s", "--", "synthetic-copy"], {
+              input: script,
+              encoding: "utf8",
+              env: { ...process.env, HOME: home },
+            });
+            assert.equal(reconnect.status, 0, reconnect.stderr);
+            assert.equal(JSON.parse(reconnect.stdout.trim()).serverKind, "managed");
+            assert.doesNotThrow(() => process.kill(pid, 0));
+          } else {
+            assert.notEqual(result.status, 0);
+            assert.include(result.stderr, "did not become ready");
+            assert.isTrue(NodeFS.existsSync(NodePath.join(home, "server-answered")));
+            assert.isFalse(
+              NodeFS.existsSync(NodePath.join(home, ".styal/ssh-launch/synthetic-copy/pid")),
+            );
+          }
+        } finally {
+          if (NodeFS.existsSync(pidFile)) {
+            try {
+              process.kill(Number(NodeFS.readFileSync(pidFile, "utf8")), "SIGKILL");
+            } catch {}
+          }
+          NodeFS.rmSync(home, { recursive: true, force: true });
+        }
       }),
   );
 
