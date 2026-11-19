@@ -26,6 +26,8 @@ export interface PendingApprovalCardProps {
     requestId: RuntimeRequestId,
     decision: ProviderApprovalDecision,
   ) => Promise<unknown>;
+  /** A row of a list that labels it already: no card, no heading, buttons side by side. */
+  readonly inList?: boolean;
 }
 
 const DEFAULT_APPROVAL_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
@@ -55,11 +57,21 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
     );
   }
   return (
-    <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-        Approval needed
-      </Text>
-      <Text className="font-t3-bold text-lg text-foreground">
+    <View
+      className={
+        props.inList ? "gap-2" : "gap-2.5 rounded-[20px] border border-border bg-card-alt p-4"
+      }
+    >
+      {props.inList ? null : (
+        <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+          Approval needed
+        </Text>
+      )}
+      <Text
+        className={
+          props.inList ? "font-t3-medium text-foreground" : "font-t3-bold text-lg text-foreground"
+        }
+      >
         {props.approval.appName ?? props.approval.requestKind}
       </Text>
       {props.approval.detail ? (
@@ -99,7 +111,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
           {warning}
         </Text>
       ) : null}
-      <View className="gap-2">
+      <View className={props.inList ? "flex-row flex-wrap gap-2" : "gap-2"}>
         {options.map((option) => (
           <Button
             key={option.decision}
@@ -113,7 +125,8 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
             }
             disabled={disabled || !props.canOperateThread}
             onPress={() => void props.onRespond(props.approval.requestId, option.decision)}
-            fullWidth
+            size={props.inList ? "compact" : "default"}
+            fullWidth={!props.inList}
           />
         ))}
       </View>

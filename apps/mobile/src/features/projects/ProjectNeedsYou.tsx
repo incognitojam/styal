@@ -13,6 +13,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import type { MessageId, ScopedThreadRef, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import { useState, type ComponentProps } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RelativeTime } from "../../components/RelativeTime";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -59,6 +60,7 @@ export function ProjectNeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewCard>, "run">) {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [seenRequest, setSeenRequest] = useState(openRequest);
   const threads = useProjectChatNeedYou(chat);
@@ -113,18 +115,26 @@ export function ProjectNeedsYou({
         </Pressable>
       )}
       {open ? (
-        <Sheet title="Needs you" onClose={() => setOpen(false)}>
+        <Sheet title="Needs you" fitToContents onClose={() => setOpen(false)}>
           <ScrollView
             contentInsetAdjustmentBehavior="automatic"
             keyboardShouldPersistTaps="handled"
-            contentContainerClassName="px-4 pb-8"
+            contentContainerClassName="px-4"
+            // Clear of the home indicator, which the sheet runs under.
+            contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           >
             {rows.map((row) =>
               row.kind === "run" ? (
                 <WorkflowRunReviewCard key={rowKey(row)} {...reviewProps} run={row.run} />
               ) : row.kind === "need" && row.need.kind === "approval" ? (
-                <View key={rowKey(row)} className="-mx-3.5 border-b border-border">
+                <View key={rowKey(row)} className="gap-1 border-b border-border py-3">
+                  <NeedMeta
+                    kind="Approval"
+                    from={row.need.thread.title}
+                    createdAt={rowCreatedAt(row)}
+                  />
                   <ChildApproval
+                    inList
                     entry={{
                       thread: scopeThreadRef(row.need.thread.environmentId, row.need.thread.id),
                       title: row.need.thread.title,
@@ -137,6 +147,7 @@ export function ProjectNeedsYou({
                   key={rowKey(row)}
                   kind={rowKind(row)}
                   title={rowTitle(row)}
+                  question={rowQuestion(row)}
                   from={row.kind === "report" ? null : row.need.thread.title}
                   createdAt={rowCreatedAt(row)}
                   onPress={() => {
@@ -219,10 +230,32 @@ function rowTitle(row: Row): string {
   }
 }
 
+/** A report's question; null for other rows, whose title is already what they ask. */
+function rowQuestion(row: Row): string | null {
+  if (row.kind === "report") return row.report.message.report!.question ?? null;
+  if (row.kind === "need" && row.need.kind === "report")
+    return row.need.report.report.question ?? null;
+  return null;
+}
+
+function NeedMeta(props: {
+  readonly kind: string;
+  /** The asking thread; null for the chat's own reports. */
+  readonly from: string | null;
+  readonly createdAt: string;
+}) {
+  return (
+    <Text className="text-xs text-foreground-secondary" numberOfLines={1}>
+      {props.kind}
+      {props.from ? ` · ${props.from}` : ""} · <RelativeTime timestamp={props.createdAt} />
+    </Text>
+  );
+}
+
 function NeedRow(props: {
   readonly kind: string;
   readonly title: string;
-  /** The asking thread; null for the chat's own reports. */
+  readonly question: string | null;
   readonly from: string | null;
   readonly createdAt: string;
   readonly onPress: () => void;
@@ -230,18 +263,22 @@ function NeedRow(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={[props.kind, props.title, props.from].filter(Boolean).join(", ")}
+      accessibilityLabel={[props.kind, props.title, props.question, props.from]
+        .filter(Boolean)
+        .join(", ")}
       onPress={props.onPress}
       className="flex-row items-center gap-3 border-b border-border py-3 active:opacity-70"
     >
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="text-xs text-foreground-secondary" numberOfLines={1}>
-          {props.kind}
-          {props.from ? ` · ${props.from}` : ""} · <RelativeTime timestamp={props.createdAt} />
-        </Text>
+      <View className="min-w-0 flex-1 gap-1">
+        <NeedMeta kind={props.kind} from={props.from} createdAt={props.createdAt} />
         <Text className="font-t3-medium text-foreground" numberOfLines={2}>
           {props.title}
         </Text>
+        {props.question ? (
+          <Text className="text-foreground-secondary" numberOfLines={3}>
+            {props.question}
+          </Text>
+        ) : null}
       </View>
       <SymbolView name="chevron.right" size={13} tintColorClassName="accent-foreground-muted" />
     </Pressable>
