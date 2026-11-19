@@ -440,7 +440,11 @@ describe("sinceLastVisitGroups", () => {
     ]);
     expect(groups.pullRequests.map((line) => line.title)).toEqual(["PR 1648", "PR 42", "PR 42"]);
     expect(
-      groups.reports.map((line) => [line.messageId, line.pullRequests?.map((pr) => pr.number)]),
+      groups.reports.map((line) =>
+        line.kind === "report"
+          ? [line.messageId, line.pullRequests?.map((pr) => pr.number)]
+          : [line.kind],
+      ),
     ).toEqual([
       ["by-key", [1645, 1646]],
       ["by-text", [1650]],
