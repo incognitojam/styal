@@ -2,7 +2,8 @@ import { createThreadSnapshotCommands } from "@t3tools/client-runtime/state/thre
 import { createChildThreadApprovalsAtom } from "@t3tools/client-runtime/state/thread-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
-import { arrayElementsEqual } from "@t3tools/client-runtime/state/entities";
+import { resolveThreadActivityState } from "../threadSync";
+import { arrayElementsEqual, parseThreadKey } from "@t3tools/client-runtime/state/entities";
 import {
   createEnvironmentThreadDetailAtoms,
   createEnvironmentThreadShellAtoms,
@@ -48,6 +49,22 @@ export const childThreadApprovalsAtom = createChildThreadApprovalsAtom({
   childThreadInputsAtom: environmentThreadShells.childThreadInputsAtom,
   pendingRequestsAtom: environmentThreadDetails.pendingRequestsAtom,
 });
+
+export const threadActivityStateAtom = Atom.family((key: string | null) =>
+  Atom.make((get) => {
+    if (key === null) return "live" as const;
+    const ref = parseThreadKey(key);
+    const detail = get(environmentThreadDetails.stateAtom(ref));
+    const shell = get(environmentShell.stateValueAtom(ref.environmentId));
+    return resolveThreadActivityState({
+      detailStatus: detail.status,
+      detailServerSequence: detail.serverSequence,
+      shellStatus: shell.status,
+      shellSequence: Option.getOrNull(shell.snapshot)?.snapshotSequence ?? 0,
+      shell: get(environmentThreadShells.threadShellAtom(ref)),
+    });
+  }).pipe(Atom.withLabel(`web-thread-activity:${key}`)),
+);
 
 const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(
   Atom.withLabel("web-environment-thread:empty"),

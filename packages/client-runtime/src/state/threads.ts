@@ -197,6 +197,7 @@ function matchesThreadSnapshot(
 function cachedThreadState(value: EnvironmentThreadState): EnvironmentThreadState {
   return {
     ...value,
+    serverSequence: undefined,
     status:
       value.status === "deleted" || (value.status === "live" && Option.isSome(value.data))
         ? value.status
@@ -405,6 +406,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       : {
           ...current,
           status: "synchronizing" as const,
+          serverSequence: undefined,
           error: Option.none(),
         },
   );
@@ -422,6 +424,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* SubscriptionRef.update(state, (current) => ({
       ...current,
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
+      serverSequence: undefined,
     }));
   });
   const setStreamError = (message: string) =>
@@ -431,6 +434,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           ...current,
           status:
             current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
+          serverSequence: undefined,
           error: Option.some(message),
         })),
       ),
@@ -441,6 +445,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     options?: {
       readonly resetHistory?: boolean;
       readonly history?: ThreadHistoryMeta;
+      readonly serverSequence?: number;
     },
   ) {
     const waiting = yield* Ref.get(awaitingCompletion);
@@ -466,6 +471,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         error: previous.error,
         history,
         sequence,
+        serverSequence: options?.serverSequence ?? previous.serverSequence,
       };
     });
     // Active projections can update many times per second and retain large tool
@@ -618,7 +624,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           if (applied._tag === "delete") break;
         }
         // A batch that changed nothing keeps its state object, so readers do not re-render.
-        return [result, result._tag === "noop" ? current : { ...current, sequence }];
+        return [
+          result,
+          result._tag === "noop" ? current : { ...current, sequence, serverSequence: sequence },
+        ];
       },
     );
 
@@ -646,7 +655,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       yield* Ref.set(awaitingCompletion, false);
       yield* SubscriptionRef.update(state, (current) =>
         Option.isSome(current.data) && current.status !== "deleted" && Option.isNone(current.error)
-          ? { ...current, status: "live" as const, error: Option.none() }
+          ? {
+              ...current,
+              status: "live" as const,
+              serverSequence: current.sequence,
+              error: Option.none(),
+            }
           : current,
       );
       return;
@@ -662,6 +676,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         boundedSnapshotProjection(item),
         hasProgressiveHistory
           ? {
+              serverSequence: item.snapshotSequence,
               history: {
                 historyCursor: item.historyCursor ?? null,
                 hasMoreHistory: item.hasMoreHistory ?? false,
@@ -671,7 +686,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 latestLocalTurnOrdinal: item.latestLocalTurnOrdinal ?? null,
               },
             }
-          : { resetHistory: true },
+          : { resetHistory: true, serverSequence: item.snapshotSequence },
       );
       return;
     }
@@ -981,7 +996,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* SubscriptionRef.update(state, (current) =>
       current.status === "deleted"
         ? current
-        : { ...current, status: "synchronizing" as const, error: Option.none() },
+        : {
+            ...current,
+            status: "synchronizing" as const,
+            serverSequence: undefined,
+            error: Option.none(),
+          },
     );
   });
 
@@ -1064,7 +1084,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                           latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
                         }
                       : EMPTY_THREAD_HISTORY_META;
-                  yield* setThread(httpResult.snapshot.projection, { history });
+                  yield* setThread(httpResult.snapshot.projection, {
+                    history,
+                    serverSequence: httpResult.snapshot.snapshotSequence,
+                  });
                   yield* remember;
                 }),
               );

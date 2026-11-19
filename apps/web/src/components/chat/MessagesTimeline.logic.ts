@@ -1,3 +1,4 @@
+import type { ThreadActivityState } from "../../threadSync";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import type { ReactNode } from "react";
 import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
@@ -264,7 +265,9 @@ export function liveWorkEntryLabel(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
   active: boolean,
-) {
+  unconfirmed = false,
+): string {
+  if (unconfirmed) return `Last seen: ${liveWorkEntryLabel(entry, workspaceRoot, true)}`;
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
     return (
@@ -543,6 +546,7 @@ const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 export type MessagesTimelineRow = MessagesTimelineRowContent & {
   readonly continuesWorkLog?: boolean;
+  readonly unconfirmed?: boolean;
 };
 
 type MessagesTimelineRowContent =
@@ -1873,6 +1877,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
+  activityState?: ThreadActivityState;
   /** Native subagent work has no app run; runless entries form the live response. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
@@ -2746,7 +2751,27 @@ export function deriveMessagesTimelineRows(input: {
     viewedPageRunIds(result),
   );
   const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
-  const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
+  const visibleRows = result.flatMap<MessagesTimelineRow>((original) => {
+    const activity =
+      original.kind === "working" ||
+      original.kind === "thinking" ||
+      original.kind === "work-live" ||
+      (original.kind === "standalone-activity" && original.active);
+    if (input.activityState === "inactive" && activity) return [];
+    const row =
+      input.activityState === "unconfirmed" && activity
+        ? {
+            ...original,
+            unconfirmed: true,
+            ...("active" in original ? { active: false } : {}),
+            ...(original.kind === "standalone-activity"
+              ? {
+                  label: `Last seen: ${original.label}`,
+                  ...(original.title ? { title: `Last seen: ${original.title}` } : {}),
+                }
+              : {}),
+          }
+        : original;
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
     const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();
@@ -3102,7 +3127,7 @@ export function computeStableMessagesTimelineRows(
 }
 
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
-  if (a.kind !== b.kind || a.id !== b.id) return false;
+  if (a.kind !== b.kind || a.id !== b.id || a.unconfirmed !== b.unconfirmed) return false;
 
   switch (a.kind) {
     case "working":

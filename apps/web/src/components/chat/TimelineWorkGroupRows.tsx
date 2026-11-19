@@ -295,8 +295,10 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
-  const shimmer = isPreparingWorktree || compacting;
-  const label = isPreparingWorktree ? (
+  const shimmer = !row.unconfirmed && (isPreparingWorktree || compacting);
+  const label = row.unconfirmed ? (
+    "Last seen working"
+  ) : isPreparingWorktree ? (
     "Setting up worktree…"
   ) : compacting ? (
     <CompactingLabel createdAt={row.createdAt} />
@@ -317,7 +319,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           {label}
           {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
         </span>
-        {backgroundWorktreeSetup ? (
+        {!row.unconfirmed && backgroundWorktreeSetup ? (
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
         ) : null}
       </div>
@@ -379,10 +381,10 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
   const { isCompacting, isPreparingWorktree, liveAnswerPreview } = use(TimelineRowActivityCtx);
   if (isPreparingWorktree || isCompacting) return <WorkLogRow label="" />;
   // A failed group keeps this disclosure while an approval waits, but nothing is thinking then.
-  const live = ctx.pendingApprovals.size === 0;
+  const live = !row.unconfirmed && ctx.pendingApprovals.size === 0;
   const activity = (
     <LiveActivityRow
-      label={liveAnswerPreview ?? "Thinking"}
+      label={row.unconfirmed ? "Last seen thinking" : (liveAnswerPreview ?? "Thinking")}
       iconName="brain"
       active={live}
       shimmer={live}
@@ -513,7 +515,7 @@ export function LiveWorkEntryTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active, row.unconfirmed);
   const threadLabel = threadReadLabel(label, threadTarget);
 
   const item = row.entry.projectedItem?.item;

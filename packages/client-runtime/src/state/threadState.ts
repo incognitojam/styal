@@ -16,6 +16,8 @@ export interface EnvironmentThreadState {
   readonly history: ThreadHistoryMeta;
   /** The last server sequence `data` reflects, so readers can tell a write has landed without searching paged-out history. */
   readonly sequence: number;
+  /** Sequence received on this connection; absent for restored or disconnected data. */
+  readonly serverSequence?: number | undefined;
 }
 
 export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {
