@@ -10,12 +10,14 @@ export interface DesktopUpdatedNoticeDecision {
   readonly record: boolean;
 }
 
-/**
- * Announce only a move to a newer version. A first run (nothing stored), a
- * downgrade or channel switch to a lower version, and versions that do not
- * parse are recorded without a notice, so the next real update compares
- * against the version the user actually ran.
- */
+function releaseChannel(version: string): "stable" | "nightly" | null {
+  const parsed = parseSemver(version);
+  if (!parsed) return null;
+  if (parsed.prerelease.length === 0) return "stable";
+  return /^nightly\.\d+\.\d+$/u.test(parsed.prerelease.join(".")) ? "nightly" : null;
+}
+
+/** Announce only newer releases on the same channel; silently record other transitions. */
 export function decideDesktopUpdatedNotice(
   lastSeenVersion: string | null,
   currentVersion: string,
@@ -24,10 +26,10 @@ export function decideDesktopUpdatedNotice(
   if (current.length === 0) return { announce: null, record: false };
   const lastSeen = lastSeenVersion?.trim() ?? "";
   if (lastSeen === current) return { announce: null, record: false };
+  const channel = releaseChannel(current);
   if (
-    lastSeen.length > 0 &&
-    parseSemver(lastSeen) !== null &&
-    parseSemver(current) !== null &&
+    channel !== null &&
+    releaseChannel(lastSeen) === channel &&
     compareSemverVersions(current, lastSeen) > 0
   ) {
     return { announce: current, record: true };

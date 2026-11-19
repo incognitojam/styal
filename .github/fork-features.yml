@@ -1500,9 +1500,9 @@ features:
     tier: yield
     prs: [1128]
     invariants:
-      - After the desktop app starts on a newer version than the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
+      - After the desktop app starts on a newer stable or nightly release on the same channel as the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
       - The toast waits until the window is visible and focused, and the version is recorded only when it shows, so a window that stays hidden until quit announces the update on the next launch.
-      - A first run with no recorded version, a downgrade, a switch to a lower-version channel, and unparseable versions are recorded without a toast; web and mobile never show it.
+      - A first run with no recorded version, a downgrade, any channel switch, PR previews, and unparseable versions are recorded without a toast; development builds, web, and mobile never show it.
     rationale: Updates install on quit or restart without a visible step, so users had no confirmation that an update landed or what it changed.
     implementation_paths:
       - apps/web/src/components/DesktopUpdatedNotice.tsx
