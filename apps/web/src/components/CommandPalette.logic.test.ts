@@ -750,7 +750,7 @@ describe("buildThreadActionItems", () => {
   it("names a project's chat by the project, while project coordinators are on", () => {
     const chat = makeThread({ id: ThreadId.make("chat"), title: "Plan Login Form Cleanup" });
     const other = makeThread({ id: ThreadId.make("other"), title: "Fix the login form" });
-    const titles = (projectCoordinatorsEnabled: boolean) =>
+    const items = (projectCoordinatorsEnabled: boolean) =>
       buildThreadActionItems({
         threads: [chat, other],
         projectByKey: new Map([[`${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`, { title: "acme-web" }]]),
@@ -761,7 +761,17 @@ describe("buildThreadActionItems", () => {
         projectNameOf: () => "Acme Web",
         icon: null,
         runThread: async () => undefined,
-      }).map((item) => [item.title, item.searchTerms]);
+      });
+    const titles = (projectCoordinatorsEnabled: boolean) =>
+      items(projectCoordinatorsEnabled).map((item) => [item.title, item.searchTerms]);
+    const firstMatch = (query: string) =>
+      filterCommandPaletteGroups({
+        activeGroups: [],
+        query,
+        isInSubmenu: false,
+        projectSearchItems: [],
+        threadSearchItems: items(true),
+      })[0]?.items[0]?.value;
 
     expect(titles(true)).toEqual([
       ["Acme Web", ["Acme Web"]],
@@ -771,6 +781,8 @@ describe("buildThreadActionItems", () => {
       ["Plan Login Form Cleanup", ["Plan Login Form Cleanup"]],
       ["Fix the login form", ["Fix the login form"]],
     ]);
+    expect(firstMatch("Acme Web")).toBe(`thread:${LOCAL_ENVIRONMENT_ID}:chat`);
+    expect(firstMatch("login form")).toBe(`thread:${LOCAL_ENVIRONMENT_ID}:other`);
   });
 
   it("ranks word-start title matches above newer mid-word matches", () => {
