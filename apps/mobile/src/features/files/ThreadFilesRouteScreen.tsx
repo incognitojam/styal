@@ -597,12 +597,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         onBack={handleReturnToThread}
       />
       <ScreenContent>
-        <SourceCheckoutNotice
-          environmentId={environmentId}
-          cwd={cwd}
-          context="files"
-          onCheckedOut={entriesQuery.refresh}
-        />
+        <SourceCheckoutNotice environmentId={environmentId} cwd={cwd} context="files" />
         <FileTreeBrowser
           key={JSON.stringify([environmentId, cwd])}
           revealSelection={entriesQuery.revealSelection}
@@ -1005,12 +1000,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           onBack={handleBack}
         />
         <ScreenContent>
-          <SourceCheckoutNotice
-            environmentId={environmentId}
-            cwd={cwd}
-            context="files"
-            onCheckedOut={entriesQuery.refresh}
-          />
+          <SourceCheckoutNotice environmentId={environmentId} cwd={cwd} context="files" />
           <FileTreeBrowser
             key={JSON.stringify([environmentId, directoryPath])}
             revealSelection={entriesQuery.revealSelection}
@@ -1056,10 +1046,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           environmentId={environmentId}
           cwd={cwd}
           context="files"
-          onCheckedOut={() => {
-            fileQuery.refresh();
-            handleRetryPreview();
-          }}
+          onCheckedOut={handleRetryPreview}
         />
         <FileContent
           key={previewKey}

@@ -27,7 +27,6 @@ export function SourceCheckoutNotice(props: {
   layout?: "line" | "panel";
   context?: "files" | "skills";
   className?: string;
-  onCheckedOut?: () => void;
 }) {
   const { environmentId, cwd } = props;
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
@@ -43,9 +42,8 @@ export function SourceCheckoutNotice(props: {
       ? "Source files released"
       : "Source checkout interrupted";
   const onCheckOut = async () => {
-    const result = await checkOut({ environmentId, input: { cwd } });
+    await checkOut({ environmentId, input: { cwd } });
     status.refresh();
-    if (result._tag === "Success") props.onCheckedOut?.();
   };
   const error = action.error ? (
     <div role="alert" className="flex min-w-0 items-start gap-1.5 text-destructive">

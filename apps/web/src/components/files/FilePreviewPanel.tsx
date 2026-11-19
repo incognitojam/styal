@@ -1440,7 +1440,6 @@ export default function FilePreviewPanel({
           cwd={cwd}
           context="files"
           className="shrink-0 border-b py-1.5"
-          onCheckedOut={file.refresh}
         />
       ) : null}
       {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (

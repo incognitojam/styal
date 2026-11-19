@@ -82,12 +82,7 @@ export function ThreadFileNavigatorPane(props: {
     // Material drags target the first scroll view, so place content before the header.
     <View className="flex-1 ios:bg-sheet android:bg-header android:flex-col-reverse">
       <ScreenContent insetHorizontal>
-        <SourceCheckoutNotice
-          environmentId={props.environmentId}
-          cwd={props.cwd}
-          context="files"
-          onCheckedOut={entriesQuery.refresh}
-        />
+        <SourceCheckoutNotice environmentId={props.environmentId} cwd={props.cwd} context="files" />
         {fileTree}
       </ScreenContent>
       <AppBar
