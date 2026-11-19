@@ -10,6 +10,7 @@ import {
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
+import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -193,8 +194,8 @@ export function ReportAnswerChip({
   );
 }
 
-/** Sits at the top of the composer while the next message replies to a report. */
-export function ReportReplyStrip({
+/** The report a message will answer, as the last notice above the input. */
+export function reportReplyBannerItem({
   title,
   version,
   question,
@@ -204,24 +205,17 @@ export function ReportReplyStrip({
   version: number;
   question: string | undefined;
   onCancel: () => void;
-}) {
-  return (
-    <div className="flex items-start gap-2 border-b border-border/60 py-2 ps-4 pe-2 text-sm">
-      <span className="w-0.5 self-stretch rounded-full bg-primary/60" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">
-          <ReplyIcon />
-          <span className="shrink-0">Replying to</span>
-          <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
-          <span className="shrink-0">· version {version}</span>
-        </div>
-        {question ? <div className="truncate">{question}</div> : null}
-      </div>
-      <Button size="icon-xs" variant="ghost-muted" aria-label="Stop replying" onClick={onCancel}>
-        <XIcon />
-      </Button>
-    </div>
-  );
+}): ComposerBannerStackItem {
+  return {
+    id: "report-reply",
+    variant: "default",
+    icon: <ReplyIcon />,
+    title: "Replying to",
+    description: `${title} · version ${version}${question ? ` · ${question}` : ""}`,
+    keepDescriptionWhenNarrow: true,
+    dismissLabel: "Stop replying",
+    onDismiss: onCancel,
+  };
 }
 
 export function NeedsYou({
