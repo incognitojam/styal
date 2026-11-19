@@ -95,7 +95,7 @@ async function until(fn, ms = 180000) {
   throw Error("experiment observation deadline");
 }
 async function stop(s) {
-  if (s.p.exitCode !== null) return;
+  if (s.p.exitCode !== null || s.p.signalCode !== null) return;
   const exited = new Promise((resolve) => s.p.once("exit", resolve));
   s.p.kill("SIGTERM");
   const timer = setTimeout(() => s.p.kill("SIGKILL"), 5000);
