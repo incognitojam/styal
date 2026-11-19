@@ -54,9 +54,17 @@ it("tells the resolver whether an image stands alone in its paragraph", async ()
     return null;
   };
   await act(async () => root.render(<Probe resolve={record} />));
-  for (const placement of ["root", "blockquote", "table", "list", "inline", "link"] as const) {
+  for (const placement of [
+    "root",
+    "blockquote",
+    "admonition",
+    "table",
+    "list",
+    "inline",
+    "link",
+  ] as const) {
     await resolveImage!({ id: placement, url: "shot.png", altText: "", title: "", placement });
   }
-  expect(asked).toEqual([true, true, false, false, false, false]);
+  expect(asked).toEqual([true, true, true, false, false, false, false]);
   act(() => root.unmount());
 });

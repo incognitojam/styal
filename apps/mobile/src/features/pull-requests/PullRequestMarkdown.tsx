@@ -279,7 +279,13 @@ function PullRequestMarkdownContent(props: {
           if (image.standalone) return { uri: "" };
           const url = resolveMediaUrl(image.href);
           const source = pullRequestMediaSource(url, mediaContext);
-          if (!source.resource) return null;
+          if (!source.resource) {
+            // Forge media is fetched with the server's credentials once the project is known.
+            if (sourceControlClients.mediaUrl(url)?.fetchUrl) {
+              throw new Error("Pull request media location is not known yet");
+            }
+            return /^https?:\/\//i.test(url) ? { uri: url } : null;
+          }
           const uri = await refreshAssetUrl(
             source.environmentId,
             /\.(?:gif|svg)(?:[?#]|$)/i.test(url)
