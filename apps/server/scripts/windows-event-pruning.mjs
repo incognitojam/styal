@@ -5,6 +5,8 @@ import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import assert from "node:assert/strict";
+import { Worker } from "node:worker_threads";
+import { pathToFileURL } from "node:url";
 if (process.argv[2] === "fixture") {
   process.argv.splice(2, 1);
   await import("./windows-event-pruning-fixture.mjs");
@@ -44,12 +46,150 @@ const read = (file, sql) => {
   }
 };
 const count = (file) => read(file, "SELECT COUNT(*) n FROM orchestration_events")[0].n;
+const traceDirectory = path.join(root, "sql-trace");
+// A static import keeps the experiment-only preload visible to the dependency checker.
+await import("./windows-event-pruning-trace.mjs");
+function traceSpans() {
+  return fs.existsSync(traceDirectory)
+    ? fs.readdirSync(traceDirectory).flatMap((name) =>
+        fs
+          .readFileSync(path.join(traceDirectory, name), "utf8")
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line)),
+      )
+    : [];
+}
+function beginProbes(file, size, serverPid) {
+  const target = path.join(root, `probes-${size}.jsonl`);
+  const worker = new Worker(
+    String.raw`
+    const {parentPort,workerData}=require('node:worker_threads');
+    const {DatabaseSync}=require('node:sqlite');
+    const fs=require('node:fs');
+    const db=new DatabaseSync(workerData.file);
+    db.exec('PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS experiment_write_probe (value INTEGER)');
+
+    const checkpoint=db.prepare('PRAGMA wal_checkpoint(NOOP)');
+    let stopping=false;
+    parentPort.on('message',()=>{stopping=true;});
+    async function run() {
+      try {
+        while(!stopping) {
+          const before=checkpoint.get();
+          const start=performance.timeOrigin+performance.now();
+          db.exec('INSERT INTO experiment_write_probe VALUES (1)');
+          const end=performance.timeOrigin+performance.now();
+          const after=checkpoint.get();
+          fs.appendFileSync(workerData.target,JSON.stringify({start,end,latencyMs:end-start,checkpointBefore:before,checkpointAfter:after})+'\n');
+          await new Promise(resolve=>setTimeout(resolve,50));
+        }
+      } finally {db.close();}
+    }
+    run().then(()=>parentPort.close()).catch(error=>{throw error;});
+  `,
+    { eval: true, workerData: { file, target } },
+  );
+  const exited = new Promise((resolve, reject) => {
+    worker.once("error", reject);
+    worker.once("exit", (code) =>
+      code === 0 ? resolve() : reject(Error(`probe worker exited ${code}`)),
+    );
+  });
+  exited.catch(() => {});
+  return {
+    async finish(manifest) {
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker threads have no browser origin.
+      worker.postMessage("stop");
+      await exited;
+      const spans = traceSpans().filter((span) => span.pid === serverPid);
+      const probes = fs
+        .readFileSync(target, "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const probe = JSON.parse(line);
+          const overlapping = spans.filter(
+            (span) => span.start <= probe.end && span.end >= probe.start,
+          );
+          const explicitCheckpoint = overlapping.some((span) => span.phase === "checkpoint");
+          const framesAdvanced =
+            probe.checkpointBefore.busy === 0 &&
+            probe.checkpointAfter.busy === 0 &&
+            probe.checkpointBefore.checkpointed >= 0 &&
+            probe.checkpointAfter.checkpointed >= 0 &&
+            probe.checkpointAfter.checkpointed > probe.checkpointBefore.checkpointed;
+          const deletePass =
+            probe.start <= manifest.firstDeleteCompletedAt &&
+            probe.end >= manifest.firstDeleteStartedAt;
+          const phase =
+            explicitCheckpoint || framesAdvanced
+              ? "checkpoint"
+              : deletePass
+                ? "delete pass"
+                : probe.start > manifest.firstDeleteCompletedAt
+                  ? "after delete pass"
+                  : "waiting for compaction";
+          return {
+            ...probe,
+            at: new Date(probe.start).toISOString(),
+            phase,
+            deletePass,
+            checkpointEvidence: explicitCheckpoint
+              ? "overlapping instrumented checkpoint"
+              : framesAdvanced
+                ? "checkpoint frame advancement (may be automatic or concurrent)"
+                : "none",
+            sqlSpans: overlapping,
+          };
+        });
+      fs.writeFileSync(target, probes.map((probe) => JSON.stringify(probe)).join("\n") + "\n");
+      const maxima = Object.fromEntries(
+        [
+          "copy",
+          "verification",
+          "waiting for compaction",
+          "delete pass",
+          "checkpoint",
+          "after delete pass",
+        ].map((phase) => {
+          const samples = probes.filter((probe) => probe.phase === phase);
+          const slowest = samples.reduce(
+            (max, probe) => (!max || probe.latencyMs > max.latencyMs ? probe : max),
+            null,
+          );
+          return [
+            phase,
+            {
+              count: samples.length,
+              maxMs: slowest?.latencyMs ?? null,
+              at: slowest?.at ?? null,
+              checkpointEvidence: slowest?.checkpointEvidence ?? null,
+            },
+          ];
+        }),
+      );
+      log({
+        size,
+        check: "phase-tagged foreground probes",
+        maxima,
+        startupWrites: "not attempted: normal runtime waits for verified copy",
+        instrumentedCheckpointSpans: spans.filter((span) => span.phase === "checkpoint").length,
+      });
+      return probes;
+    },
+  };
+}
 const children = new Set();
 function start(home, port) {
   const started = performance.now();
   const p = spawn(
     process.execPath,
     [
+      "--import",
+      pathToFileURL(path.resolve("apps/server/scripts/windows-event-pruning-trace.mjs")).href,
       "apps/server/src/bin.ts",
       "start",
       "--base-dir",
@@ -64,6 +204,7 @@ function start(home, port) {
       env: {
         ...process.env,
         T3CODE_EVENT_PRUNING: "1",
+        EVENT_PRUNING_SQL_TRACE_DIR: traceDirectory,
         T3CODE_TELEMETRY_ENABLED: "false",
         T3CODE_DISABLE_AUTO_UPDATE: "true",
         T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
@@ -175,7 +316,9 @@ try {
         if (s.p.exitCode !== null) throw Error(s.lines.map((x) => x.text).join("\n"));
         const line =
           s.lines.find((x) => /verified and saved/.test(x.text)) ??
-          (fs.existsSync(manifest) ? { ms: performance.now() - s.started } : undefined);
+          (fs.existsSync(manifest) && fs.existsSync(path.join(backup, "statev2.sqlite"))
+            ? { ms: performance.now() - s.started }
+            : undefined);
         if (line) {
           copyEnd = line.ms;
           copyStart = s.lines.find((x) => /Making a safety copy/i.test(x.text))?.ms;
@@ -218,19 +361,14 @@ try {
       } finally {
         await stop(competing);
       }
-      const writes = [];
-      const observer = new DatabaseSync(file);
-      observer.exec(
-        "PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS experiment_write_probe (value INTEGER)",
-      );
+      const probes = beginProbes(file, size, s.p.pid);
       const pruneWait = performance.now();
-      await until(() => {
-        const begin = performance.now();
-        observer.exec("INSERT INTO experiment_write_probe VALUES (1)");
-        writes.push(performance.now() - begin);
-        return fs.existsSync(path.join(path.dirname(file), "compacted-at"));
-      }, 240000);
-      observer.close();
+      let writes;
+      try {
+        await until(() => fs.existsSync(path.join(path.dirname(file), "compacted-at")), 240000);
+      } finally {
+        writes = await probes.finish(JSON.parse(fs.readFileSync(manifest, "utf8")));
+      }
       const remaining = count(file);
       assert(remaining < events);
       const after = fixture("dump", file);
@@ -245,7 +383,7 @@ try {
         })(),
         remaining,
         waitForPruneMs: performance.now() - pruneWait,
-        maxProbeWriteMs: Math.max(...writes),
+        maxProbeWriteMs: Math.max(...writes.map((probe) => probe.latencyMs)),
         snapshot: before,
         lines: s.lines,
       });

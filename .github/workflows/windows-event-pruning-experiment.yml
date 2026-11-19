@@ -12,6 +12,50 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
+      - name: Enable Defender before setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'windows-event-pruning'
+          $env:EVENT_PRUNING_EXPERIMENT_ROOT = $root
+          "EVENT_PRUNING_EXPERIMENT_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force $root | Out-Null
+          Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json -Compress
+          Set-MpPreference -DisableRealtimeMonitoring $false
+          $preferences = Get-MpPreference
+          $preferences | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | ConvertTo-Json -Compress
+          # This ephemeral runner needs no file-scan exclusions for the experiment.
+          if ($preferences.ExclusionPath) { Remove-MpPreference -ExclusionPath $preferences.ExclusionPath }
+          if ($preferences.ExclusionProcess) { Remove-MpPreference -ExclusionProcess $preferences.ExclusionProcess }
+          if ($preferences.ExclusionExtension) { Remove-MpPreference -ExclusionExtension $preferences.ExclusionExtension }
+          $status = Get-MpComputerStatus
+          $status | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json -Compress
+          if (-not $status.RealTimeProtectionEnabled) { throw 'Defender real-time protection is not enabled; experiment refused' }
+          $preferences = Get-MpPreference
+          $preferences | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | ConvertTo-Json -Compress
+          if ($preferences.ExclusionPath -or $preferences.ExclusionProcess -or $preferences.ExclusionExtension) { throw 'Defender exclusions remain; experiment refused' }
+          $monitor = @'
+          $ErrorActionPreference = 'Stop'
+          try {
+            do {
+              $stopping = Test-Path "$env:EVENT_PRUNING_EXPERIMENT_ROOT/stop-defender-monitor"
+              $status = Get-MpComputerStatus
+              $prefs = Get-MpPreference
+              @{ at = [DateTimeOffset]::UtcNow.ToString('o'); realtime = $status.RealTimeProtectionEnabled; paths = @($prefs.ExclusionPath | Where-Object { $_ }); processes = @($prefs.ExclusionProcess | Where-Object { $_ }); extensions = @($prefs.ExclusionExtension | Where-Object { $_ }) } | ConvertTo-Json -Compress | Add-Content "$env:EVENT_PRUNING_EXPERIMENT_ROOT/defender.jsonl"
+              if ($stopping) { break }
+              Start-Sleep -Seconds 10
+            } while ($true)
+          } catch {
+            $_ | Out-String | Set-Content "$env:EVENT_PRUNING_EXPERIMENT_ROOT/defender-error.txt"
+          } finally {
+            if (Test-Path "$env:EVENT_PRUNING_EXPERIMENT_ROOT/stop-defender-monitor") {
+              [DateTimeOffset]::UtcNow.ToString('o') | Set-Content "$env:EVENT_PRUNING_EXPERIMENT_ROOT/defender-monitor-done"
+            }
+          }
+          '@
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($monitor))
+          $process = Start-Process pwsh -ArgumentList '-NoProfile', '-EncodedCommand', $encoded -PassThru
+          $process.Id | Set-Content "$root/defender-monitor-pid"
       - uses: actions/checkout@v7
         with:
           sparse-checkout: |
@@ -35,9 +79,41 @@ jobs:
         env:
           EVENT_PRUNING_EXPERIMENT_ROOT: ${{ runner.temp }}/windows-event-pruning
         run: node apps/server/scripts/windows-event-pruning.mjs
+      - name: Verify Defender after experiment
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:EVENT_PRUNING_EXPERIMENT_ROOT
+          Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json -Compress
+          Get-MpPreference | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | ConvertTo-Json -Compress
+          $stopRequestedAt = [DateTimeOffset]::UtcNow
+          New-Item -ItemType File -Force "$root/stop-defender-monitor" | Out-Null
+          $pidFile = "$root/defender-monitor-pid"
+          if (-not (Test-Path $pidFile)) { throw 'Defender monitor never started' }
+          $monitor = Get-Process -Id (Get-Content $pidFile) -ErrorAction SilentlyContinue
+          if ($monitor -and -not $monitor.WaitForExit(60000)) { throw 'Defender monitor did not stop' }
+          if (Test-Path "$root/defender-error.txt") { throw (Get-Content "$root/defender-error.txt" -Raw) }
+          $samples = @(Get-Content "$root/defender.jsonl" | ForEach-Object { $_ | ConvertFrom-Json })
+          if (-not (Test-Path "$root/defender-monitor-done")) { throw 'Defender monitor exited without acknowledging stop' }
+          if ([DateTimeOffset]::Parse($samples[-1].at) -lt $stopRequestedAt) { throw 'Defender monitor did not cover experiment end' }
+          if ($samples.Count -lt 2) { throw 'Insufficient Defender samples' }
+          foreach ($sample in $samples) {
+            if (-not $sample.realtime -or $sample.paths.Count -or $sample.processes.Count -or $sample.extensions.Count) { throw "Defender verification failed: $($sample | ConvertTo-Json -Compress)" }
+          }
+          $status = Get-MpComputerStatus
+          if (-not $status.RealTimeProtectionEnabled) { throw 'Defender real-time protection is off after experiment' }
+          $preferences = Get-MpPreference
+          if ($preferences.ExclusionPath -or $preferences.ExclusionProcess -or $preferences.ExclusionExtension) { throw 'Defender exclusions were reintroduced' }
+          "Defender verified: $($samples.Count) samples, all enabled with no path/process/extension exclusions"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: windows-event-pruning-summary
-          path: ${{ runner.temp }}/windows-event-pruning/summary.txt
+          path: |
+            ${{ runner.temp }}/windows-event-pruning/summary.txt
+            ${{ runner.temp }}/windows-event-pruning/defender*.jsonl
+            ${{ runner.temp }}/windows-event-pruning/defender-error.txt
+            ${{ runner.temp }}/windows-event-pruning/probes*.jsonl
+            ${{ runner.temp }}/windows-event-pruning/sql-trace/*.jsonl
           if-no-files-found: ignore
