@@ -238,10 +238,15 @@ export function ProjectSinceLastVisit({
   const canMarkSeen = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(chatRef.environmentId),
   );
+  const membersKey = source.members
+    .map((member) => `${member.environmentId}:${member.id}`)
+    .join("|");
   const [phase, setPhase] = useState<
     | { readonly kind: "opening" }
     | { readonly kind: "showing"; readonly since: number }
-    | { readonly kind: "done" }
+    /** Nothing to list once ready; decided again if a checkout of the project joins. */
+    | { readonly kind: "empty"; readonly membersKey: string }
+    | { readonly kind: "seen" }
   >({ kind: "opening" });
 
   const reportLines = sinceLastVisitReportLines(
@@ -257,13 +262,16 @@ export function ProjectSinceLastVisit({
   const ready =
     chat.loaded &&
     source.members.every((member) => shellStatuses.get(member.environmentId) !== "synchronizing");
+  if (phase.kind === "empty" && phase.membersKey !== membersKey) setPhase({ kind: "opening" });
   if (phase.kind === "opening" && ready) {
-    setPhase(layout.total > 0 ? { kind: "showing", since: window.since } : { kind: "done" });
+    setPhase(
+      layout.total > 0 ? { kind: "showing", since: window.since } : { kind: "empty", membersKey },
+    );
   }
   // Checking on any device ends it here, even if newer changes arrived meanwhile: they wait for
   // the next visit.
   if (phase.kind === "showing" && (window.since > phase.since || layout.total === 0)) {
-    setPhase({ kind: "done" });
+    setPhase({ kind: "seen" });
   }
   if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0) return null;
 
