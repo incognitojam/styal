@@ -294,15 +294,15 @@ describe("moving a Clerk sign-in", () => {
     Effect.gen(function* () {
       // The adoption component can react to "adopting" before the restore
       // that published it has finished.
-      const settled = yield* Deferred.make<Promise<void>>();
+      const settled = yield* Deferred.make<{ readonly pending: Promise<void> }>();
       const unsubscribe = appAtomRegistry.subscribe(relaySignInAtom, (state) => {
         if (state.status === "adopting") {
-          Deferred.doneUnsafe(settled, Effect.succeed(finishClerkAdoptionSignedOut()));
+          Deferred.doneUnsafe(settled, Effect.succeed({ pending: finishClerkAdoptionSignedOut() }));
         }
       });
       yield* Effect.gen(function* () {
         yield* settle(restoreRelaySession());
-        yield* settle(yield* Deferred.await(settled));
+        yield* settle((yield* Deferred.await(settled)).pending);
       }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
       expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
     }),

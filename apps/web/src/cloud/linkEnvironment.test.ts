@@ -268,7 +268,7 @@ describe("web cloud link environment client", () => {
                 user: { id: "account-1", email: null },
                 token_type: "DPoP",
                 expires_in: 300,
-                scope: "environment:link",
+                scope: "account",
               })
             : String(input).startsWith("https://relay.example.test/")
               ? Response.json(
