@@ -1,5 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
+import {
+  formatReportAnswer,
+  reportResponseFailure,
+} from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -32,7 +35,11 @@ import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
-import { dismissCoordinatorReport } from "../../state/coordinatorReports";
+import {
+  dismissCoordinatorReport,
+  respondToReport,
+  threadReportResponsesAtom,
+} from "../../state/coordinatorReports";
 import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -57,11 +64,16 @@ const threadNeedsAtom = Atom.family((key: string) => {
   return Atom.make((get) => {
     const requests = get(environmentThreadDetails.pendingRequestsAtom(ref));
     const projection = Option.getOrNull(get(environmentThreadDetails.stateAtom(ref)).data);
+    const responses = get(threadReportResponsesAtom(key));
     if (requests === null || projection === null) return null;
-    const inputs = [requests, projection.messages, projection.thread.reportDismissals];
+    const inputs = [requests, projection.messages, projection.thread.reportDismissals, responses];
     if (inputs.some((input, index) => input !== previous[index])) {
       previous = inputs;
-      value = { requests, reports: openReports(projection) };
+      value = {
+        requests,
+        reports: openReports(projection, responses),
+        responding: responses.some((response) => response.failed === undefined),
+      };
     }
     return value;
   });
@@ -381,26 +393,38 @@ function ReportAnswer({
   onAnswered: (answer: string) => void;
 }) {
   const { environmentId, id: threadId, runtimeMode, interactionMode } = need.thread;
+  const thread = scopeThreadRef(environmentId, threadId);
   const canOperate = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
+  const responses = useAtomValue(threadReportResponsesAtom(threadKey(thread)));
   const [reply, setReply] = useState("");
-  const { sending, run, alert } = useAnswerCommand();
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
-  const disabled = !canOperate || sending;
+  const failure = reportResponseFailure(responses, ref);
+  const disabled = !canOperate;
   // The answer is the asking thread's next message, so it reaches that thread's agent.
-  const send = (text: string) =>
-    run(
+  const send = async (text: string) => {
+    const answerId = newMessageId();
+    const answer = formatReportAnswer(report, text);
+    const sent = await respondToReport(
+      thread,
+      {
+        ref,
+        kind: "answer",
+        messageId: answerId,
+        text: answer,
+        createdAt: new Date().toISOString(),
+      },
       () =>
         startTurn({
           environmentId,
           input: {
             threadId,
             message: {
-              messageId: newMessageId(),
+              messageId: answerId,
               role: "user",
-              text: formatReportAnswer(report, text),
+              text: answer,
               attachments: [],
               reportAnswer: ref,
             },
@@ -410,8 +434,9 @@ function ReportAnswer({
           },
         }),
       "Could not send your answer. Try again.",
-      () => onAnswered(text),
     );
+    if (sent) onAnswered(text);
+  };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <ReportAnswerOptions
@@ -428,21 +453,26 @@ function ReportAnswer({
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
-      {alert}
+      {failure ? (
+        <p role="alert" className="text-xs text-destructive">
+          {failure}
+        </p>
+      ) : null}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"
           variant="ghost-muted"
           disabled={disabled}
           onClick={() =>
-            void run(
+            void respondToReport(
+              thread,
+              { ref, kind: "dismiss" },
               () =>
                 dismiss({
                   environmentId,
                   input: { commandId: CommandId.make(randomUUID()), threadId, ...ref },
                 }),
-              "Could not dismiss the report.",
-              () => {},
+              "Could not dismiss the report. Try again.",
             )
           }
         >

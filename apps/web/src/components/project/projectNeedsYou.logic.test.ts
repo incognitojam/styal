@@ -86,6 +86,8 @@ describe("listProjectNeeds", () => {
         createdAt: secret.pendingUserInputAt,
       },
     ]);
+    // Its only question was just answered here; the server still counts it until the answer lands.
+    expect(listProjectNeeds([secret], () => ({ ...empty, responding: true }))).toEqual([]);
   });
 });
 
@@ -126,5 +128,21 @@ describe("openReports", () => {
         createdAt: "2026-11-18T10:01:00.000Z",
       },
     ]);
+    // An answer or dismissal this client is still sending takes the question off at once.
+    const openRef = { messageId: MessageId.make("open"), key: "open", version: 1 };
+    for (const pending of [
+      {
+        ref: openRef,
+        kind: "answer" as const,
+        messageId: MessageId.make("pending-reply"),
+        text: "[open, version 1] Yes",
+        createdAt: "2026-11-18T10:06:00.000Z",
+      },
+      { ref: openRef, kind: "dismiss" as const },
+    ]) {
+      expect(openReports(projection, [pending])).toEqual([]);
+      // A failed one leaves it waiting.
+      expect(openReports(projection, [{ ...pending, failed: "Offline" }])).toHaveLength(1);
+    }
   });
 });

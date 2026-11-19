@@ -6,10 +6,14 @@ import type {
 } from "@t3tools/client-runtime/state/thread-requests";
 import {
   coordinatorReports,
+  pendingReportAnswers,
+  pendingReportDismissals,
   waitingCoordinatorReports,
+  type PendingReportResponse,
 } from "@t3tools/client-runtime/coordinator-reports";
 import type {
   CoordinatorReport,
+  CoordinatorReportReference,
   MessageId,
   OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
@@ -25,6 +29,8 @@ export interface OpenReport {
 export interface ThreadNeeds {
   readonly requests: PendingThreadRequests;
   readonly reports: ReadonlyArray<OpenReport>;
+  /** A report response from this client is on its way, so the server's count is behind. */
+  readonly responding?: boolean;
 }
 
 interface NeedBase {
@@ -42,15 +48,20 @@ export type ProjectNeed = NeedBase &
     | { readonly kind: "thread" }
   );
 
+/** Report questions still waiting, counting responses this client has sent as given. */
 export function openReports(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "thread">,
+  pending: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReference.Type>> = [],
 ): ReadonlyArray<OpenReport> {
   const messages = projection.messages.map((message) => ({
     ...message,
     createdAt: DateTime.formatIso(message.createdAt),
   }));
   return waitingCoordinatorReports(
-    coordinatorReports(messages, projection.thread.reportDismissals ?? []),
+    coordinatorReports(
+      [...messages, ...pendingReportAnswers(pending)],
+      [...(projection.thread.reportDismissals ?? []), ...pendingReportDismissals(pending)],
+    ),
   ).map(({ message }) => ({
     messageId: message.id,
     report: message.report!,
@@ -94,6 +105,7 @@ export function listProjectNeeds(
         report,
       })),
     ];
+    if (own.length === 0 && loaded.responding) continue;
     needs.push(
       ...(own.length > 0
         ? own

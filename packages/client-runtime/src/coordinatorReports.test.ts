@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  claimReportResponse,
   coordinatorReports,
+  failReportResponse,
   formatReportAnswer,
+  pendingReportAnswers,
+  pendingReportDismissals,
+  reportAnswerDelivery,
   reportAnswerDisplay,
+  reportResponseFailure,
+  settleReportResponses,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
@@ -80,5 +87,53 @@ describe("coordinator reports", () => {
         .compact,
     ).toBe(false);
     expect(reportAnswerDisplay(answer("Start it\nafter lunch"), report).compact).toBe(false);
+  });
+
+  it("keeps one response per report until it fails or the server shows it", () => {
+    const ref = { messageId: "a", key: "pr:1", version: 1 };
+    const answer = (messageId: string, text: string) => ({
+      ref,
+      kind: "answer" as const,
+      messageId,
+      text,
+      createdAt: "2026-11-19T00:00:00.000Z",
+    });
+    const first = claimReportResponse([], answer("m1", "Merge it"));
+    expect(first).not.toBeNull();
+    // A double click, a different answer, and a dismiss before the first confirms send nothing.
+    expect(claimReportResponse(first!, answer("m2", "Merge it"))).toBeNull();
+    expect(claimReportResponse(first!, answer("m3", "Hold"))).toBeNull();
+    expect(claimReportResponse(first!, { ref, kind: "dismiss" })).toBeNull();
+    // Another report, or another version of it, is still free.
+    expect(
+      claimReportResponse(first!, { ...answer("m4", "Hold"), ref: { ...ref, version: 2 } }),
+    ).not.toBeNull();
+
+    const messages = [report("a", "pr:1", 1)];
+    const answered = [...messages, ...pendingReportAnswers(first!)];
+    expect(coordinatorReports(answered, [])[0]?.state).toBe("answered");
+    const sending = pendingReportAnswers(first!).map((message) => message.id);
+    expect(reportAnswerDelivery("m1", { sending, queued: [] })).toBe("sending");
+    expect(reportAnswerDelivery("m1", { sending: [], queued: ["m1"] })).toBe("queued");
+    expect(reportAnswerDelivery("m1", { sending: [], queued: [] })).toBe("delivered");
+
+    // A failed send leaves the report open and free to answer again.
+    const failed = failReportResponse(first!, ref, "Could not send your answer.");
+    expect(pendingReportAnswers(failed)).toEqual([]);
+    expect(reportResponseFailure(failed, ref)).toBe("Could not send your answer.");
+    expect(reportResponseFailure(first!, ref)).toBeUndefined();
+    expect(coordinatorReports([...messages, ...pendingReportAnswers(failed)], [])[0]?.state).toBe(
+      "open",
+    );
+    const retried = claimReportResponse(failed, answer("m5", "Hold"));
+    expect(retried?.map((response) => response.failed)).toEqual([undefined]);
+    expect(reportResponseFailure(retried!, ref)).toBeUndefined();
+
+    // Settled once the server has the answer message or the dismissal.
+    expect(settleReportResponses(first!, { messageIds: ["m1"], dismissals: [] })).toEqual([]);
+    expect(settleReportResponses(first!, { messageIds: [], dismissals: [] })).toBe(first);
+    const dismissed = claimReportResponse([], { ref, kind: "dismiss" })!;
+    expect(pendingReportDismissals(dismissed)).toEqual([ref]);
+    expect(settleReportResponses(dismissed, { messageIds: [], dismissals: [ref] })).toEqual([]);
   });
 });

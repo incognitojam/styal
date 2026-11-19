@@ -6,9 +6,12 @@ import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
+  reportAnswerDelivery,
   reportAnswerDisplay,
+  reportResponseFailure,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
+import type { PendingResponse } from "../../state/coordinatorReports";
 import { Button } from "../ui/button";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
@@ -37,7 +40,11 @@ export type ReportAnswer = { messageId: MessageId; title: string; version: numbe
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   answers: ReadonlyMap<MessageId, ReportAnswer>;
-  send: (text: string, ref: ReportReference) => Promise<void>;
+  /** Responses this client sent that the server does not show yet, and ones that failed. */
+  responses: readonly PendingResponse[];
+  /** Message ids still sending, and ids of answers waiting in the queue behind a running turn. */
+  delivery: { sending: readonly string[]; queued: readonly string[] };
+  answer: (text: string, ref: ReportReference) => void;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
@@ -54,8 +61,6 @@ export function ReportAnswerBar({
   renderAnswer: (answer: NonNullable<ReportState["answer"]>, text: string) => ReactNode;
 }) {
   const ctx = use(CoordinatorReportsContext);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "dismissed") {
@@ -70,21 +75,30 @@ export function ReportAnswerBar({
   }
   if (report.state === "answered" && report.answer) {
     const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
+    const delivery = reportAnswerDelivery(report.answer.id, ctx.delivery);
+    const status =
+      delivery === "sending" ? (
+        <span>· Sending</span>
+      ) : delivery === "queued" ? (
+        <span>· Queued until the current turn ends</span>
+      ) : null;
     if (compact) {
       return (
         <div className={panelClassName}>
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
             <MessageSquareIcon />
             You answered: <span className="text-foreground">{text}</span>
+            {status}
           </span>
         </div>
       );
     }
     return (
       <div className={panelClassName}>
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+        <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
           <MessageSquareIcon />
           You answered
+          {status}
         </span>
         {renderAnswer(report.answer, text)}
       </div>
@@ -93,7 +107,8 @@ export function ReportAnswerBar({
   if (report.state !== "open") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
-  const disabled = !ctx.canOperate || sending;
+  const disabled = !ctx.canOperate;
+  const sendError = reportResponseFailure(ctx.responses, ref);
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
@@ -105,14 +120,7 @@ export function ReportAnswerBar({
       <ReportAnswerOptions
         answers={tag.answers ?? []}
         disabled={disabled}
-        onPick={(answer) => {
-          setSending(true);
-          setSendError(null);
-          void ctx
-            .send(formatReportAnswer(tag, answer), ref)
-            .catch(() => setSendError("Could not send your answer. Try again."))
-            .finally(() => setSending(false));
-        }}
+        onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
       />
       <div className="flex items-center justify-between">
         <Button

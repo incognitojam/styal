@@ -99,6 +99,7 @@ import {
   previewAnnotationContextReference,
   responseContextReference,
 } from "../../lib/composerContextRecords";
+import { beginReportResponse } from "../../state/coordinatorReports";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { Atom } from "effect/reactivity";
@@ -1145,6 +1146,23 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
     }
+    // Every surface that shows the report counts this reply as given until the server has it;
+    // one answered elsewhere while this send waited is not answered twice.
+    const failReportReply =
+      input.reportReply && multipleModelSelections === null
+        ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
+            ref: input.reportReply.ref,
+            kind: "answer",
+            messageId: messageIdForSend,
+            text: outgoingMessageText,
+            createdAt: messageCreatedAt,
+          })
+        : null;
+    if (input.reportReply && multipleModelSelections === null && failReportReply === null) {
+      sendInFlightRef.current = false;
+      setThreadError(threadIdForSend, "This report already has an answer on its way.");
+      return;
+    }
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else {
@@ -1474,6 +1492,7 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure !== null) {
+      failReportReply?.("Could not send your answer. Try again.");
       if (isLocalDraftThread && draftId && draftThread) {
         restoreFailedDraftThread(
           draftId,
