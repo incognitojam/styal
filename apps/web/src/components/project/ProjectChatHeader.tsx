@@ -1,5 +1,5 @@
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { SettingsIcon, SquarePenIcon } from "lucide-react";
+import { MessageSquareTextIcon, SettingsIcon, SquarePenIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -14,6 +14,8 @@ export interface ProjectChatHeaderProps {
   readonly machine: { readonly label: string; readonly kind: EnvironmentMachineKind } | null;
   readonly onNewThread: () => void;
   readonly onOpenSettings: () => void;
+  /** Once the chat exists: its thread view, for the thread's title, menu and details panel. */
+  readonly onOpenThread?: (() => void) | null;
 }
 
 /** The project page's header, in the slot and height of a thread's header. */
@@ -48,6 +50,23 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
         <SquarePenIcon aria-hidden />
         <span className="max-sm:sr-only">New thread</span>
       </Button>
+      {props.onOpenThread ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label="Open as thread"
+                onClick={props.onOpenThread}
+              />
+            }
+          >
+            <MessageSquareTextIcon aria-hidden />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">Open as thread</TooltipPopup>
+        </Tooltip>
+      ) : null}
       <Tooltip>
         <TooltipTrigger
           render={
