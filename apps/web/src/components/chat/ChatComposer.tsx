@@ -393,6 +393,8 @@ export interface ChatComposerProps {
   isPreparingWorktree: boolean;
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
+  /** What the next message replies to: last, on the input, and kept beside an open approval or question. */
+  replyItem?: ComposerBannerStackItem | null;
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
@@ -2666,12 +2668,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }),
           },
         ];
-  const shelfItems = hasBlockingComposerTopDrawer
-    ? shelfBannerItems.filter(
-        (item) =>
-          item.group === "environment" && (item.variant === "error" || item.variant === "warning"),
-      )
-    : shelfBannerItems;
+  const shelfItems = [
+    ...(hasBlockingComposerTopDrawer
+      ? shelfBannerItems.filter(
+          (item) =>
+            item.group === "environment" &&
+            (item.variant === "error" || item.variant === "warning"),
+        )
+      : shelfBannerItems),
+    ...(props.replyItem ? [props.replyItem] : []),
+  ];
 
   const insertComposerText = (
     text: string,

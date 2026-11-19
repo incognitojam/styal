@@ -2866,7 +2866,7 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  const otherComposerBannerItems = (() => {
+  const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
       draftDefaultModelSelection ??
@@ -2961,21 +2961,17 @@ export default function ChatView(props: ChatViewProps) {
       }),
     ];
   })() as ComposerBannerStackItem[];
-  // Last, so nothing comes between the reply and the input it belongs to.
-  const composerBannerItems =
+  const reportReplyItem =
     settings.coordinatorReportsEnabled && activeReportReply
-      ? [
-          ...otherComposerBannerItems,
-          reportReplyBannerItem({
-            title: activeReportReply.title,
-            version: activeReportReply.ref.version,
-            question: reportStates.find(
-              (report) => report.message.id === activeReportReply.ref.messageId,
-            )?.message.report?.question,
-            onCancel: () => setReportReply(null),
-          }),
-        ]
-      : otherComposerBannerItems;
+      ? reportReplyBannerItem({
+          title: activeReportReply.title,
+          version: activeReportReply.ref.version,
+          question: reportStates.find(
+            (report) => report.message.id === activeReportReply.ref.messageId,
+          )?.message.report?.question,
+          onCancel: () => setReportReply(null),
+        })
+      : null;
 
   if (
     terminalUiLaunchContext !== null &&
@@ -4042,6 +4038,7 @@ export default function ChatView(props: ChatViewProps) {
                                     ? EMPTY_COMPOSER_BANNER_ITEMS
                                     : composerBannerItems
                                 }
+                                replyItem={reportReplyItem}
                                 resumeCompactionTokens={resumeCompactionTokens}
                                 keepFullHistory={keepFullHistory}
                                 onToggleKeepFullHistory={toggleKeepFullHistoryStable}
