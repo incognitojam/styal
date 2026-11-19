@@ -174,12 +174,17 @@ refreshing does not update or restart your connected servers. This also works in
 
 ## Desktop app updates
 
-The desktop app downloads updates in the background and installs them when you
-quit, ready for your next launch. On macOS, closing the last window leaves the
-app running; choose **Quit** to install. To apply a downloaded update right away,
-select **Restart to update** in the sidebar. Update checks, download progress,
-retries, and the update track are in **Settings**. Changing the track cancels a
-pending update from the previous track.
+The desktop app checks for updates automatically. Choose **Download** in the
+sidebar or **Settings → About** when you are ready; it checks the latest release
+again before downloading. Progress and retries appear in the same places.
+A finished download stays ready; automatic checks pause while it waits.
+**Restart to Install** installs that version without another update check or
+download. After restarting, a newer release is offered through **Download**.
+
+Downloaded updates also install when you quit, ready for your next launch.
+On macOS, styal prepares the installer after downloading when permissions allow.
+Closing the last window leaves the app running; choose **Quit** to install.
+Changing the track cancels a pending update from the previous track.
 After an update to a newer release on the same track, the desktop app names the
 version the next time you look at its window, with a link to its release notes.
 First launches, track changes, downgrades, PR previews, and development builds

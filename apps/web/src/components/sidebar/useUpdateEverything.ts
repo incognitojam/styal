@@ -9,6 +9,7 @@ import { useEnvironments } from "~/state/environments";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
+import { getDesktopUpdateDownloadedVersion } from "../desktopUpdate.logic";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import {
@@ -319,8 +320,16 @@ export function useUpdateEverything(
             skipped,
           });
         if (outcome.localReady && installLocal) {
-          setUpdateEverythingRun((run) => run && { ...run, phase: "installing" });
-          saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
+          const downloadedVersion = window.desktopBridge
+            ? getDesktopUpdateDownloadedVersion(await window.desktopBridge.getUpdateState())
+            : localVersion;
+          setUpdateEverythingRun(
+            (run) => run && { ...run, phase: "installing", localVersion: downloadedVersion },
+          );
+          saveUpdateEverythingResult({
+            ...result(finishedServers),
+            localVersion: downloadedVersion,
+          });
           if (await installLocal(reportLocalError)) return;
           clearSavedUpdateEverythingResult();
         }

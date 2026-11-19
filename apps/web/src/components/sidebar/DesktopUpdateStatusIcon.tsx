@@ -1,8 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { CircleArrowUpIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
+import { CircleArrowUpIcon, DownloadIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
-
-import { cn } from "../../lib/utils";
 
 const DOWNLOAD_PROGRESS_RADIUS = 11;
 const DOWNLOAD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_PROGRESS_RADIUS;
@@ -13,6 +11,7 @@ export type DesktopUpdateStatusIconState =
   | "available"
   | "downloading"
   | "downloaded"
+  | "failed"
   | "everything";
 
 function DesktopUpdateAvailableIcon() {
@@ -28,19 +27,18 @@ function DesktopUpdateAvailableIcon() {
 }
 
 function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
-  const isDeterminate = typeof percent === "number" && Number.isFinite(percent) && percent > 0;
-  const progressOffset = isDeterminate
-    ? DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - Math.min(100, percent) / 100)
-    : DOWNLOAD_PROGRESS_CIRCUMFERENCE * 0.75;
+  // Unknown progress draws an empty ring: no spinning, which would repaint every frame.
+  const normalizedPercent =
+    typeof percent === "number" && Number.isFinite(percent)
+      ? Math.min(100, Math.max(0, percent))
+      : 0;
+  const progressOffset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - normalizedPercent / 100);
 
   return (
     <span className="relative grid size-8 place-items-center">
       <svg
         aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute inset-0 size-full -rotate-90 transform-gpu",
-          !isDeterminate && "animate-spin motion-reduce:animate-none",
-        )}
+        className="pointer-events-none absolute inset-0 size-full -rotate-90"
         viewBox="0 0 32 32"
       >
         <circle
@@ -48,7 +46,7 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
           cy="16"
           r={DOWNLOAD_PROGRESS_RADIUS}
           fill="none"
-          className="stroke-current/22"
+          className="stroke-current/35"
           strokeWidth="1.5"
         />
         <circle
@@ -85,6 +83,7 @@ export function DesktopUpdateStatusIcon({
     return <DesktopUpdateDownloadingIcon percent={downloadPercent ?? null} />;
   }
   if (status === "downloaded") return <RotateCwIcon className="size-4" />;
+  if (status === "failed") return <TriangleAlertIcon className="size-4" />;
   if (status === "everything") return <CircleArrowUpIcon className="size-4" />;
 
   return (

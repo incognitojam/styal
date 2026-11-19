@@ -13,7 +13,10 @@ import {
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
+  isDesktopUpdateButtonDisabled,
+  isDesktopUpdateFailed,
   resolveDesktopUpdateButtonAction,
+  resolveDesktopUpdateButtonTone,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
@@ -91,6 +94,33 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 };
 
+/** Resolves once the download finishes; true only when the update is ready to install. */
+export async function downloadLocalUpdate(
+  bridge: DesktopBridge,
+  {
+    notifyDownloaded,
+    reportError = toastUpdateError,
+  }: { readonly notifyDownloaded: boolean; readonly reportError?: ReportLocalUpdateError },
+): Promise<boolean> {
+  try {
+    const result = await bridge.downloadUpdate();
+    if (result.completed && notifyDownloaded) {
+      showDesktopUpdateDownloadedToast(bridge, result.state);
+    }
+    const actionError = shouldToastDesktopUpdateActionResult(result)
+      ? getDesktopUpdateActionError(result)
+      : null;
+    if (actionError) reportError("Could not download update", actionError);
+    return result.completed;
+  } catch (error) {
+    reportError(
+      "Could not start update download",
+      error instanceof Error ? error.message : "An unexpected error occurred.",
+    );
+    return false;
+  }
+}
+
 export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
@@ -103,7 +133,8 @@ export async function installLocalUpdate(
         ? await bridge.installUpdate()
         : await bridge.installUpdate({ expectedVersion, confirmed });
     if (!result.accepted) {
-      showDesktopUpdateDownloadedToast(bridge, result.state);
+      if (result.state.status === "downloaded")
+        showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;
     }
     const actionError = shouldToastDesktopUpdateActionResult(result)
@@ -122,8 +153,8 @@ export async function installLocalUpdate(
 }
 
 /**
- * The sidebar update button. Desktop updates download in the background, so with
- * only a local update the button restarts into it. When other machines' servers
+ * The sidebar update button. It appears once an update is found: Download fetches it, then
+ * Restart to Install restarts into it. When other machines' servers
  * or any providers are behind, one click updates everything: providers, then
  * servers, then this app last. Web shows its build refresh notice beside it.
  */
@@ -152,7 +183,7 @@ function SidebarUpdateControl() {
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
   const localUpdateVersion =
-    state && action === "install" ? getDesktopUpdateDownloadedVersion(state) : null;
+    state && action !== "none" ? getDesktopUpdateDownloadedVersion(state) : null;
   const everything = useUpdateEverything(localUpdateVersion);
   const checkProviderUpdates = useCheckProviderUpdates();
   const isDownloading = state?.status === "downloading";
@@ -166,7 +197,10 @@ function SidebarUpdateControl() {
       ? getDesktopUpdateButtonTooltip(state)
       : "Restart to update";
   const isInteractionDisabled =
-    isActionPending || isRunningEverything || (!runsEverything && state?.status === "checking");
+    isActionPending ||
+    isRunningEverything ||
+    (!runsEverything && (state?.status === "checking" || isDesktopUpdateButtonDisabled(state)));
+  const tone = runsEverything ? "cta" : resolveDesktopUpdateButtonTone(state);
   const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
   const suppressReleaseNotesFocusOpen = useRef(false);
   const releaseNotesPopupRef = useRef<HTMLDivElement>(null);
@@ -232,7 +266,15 @@ function SidebarUpdateControl() {
       return;
     }
     const bridge = window.desktopBridge;
-    if (!bridge || !state || action !== "install") return;
+    if (!bridge || !state) return;
+    if (action === "download") {
+      setIsActionPending(true);
+      void downloadLocalUpdate(bridge, { notifyDownloaded: true }).finally(() =>
+        setIsActionPending(false),
+      );
+      return;
+    }
+    if (action !== "install") return;
     setIsActionPending(true);
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
   };
@@ -249,15 +291,25 @@ function SidebarUpdateControl() {
     const result = await settlePromise(() =>
       everything.run({
         ...(confirmed ? { confirmation: activity } : {}),
-        ...(bridge && action === "install"
+        ...(bridge && action === "download"
           ? {
-              installLocal: (reportError) =>
-                installLocalUpdate(
+              downloadLocal: (reportError) =>
+                downloadLocalUpdate(bridge, { notifyDownloaded: false, reportError }),
+            }
+          : {}),
+        ...(bridge && action !== "none"
+          ? {
+              installLocal: async (reportError) => {
+                const downloadedVersion = (await bridge.getUpdateState()).downloadedVersion;
+                if (downloadedVersion === null) return false;
+                const sameVersion = downloadedVersion === activity.localVersion;
+                return installLocalUpdate(
                   bridge,
                   reportError,
-                  activity.localVersion ?? undefined,
-                  confirmed,
-                ),
+                  sameVersion ? downloadedVersion : undefined,
+                  sameVersion && confirmed,
+                );
+              },
             }
           : {}),
       }),
@@ -277,14 +329,26 @@ function SidebarUpdateControl() {
 
   if (!showsLocalUpdate && !showsEverything) return null;
 
-  const statusIcon = isActionPending ? (
-    <Spinner size="md" aria-hidden="true" />
-  ) : (
-    <DesktopUpdateStatusIcon
-      status={showsEverything ? "everything" : "downloaded"}
-      downloadPercent={null}
-    />
-  );
+  // A running download shows its progress ring rather than a spinner.
+  const statusIcon =
+    isActionPending && !isDownloading ? (
+      <Spinner size="md" aria-hidden="true" />
+    ) : (
+      <DesktopUpdateStatusIcon
+        status={
+          isDownloading
+            ? "downloading"
+            : showsEverything
+              ? "everything"
+              : state && isDesktopUpdateFailed(state)
+                ? "failed"
+                : action === "download"
+                  ? "available"
+                  : "downloaded"
+        }
+        downloadPercent={state?.downloadPercent ?? null}
+      />
+    );
   const confirmDialog = activityCheck ? (
     <UpdateEverythingDialog
       open={isConfirmingEverything}
@@ -343,9 +407,15 @@ function SidebarUpdateControl() {
       className={cn(
         "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
-        "bg-update-surface text-update-foreground",
-        !isInteractionDisabled && "hover:bg-update-surface-hover",
-        isInteractionDisabled && "opacity-60",
+        state && isDesktopUpdateFailed(state)
+          ? "bg-warning/12 text-warning-foreground hover:bg-warning/18"
+          : tone === "cta"
+            ? cn(
+                "bg-update-surface text-update-foreground",
+                !isInteractionDisabled && "hover:bg-update-surface-hover",
+              )
+            : "bg-sidebar-control-surface text-sidebar-foreground",
+        isInteractionDisabled && tone === "cta" && "opacity-60",
       )}
       onClick={handleAction}
       onBlur={() => {

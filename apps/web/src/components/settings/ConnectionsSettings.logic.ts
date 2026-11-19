@@ -112,9 +112,7 @@ export function resolveLocalVersionStatusLabel(state: DesktopUpdateState | null)
     const version = getDesktopUpdateDownloadedVersion(state);
     return version ? `Update ${version} downloaded` : "Update downloaded";
   }
-  // The fork downloads found updates in the background, so a plain `available`
-  // state has no sidebar action but is still pending.
-  if (action === "download" || state.status === "available") {
+  if (action === "download") {
     return state.availableVersion
       ? `Update ${state.availableVersion} available`
       : "Update available";

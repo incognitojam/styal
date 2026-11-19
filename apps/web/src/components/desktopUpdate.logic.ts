@@ -52,7 +52,7 @@ export function resolveDesktopUpdateButtonAction(
   ) {
     return "install";
   }
-  if (state.status === "available" && state.errorContext === "download" && state.canRetry) {
+  if (state.status === "available") {
     return "download";
   }
   if (state.status === "error") {
@@ -63,23 +63,21 @@ export function resolveDesktopUpdateButtonAction(
   return "none";
 }
 
-/** The sidebar stays quiet until a downloaded update can be installed. */
+/** The sidebar stays quiet until an update is found: idle and failed checks show nothing. */
 export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
   if (!state || !state.enabled) {
     return false;
   }
   return (
-    resolveDesktopUpdateButtonAction(state) === "install" ||
+    resolveDesktopUpdateButtonAction(state) !== "none" ||
+    state.status === "downloading" ||
     (state.status === "checking" && state.downloadedVersion !== null)
   );
 }
 
 export type DesktopUpdateButtonTone = "cta" | "quiet" | "idle";
 
-/**
- * The background download needs no input, so it stays quiet. Only a state that
- * wants a click — install, or retry a failed download — gets call-to-action colour.
- */
+/** A running download needs no input, so it stays quiet; download and install want a click. */
 export function resolveDesktopUpdateButtonTone(
   state: DesktopUpdateState | null,
 ): DesktopUpdateButtonTone {
@@ -100,19 +98,67 @@ export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null):
   return state?.status === "downloading";
 }
 
-/** Statuses driven entirely by the updater should not look like clickable actions. */
-export function getDesktopUpdateProgressLabel(state: DesktopUpdateState | null): string | null {
-  if (state?.status === "checking") {
-    return "Checking…";
+export function getDesktopUpdateSettingsButtonLabel(
+  state: DesktopUpdateState | null,
+  { offTrack = false }: { readonly offTrack?: boolean } = {},
+): string {
+  const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
+  if (action === "download") {
+    return state?.errorContext === "download" ? "Retry Download" : "Download";
   }
-  if (state?.status === "available" && state.errorContext !== "download") {
-    return "Preparing download…";
+  if (action === "install") {
+    return state?.errorContext === "install" ? "Retry Install" : "Restart to Install";
   }
-  if (state?.status === "downloading") {
-    const progress =
-      typeof state.downloadPercent === "number" ? ` ${Math.floor(state.downloadPercent)}%` : "";
-    return `Downloading…${progress}`;
+  if (state?.status === "checking") return "Checking…";
+  // Off its track, "up to date" only means no switch is pending; Review moves it.
+  if (state?.status === "up-to-date" && !offTrack) return "Up to Date";
+  return "Check for Updates";
+}
+
+/** A download or install that failed, or an install that did not take; the next click retries it. */
+export function isDesktopUpdateFailed(state: DesktopUpdateState): boolean {
+  if (resolveDesktopUpdateButtonAction(state) === "none") return false;
+  return (
+    state.errorContext === "download" ||
+    state.errorContext === "install" ||
+    isDesktopUpdateNotApplied(state)
+  );
+}
+
+function isDesktopUpdateNotApplied(state: DesktopUpdateState): boolean {
+  return (
+    state.notAppliedVersion !== undefined &&
+    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+  );
+}
+
+function withMessage(text: string, message: string | null): string {
+  const detail = message?.trim();
+  return detail ? `${text}: ${detail}` : `${text}.`;
+}
+
+/** What the Settings version row says about an update; null when there is none to describe. */
+export function getDesktopUpdateSettingsDescription(state: DesktopUpdateState): string | null {
+  const available = state.availableVersion;
+  const downloaded = state.downloadedVersion;
+  const action = resolveDesktopUpdateButtonAction(state);
+  if (action === "download" && state.errorContext === "download") {
+    return withMessage(`Could not download version ${available}`, state.message);
   }
+  if (action === "install" && state.errorContext === "install") {
+    return withMessage(`Could not install version ${downloaded}`, state.message);
+  }
+  if (action !== "none" && isDesktopUpdateNotApplied(state)) {
+    return `Version ${state.notAppliedVersion} did not install.`;
+  }
+  if (state.status === "downloading") {
+    return available ? `Downloading version ${available}.` : "Downloading an update.";
+  }
+  if (state.status === "checking" && downloaded) {
+    return `Version ${downloaded} is ready to install.`;
+  }
+  if (action === "install" && downloaded) return `Version ${downloaded} is ready to install.`;
+  if (action === "download" && available) return `Version ${available} is available.`;
   return null;
 }
 
@@ -128,48 +174,51 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
   if (action === "install") {
     return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. Restart to install the downloaded Apple Silicon build.";
   }
-  if (state.status === "available" || state.status === "downloading") {
-    return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. The available update will replace it with the native Apple Silicon build automatically.";
-  }
   return "This Mac has Apple Silicon, but styal is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
 
+/** The sidebar button's tooltip and release-notes heading: a summary line, then any updater message. */
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
+  const detail = state.message?.trim() ? `\n${state.message.trim()}` : "";
   if (state.status === "checking" && state.downloadedVersion !== null) {
-    return `Update ${state.downloadedVersion} downloaded. Checking for newer updates…`;
+    return `Version ${state.downloadedVersion} is ready to install.`;
   }
   if (
-    state.notAppliedVersion !== undefined &&
-    (state.status === "available" || state.status === "downloaded") &&
-    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+    (state.status === "available" || state.status === "error") &&
+    state.errorContext === "download" &&
+    state.availableVersion
   ) {
-    return `Update ${state.notAppliedVersion} did not apply. Click to retry.`;
+    return `Could not download version ${state.availableVersion}. Click to retry.${detail}`;
+  }
+  if (
+    (state.status === "downloaded" || state.status === "error") &&
+    state.errorContext === "install" &&
+    state.downloadedVersion
+  ) {
+    return `Could not install version ${state.downloadedVersion}. Click to retry.${detail}`;
+  }
+  if (
+    (state.status === "available" || state.status === "downloaded") &&
+    isDesktopUpdateNotApplied(state)
+  ) {
+    return `Version ${state.notAppliedVersion} did not install. Click to retry.`;
   }
   if (state.status === "available") {
-    if (state.errorContext === "download") {
-      return `Download failed for ${state.availableVersion ?? "the available update"}. Click to retry.`;
-    }
-    return `Update ${state.availableVersion ?? "available"} ready to download`;
+    return state.availableVersion
+      ? `Version ${state.availableVersion} is available. Click to download.`
+      : "An update is available. Click to download.";
   }
   if (state.status === "downloading") {
+    const version = state.availableVersion ? `version ${state.availableVersion}` : "an update";
     const progress =
       typeof state.downloadPercent === "number" ? ` (${Math.floor(state.downloadPercent)}%)` : "";
-    return `Downloading update${progress}`;
+    return `Downloading ${version}${progress}`;
   }
-  if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
-  }
+  const ready = state.downloadedVersion ?? state.availableVersion;
+  const readyLine = `${ready ? `Version ${ready}` : "An update"} is ready to install. Click to restart.`;
+  if (state.status === "downloaded") return readyLine;
   if (state.status === "error") {
-    if (state.errorContext === "download" && state.availableVersion) {
-      return `Download failed for ${state.availableVersion}. Click to retry.`;
-    }
-    if (state.errorContext === "install" && state.downloadedVersion) {
-      return `Install failed for ${state.downloadedVersion}. Click to retry.`;
-    }
-    if (state.downloadedVersion) {
-      return `Update ${state.downloadedVersion} downloaded. Click to restart and install.`;
-    }
-    return state.message ?? "Update failed";
+    return state.downloadedVersion ? readyLine : (state.message ?? "Update failed");
   }
   return "Up to date";
 }

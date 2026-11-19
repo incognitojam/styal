@@ -7,7 +7,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
 import { DiscordPresenceStatus } from "./DiscordPresenceStatus";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, TriangleAlertIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -54,9 +54,10 @@ import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateActionError,
   getDesktopUpdateDisabledReason,
-  getDesktopUpdateProgressLabel,
+  isDesktopUpdateFailed,
+  getDesktopUpdateSettingsButtonLabel,
+  getDesktopUpdateSettingsDescription,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
@@ -137,6 +138,7 @@ import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer } from "../ServerUpdateAction";
+import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
@@ -266,21 +268,7 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          const error = getDesktopUpdateActionError(result);
-          if (error) throw new Error(error);
-        })
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not download update",
-              description: error instanceof Error ? error.message : "Download failed.",
-            }),
-          );
-        });
+      void downloadLocalUpdate(bridge, { notifyDownloaded: false });
       return;
     }
 
@@ -332,34 +320,50 @@ function AboutVersionSection() {
   };
 
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
-  const progressLabel = getDesktopUpdateProgressLabel(updateState);
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
   const buttonDisabled = action === "none" && !canCheckForUpdate(updateState);
-
-  const actionLabel: Record<string, string> = { download: "Retry Download", install: "Install" };
-  const buttonLabel =
-    actionLabel[action] ??
-    // Off its track, "up to date" only means no switch is pending; Review moves it.
-    (updateState?.status === "up-to-date" && !appOffTrack ? "Up to Date" : "Check for Updates");
+  const buttonLabel = getDesktopUpdateSettingsButtonLabel(updateState, { offTrack: appOffTrack });
   const description =
-    action === "download" || action === "install"
-      ? "Update available."
-      : (getDesktopUpdateDisabledReason(updateState, updatesDenial) ??
-        "Current version of the application.");
+    (updateState ? getDesktopUpdateSettingsDescription(updateState) : null) ??
+    getDesktopUpdateDisabledReason(updateState, updatesDenial) ??
+    "Current version of the application.";
+  const downloadPercent =
+    updateState?.status === "downloading" && typeof updateState.downloadPercent === "number"
+      ? Math.floor(updateState.downloadPercent)
+      : null;
 
   return (
     <>
       <SettingsRow
         id={searchableSetting("app-version").id}
         title={<AboutVersionTitle />}
-        description={description}
+        description={
+          updateState && isDesktopUpdateFailed(updateState) ? (
+            <span className="flex items-start gap-1.5 text-warning-foreground">
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>{description}</span>
+            </span>
+          ) : (
+            description
+          )
+        }
         status={<AboutBuildProvenance />}
         managed={updatesDenial}
         control={
-          progressLabel ? (
-            <span role="status" aria-live="polite" className="text-xs text-muted-foreground">
-              {progressLabel}
-            </span>
+          updateState?.status === "downloading" ? (
+            <div className="flex w-28 flex-col items-end gap-1.5">
+              <span role="status" className="text-xs text-muted-foreground tabular-nums">
+                {downloadPercent === null ? "Downloading…" : `${downloadPercent}%`}
+              </span>
+              <progress
+                aria-label="Update download"
+                // Same system-colour fallback as the Antigravity download bar in ProviderSetupSection.
+                className="block h-1 w-full appearance-none overflow-hidden rounded-full bg-foreground/15 forced-colors:border [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary forced-colors:[&::-moz-progress-bar]:bg-[Highlight] [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-foreground/15 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary forced-colors:[&::-webkit-progress-value]:bg-[Highlight]"
+                // A value is always set: an indeterminate <progress> animates without end.
+                value={downloadPercent ?? 0}
+                max={100}
+              />
+            </div>
           ) : (
             <Tooltip>
               <TooltipTrigger
@@ -374,7 +378,11 @@ function AboutVersionSection() {
                   </Button>
                 }
               />
-              {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+              {buttonTooltip ? (
+                <TooltipPopup>
+                  <span className="whitespace-pre-line">{buttonTooltip}</span>
+                </TooltipPopup>
+              ) : null}
             </Tooltip>
           )
         }

@@ -136,6 +136,49 @@ describe("finishLocalDownload", () => {
     expect(errors).toEqual(["disk full"]);
   });
 
+  it("downloads once when a concurrent check finishes with an available release", async () => {
+    const { bridge, emit } = fakeDownloadBridge(state({ status: "checking" }));
+    let downloads = 0;
+    const finished = finishLocalDownload(
+      {
+        ...bridge,
+        downloadUpdate: async () => {
+          downloads++;
+          emit(state({ status: "available" }));
+          return bridge.downloadUpdate();
+        },
+      },
+      () => undefined,
+    );
+    await bridge.getUpdateState();
+    emit(state({ status: "available" }));
+    expect(await finished).toBe(true);
+    expect(downloads).toBe(1);
+  });
+
+  it.each(["available", "checking"] as const)(
+    "reports a refused download after %s instead of waiting forever",
+    async (status) => {
+      const { bridge, emit } = fakeDownloadBridge(state({ status }));
+      const errors: string[] = [];
+      const finished = finishLocalDownload(
+        {
+          ...bridge,
+          downloadUpdate: async () => ({
+            accepted: false,
+            completed: false,
+            state: state({ status: "available" }),
+          }),
+        },
+        (_title, message) => errors.push(message),
+      );
+      await bridge.getUpdateState();
+      if (status === "checking") emit(state({ status: "available" }));
+      expect(await finished).toBe(false);
+      expect(errors).toEqual(["Another update action is in progress. Try again."]);
+    },
+  );
+
   it("starts the download when this app has not", async () => {
     const { bridge } = fakeDownloadBridge(state({ status: "available" }));
     expect(await finishLocalDownload(bridge, () => undefined)).toBe(true);

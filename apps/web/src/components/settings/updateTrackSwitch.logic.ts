@@ -13,22 +13,45 @@ const downloadEnded = (state: DesktopUpdateState) =>
   state.status === "error" ||
   state.errorContext === "download";
 
-/** Waits for the download this app starts by itself once a check finds a build. Starts it only if
- * that did not happen. False once it failed or no longer runs. */
+/** Starts the download of the build a check found, or waits for one already running. False once
+ * it failed or no longer runs. */
 export async function finishLocalDownload(
   bridge: LocalDownloadBridge,
   reportError: (title: string, description: string) => void,
 ): Promise<boolean> {
   let stop: () => void = () => undefined;
+  let downloadStarted = false;
+  const download = async () => {
+    const result = await bridge.downloadUpdate();
+    if (!result.accepted && result.state.status !== "downloaded") {
+      throw new Error("Another update action is in progress. Try again.");
+    }
+    return result.state;
+  };
   const settled = new Promise<DesktopUpdateState>((resolve) => {
     stop = bridge.onUpdateState((state) => {
       if (downloadEnded(state)) resolve(state);
+      else if (state.status === "available" && state.errorContext === null && !downloadStarted) {
+        downloadStarted = true;
+        void download().then(
+          (state) => {
+            if (downloadEnded(state)) resolve(state);
+          },
+          (error: unknown) =>
+            resolve({
+              ...state,
+              status: "error",
+              message: error instanceof Error ? error.message : "An unexpected error occurred.",
+            }),
+        );
+      }
     });
   });
   try {
     let state = await bridge.getUpdateState();
-    if (state.status === "available" && state.errorContext === null) {
-      state = (await bridge.downloadUpdate()).state;
+    if (state.status === "available" && state.errorContext === null && !downloadStarted) {
+      downloadStarted = true;
+      state = await download();
     }
     if (!downloadEnded(state)) state = await settled;
     if (state.status === "downloaded") return true;
@@ -78,7 +101,7 @@ export async function prepareLocalTrackSwitch(
   }
   if (!input.reinstall) return { ok: true, local: null };
   const found = local.downloadedVersion ?? local.availableVersion;
-  // This app downloads a found build by itself, so the check can return with that under way.
+  // A download started earlier can already be under way or finished.
   if (
     (local.status === "available" ||
       local.status === "downloading" ||
