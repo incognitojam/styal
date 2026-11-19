@@ -867,8 +867,8 @@ describe("DesktopUpdates", () => {
         assert.isFalse(yield* Ref.get(desktopState.quitting));
 
         const failedState = yield* updates.getState;
-        assert.equal(failedState.status, "downloaded");
-        assert.equal(failedState.errorContext, "install");
+        assert.equal(failedState.status, "available");
+        assert.equal(failedState.errorContext, "download");
         assert.equal(failedState.message, "Desktop update install action failed unexpectedly.");
 
         const changedState = yield* updates.setChannel("nightly");
@@ -947,7 +947,7 @@ describe("DesktopUpdates", () => {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
         yield* Ref.set((yield* DesktopState.DesktopState).quitting, true);
-        assert.isFalse(yield* updates.installOnQuit);
+        assert.isTrue(yield* updates.prepareForQuit);
         assert.deepEqual(harness.installs, []);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1053,89 +1053,12 @@ describe("DesktopUpdates", () => {
             yield* flushCallbacks;
           }
           yield* Ref.set(desktopState.quitting, true);
-          assert.equal(yield* updates.installOnQuit, outcome === "replacement-ready");
-          assert.deepEqual(
-            harness.installs,
-            outcome === "replacement-ready" ? [{ isSilent: true, isForceRunAfter: false }] : [],
-          );
+          assert.isTrue(yield* updates.prepareForQuit);
+          assert.deepEqual(harness.installs, []);
           assert.isFalse(harness.autoInstallOnAppQuit());
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     },
-  );
-
-  it.effect(
-    "records an install on quit without an existing runtime directory or running backend",
-    () => {
-      const harness = makeHarness({
-        platform: "linux",
-        env: { APPIMAGE: "/synthetic/styal.AppImage" },
-        backendDesiredRunning: false,
-      });
-      return Effect.scoped(
-        Effect.gen(function* () {
-          const updates = yield* DesktopUpdates.DesktopUpdates;
-          const desktopState = yield* DesktopState.DesktopState;
-          yield* updates.configure;
-          harness.emit("update-downloaded", { version: "1.2.4" });
-          yield* flushCallbacks;
-          yield* updates.setChannel("latest");
-          assert.isFalse(yield* updates.installOnQuit);
-          assert.deepEqual(harness.installs, []);
-          yield* Ref.set(desktopState.quitting, true);
-          assert.isTrue(yield* updates.installOnQuit);
-          assert.isFalse(yield* updates.installOnQuit);
-          assert.deepEqual(harness.installs, [{ isSilent: true, isForceRunAfter: false }]);
-          // The next start can tell whether the quit install applied.
-          assert.equal(harness.installRecords.size, 1);
-        }),
-      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-    },
-  );
-
-  it.effect("lets normal quit finish when native staging fails", () => {
-    const harness = makeHarness({
-      installError: new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
-        channel: "latest",
-        isSilent: true,
-        isForceRunAfter: false,
-        cause: new Error("native staging failed"),
-      }),
-    });
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const updates = yield* DesktopUpdates.DesktopUpdates;
-        const desktopState = yield* DesktopState.DesktopState;
-        yield* updates.configure;
-        harness.emit("update-downloaded", { version: "1.2.4" });
-        yield* flushCallbacks;
-        yield* Ref.set(desktopState.quitting, true);
-        assert.isFalse(yield* updates.installOnQuit);
-      }),
-    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-  });
-
-  it.effect("bounds a stalled native staging handoff so normal quit can finish", () =>
-    Effect.gen(function* () {
-      const started = yield* Deferred.make<void>();
-      const harness = makeHarness({
-        installWait: Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
-      });
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const updates = yield* DesktopUpdates.DesktopUpdates;
-          const desktopState = yield* DesktopState.DesktopState;
-          yield* updates.configure;
-          harness.emit("update-downloaded", { version: "1.2.4" });
-          yield* flushCallbacks;
-          yield* Ref.set(desktopState.quitting, true);
-          const install = yield* updates.installOnQuit.pipe(Effect.forkChild);
-          yield* Deferred.await(started);
-          yield* TestClock.adjust("30 seconds");
-          assert.isFalse(yield* Fiber.join(install));
-        }),
-      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-    }),
   );
 
   it.effect("persists channel changes through the settings service", () => {
@@ -1306,6 +1229,7 @@ describe("DesktopUpdates", () => {
 
   it.effect("keeps windows and restarts backends when quitAndInstall fails", () => {
     const harness = makeHarness({
+      platform: "win32",
       quitAndInstall: Effect.fail(
         new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
           channel: "latest",
@@ -1336,6 +1260,7 @@ describe("DesktopUpdates", () => {
 
   it.effect("keeps the disabled primary stopped when quitAndInstall fails", () => {
     const harness = makeHarness({
+      platform: "win32",
       backendDesiredRunning: false,
       quitAndInstall: Effect.fail(
         new ElectronUpdater.ElectronUpdaterQuitAndInstallError({

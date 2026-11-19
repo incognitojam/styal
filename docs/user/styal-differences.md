@@ -426,12 +426,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   hourly rather than T3 Code's four hours, keeping Nightly offers fresh without
   downloading them. Download checks the latest release again. A finished download
   stays ready; Restart to Install installs it without another check or download.
-  Downloaded updates still install on quit. After a newer release on the same track,
+  Installation waits for your click. After a newer release on the same track,
   the app names the version and links to its release notes.
   [Updating styal](./updating.md#desktop-app-updates). Compared with
   [T3 Code revision 1852121](https://github.com/pingdotgg/t3code/tree/1852121afac633f7b4dd85e4965f679e66de21dd),
-  checked November 19, 2026, which checks every four hours and requires an explicit
-  install. Its Install action can download a newer release before restarting.
+  checked November 19, 2026, which checks every four hours. Its Install action can download a newer release before restarting.
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices

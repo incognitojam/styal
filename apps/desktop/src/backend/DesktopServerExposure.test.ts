@@ -1,3 +1,4 @@
+import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopLifecycle from "../app/DesktopLifecycle.ts";
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as DesktopShutdown from "../app/DesktopShutdown.ts";
@@ -172,6 +173,7 @@ describe("DesktopServerExposure", () => {
       }),
       Layer.mock(DesktopLifecycle.DesktopLifecycle)({ relaunch: () => Effect.succeed(false) }),
       Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({}),
+      Layer.mock(DesktopUpdates.DesktopUpdates)({}),
       Layer.mock(DesktopShutdown.DesktopShutdown)({}),
       DesktopState.layer,
       Layer.mock(DesktopObservability.DesktopTrace)({}),

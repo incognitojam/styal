@@ -1,3 +1,4 @@
+import * as DesktopUpdates from "../../updates/DesktopUpdates.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -22,6 +23,7 @@ import {
 } from "./localEnvironment.ts";
 
 const layerUnusedLifecycleRuntime = Layer.mergeAll(
+  Layer.mock(DesktopUpdates.DesktopUpdates)({}),
   Layer.succeed(
     DesktopObservability.DesktopTrace,
     DesktopObservability.DesktopTrace.of({ flush: Effect.void }),

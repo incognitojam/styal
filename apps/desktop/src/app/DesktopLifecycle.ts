@@ -41,6 +41,7 @@ export type DesktopLifecycleRuntimeServices =
   | DesktopObservability.DesktopTrace
   | DesktopShutdown.DesktopShutdown
   | DesktopState.DesktopState
+  | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
   | ElectronApp.ElectronApp
   | ElectronTheme.ElectronTheme;
@@ -106,7 +107,7 @@ const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdo
     const electronApp = yield* ElectronApp.ElectronApp;
     // The final window-all-closed event can arrive after cleanup removes the
     // scoped listeners. Without a listener Electron quits immediately, before
-    // the updater can stage its installer. Keep this last close under our control.
+    // application cleanup completes. Keep this last close under our control.
     yield* electronApp.once("window-all-closed", () => {});
     const shutdownStartedAt = yield* Clock.currentTimeMillis;
     yield* logLifecycleInfo("desktop shutdown requested");
@@ -170,8 +171,6 @@ const quitElectronAfterShutdown = Effect.fn("desktop.lifecycle.quitElectronAfter
       "requesting Electron quit",
       shutdownStartedAt,
     );
-    const updates = yield* DesktopUpdates.DesktopUpdates;
-    if (yield* updates.installOnQuit) return;
     yield* electronApp.quit;
     yield* recordQuitMilestone(
       "electron-quit-request-returned",
@@ -280,6 +279,9 @@ function quitFromSignal(
     Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({ signal });
       const state = yield* DesktopState.DesktopState;
+      if (yield* Ref.get(state.quitting)) return;
+      const updates = yield* DesktopUpdates.DesktopUpdates;
+      if (!(yield* updates.prepareForQuit)) return;
       const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
       if (wasQuitting) return;
       yield* startWaitingForShutdown(quit);
@@ -301,6 +303,8 @@ export const make = DesktopLifecycle.of({
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const state = yield* DesktopState.DesktopState;
     if (yield* Ref.get(state.quitting)) return false;
+    const updates = yield* DesktopUpdates.DesktopUpdates;
+    if (!(yield* updates.prepareForQuit)) return false;
     const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
     if (!(yield* guard.confirm("restart", options))) return false;
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
@@ -376,6 +380,11 @@ export const make = DesktopLifecycle.of({
         Effect.gen(function* () {
           const state = yield* DesktopState.DesktopState;
           if (yield* Ref.get(state.quitting)) {
+            quitCheckPending = false;
+            return;
+          }
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          if (!(yield* updates.prepareForQuit)) {
             quitCheckPending = false;
             return;
           }

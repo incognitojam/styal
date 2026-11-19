@@ -117,33 +117,26 @@ Environment descriptors advertise `serverPackageName`. The shared update command
 remote update to a server with an absent or different package identity, so a new styal client
 cannot ask an old server to fetch `t3@<styal-version>`.
 
-## Desktop updates on quit
+## Desktop native update lifecycle
 
-electron-updater's `autoInstallOnAppQuit` stays off. Switching update tracks resets styal's ready
-state but not the library's queued installer. Instead, after normal shutdown drains backend cleanup,
-[`DesktopUpdates`](../../apps/desktop/src/updates/DesktopUpdates.ts) installs only a ready download
-that still belongs to the selected track, silently and without relaunching. Any failure falls back
-to an ordinary quit.
+Checks are metadata-only; downloads and installation require explicit update actions.
+`autoInstallOnAppQuit` stays off, and ordinary quit never starts native staging or installation.
+[`DesktopUpdates`](../../apps/desktop/src/updates/DesktopUpdates.ts) stages macOS updates after
+restart consent and before stopping backends. Squirrel staging cannot be cancelled: a service-scoped
+worker retains its reservation after a timeout or caller interruption, then discards a late result.
+A failed or discarded staging attempt requires another download to recreate MacUpdater's spent
+native feed, even when the archive is cached.
 
-On macOS, Squirrel.Mac takes several seconds to unpack and verify an update, so
-[desktop](../../apps/desktop/src/updates/DesktopNativeUpdateStaging.ts) stages a download as soon
-as it finishes. Staging writes `~/Library/Caches/<bundle id>.ShipIt/ShipItState.plist`
-and submits the `<bundle id>.ShipIt` launchd job, which installs that request on any exit, whether or
-not the exit went through the update handoff. Staging cannot be cancelled, and Squirrel submits the
-job only once per native updater, which electron-updater replaces at each download. Desktop therefore
-keeps the finished release ready while checks continue, holding checks only during staging. A track
-switch removes the user launchd job (verified with `launchctl print`) before a new download, and
-staging is skipped when Squirrel would need administrator rights, which would put the job in the system domain. Every track switch runs
-the discard, since a job can outlive the process that submitted it. When background staging failed
-or was skipped, the handoff stages on the same native updater itself and waits for Squirrel's
-outcome rather than calling MacUpdater's `quitAndInstall` unstaged: that waits only for success, and
-after a discard its "already staged" flag, which never resets, makes it quit without staging. A
-system-domain job left by an earlier administrator-rights install is not discarded.
-
-macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
-[Electron adapter](../../apps/desktop/src/electron/ElectronUpdater.ts) sets it for both paths.
-Shutdown keeps a one-shot `window-all-closed` listener while draining cleanup; without it,
-Electron's default quit would bypass the update handoff.
+Squirrel's ShipIt job can outlive the build that prepared it and installs on app exit. Startup
+cleanup runs even with managed updates disabled. The
+[native adapter](../../apps/desktop/src/electron/ElectronNativeUpdater.ts) unloads stopped user or
+system jobs only when permitted and verifies absence. It preserves request files and installer
+preferences because interrupted installations need them for recovery. A running inherited job is
+ambiguous: it may be waiting for app exit or already installing. Cleanup never terminates it;
+only a job staged by this still-running process is known to be waiting safely. Inspection or
+removal failures leave checks and downloads available but refuse channel changes, installation,
+and normal quit or relaunch with instructions to inspect the job. These actions re-inspect on
+retry rather than permanently disabling updates.
 
 ## Desktop shutdown activity checks
 

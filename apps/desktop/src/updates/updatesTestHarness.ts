@@ -14,6 +14,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
@@ -88,7 +89,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       listener(payload);
     }
   };
-  const nativeFakes = makeNativeUpdatesFakes(options, emit);
+  const nativeFakes = makeNativeUpdatesFakes(options);
 
   const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
     setFeedURL: (options) =>
@@ -145,6 +146,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       ).pipe(Effect.asVoid),
   } satisfies ElectronUpdater.ElectronUpdater["Service"]);
 
+  const refusalDialogs: string[] = [];
   const layerWindow = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
     main: Effect.succeedNone,
@@ -316,7 +318,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         if (isInstallRecord(path)) previousInstallRecord = undefined;
       }),
   } satisfies Partial<FileSystem.FileSystem>;
-  const layerFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
+  const layerFileSystem = FileSystem.layerNoop(fileSystem);
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
@@ -332,6 +334,20 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provide(DesktopUpdatePolicy.layerTest(options.policy)),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
+    Layer.provide(
+      Layer.succeed(ElectronDialog.ElectronDialog, {
+        pickFolder: Effect.fn("test.dialog.pickFolder")(() => Effect.succeedNone),
+        pickFiles: Effect.fn("test.dialog.pickFiles")(() => Effect.succeed([])),
+        showMessageBox: Effect.fn("test.dialog.showMessageBox")(() =>
+          Effect.succeed({ response: 0, checkboxChecked: false }),
+        ),
+        showErrorBox: Effect.fn("test.dialog.showErrorBox")((_title, content) =>
+          Effect.sync(() => {
+            refusalDialogs.push(content);
+          }),
+        ),
+      }),
+    ),
     Layer.provideMerge(layerBackend),
     Layer.provideMerge(DesktopState.layer),
     Layer.provideMerge(layerSettings),
@@ -348,6 +364,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   );
 
   return {
+    refusalDialogs,
     installs,
     autoInstallOnAppQuit: () => autoInstallOnAppQuit,
     layer,
@@ -370,7 +387,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       ),
     sentStates,
     squirrel: nativeFakes.squirrel,
-    idleRestart: nativeFakes.idleRestart,
+    activity: nativeFakes.activity,
     emit,
   };
 }

@@ -181,9 +181,14 @@ A finished download stays ready while later checks run. **Restart to Install**
 installs that version without another update check or download. After restarting,
 a newer release is offered through **Download**.
 
-Downloaded updates also install when you quit, ready for your next launch.
-On macOS, closing the last window leaves the app running; choose **Quit** to
-install. Changing the track cancels a pending update from the previous track.
+Quitting does not start an installation. Changing the track cancels a pending
+download from the previous track.
+
+An older build may have left a native macOS installer behind. styal clears it on startup
+when safe. If it cannot safely do so, channel changes, installation and quitting explain
+what needs an administrator's attention. Checks and downloads remain available. Keep
+styal open until the old installer is resolved so it cannot unexpectedly install on exit.
+
 After an update to a newer release on the same track, the desktop app names the
 version the next time you look at its window, with a link to its release notes.
 First launches, track changes, downgrades, PR previews, and development builds

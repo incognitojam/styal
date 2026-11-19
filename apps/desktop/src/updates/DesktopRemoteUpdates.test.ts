@@ -109,13 +109,13 @@ describe("DesktopRemoteUpdates", () => {
               requestingEnvironmentId: EnvironmentId.make("selected-environment"),
             });
             yield* Queue.take(activityReports);
-            assert.equal(harness.idleRestart.inspections, 1);
+            assert.equal(harness.activity.inspections, 1);
             // Older servers omit consent, which must not permit an interruption.
             yield* Queue.offer(requests, request("race"));
             yield* settle;
             harness.emit("update-available", { version: "1.2.4" });
             yield* settle;
-            harness.idleRestart.hosts = harness.idleRestart.hosts.map(
+            harness.activity.hosts = harness.activity.hosts.map(
               (host) => host && { ...host, waitingSessions: 1, terminalsRequiringConfirmation: 1 },
             );
             harness.emit("update-downloaded", { version: "1.2.4" });
@@ -126,7 +126,7 @@ describe("DesktopRemoteUpdates", () => {
               requestId: "race",
             });
             yield* settle;
-            assert.equal(harness.idleRestart.inspections, 2);
+            assert.equal(harness.activity.inspections, 2);
             assert.equal(harness.quitAndInstalls(), 0);
             assert.equal(harness.installSteps.length, 0);
             const failure = terminalReports(reports).find((report) => report.outcome === "failed");
@@ -147,7 +147,7 @@ describe("DesktopRemoteUpdates", () => {
             assert.equal(harness.quitAndInstalls(), 1);
             assert.equal(harness.downloadCount(), 1);
             assert.equal(harness.checkCount(), 2);
-            assert.equal(harness.idleRestart.inspections, 2);
+            assert.equal(harness.activity.inspections, 2);
           }),
       );
     },
@@ -168,11 +168,11 @@ describe("DesktopRemoteUpdates", () => {
           harness.emit("update-downloaded", { version: "1.2.4" });
           yield* settle;
           if (activity === "resumable") {
-            harness.idleRestart.hosts = harness.idleRestart.hosts.map(
+            harness.activity.hosts = harness.activity.hosts.map(
               (host) => host && { ...host, activeSessions: 1, continuableSessions: 1 },
             );
           } else if (activity === "unknown") {
-            harness.idleRestart.hosts = [null];
+            harness.activity.hosts = [null];
           }
           yield* Queue.offer(commits, {
             version: 1,
@@ -180,8 +180,8 @@ describe("DesktopRemoteUpdates", () => {
             requestId: "handoff-check",
           });
           yield* settle;
-          assert.equal(harness.idleRestart.inspections, 1);
           const safe = activity === "idle" || activity === "resumable";
+          assert.equal(harness.activity.inspections, safe ? 2 : 1);
           assert.equal(harness.quitAndInstalls(), safe ? 1 : 0);
           assert.equal(
             terminalReports(reports).some((report) => report.outcome === "failed"),
@@ -204,7 +204,7 @@ describe("DesktopRemoteUpdates", () => {
         terminalsWithUnknownActivity: 0,
         environmentsUsingDevices: 0,
       };
-      harness.idleRestart.hosts = [
+      harness.activity.hosts = [
         { ...idle, environmentId: EnvironmentId.make("selected-environment") },
         {
           ...idle,
@@ -256,7 +256,7 @@ describe("DesktopRemoteUpdates", () => {
               },
             ],
           });
-          harness.idleRestart.onInspect = () => {
+          harness.activity.onInspect = () => {
             throw new Error("pool inspection failed");
           };
           yield* Queue.offer(activityRequests, {
@@ -266,8 +266,8 @@ describe("DesktopRemoteUpdates", () => {
             requestingEnvironmentId: EnvironmentId.make("selected-environment"),
           });
           assert.deepEqual((yield* Queue.take(activityReports)).hosts, [null]);
-          harness.idleRestart.onInspect = undefined;
-          harness.idleRestart.hosts = [idle];
+          harness.activity.onInspect = undefined;
+          harness.activity.hosts = [idle];
           yield* Queue.offer(activityRequests, {
             version: 1,
             type: "requestDesktopUpdateActivity",

@@ -233,23 +233,6 @@ export function describeHostActivity(
   };
 }
 
-/**
- * Every host must have been checked. Providers cannot restore waiting sessions after a restart,
- * so they block, as do turns continuation will not resume, provider installs, and shared devices.
- * Turns that will resume and terminal commands do not block.
- */
-export function idleRestartBlocked(checks: ReadonlyArray<HostActivityCheck | null>): boolean {
-  if (checks.length === 0) return true;
-  return checks.some(
-    (check) =>
-      check === null ||
-      check.waitingSessions > 0 ||
-      check.activeSessions > check.continuableSessions ||
-      (check.providerInstalls ?? 0) > 0 ||
-      check.environmentsUsingDevices > 0,
-  );
-}
-
 type Reason = HostActivityThread["reasons"][number];
 
 export type HostActivityTone = "warning" | "info" | "secondary";

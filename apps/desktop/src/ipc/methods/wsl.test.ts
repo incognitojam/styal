@@ -1,3 +1,4 @@
+import * as DesktopUpdates from "../../updates/DesktopUpdates.ts";
 import * as DesktopShutdownGuard from "../../app/DesktopShutdownGuard.ts";
 import { DesktopWslStateSchema } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
@@ -62,6 +63,7 @@ function layerLifecycle(relaunchReasons: Array<string>, accepted = true) {
 }
 
 const layerUnusedLifecycleRuntime = Layer.mergeAll(
+  Layer.mock(DesktopUpdates.DesktopUpdates)({}),
   Layer.succeed(
     DesktopObservability.DesktopTrace,
     DesktopObservability.DesktopTrace.of({ flush: Effect.void }),

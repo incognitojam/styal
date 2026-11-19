@@ -67,6 +67,7 @@ const layerElectronDialog = Layer.succeed(ElectronDialog.ElectronDialog, {
 const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
   isActionActive: Effect.succeed(false),
+  prepareForQuit: Effect.succeed(true),
   isInstallActive: Effect.succeed(false),
   subscribe: Effect.die("unexpected subscribe"),
   emitState: Effect.void,
@@ -76,7 +77,6 @@ const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   check: () => Effect.die("unexpected check"),
   download: Effect.die("unexpected download"),
   install: Effect.die("unexpected install"),
-  installOnQuit: Effect.succeed(false),
   installPrepared: () => Effect.die("unexpected installPrepared"),
 } satisfies DesktopUpdates.DesktopUpdates["Service"]);
 

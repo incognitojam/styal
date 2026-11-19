@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   describeHostActivity,
   groupHostActivityThreads,
-  idleRestartBlocked,
   settleWithinGrace,
 } from "./hostActivity.ts";
 
@@ -156,29 +155,6 @@ const namedThread: HostActivityThread = {
   reasons: ["running", "monitor"],
   continuable: true,
 };
-
-describe("idleRestartBlocked", () => {
-  it("allows a restart over turns that will resume and terminal commands", () => {
-    expect(
-      idleRestartBlocked([
-        { ...idle, activeSessions: 2, continuableSessions: 2 },
-        { ...idle, terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
-      ]),
-    ).toBe(false);
-  });
-
-  it("blocks on waiting sessions, provider installs and shared devices", () => {
-    expect(idleRestartBlocked([idle, { ...idle, waitingSessions: 1 }])).toBe(true);
-    expect(idleRestartBlocked([{ ...idle, activeSessions: 2, continuableSessions: 1 }])).toBe(true);
-    expect(idleRestartBlocked([{ ...idle, providerInstalls: 1 }])).toBe(true);
-    expect(idleRestartBlocked([{ ...idle, environmentsUsingDevices: 1 }])).toBe(true);
-  });
-
-  it("blocks when a host could not be checked or no host was checked", () => {
-    expect(idleRestartBlocked([idle, null])).toBe(true);
-    expect(idleRestartBlocked([])).toBe(true);
-  });
-});
 
 describe("host thread descriptions", () => {
   it("keeps titles, project and host context separate from summary copy", () => {

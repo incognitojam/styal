@@ -12,6 +12,7 @@ import { errorTag } from "@t3tools/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -33,11 +34,11 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-import * as DesktopIdleRestart from "./DesktopIdleRestart.ts";
-import * as DesktopNativeUpdateStaging from "./DesktopNativeUpdateStaging.ts";
+import * as ElectronNativeUpdater from "../electron/ElectronNativeUpdater.ts";
 import * as DesktopUpdatePolicy from "./DesktopUpdatePolicy.ts";
 import {
   normalizeDesktopUpdateReleaseNotes,
@@ -63,6 +64,7 @@ const CHANNEL_CHANGE_RETRY_DELAY = Duration.seconds(1);
 const CHANNEL_CHANGE_RETRIES = 30;
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "1 hour";
+const isNativeUpdaterError = Schema.is(ElectronNativeUpdater.ElectronNativeUpdaterError);
 const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
@@ -193,7 +195,7 @@ export class DesktopUpdateChannelManagedError extends Schema.TaggedError<Desktop
 export const DesktopUpdateSetChannelError = Schema.Union([
   DesktopUpdateActionInProgressError,
   DesktopUpdateChannelPersistenceError,
-  DesktopNativeUpdateStaging.DesktopUpdateStagedUpdateDiscardError,
+  ElectronNativeUpdater.ElectronNativeUpdaterError,
   DesktopUpdateChannelManagedError,
 ]);
 export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
@@ -227,8 +229,7 @@ export class DesktopUpdates extends Context.Service<
     ) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
-    /** Called after shutdown cleanup; true means the updater owns the final quit. */
-    readonly installOnQuit: Effect.Effect<boolean>;
+    readonly prepareForQuit: Effect.Effect<boolean>;
     readonly installPrepared: (
       expectedVersion: string,
       consent?: DesktopInstallConsent,
@@ -382,11 +383,14 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const scope = yield* Effect.scope;
   const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
   const config = yield* DesktopConfig.DesktopConfig;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const desktopState = yield* DesktopState.DesktopState;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
+  const nativeUpdater = yield* ElectronNativeUpdater.ElectronNativeUpdater;
+  const dialog = yield* ElectronDialog.ElectronDialog;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -402,6 +406,8 @@ export const make = Effect.gen(function* () {
   >([]);
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
+  const nativeStagePendingRef = yield* Ref.make(false);
+  const nativeStagedRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
   // The release a track switch's database check cleared. A build crosses to another track only
@@ -584,7 +590,6 @@ export const make = Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({ reason });
     if (yield* Ref.get(desktopState.quitting)) return false;
     if (!(yield* Ref.get(updaterConfiguredRef))) return false;
-    if (yield* nativeStaging.holdsChecks(reason)) return false;
 
     const state = yield* Ref.get(updateStateRef);
     // A configured updater is disabled only by a channel the managed policy blocks.
@@ -749,28 +754,6 @@ export const make = Effect.gen(function* () {
     .remove(updateRestartMarkerPath, { force: true })
     .pipe(Effect.ignore);
 
-  const idleRestart = yield* DesktopIdleRestart.make({
-    runtimeDir: updateRestartMarkerDir,
-    updateState: Ref.get(updateStateRef),
-    updateActionActive: Effect.map(activeUpdateAction, Option.isSome),
-    install: (version): Effect.Effect<unknown> => installWithExpectedVersion(version),
-  });
-  const nativeStaging = yield* DesktopNativeUpdateStaging.make({
-    enabled: environment.platform === "darwin",
-    downloadedVersion: Effect.map(Ref.get(updateStateRef), (state) => state.downloadedVersion),
-    quitting: Ref.get(desktopState.quitting),
-    updaterConfigured: Ref.get(updaterConfiguredRef),
-    clearDownload: updateState((current) =>
-      createBaseUpdateState(
-        current.channel,
-        current.enabled ? Option.none() : Option.some(current.message ?? ""),
-        environment,
-      ),
-    ),
-    onStaged: idleRestart.start,
-    onDiscarded: idleRestart.abandon,
-  });
-
   const installRecordPath = environment.path.join(
     updateRestartMarkerDir,
     DESKTOP_UPDATE_INSTALL_RECORD_FILE,
@@ -830,6 +813,24 @@ export const make = Effect.gen(function* () {
     { discard: true },
   );
 
+  const discardOwnNativeUpdate = Effect.gen(function* () {
+    if (!(yield* Ref.get(nativeStagedRef))) return;
+    yield* nativeUpdater.discard({ ownStaged: true }).pipe(
+      Effect.andThen(Ref.set(nativeStagedRef, false)),
+      Effect.catch((error) => logUpdaterWarning(error.message, { cause: error.cause })),
+    );
+    // A discarded Squirrel feed is spent; Download recreates it even when the archive is cached.
+    yield* updateState((current) => ({
+      ...current,
+      status: "available",
+      downloadedVersion: null,
+      downloadPercent: null,
+      errorContext: "download",
+      canRetry: true,
+      message: current.message ?? "Download the update again before installing.",
+    }));
+  });
+
   const recoverFailedInstall = Effect.fn("desktop.updates.recoverFailedInstall")(function* (
     message: string,
   ) {
@@ -853,6 +854,7 @@ export const make = Effect.gen(function* () {
         discard: true,
       }).pipe(Effect.exit);
       yield* updateState((current) => reduceDesktopUpdateStateOnInstallFailure(current, message));
+      yield* discardOwnNativeUpdate;
       if (Exit.isFailure(restartExit)) {
         yield* logUpdaterError("Desktop update install recovery could not restart every backend.");
       }
@@ -937,10 +939,90 @@ export const make = Effect.gen(function* () {
           yield* finishUpdateAction("install");
           return { accepted: false, completed: false, failed: false };
         }
-        yield* Ref.set(desktopState.quitting, true);
         yield* Ref.set(installRunningBackendsRef, []);
 
         return yield* Effect.gen(function* () {
+          if (environment.platform === "darwin") {
+            yield* nativeUpdater.discard({ ownStaged: yield* Ref.get(nativeStagedRef) }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+                    channel: null,
+                    isSilent: true,
+                    isForceRunAfter: true,
+                    cause,
+                  }),
+              ),
+            );
+            const completed =
+              yield* Deferred.make<
+                Exit.Exit<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>
+              >();
+            yield* Ref.set(nativeStagePendingRef, true);
+            yield* nativeUpdater.stage.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+                    channel: null,
+                    isSilent: true,
+                    isForceRunAfter: true,
+                    cause,
+                  }),
+              ),
+              Effect.exit,
+              Effect.flatMap((exit) =>
+                Ref.set(nativeStagePendingRef, false).pipe(
+                  Effect.andThen(Ref.set(nativeStagedRef, true)),
+                  Effect.andThen(Deferred.succeed(completed, exit)),
+                ),
+              ),
+              Effect.forkIn(scope),
+            );
+            const abandon = Ref.set(
+              activeUpdateActionRef,
+              Option.some<UpdateAction>("install-recovery"),
+            ).pipe(
+              Effect.andThen(
+                Deferred.await(completed).pipe(
+                  Effect.andThen(discardOwnNativeUpdate),
+                  Effect.ensuring(finishUpdateAction("install-recovery")),
+                  Effect.forkIn(scope),
+                ),
+              ),
+            );
+            const staged = yield* Deferred.await(completed).pipe(
+              Effect.timeoutOption("90 seconds"),
+              Effect.onInterrupt(() => abandon),
+            );
+            if (Option.isNone(staged)) {
+              yield* abandon;
+              yield* updateState((current) =>
+                reduceDesktopUpdateStateOnInstallFailure(
+                  current,
+                  "The native updater is still preparing. Keep styal open; download the update again after preparation finishes.",
+                ),
+              );
+              return { accepted: true, completed: false, failed: true };
+            }
+            if (Exit.isFailure(staged.value)) return yield* Effect.failCause(staged.value.cause);
+          }
+          if (environment.platform === "darwin" && consent === "require-safe") {
+            const checks = yield* guard.inspect.pipe(
+              Effect.catchCause(() => Effect.succeed([null])),
+            );
+            if (DesktopShutdownGuard.shutdownConfirmation(checks, "restart") !== null) {
+              yield* discardOwnNativeUpdate;
+              yield* finishUpdateAction("install");
+              return {
+                accepted: false,
+                completed: false,
+                failed: false,
+                reason:
+                  "Activity changed while the native update was preparing. Try updating again to review and confirm running work.",
+              };
+            }
+          }
+          yield* Ref.set(desktopState.quitting, true);
           yield* writeUpdateRestartMarker;
           const { downloadedVersion } = yield* Ref.get(updateStateRef);
           if (downloadedVersion !== null) yield* writeInstallRecord(downloadedVersion);
@@ -957,7 +1039,7 @@ export const make = Effect.gen(function* () {
               instance.stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT }),
             { concurrency: "unbounded" },
           );
-          yield* nativeStaging.handOffToInstaller({
+          yield* electronUpdater.quitAndInstall({
             isSilent: true,
             isForceRunAfter: true,
           });
@@ -966,7 +1048,9 @@ export const make = Effect.gen(function* () {
           Effect.catchTags({
             ElectronUpdaterQuitAndInstallError: Effect.fn("desktop.updates.handleInstallFailure")(
               function* (error) {
-                yield* recoverFailedInstall(error.message);
+                yield* recoverFailedInstall(
+                  isNativeUpdaterError(error.cause) ? error.cause.message : error.message,
+                );
                 yield* logUpdaterError(error.message, {
                   errorTag: error._tag,
                   cause: describeUpdateErrorCause(error.cause),
@@ -978,14 +1062,16 @@ export const make = Effect.gen(function* () {
               },
             ),
           }),
-          Effect.onInterrupt(() => resetInstallAction),
+          Effect.onInterrupt(() => discardOwnNativeUpdate.pipe(Effect.andThen(resetInstallAction))),
           Effect.catchCause((cause) =>
             Effect.gen(function* () {
               if (Cause.hasInterruptsOnly(cause)) {
                 return yield* Effect.failCause(cause);
               }
               const error = new DesktopUpdateUnexpectedActionError({ action: "install", cause });
-              yield* recoverFailedInstall(error.message);
+              yield* recoverFailedInstall(
+                isNativeUpdaterError(error.cause) ? error.cause.message : error.message,
+              );
               yield* logUpdaterError(error.message, {
                 errorTag: error._tag,
                 cause: describeUpdateErrorCause(error.cause),
@@ -1044,7 +1130,6 @@ export const make = Effect.gen(function* () {
       Effect.forever,
       Effect.forkScoped,
     );
-    yield* idleRestart.startChecks;
   }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
@@ -1125,9 +1210,17 @@ export const make = Effect.gen(function* () {
       }),
       cause,
     });
-    if (yield* nativeStaging.absorbsError(error)) return;
+    if (yield* Ref.get(nativeStagePendingRef)) {
+      yield* logUpdaterWarning(error.message, {
+        cause: describeUpdateErrorCause(error.cause),
+        operation: "stage",
+      });
+      return;
+    }
     if (Option.isSome(activeAction) && activeAction.value === "install") {
-      yield* recoverFailedInstall(error.message);
+      yield* recoverFailedInstall(
+        isNativeUpdaterError(error.cause) ? error.cause.message : error.message,
+      );
       yield* logUpdaterError(error.message, {
         errorTag: error._tag,
         cause: describeUpdateErrorCause(error.cause),
@@ -1195,7 +1288,6 @@ export const make = Effect.gen(function* () {
     yield* decodeUpdateInfo(raw).pipe(
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateDownloaded")(function* (info) {
-          yield* nativeStaging.recordFeed(info.version);
           const state = yield* Ref.get(updateStateRef);
           // A download can finish after its track switch moved on; never offer that build.
           if (!(yield* offerable(info.version, state))) {
@@ -1213,7 +1305,6 @@ export const make = Effect.gen(function* () {
           }
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
           yield* logUpdaterInfo("update downloaded", { version: info.version });
-          yield* nativeStaging.stageDownloaded(info.version);
         }),
       ),
       Effect.catchCause((cause) => {
@@ -1231,6 +1322,28 @@ export const make = Effect.gen(function* () {
   });
 
   return DesktopUpdates.of({
+    prepareForQuit: stateMutex.withPermits(1)(
+      Effect.gen(function* () {
+        if (environment.platform !== "darwin" || !environment.isPackaged) return true;
+        const action = yield* activeUpdateAction;
+        if (
+          Option.isSome(action) &&
+          (action.value === "install" || action.value === "install-recovery")
+        ) {
+          yield* dialog.showErrorBox(
+            "Native update is still preparing",
+            "Keep styal open until the native update finishes preparing, then try again.",
+          );
+          return false;
+        }
+        return yield* nativeUpdater.discard({ ownStaged: yield* Ref.get(nativeStagedRef) }).pipe(
+          Effect.as(true),
+          Effect.catch((error) =>
+            dialog.showErrorBox("Cannot safely quit styal", error.message).pipe(Effect.as(false)),
+          ),
+        );
+      }),
+    ),
     getState: Ref.get(updateStateRef),
     isActionActive: activeUpdateAction.pipe(Effect.map(Option.isSome)),
     isInstallActive: activeUpdateAction.pipe(
@@ -1278,6 +1391,19 @@ export const make = Effect.gen(function* () {
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
       }
 
+      yield* electronUpdater.setAutoDownload(false);
+      yield* electronUpdater.setAutoInstallOnAppQuit(false);
+      yield* fileSystem
+        .remove(environment.path.join(updateRestartMarkerDir, "update-idle-restart-pending"), {
+          force: true,
+        })
+        .pipe(Effect.ignore);
+      // Cleanup also runs with managed updates disabled: an older build may have prepared a job.
+      if (environment.platform === "darwin" && environment.isPackaged) {
+        yield* nativeUpdater
+          .discard()
+          .pipe(Effect.catch((error) => logUpdaterWarning(error.message, { cause: error.cause })));
+      }
       const settings = yield* desktopSettings.get;
       const disabledReason = yield* resolveDisabledReason;
       // A blocked nightly channel still lets the user switch back to stable, so it stays updatable.
@@ -1293,11 +1419,6 @@ export const make = Effect.gen(function* () {
       }
       yield* Ref.set(updaterConfiguredRef, true);
 
-      yield* electronUpdater.setAutoDownload(false);
-      // Installation runs only through our shutdown. On Windows and Linux this
-      // flag would install from electron-updater's own quit handler, and on
-      // macOS DesktopNativeUpdateStaging starts native staging explicitly.
-      yield* electronUpdater.setAutoInstallOnAppQuit(false);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
@@ -1377,7 +1498,12 @@ export const make = Effect.gen(function* () {
           return state;
         }
 
-        yield* nativeStaging.discardForChannelChange(nextChannel);
+        if (environment.platform === "darwin" && environment.isPackaged) {
+          yield* nativeUpdater
+            .discard({ ownStaged: yield* Ref.get(nativeStagedRef) })
+            .pipe(Effect.onError(() => Ref.set(releaseFloorRef, previousFloor)));
+          yield* Ref.set(nativeStagedRef, false);
+        }
         yield* desktopSettings.setUpdateChannel(nextChannel).pipe(
           Effect.onError(() => Ref.set(releaseFloorRef, previousFloor)),
           Effect.mapError(
@@ -1427,39 +1553,6 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }).pipe(Effect.withSpan("desktop.updates.download")),
-    installOnQuit: Effect.gen(function* () {
-      const state = yield* Ref.get(updateStateRef);
-      if (
-        !(yield* Ref.get(desktopState.quitting)) ||
-        !(yield* Ref.get(updaterConfiguredRef)) ||
-        !state.enabled ||
-        state.downloadedVersion === null ||
-        // A version whose last install did not apply waits for the update button.
-        state.downloadedVersion === state.notAppliedVersion ||
-        desktopUpdateChannelOf(state.downloadedVersion) !== state.channel ||
-        (state.status !== "downloaded" &&
-          !(
-            state.status === "error" &&
-            (state.errorContext === null || state.errorContext === "install")
-          )) ||
-        !(yield* tryStartUpdateAction("install"))
-      ) {
-        return false;
-      }
-      yield* writeInstallRecord(state.downloadedVersion);
-      return yield* nativeStaging
-        .handOffToInstaller({
-          isSilent: true,
-          isForceRunAfter: false,
-        })
-        .pipe(
-          Effect.timeout("30 seconds"),
-          Effect.as(true),
-          Effect.catchCause((cause) =>
-            logUpdaterError("could not install update on quit", { cause }).pipe(Effect.as(false)),
-          ),
-        );
-    }).pipe(Effect.withSpan("desktop.updates.installOnQuit")),
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
