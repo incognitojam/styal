@@ -44,6 +44,9 @@ function createShortcutModifierStore(ignoreEditable: boolean) {
         : shortcutModifierStateAfterKeyboardEvent(state, event),
     );
   };
+  const onPointerEvent = (event: PointerEvent) => {
+    updateState(clearReleasedModifiers(state, event));
+  };
   // Dictation tools can omit Meta keyup after synthetic paste, leaving jump hints stuck.
   const onResetEvent = () => {
     updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
@@ -55,14 +58,22 @@ function createShortcutModifierStore(ignoreEditable: boolean) {
     window.addEventListener("focusin", onFocus);
     window.addEventListener("keydown", onKeyboardEvent, true);
     window.addEventListener("keyup", onKeyboardEvent, true);
+    window.addEventListener("pointermove", onPointerEvent, true);
+    window.addEventListener("pointerdown", onPointerEvent, true);
     window.addEventListener("paste", onResetEvent, true);
     window.addEventListener("blur", onResetEvent);
+    window.addEventListener("focus", onResetEvent);
+    document.addEventListener("visibilitychange", onResetEvent);
     return () => {
       window.removeEventListener("focusin", onFocus);
       window.removeEventListener("keydown", onKeyboardEvent, true);
       window.removeEventListener("keyup", onKeyboardEvent, true);
+      window.removeEventListener("pointermove", onPointerEvent, true);
+      window.removeEventListener("pointerdown", onPointerEvent, true);
       window.removeEventListener("paste", onResetEvent, true);
       window.removeEventListener("blur", onResetEvent);
+      window.removeEventListener("focus", onResetEvent);
+      document.removeEventListener("visibilitychange", onResetEvent);
       state = EMPTY_SHORTCUT_MODIFIER_STATE;
     };
   };
@@ -114,21 +125,23 @@ export function shortcutModifierStateAfterKeyboardEvent(
   event: KeyboardEvent,
 ): ShortcutModifierState {
   const normalizedModifierKey = normalizeModifierKey(event.key);
-  let nextState: ShortcutModifierState;
+  const nextState = clearReleasedModifiers(currentState, event);
   if (normalizedModifierKey) {
-    nextState = {
-      ...currentState,
-      [normalizedModifierKey]: event.type === "keydown",
-    };
-  } else {
-    // Dictation paste can poison real events with metaKey=true until a physical Meta press.
-    nextState = {
-      metaKey: currentState.metaKey && event.metaKey,
-      ctrlKey: currentState.ctrlKey && event.ctrlKey,
-      altKey: currentState.altKey && event.altKey,
-      shiftKey: currentState.shiftKey && event.shiftKey,
-    };
+    nextState[normalizedModifierKey] = event.type === "keydown";
   }
 
   return areShortcutModifierStatesEqual(currentState, nextState) ? currentState : nextState;
+}
+
+function clearReleasedModifiers(
+  currentState: ShortcutModifierState,
+  event: ShortcutModifierState,
+): ShortcutModifierState {
+  // Dictation paste can poison modifier flags; only a modifier keydown may set a bit.
+  return {
+    metaKey: currentState.metaKey && event.metaKey,
+    ctrlKey: currentState.ctrlKey && event.ctrlKey,
+    altKey: currentState.altKey && event.altKey,
+    shiftKey: currentState.shiftKey && event.shiftKey,
+  };
 }
