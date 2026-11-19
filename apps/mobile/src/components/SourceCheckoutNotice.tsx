@@ -29,9 +29,11 @@ export function SourceCheckoutNotice(props: {
           <StyalMark height={14} colorClassName="accent-foreground-muted" />
         </View>
         <AppText className="text-sm text-foreground">
-          {status.data.sourceCheckout === "released"
-            ? "Source files released"
-            : "Source checkout interrupted"}
+          {action.pending
+            ? "Checking out source files…"
+            : status.data.sourceCheckout === "released"
+              ? "Source files released"
+              : "Source checkout interrupted"}
         </AppText>
         <Button
           label="Check out again"
@@ -53,7 +55,7 @@ export function SourceCheckoutNotice(props: {
             : "Check out again to open tracked source files."}
         </AppText>
       ) : null}
-      {status.data?.sourceCheckout === "recovery-required" ? (
+      {!action.pending && status.data?.sourceCheckout === "recovery-required" ? (
         <AppText className="text-xs text-foreground-muted">
           Source checkout was interrupted. Check out again to recover.
         </AppText>

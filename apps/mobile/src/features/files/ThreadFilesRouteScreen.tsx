@@ -1,5 +1,6 @@
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isHostPath } from "@t3tools/shared/path";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
 import {
@@ -34,6 +35,7 @@ import { type MediaActionsSource } from "../../lib/mediaActionsSource";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { projectEnvironment } from "../../state/projects";
 import type { AssetUrlFailureReason } from "../../state/asset-url-state";
@@ -251,6 +253,9 @@ function FileContent(props: {
   readonly truncated: boolean;
   readonly onRefresh?: () => Promise<void> | void;
 }) {
+  const sourceStatus = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId: props.environmentId, input: { cwd: props.cwd } }),
+  );
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
   const thumbnailInstanceId = useId();
   const barOverlap = useContentTopInset();
@@ -265,6 +270,15 @@ function FileContent(props: {
     isVideoFile ||
     isAudioFile ||
     (props.activeMode === "preview" && (isImageFile || isBrowserFile));
+
+  if (
+    !isHostPath(props.relativePath) &&
+    sourceStatus.data?.sourceCheckout &&
+    ((props.fileError && props.fileContents === null) ||
+      (needsAssetUrl && props.previewFailure === "failed"))
+  ) {
+    return <View className="flex-1" />;
+  }
 
   if (needsAssetUrl && props.previewFailure !== null) {
     return (

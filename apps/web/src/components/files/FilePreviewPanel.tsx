@@ -1,3 +1,6 @@
+import { SourceCheckoutNotice } from "../SourceCheckoutNotice";
+import { useEnvironmentQuery } from "~/state/query";
+import { vcsEnvironment } from "~/state/vcs";
 import { DownloadIcon, CopyIcon, CheckIcon, Code2Icon, EyeIcon, Table2Icon } from "lucide-react";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { Spinner } from "~/components/ui/spinner";
@@ -1053,6 +1056,9 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
+  const sourceStatus = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId, input: { cwd } }),
+  );
   const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
@@ -1565,6 +1571,13 @@ export default function FilePreviewPanel({
               }}
               origin="File"
             />
+          ) : relativePath &&
+            file.error &&
+            file.data === null &&
+            !attachment &&
+            !isHostFile &&
+            sourceStatus.data?.sourceCheckout ? (
+            <div className="min-h-0 flex-1" />
           ) : relativePath && file.error && file.data === null ? (
             <div
               role="alert"
@@ -1810,4 +1823,3 @@ export function WorkspaceLargeTextPreview(props: {
     </>
   );
 }
-import { SourceCheckoutNotice } from "../SourceCheckoutNotice";

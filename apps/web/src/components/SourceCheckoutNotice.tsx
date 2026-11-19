@@ -31,9 +31,11 @@ export function SourceCheckoutNotice(props: {
         <TooltipPopup>Only in styal</TooltipPopup>
       </Tooltip>
       <span>
-        {status.data.sourceCheckout === "released"
-          ? "Source files released"
-          : "Source checkout interrupted"}
+        {action.pending
+          ? "Checking out source files…"
+          : status.data.sourceCheckout === "released"
+            ? "Source files released"
+            : "Source checkout interrupted"}
       </span>
       <Button
         size="compact"
@@ -54,7 +56,7 @@ export function SourceCheckoutNotice(props: {
             : "Check out again to open tracked source files."}
         </span>
       ) : null}
-      {status.data?.sourceCheckout === "recovery-required" ? (
+      {!action.pending && status.data?.sourceCheckout === "recovery-required" ? (
         <span className="w-full text-muted-foreground">
           Source checkout was interrupted. Check out again to recover.
         </span>
