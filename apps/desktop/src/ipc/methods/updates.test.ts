@@ -79,7 +79,7 @@ describe("update installation IPC", () => {
         accepted: true,
         completed: false,
       });
-      assert.equal(prompts, 2);
+      assert.equal(prompts, 3);
       assert.equal(stops, 1);
       assert.lengthOf(harness.installs, 1);
     }).pipe(Effect.scoped, Effect.provide(harness.layer));
