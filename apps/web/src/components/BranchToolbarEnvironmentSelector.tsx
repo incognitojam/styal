@@ -33,8 +33,8 @@ interface BranchToolbarEnvironmentSelectorProps {
   addTargets?: readonly AddProjectTarget[] | undefined;
   /** Adds to the named machine, or opens the dialog for null. */
   onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
-  /** Why a machine's Add row is unavailable: that add is already under way. */
-  addBusyReason?: ((environmentId: EnvironmentId) => string | null) | undefined;
+  /** The add to a machine already under way, and whether this composer shows it. */
+  addInProgress?: ((environmentId: EnvironmentId) => AddInProgress | null) | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
@@ -42,7 +42,7 @@ const AUTO_VALUE = "action:auto";
 const ADD_OPTIONS_VALUE = "action:add-options";
 const addValue = (id: EnvironmentId) => `add:${id}`;
 const environmentValue = (id: EnvironmentId) => `env:${id}`;
-const noBusyReason = () => null;
+const noAddInProgress = () => null;
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
   autoEnvironmentLabel,
@@ -53,7 +53,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onEnvironmentChange,
   addTargets = [],
   onAddToMachine,
-  addBusyReason = noBusyReason,
+  addInProgress = noAddInProgress,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -189,11 +189,11 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
                 <SelectItem
                   key={target.environmentId}
                   value={addValue(target.environmentId)}
-                  disabled={addBusyReason(target.environmentId) !== null}
+                  disabled={addInProgress(target.environmentId)?.shownHere === true}
                 >
                   <AddTargetLabel
                     target={target}
-                    busyReason={addBusyReason(target.environmentId)}
+                    inProgress={addInProgress(target.environmentId)}
                   />
                 </SelectItem>
               ))}
@@ -209,12 +209,18 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
 });
 
 /** Adding the project to one machine, with the folder the clone lands in or why it cannot start yet. */
+export interface AddInProgress {
+  readonly title: string;
+  /** This composer already shows the add; elsewhere picking it again shows it there. */
+  readonly shownHere: boolean;
+}
+
 export function AddTargetLabel({
   target,
-  busyReason = null,
+  inProgress = null,
 }: {
   target: AddProjectTarget;
-  busyReason?: string | null;
+  inProgress?: AddInProgress | null;
 }) {
   return (
     <span className="flex min-w-0 flex-col">
@@ -222,12 +228,12 @@ export function AddTargetLabel({
         <PlusIcon aria-hidden="true" className="size-3 shrink-0" />
         <span className="min-w-0 truncate">Add to {target.label}</span>
       </span>
-      {busyReason === null ? (
+      {inProgress === null ? (
         <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
           {target.destinationPath}
         </span>
       ) : (
-        <span className="truncate ps-4.5 text-muted-foreground text-xs">{busyReason}</span>
+        <span className="truncate ps-4.5 text-muted-foreground text-xs">{inProgress.title}…</span>
       )}
     </span>
   );

@@ -37,6 +37,7 @@ import {
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
 import {
+  type AddInProgress,
   AddTargetLabel,
   AddWithOptionsLabel,
   BranchToolbarEnvironmentSelector,
@@ -171,8 +172,8 @@ interface RunContextSelectorProps {
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId | null) => void;
-  /** Why a machine's Add row is unavailable: that add is already under way. */
-  addBusyReason: (environmentId: EnvironmentId) => string | null;
+  /** The add to a machine already under way, and whether this composer shows it. */
+  addInProgress: (environmentId: EnvironmentId) => AddInProgress | null;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -197,7 +198,7 @@ const RunContextSelector = memo(function RunContextSelector({
   worktreeUnavailableReason,
   addTargets,
   onAddToMachine,
-  addBusyReason,
+  addInProgress,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -387,12 +388,12 @@ const RunContextSelector = memo(function RunContextSelector({
                   {addTargets.map((target) => (
                     <MenuItem
                       key={target.environmentId}
-                      disabled={addBusyReason(target.environmentId) !== null}
+                      disabled={addInProgress(target.environmentId)?.shownHere === true}
                       onClick={() => onAddToMachine(target.environmentId)}
                     >
                       <AddTargetLabel
                         target={target}
-                        busyReason={addBusyReason(target.environmentId)}
+                        inProgress={addInProgress(target.environmentId)}
                       />
                     </MenuItem>
                   ))}
@@ -699,11 +700,13 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
-  // A project goes to each machine once: its row waits while that add is under way.
+  // An add under way names itself on its row; picking it from another composer shows it there.
   const preparingAdds = usePreparingAdds();
-  const addBusyReason = (targetEnvironmentId: EnvironmentId) => {
+  const addInProgress = (targetEnvironmentId: EnvironmentId) => {
     const add = preparingAdds[preparingAddKey(activeProjectRef, targetEnvironmentId)];
-    return add ? `${add.title}…` : null;
+    return add
+      ? { title: add.title, shownHere: draftId !== undefined && add.draftId === draftId }
+      : null;
   };
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
@@ -754,7 +757,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addBusyReason={addBusyReason}
+            addInProgress={addInProgress}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -806,7 +809,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addBusyReason={addBusyReason}
+            addInProgress={addInProgress}
           />
         </div>
       ) : null}
@@ -827,7 +830,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addBusyReason } : {})}
+                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addInProgress } : {})}
               />
               {showGitControls ? (
                 <Separator
