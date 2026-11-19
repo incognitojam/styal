@@ -107,7 +107,13 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
   const sentRef = draftSession?.promotedTo ?? draftRedirect;
   const sentShell = useQuietThreadShell(sentRef);
   const chat = chatShell !== null && chatShell.deletedAt == null ? chatRef : null;
-  // Fixed when the chat's snapshot is first live; the card reads everything else as it changes.
+  // Taken when the chat's snapshot is first live; the card reads everything else as it changes.
+  // The project's checkouts follow the page, so a machine linked later is included.
+  const members = page.group.memberProjects.map((member) => ({
+    environmentId: member.environmentId,
+    id: member.id,
+  }));
+  const membersKey = members.map((member) => `${member.environmentId}:${member.id}`).join("|");
   const [sinceLastVisit, setSinceLastVisit] = useState<ProjectSinceLastVisitSource | null>(null);
   if (sinceLastVisit === null && chat !== null && shellLive) {
     const liveChat = appAtomRegistry.get(environmentThreadShells.threadShellAtom(chat));
@@ -116,14 +122,17 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     if (liveChat !== null) {
       setSinceLastVisit({
         projectId: checkout.id,
-        members: page.group.memberProjects.map((member) => ({
-          environmentId: member.environmentId,
-          id: member.id,
-        })),
+        members,
         openedAt,
         anchorAt: liveChat.updatedAt,
       });
     }
+  } else if (
+    sinceLastVisit !== null &&
+    sinceLastVisit.members.map((member) => `${member.environmentId}:${member.id}`).join("|") !==
+      membersKey
+  ) {
+    setSinceLastVisit({ ...sinceLastVisit, members });
   }
   // The draft's thread this page named as the chat, until the settings stream names it too.
   const [named, setNamed] = useState<ScopedThreadRef | null>(null);

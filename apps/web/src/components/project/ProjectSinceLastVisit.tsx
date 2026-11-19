@@ -37,7 +37,11 @@ import { type MouseEvent, useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
-import { useQuietThreadShell, useThreadHistory } from "../../state/entities";
+import {
+  useEnvironmentShellStatuses,
+  useQuietThreadShell,
+  useThreadHistory,
+} from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import {
   environmentThreadDetails,
@@ -69,6 +73,8 @@ interface ChatReports {
   }>;
   readonly dismissals: ReadonlyArray<ReportReference>;
   readonly earliestLoadedAt: string | null;
+  /** The chat's history has loaded, so an empty list means none rather than not yet. */
+  readonly loaded: boolean;
 }
 
 const NO_CHAT_REPORTS: ChatReports = {
@@ -76,6 +82,7 @@ const NO_CHAT_REPORTS: ChatReports = {
   messages: [],
   dismissals: [],
   earliestLoadedAt: null,
+  loaded: false,
 };
 
 /**
@@ -109,7 +116,8 @@ const chatReportsAtom = Atom.family((threadKey: string) => {
       ]),
       dismissals.map((d) => [d.messageId, d.version]),
     ]);
-    if (key !== previous.key) previous = { key, messages, dismissals, earliestLoadedAt };
+    if (key !== previous.key)
+      previous = { key, messages, dismissals, earliestLoadedAt, loaded: true };
     return previous;
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`project-since-last-visit-reports:${threadKey}`));
 });
@@ -226,7 +234,15 @@ export function ProjectSinceLastVisit({
   const navigate = useNavigate();
   const openPrLink = useOpenPrLink();
   const [expanded, setExpanded] = useState<ReadonlySet<SinceLastVisitGroup>>(new Set());
-  const [phase, setPhase] = useState<"opening" | "showing" | "done">("opening");
+  const shellStatuses = useEnvironmentShellStatuses();
+  const canMarkSeen = useAtomValue(
+    serverEnvironment.updateSettings.permissionAtom(chatRef.environmentId),
+  );
+  const [phase, setPhase] = useState<
+    | { readonly kind: "opening" }
+    | { readonly kind: "showing"; readonly since: number }
+    | { readonly kind: "done" }
+  >({ kind: "opening" });
 
   const reportLines = sinceLastVisitReportLines(
     coordinatorReports(chat.messages, chat.dismissals),
@@ -237,9 +253,19 @@ export function ProjectSinceLastVisit({
     window,
   );
   const layout = sinceLastVisitLayout(sinceLastVisitGroups(threads.lines, reportLines), expanded);
-  if (phase === "opening") setPhase(layout.total > 0 ? "showing" : "done");
-  if (phase === "showing" && layout.total === 0) setPhase("done");
-  if (phase !== "showing" || layout.total === 0) return null;
+  // Decided once the chat's history has loaded and no machine of the project is still syncing.
+  const ready =
+    chat.loaded &&
+    source.members.every((member) => shellStatuses.get(member.environmentId) !== "synchronizing");
+  if (phase.kind === "opening" && ready) {
+    setPhase(layout.total > 0 ? { kind: "showing", since: window.since } : { kind: "done" });
+  }
+  // Checking on any device ends it here, even if newer changes arrived meanwhile: they wait for
+  // the next visit.
+  if (phase.kind === "showing" && (window.since > phase.since || layout.total === 0)) {
+    setPhase({ kind: "done" });
+  }
+  if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0) return null;
 
   const sinceIso = new Date(window.since).toISOString();
   const sinceLabel = window.capped
@@ -315,10 +341,15 @@ export function ProjectSinceLastVisit({
             {sinceLabel}
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
-            {layout.total} ·
-            <InlineButton tone="muted" onClick={markSeen}>
-              Mark as seen
-            </InlineButton>
+            {layout.total}
+            {canMarkSeen ? (
+              <>
+                {" ·"}
+                <InlineButton tone="muted" onClick={markSeen}>
+                  Mark as seen
+                </InlineButton>
+              </>
+            ) : null}
           </span>
         </div>
         <div className="flex flex-col divide-y divide-border/60">

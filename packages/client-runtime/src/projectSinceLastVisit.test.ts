@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
-import { projectSeenPatch } from "./state/projectCoordinators.ts";
+import { projectCoordinatorPatch, projectSeenPatch } from "./state/projectCoordinators.ts";
 import {
   SINCE_LAST_SEEN_DAYS,
   sinceLastVisitHistoryGap,
@@ -109,7 +109,10 @@ describe("sinceLastVisitWindow", () => {
   it("is shown on another client until the mark moves, and empty there afterwards", () => {
     const threads = [thread("fix-upload-test", { latestRun: run("completed", at(2)) })];
     const settings = applyServerSettingsPatch(
-      { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+      applyServerSettingsPatch(
+        { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+        projectCoordinatorPatch(project, chat.threadId),
+      ),
       projectSeenPatch(project, chat.threadId, at(5)),
     );
     const linesOn = (current: typeof settings) =>

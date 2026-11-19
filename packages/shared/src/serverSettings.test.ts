@@ -168,7 +168,10 @@ describe("serverSettings helpers", () => {
     const app = ProjectId.make("project:app");
     const chat = ThreadId.make("thread:app-coordinator");
     const seen = applyServerSettingsPatch(
-      { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+      applyServerSettingsPatch(
+        { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+        { projectCoordinators: { [app]: { threadId: chat } } },
+      ),
       { projectCoordinators: { [app]: { threadId: chat, seenAt: "2026-11-18T18:00:00.000Z" } } },
     );
     expect(seen.projectCoordinators[app]).toEqual({
@@ -190,6 +193,42 @@ describe("serverSettings helpers", () => {
       projectCoordinators: { [app]: { threadId: ThreadId.make("thread:new-chat") } },
     });
     expect(replaced.projectCoordinators[app]?.seenAt).toBeUndefined();
+  });
+
+  it("applies a seen mark only to the current coordinator and never moves it back", () => {
+    const app = ProjectId.make("project:app");
+    const chat = ThreadId.make("thread:app-coordinator");
+    const mark = (threadId: ThreadId, seenAt: string) => ({
+      projectCoordinators: { [app]: { threadId, seenAt } },
+    });
+    const seen = applyServerSettingsPatch(
+      { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+      { projectCoordinators: { [app]: { threadId: chat } } },
+    );
+    const at11 = applyServerSettingsPatch(seen, mark(chat, "2026-11-18T11:00:00.000Z"));
+    expect(at11.projectCoordinators[app]?.seenAt).toBe("2026-11-18T11:00:00.000Z");
+    // A slower device's earlier mark arrives last.
+    expect(
+      applyServerSettingsPatch(at11, mark(chat, "2026-11-18T10:00:00.000Z")).projectCoordinators[
+        app
+      ],
+    ).toEqual({ threadId: chat, seenAt: "2026-11-18T11:00:00.000Z" });
+    // Another device chose a new coordinator before this mark arrived: the mark does not undo it.
+    const moved = applyServerSettingsPatch(at11, {
+      projectCoordinators: { [app]: { threadId: ThreadId.make("thread:new-chat") } },
+    });
+    expect(
+      applyServerSettingsPatch(moved, mark(chat, "2026-11-18T12:00:00.000Z")).projectCoordinators[
+        app
+      ],
+    ).toEqual({ threadId: "thread:new-chat" });
+    // Nor does it name a coordinator for a project that has none.
+    const cleared = applyServerSettingsPatch(at11, { projectCoordinators: { [app]: null } });
+    expect(
+      applyServerSettingsPatch(cleared, mark(chat, "2026-11-18T12:00:00.000Z")).projectCoordinators[
+        app
+      ],
+    ).toBeUndefined();
   });
 
   it("keeps a source control host's saved tokens when a patch sets another host's token", () => {
