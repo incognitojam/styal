@@ -25,7 +25,6 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
-import type { ProjectChat } from "../projects/projectChats.logic";
 import type {
   ThreadListV2ProjectGrouping,
   ThreadListV2ProjectHeader,
@@ -122,7 +121,7 @@ export function findHomeProjectScope(
  */
 export function buildHomeThreadProjectGrouping(
   scopes: ReadonlyArray<HomeProjectScope>,
-  chatsByScopeKey: ReadonlyMap<string, ProjectChat>,
+  chatsByScopeKey: ReadonlyMap<string, ProjectChatSummary>,
 ): ThreadListV2ProjectGrouping {
   return {
     groupByProjectKey: new Map(
@@ -144,9 +143,15 @@ export function buildHomeThreadProjectGrouping(
     groupKeys: scopes.map((scope) => scope.key),
   };
 }
+/** The parts of a project chat its header shows; the full type lives in features/projects. */
+interface ProjectChatSummary {
+  readonly chat: Pick<EnvironmentThreadShell, "environmentId" | "id">;
+  readonly statusLine: string | null;
+}
+
 function projectHeader(
   scope: HomeProjectScope,
-  chat: ProjectChat | undefined,
+  chat: ProjectChatSummary | undefined,
 ): ThreadListV2ProjectHeader {
   const header = { title: scope.title, project: scope.representative, pinned: scope.pinned };
   return chat === undefined
