@@ -401,11 +401,13 @@ describe("thread notifications", () => {
 
     expect(state.notification).not.toHaveBeenCalled();
     expect(bridge.showSystemNotification).toHaveBeenCalledTimes(2);
-    expect(bridge.showSystemNotification).toHaveBeenLastCalledWith({
-      title: "Thread completed",
-      body: "Fix the login form",
-      tag: expect.any(String),
-    });
+    expect(bridge.showSystemNotification).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: "Thread completed",
+        body: "Fix the login form",
+        tag: expect.any(String),
+      }),
+    );
     expect(state.add).toHaveBeenCalledTimes(1);
     expect(state.add).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: "macOS is blocking styal notifications" }),

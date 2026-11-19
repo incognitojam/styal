@@ -1,8 +1,7 @@
 import type { ProjectIconColor } from "@t3tools/contracts";
 import { projectIconColorClassName } from "../projectIconColors";
+import { PROJECT_MONOGRAM_TILE as TILE } from "../projectIdentity";
 import { cn } from "~/lib/utils";
-
-const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function ProjectMonogram({
   text,
@@ -20,24 +19,25 @@ export function ProjectMonogram({
       className={cn("inline-flex size-4 shrink-0 items-center justify-center", className)}
     >
       <svg
-        viewBox="0 0 16 16"
+        viewBox={`0 0 ${TILE.size} ${TILE.size}`}
         className={cn(
-          "size-full overflow-hidden rounded-[25%] font-mono select-none",
+          "size-full overflow-hidden font-mono select-none",
           projectIconColorClassName(color),
         )}
         style={{
-          backgroundColor: "color-mix(in srgb, currentColor 14%, transparent)",
+          borderRadius: `${(TILE.cornerRadius / TILE.size) * 100}%`,
+          backgroundColor: `color-mix(in srgb, currentColor ${TILE.backgroundOpacity * 100}%, transparent)`,
         }}
       >
         <text
-          x="8"
-          y="10.8"
+          x={TILE.textX}
+          y={TILE.textBaseline}
           textAnchor="middle"
           fill="currentColor"
           className="font-mono"
-          fontSize="8.25"
-          fontWeight="700"
-          textLength={Array.from(monogramSegmenter.segment(text)).length === 1 ? 6 : 12}
+          fontSize={TILE.fontSize}
+          fontWeight={TILE.fontWeight}
+          textLength={TILE.textWidth(text)}
           lengthAdjust="spacingAndGlyphs"
           textRendering="geometricPrecision"
         >
