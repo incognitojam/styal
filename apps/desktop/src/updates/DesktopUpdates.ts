@@ -1069,6 +1069,21 @@ export const make = Effect.gen(function* () {
               Effect.catch((error) => logUpdaterWarning(error.message).pipe(Effect.as(2))),
             );
           if (choice === 1) {
+            if (!(yield* nativeStaging.releaseSuperseded(refreshed.value.availableVersion))) {
+              yield* electronDialog
+                .showMessageBox(
+                  {
+                    type: "warning",
+                    title: "Update styal",
+                    message: `Could not prepare update ${refreshed.value.availableVersion}`,
+                    detail: `Version ${retained.downloadedVersion} is downloaded and ready to install. The previous native update could not be cleared.`,
+                    buttons: ["OK"],
+                  },
+                  Option.getOrUndefined(owner),
+                )
+                .pipe(Effect.ignore);
+              return false;
+            }
             yield* setState({
               ...refreshed.value,
               status: "available",

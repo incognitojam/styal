@@ -299,13 +299,17 @@ function SidebarUpdateControl() {
           : {}),
         ...(bridge && action !== "none"
           ? {
-              installLocal: (reportError) =>
-                installLocalUpdate(
+              installLocal: async (reportError) => {
+                const downloadedVersion = (await bridge.getUpdateState()).downloadedVersion;
+                if (downloadedVersion === null) return false;
+                const sameVersion = downloadedVersion === activity.localVersion;
+                return installLocalUpdate(
                   bridge,
                   reportError,
-                  activity.localVersion ?? undefined,
-                  confirmed,
-                ),
+                  sameVersion ? downloadedVersion : undefined,
+                  sameVersion && confirmed,
+                );
+              },
             }
           : {}),
       }),

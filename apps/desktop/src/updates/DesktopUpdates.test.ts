@@ -959,7 +959,6 @@ describe("DesktopUpdates", () => {
         harness.emit("update-available", { version: "1.2.4" });
         yield* flushCallbacks;
         const state = yield* updates.getState;
-        // Desktop updates download in the background as soon as they are available.
         assert.equal(state.status, "available");
         assert.equal(state.notAppliedVersion, "1.2.4");
 
@@ -967,6 +966,7 @@ describe("DesktopUpdates", () => {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
         yield* Ref.set((yield* DesktopState.DesktopState).quitting, true);
+        assert.isFalse(yield* updates.installOnQuit);
         assert.deepEqual(harness.installs, []);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));

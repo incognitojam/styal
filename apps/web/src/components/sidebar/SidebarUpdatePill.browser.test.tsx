@@ -334,6 +334,7 @@ function setup() {
       },
       getLocalHostActivity: testState.localActivity,
       installUpdate: testState.install,
+      downloadUpdate: async () => ({ accepted: true, completed: true, state: downloaded }),
     } as unknown as DesktopBridge),
   );
   resetConfirmDialogForTests();
@@ -349,6 +350,37 @@ function setup() {
 }
 
 describe("combined sidebar update", () => {
+  it.each([localVersion, "0.0.51"])(
+    "installs the finished version %s after an explicit download",
+    async (version) => {
+      using _setup = setup();
+      let current: DesktopUpdateState = {
+        ...downloaded,
+        status: "available",
+        downloadedVersion: null,
+      };
+      const bridge = window.desktopBridge!;
+      using _state = vi.spyOn(bridge, "getUpdateState").mockImplementation(async () => current);
+      using _download = vi.spyOn(bridge, "downloadUpdate").mockImplementation(async () => {
+        current = { ...downloaded, downloadedVersion: version, availableVersion: version };
+        for (const listener of desktopListeners) listener(current);
+        return { accepted: true, completed: true, state: current };
+      });
+      testState.localActivity.mockResolvedValue(safeLocalChecks);
+      await using screen = await renderPill();
+      await click(screen.container.querySelector<HTMLButtonElement>("button")!);
+      await vi.waitFor(() => expect(testState.install).toHaveBeenCalledOnce());
+      if (version === localVersion) {
+        expect(testState.install).toHaveBeenCalledWith({
+          expectedVersion: localVersion,
+          confirmed: false,
+        });
+      } else {
+        expect(testState.install).toHaveBeenCalledWith();
+      }
+    },
+  );
+
   it("keeps a safe activity check after provider installation silent", async () => {
     using _setup = setup();
     const providers =

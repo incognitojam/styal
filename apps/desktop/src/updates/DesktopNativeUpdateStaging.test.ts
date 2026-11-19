@@ -95,6 +95,7 @@ describe("macOS background staging", () => {
   it.effect("keeps the staged update when it cannot be discarded for a newer release", () => {
     const harness = makeHarness({
       stagesInBackground: true,
+      chooseInstallUpdate: 1,
       discardNativeUpdateFailure: "job-removal",
       checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
     });
@@ -110,6 +111,11 @@ describe("macOS background staging", () => {
         assert.equal(state.status, "downloaded");
         assert.equal(state.downloadedVersion, "1.2.4");
 
+        assert.isFalse((yield* updates.install).accepted);
+        const retained = yield* updates.getState;
+        assert.equal(retained.status, "downloaded");
+        assert.equal(retained.downloadedVersion, "1.2.4");
+        assert.equal(harness.installChoices.at(-1)?.type, "warning");
         assert.isTrue(yield* quit);
         assert.deepEqual(harness.squirrel.installedOnExit, ["1.2.4"]);
       }),
