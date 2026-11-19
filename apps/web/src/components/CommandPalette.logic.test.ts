@@ -6,6 +6,7 @@ import {
   newThreadNoProjectIndex,
   buildNestedSearchItems,
   resolveCommandPaletteProject,
+  resolveProjectSettingsGroup,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
   filterPinnedBrowseEntries,
@@ -1006,4 +1007,14 @@ describe("newThreadNoProjectIndex", () => {
     expect(newThreadNoProjectIndex([entry(false, true, true), entry()])).toBe(0);
     expect(newThreadNoProjectIndex([entry(true), entry(true, false, true), entry()])).toBe(1);
   });
+});
+
+it("opens settings for the project page ahead of a prior thread or the first project", () => {
+  const first = { projectKey: "first" };
+  const page = { projectKey: "orchard" };
+  expect(resolveProjectSettingsGroup([first, page], first, "orchard")).toBe(page);
+  expect(resolveProjectSettingsGroup([first, page], null, "orchard")).toBe(page);
+  expect(resolveProjectSettingsGroup([first, page], page, null)).toBe(page);
+  expect(resolveProjectSettingsGroup([first, page], null, null)).toBe(first);
+  expect(resolveProjectSettingsGroup([], null, null)).toBeNull();
 });

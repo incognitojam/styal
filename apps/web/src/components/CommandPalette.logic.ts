@@ -923,6 +923,16 @@ export function resolveCommandPaletteProject<TProject>(
   return environmentId && projectId ? projects.get(`${environmentId}:${projectId}`) : undefined;
 }
 
+export function resolveProjectSettingsGroup<T extends { readonly projectKey: string }>(
+  groups: ReadonlyArray<T>,
+  current: T | null,
+  projectPageKey: string | null,
+) {
+  return (
+    groups.find((group) => group.projectKey === projectPageKey) ?? current ?? groups[0] ?? null
+  );
+}
+
 /**
  * Where "No project" goes among the new-thread picker's real projects: at the
  * scratch project's own place when it is pinned or current, else after the
