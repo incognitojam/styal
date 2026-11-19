@@ -44,14 +44,19 @@ export type SinceLastVisitThreadShell = Pick<
   | "hasPendingUserInput"
   | "openReportQuestionCount"
   | "pendingSubagentRequest"
+  | "pendingGuestMessageCount"
 >;
 
-/** Waiting on an approval or a question: the project page's Needs you lists it instead. */
+/**
+ * Waiting on an approval, a question or a guest's message: the page's Needs you or the chat's
+ * started-threads list shows it instead.
+ */
 const needsYou = (thread: SinceLastVisitThreadShell) =>
   thread.hasPendingApprovals ||
   thread.hasPendingUserInput ||
   (thread.openReportQuestionCount ?? 0) > 0 ||
-  thread.pendingSubagentRequest != null;
+  thread.pendingSubagentRequest != null ||
+  (thread.pendingGuestMessageCount ?? 0) > 0;
 
 interface ThreadRef {
   readonly environmentId: EnvironmentId;

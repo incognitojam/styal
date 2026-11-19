@@ -248,6 +248,10 @@ describe("sinceLastVisitThreadLines", () => {
           openReportQuestionCount: 1,
         }),
         thread("awaits-approval", { latestRun: run("failed", at(2)), hasPendingApprovals: true }),
+        thread("guest-waiting", {
+          latestRun: run("completed", at(2)),
+          pendingGuestMessageCount: 1,
+        }),
         thread("subagent-asks", {
           latestRun: run("completed", at(2)),
           pendingSubagentRequest: "user_input",
