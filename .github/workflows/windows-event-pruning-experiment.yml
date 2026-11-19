@@ -22,6 +22,8 @@ jobs:
           New-Item -ItemType Directory -Force $root | Out-Null
           Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json -Compress
           Set-MpPreference -DisableRealtimeMonitoring $false
+          # The status flag changes asynchronously after Set-MpPreference returns.
+          Start-Sleep -Seconds 10
           $preferences = Get-MpPreference
           $preferences | Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | ConvertTo-Json -Compress
           # This ephemeral runner needs no file-scan exclusions for the experiment.
