@@ -21,6 +21,7 @@ import { useEnvironmentMachines, useEnvironments } from "../../state/environment
 import {
   useAllEnvironmentProjectSnapshotsReady,
   useEnvironmentShellStatuses,
+  useProject,
   useQuietThreadShell,
   useServerConfigs,
 } from "../../state/entities";
@@ -169,16 +170,24 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     member.environmentId === draftSession?.environmentId && member.id === draftSession.projectId;
   const unsentDraft =
     chatThreadId === null && draftSession?.promotedTo == null ? draftSession : null;
-  // A machine the project was just added to keeps the draft while it clones; the checkout joins
-  // the project once the clone finishes and its repository is known.
-  const draftClone = useProjectClone(
-    unsentDraft ? scopeProjectRef(unsentDraft.environmentId, unsentDraft.projectId) : null,
-  );
+  // A machine the project was just added to keeps the draft while it clones and until its
+  // repository is known, when the checkout joins the project.
+  const unsentDraftRef = unsentDraft
+    ? scopeProjectRef(unsentDraft.environmentId, unsentDraft.projectId)
+    : null;
+  const draftClone = useProjectClone(unsentDraftRef);
+  const draftProject = useProject(unsentDraftRef);
+  const draftJoining =
+    unsentDraftRef !== null &&
+    !page.group.memberProjects.some(isDraftCheckout) &&
+    (draftClone !== null || (draftProject !== null && draftProject.repositoryIdentity == null));
   const draftOffChoices =
     unsentDraft !== null &&
-    draftClone === null &&
+    !draftJoining &&
     (off.some(isDraftCheckout) || !page.group.memberProjects.some(isDraftCheckout));
-  const machineId = draftClone !== null && unsentDraft ? unsentDraft.environmentId : environmentId;
+  const hostRef =
+    draftJoining && unsentDraftRef ? unsentDraftRef : scopeProjectRef(environmentId, checkout.id);
+  const machineId = hostRef.environmentId;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens or moves the chat's draft in the composer draft store, which the page cannot hold in render
   useEffect(() => {
     if (draftOffChoices) {
@@ -273,7 +282,7 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
             offLabels: off.map((member) => labelOf(member.environmentId)),
           }
         : null,
-    onNewThread: () => void handleNewThread(scopeProjectRef(environmentId, checkout.id)),
+    onNewThread: () => void handleNewThread(hostRef),
     onOpenSettings: () =>
       void navigate({
         to: "/settings/projects",

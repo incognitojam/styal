@@ -18,6 +18,8 @@ import { environmentProjectClonesAtom, silenceProjectCloneToasts } from "../stat
 import { projectEnvironment } from "../state/projects";
 import { sourceControlEnvironment } from "../state/sourceControl";
 
+const CLONE_LISTED_WAIT_MS = 10_000;
+
 /** Matches the server's read cap: a larger file would arrive truncated. */
 export const COPYABLE_FILE_MAX_BYTES = 1024 * 1024;
 
@@ -47,19 +49,28 @@ function failureMessage(result: Parameters<typeof squashAtomCommandFailure>[0]):
 }
 
 /**
- * Resolves when the clone is listed or, with "done", finishes; null once it is removed. A failed
- * or cancelled clone keeps waiting for "done", since the composer offers a retry.
+ * Resolves when the clone is listed or, with "done", finishes; null once it is removed or after
+ * `timeoutMs`. A failed or cancelled clone keeps waiting for "done", since the composer offers a
+ * retry.
  */
 function waitForClone(
   environmentId: EnvironmentId,
   projectId: ProjectId,
   until: "listed" | "done",
+  timeoutMs?: number,
 ) {
   return new Promise<ProjectCloneSnapshot | null>((resolve) => {
     const atom = environmentProjectClonesAtom(environmentId);
     let seen = false;
     let settled = false;
     let unsubscribe: (() => void) | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (result: ProjectCloneSnapshot | null) => {
+      settled = true;
+      unsubscribe?.();
+      clearTimeout(timer);
+      resolve(result);
+    };
     const check = (clones: ReadonlyArray<ProjectCloneSnapshot>) => {
       if (settled) return;
       const clone = clones.find((candidate) => candidate.projectId === projectId);
@@ -70,12 +81,10 @@ function waitForClone(
           : !clone && seen
             ? null
             : undefined;
-      if (result === undefined) return;
-      settled = true;
-      unsubscribe?.();
-      resolve(result);
+      if (result !== undefined) settle(result);
     };
     unsubscribe = appAtomRegistry.subscribe(atom, check);
+    if (timeoutMs !== undefined) timer = setTimeout(() => settle(null), timeoutMs);
     check(appAtomRegistry.get(atom));
   });
 }
@@ -165,8 +174,8 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
   }
   void suggestAppAccessForRemote(input.target.environmentId, input.remoteUrl);
   // The clone list can arrive after the reply; a project page moves its chat draft off a
-  // checkout that is neither in the project nor cloning.
-  await waitForClone(input.target.environmentId, projectId, "listed");
+  // checkout that is neither in the project nor cloning. Bounded, since the target can drop.
+  await waitForClone(input.target.environmentId, projectId, "listed", CLONE_LISTED_WAIT_MS);
   if (reads.length === 0) return projectId;
 
   void (async () => {

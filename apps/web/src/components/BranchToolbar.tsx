@@ -697,7 +697,12 @@ export const BranchToolbar = memo(function BranchToolbar({
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
-    openAddProjectToMachine({ projectRef: activeProjectRef, targetEnvironmentId, draftId });
+    openAddProjectToMachine({
+      projectRef: activeProjectRef,
+      targetEnvironmentId,
+      draftId,
+      onlyTargets: addTargetsOverride?.map((target) => target.environmentId),
+    });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;
   const showEnvironmentPicker = hasMultipleEnvironments && onEnvironmentChange !== undefined;

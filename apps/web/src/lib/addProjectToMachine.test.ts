@@ -26,51 +26,71 @@ vi.mock("../components/sourceControlAppAccessToast", () => ({
 vi.mock("../state/projects", () => ({ projectEnvironment: {} }));
 vi.mock("../state/sourceControl", () => ({ sourceControlEnvironment: {} }));
 
-const target = EnvironmentId.make("build-server");
 const projectId = ProjectId.make("project-1");
+const remoteUrl = "git@example.com:o/r.git";
+
+function startAdd() {
+  appAtomRegistry.set(clonesAtom, []);
+  mocks.runAtomCommand.mockResolvedValue({
+    _tag: "Success",
+    value: { projectId, cwd: "~/Hello-World", remoteUrl },
+  });
+  let settled = false;
+  const added = addProjectToMachine({
+    source: { environmentId: EnvironmentId.make("studio-mac"), cwd: "/Users/dev/hello-world" },
+    subdirectory: "",
+    target: { environmentId: EnvironmentId.make("build-server"), label: "build-server" },
+    projectId,
+    title: "hello-world",
+    remoteUrl,
+    destinationPath: "~/Hello-World",
+    files: [],
+  }).finally(() => {
+    settled = true;
+  });
+  return { added, settled: () => settled };
+}
 
 describe("addProjectToMachine", () => {
   it("resolves once the target lists the clone, not when the start request returns", async () => {
-    appAtomRegistry.set(clonesAtom, []);
-    mocks.runAtomCommand.mockResolvedValue({
-      _tag: "Success",
-      value: { projectId, cwd: "~/Hello-World", remoteUrl: "git@example.com:o/r.git" },
-    });
+    vi.useFakeTimers();
+    try {
+      const { added, settled } = startAdd();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled()).toBe(false);
 
-    let listedWhenResolved: number | null = null;
-    const added = addProjectToMachine({
-      source: { environmentId: EnvironmentId.make("studio-mac"), cwd: "/Users/dev/hello-world" },
-      subdirectory: "",
-      target: { environmentId: target, label: "build-server" },
-      projectId,
-      title: "hello-world",
-      remoteUrl: "git@example.com:o/r.git",
-      destinationPath: "~/Hello-World",
-      files: [],
-    }).then((id) => {
-      listedWhenResolved = appAtomRegistry.get(clonesAtom).length;
-      return id;
-    });
+      appAtomRegistry.set(clonesAtom, [
+        {
+          projectId,
+          remoteUrl,
+          destinationPath: "~/Hello-World",
+          repository: null,
+          phase: "running",
+          stage: "connecting",
+          percent: null,
+          detail: null,
+          error: null,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: null,
+          sequence: 1,
+        },
+      ]);
+      await expect(added).resolves.toBe(projectId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
-    await vi.waitFor(() => expect(mocks.runAtomCommand).toHaveBeenCalled());
-    appAtomRegistry.set(clonesAtom, [
-      {
-        projectId,
-        remoteUrl: "git@example.com:o/r.git",
-        destinationPath: "~/Hello-World",
-        repository: null,
-        phase: "running",
-        stage: "connecting",
-        percent: null,
-        detail: null,
-        error: null,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        endedAt: null,
-        sequence: 1,
-      },
-    ]);
-
-    await expect(added).resolves.toBe(projectId);
-    expect(listedWhenResolved).toBe(1);
+  it("stops waiting for the listing after ten seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const { added, settled } = startAdd();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(settled()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(added).resolves.toBe(projectId);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

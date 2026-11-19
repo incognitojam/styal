@@ -59,6 +59,8 @@ interface AddProjectToMachineRequest {
   readonly targetEnvironmentId: EnvironmentId | null;
   /** The draft that moves to the new machine; defaults to the draft the route shows. */
   readonly draftId?: DraftId | undefined;
+  /** Limits the machines offered, such as to those where a project chat can start. */
+  readonly onlyTargets?: ReadonlyArray<EnvironmentId> | undefined;
 }
 
 const useRequest = create<{ request: AddProjectToMachineRequest | null; session: number }>(() => ({
@@ -98,7 +100,10 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   const handleNewThread = useNewThreadHandler();
   const { draftId: routeDraftId } = useParams({ strict: false });
   const { environments } = useEnvironments();
-  const targets = useAddProjectTargets(project, useLogicalProjectEnvironments(project, false));
+  const targets = useAddProjectTargets(
+    project,
+    useLogicalProjectEnvironments(project, false),
+  ).filter((t) => request.onlyTargets?.includes(t.environmentId) ?? true);
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
   const target = targets.find((t) => t.environmentId === targetId) ?? targets[0] ?? null;
   const source = environments.find((env) => env.environmentId === request.projectRef.environmentId);
