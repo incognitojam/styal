@@ -1541,7 +1541,8 @@ function ThreadDetailBody(
       opened,
       selectedThreadKey,
       props.reports ?? [],
-      props.contentPresentation.kind === "ready",
+      // A report older than the loaded history is still on its way while the jump loads it.
+      props.contentPresentation.kind === "ready" && jumpMessageId !== opened?.id,
     )
   ) {
     setOpened(null);
