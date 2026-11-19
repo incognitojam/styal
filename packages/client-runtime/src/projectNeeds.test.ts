@@ -1,8 +1,5 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type {
-  ThreadPendingApproval,
-  ThreadPendingUserInput,
-} from "@t3tools/client-runtime/state/thread-requests";
+import type { EnvironmentThreadShell } from "./state/models.ts";
+import type { ThreadPendingApproval, ThreadPendingUserInput } from "./state/threadRequests.ts";
 import {
   EnvironmentId,
   MessageId,
@@ -13,7 +10,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeedsYou.logic";
+import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeeds.ts";
 
 const local = EnvironmentId.make("env-local");
 

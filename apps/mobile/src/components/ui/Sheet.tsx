@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, useWindowDimensions, View } from "react-native";
 import { FormSheet, ScreenStack } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
 
@@ -7,6 +7,8 @@ import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { formSheetDetents } from "../../native/sheet-surface";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 
+// The sheet's grabber and title bar, above the caller's scroll content.
+const IOS_SHEET_HEADER_HEIGHT = 72;
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
 export type { SheetProps } from "./Sheet.types";
@@ -21,10 +23,16 @@ export function Sheet(props: SheetProps) {
     if (!props.dismissDisabled) setIsOpen(false);
   };
 
+  const { height } = useWindowDimensions();
+  const contentHeight = props.fitToContents?.contentHeight ?? null;
   return (
     <FormSheet
       isOpen={isOpen}
-      detents={formSheetDetents(0.5, 0.9)}
+      detents={
+        contentHeight === null
+          ? formSheetDetents(0.5, 0.9)
+          : [Math.min(0.75, (contentHeight + IOS_SHEET_HEADER_HEIGHT) / height)]
+      }
       prefersGrabberVisible
       preventNativeDismiss={props.dismissDisabled}
       // The header holds the close button, so the Duo needs no rail inside this sheet.
@@ -55,16 +63,20 @@ export function Sheet(props: SheetProps) {
               titleFontSize={18}
               titleFontWeight="800"
               translucent
-              headerRightBarButtonItems={[
-                {
-                  type: "button",
-                  icon: { name: "xmark", type: "sfSymbol" },
-                  accessibilityLabel: `Close ${props.title}`,
-                  identifier: `app-sheet-close-${screenId}`,
-                  disabled: props.dismissDisabled,
-                  onPress: close,
-                },
-              ]}
+              headerRightBarButtonItems={
+                props.hideCloseButton
+                  ? []
+                  : [
+                      {
+                        type: "button",
+                        icon: { name: "xmark", type: "sfSymbol" },
+                        accessibilityLabel: `Close ${props.title}`,
+                        identifier: `app-sheet-close-${screenId}`,
+                        disabled: props.dismissDisabled,
+                        onPress: close,
+                      },
+                    ]
+              }
             />
           </NativeScreen>
         </ScreenStack>

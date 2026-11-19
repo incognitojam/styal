@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -59,6 +60,23 @@ const projectChatHeaderAtom = Atom.family((threadKey: string) => {
   }).pipe(Atom.withLabel(`mobile-project-chat-header:${threadKey}`));
 });
 
+const NO_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
+
+// The same array while the same shells need you, for the chat's Needs you bar.
+const projectChatNeedYouAtom = Atom.family((threadKey: string) => {
+  let previous = NO_THREADS;
+  return Atom.make((get) => {
+    const next = get(projectChatsAtom).byChatKey.get(threadKey)?.needYou ?? NO_THREADS;
+    if (
+      next.length !== previous.length ||
+      next.some((thread, index) => thread !== previous[index])
+    ) {
+      previous = next;
+    }
+    return previous;
+  }).pipe(Atom.withLabel(`mobile-project-chat-need-you:${threadKey}`));
+});
+
 const NO_PROJECT_CHAT_HEADER_ATOM = Atom.make<ProjectChatHeader | null>(null).pipe(
   Atom.withLabel("mobile-project-chat-header:none"),
 );
@@ -74,4 +92,9 @@ export function useProjectChatHeader(ref: ScopedThreadRef | null): ProjectChatHe
       ? NO_PROJECT_CHAT_HEADER_ATOM
       : projectChatHeaderAtom(scopedThreadKey(ref.environmentId, ref.threadId)),
   );
+}
+
+/** The project's other threads that need you, when the thread is its project's chat. */
+export function useProjectChatNeedYou(ref: ScopedThreadRef): ReadonlyArray<EnvironmentThreadShell> {
+  return useAtomValue(projectChatNeedYouAtom(scopedThreadKey(ref.environmentId, ref.threadId)));
 }

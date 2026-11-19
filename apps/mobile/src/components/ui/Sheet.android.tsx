@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { FormSheet } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
 import { AppBar } from "./AppBar";
@@ -11,10 +11,12 @@ export type { SheetProps } from "./Sheet.types";
 export function Sheet(props: SheetProps) {
   const containerStyle = useResolveClassNames("bg-header");
   const [isOpen, setIsOpen] = useState(true);
+  const { height } = useWindowDimensions();
+  const fit = props.fitToContents !== undefined;
   return (
     <FormSheet
       isOpen={isOpen}
-      detents={[0.5, 0.9]}
+      detents={fit ? "fitToContents" : [0.5, 0.9]}
       prefersGrabberVisible={false}
       preventNativeDismiss={props.dismissDisabled}
       nativeContainerStyle={containerStyle}
@@ -23,12 +25,18 @@ export function Sheet(props: SheetProps) {
     >
       <RoutedFormSheetContext value={false}>
         {/* Android FormSheet does not bound flex children. Material drags target the first scroll view, so place content before the header. */}
-        <View collapsable={false} className="absolute inset-0 flex-col-reverse bg-header">
-          <ScreenContent>{props.children}</ScreenContent>
+        <View
+          collapsable={false}
+          className={`${fit ? "" : "absolute inset-0 "}flex-col-reverse bg-header`}
+          style={fit ? { maxHeight: height * 0.75 } : undefined}
+        >
+          <ScreenContent fitToContents={fit}>{props.children}</ScreenContent>
           <AppBar
             sheet
             title={props.title}
-            onBack={props.dismissDisabled ? undefined : () => setIsOpen(false)}
+            onBack={
+              props.dismissDisabled || props.hideCloseButton ? undefined : () => setIsOpen(false)
+            }
             hideBottomBorder
           />
           <View

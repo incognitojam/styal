@@ -14,17 +14,27 @@ import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads
 import { useAtomCommand } from "../../state/use-atom-command";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 
-function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
+/** `inList`: a Needs you row, which names the thread itself. */
+export function ChildApproval({
+  entry,
+  inList = false,
+}: {
+  entry: ChildThreadApproval;
+  inList?: boolean;
+}) {
   const canRespond = useEnvironmentScope(entry.thread.environmentId, AuthOrchestrationOperateScope);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <View className="mx-3.5 my-2 gap-2">
-      <AppText className="font-t3-bold text-sm text-foreground">
-        Approval from {entry.title}
-      </AppText>
+    <View className={inList ? "gap-2" : "mx-3.5 my-2 gap-2"}>
+      {inList ? null : (
+        <AppText className="font-t3-bold text-sm text-foreground">
+          Approval from {entry.title}
+        </AppText>
+      )}
       <PendingApprovalCard
+        inList={inList}
         threadRef={entry.thread}
         canOperateThread={canRespond}
         approval={entry.approval}

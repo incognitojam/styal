@@ -32,7 +32,15 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
-import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from "react";
 import { I18nManager, Keyboard, Platform, View, type ViewStyle } from "react-native";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { filePreviewGallery } from "../../lib/filePreviewGallery";
@@ -243,6 +251,8 @@ export interface ThreadComposerProps {
   readonly canSteerActiveTurn: boolean;
   readonly hidden: boolean;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
+  /** Starts dictation into this composer, as its mic button does; false when it can't. */
+  readonly dictationRef?: Ref<{ readonly start: () => boolean }>;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftMedia: () => Promise<void>;
   readonly onPickDraftFiles: () => Promise<void>;
@@ -257,7 +267,8 @@ export interface ThreadComposerProps {
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
   ) => Promise<MessageId | null>;
-  readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
+  /** Absent where there is no limits panel to show; the usage-limits command is then not offered. */
+  readonly onShowUsageLimits?: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
   readonly onHeightChange?: (height: number) => void;
   readonly onEditorFocusChange?: (focused: boolean) => void;
@@ -524,6 +535,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   };
   const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
   const usageLimitsOffered =
+    onShowUsageLimits !== undefined &&
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
       selectedProviderStatus.driver,
@@ -537,7 +549,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.serverConfig?.usageLimitSources ?? [],
       Date.now(),
     );
-    onShowUsageLimits(report);
+    onShowUsageLimits?.(report);
     if (!report) {
       Dialog.alert("Usage limits unavailable", "This provider does not currently report limits.");
     }
@@ -587,6 +599,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     onChangeSelection: composerMenu.onSelectionChange,
   });
+  const canStartDictation = voiceInput.isAvailable && !voiceInput.isBusy;
+  useImperativeHandle(
+    props.dictationRef,
+    () => ({
+      start: () => {
+        if (!canStartDictation) return false;
+        voiceInput.start();
+        return true;
+      },
+    }),
+    [canStartDictation, voiceInput.start],
+  );
   const isSubmissionLocked =
     props.interactionLocked === true || queuedEdit?.saving === true || voiceInput.blocksSubmission;
   const voicePresentation = resolveVoiceComposerPresentation(

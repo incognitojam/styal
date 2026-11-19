@@ -1,19 +1,22 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "./state/models.ts";
 import type {
   PendingThreadRequests,
   ThreadPendingApproval,
   ThreadPendingUserInput,
-} from "@t3tools/client-runtime/state/thread-requests";
-import {
-  coordinatorReports,
-  waitingCoordinatorReports,
-} from "@t3tools/client-runtime/coordinator-reports";
+} from "./state/threadRequests.ts";
+import { coordinatorReports, waitingCoordinatorReports } from "./coordinatorReports.ts";
 import type {
   CoordinatorReport,
   MessageId,
   OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
+import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
+import { Atom } from "effect/reactivity";
+
+import { parseThreadKey } from "./state/entities.ts";
+import type { createEnvironmentThreadDetailAtoms } from "./state/threadDetail.ts";
 
 export interface OpenReport {
   readonly messageId: MessageId;
@@ -108,4 +111,70 @@ export function listProjectNeeds(
     );
   }
   return needs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));
+}
+
+/**
+ * What each listed thread waits on, keyed by `threadKey` and read from `keys` joined by newlines.
+ * Only threads that need you are passed in, so only they stream their thread detail.
+ */
+export function createProjectNeedsAtom(
+  details: Pick<
+    ReturnType<typeof createEnvironmentThreadDetailAtoms>,
+    "pendingRequestsAtom" | "stateAtom"
+  >,
+) {
+  const threadNeedsAtom = Atom.family((key: string) => {
+    const ref = parseThreadKey(key);
+    let previous: readonly unknown[] = [];
+    let value: ThreadNeeds | null = null;
+    return Atom.make((get) => {
+      const requests = get(details.pendingRequestsAtom(ref));
+      const projection = Option.getOrNull(get(details.stateAtom(ref)).data);
+      if (requests === null || projection === null) return null;
+      const inputs = [requests, projection.messages, projection.thread.reportDismissals];
+      if (inputs.some((input, index) => input !== previous[index])) {
+        previous = inputs;
+        value = { requests, reports: openReports(projection) };
+      }
+      return value;
+    });
+  });
+  return Atom.family((keys: string) =>
+    Atom.make((get) => {
+      const needs = new Map<string, ThreadNeeds | null>();
+      for (const key of keys.split("\n")) if (key) needs.set(key, get(threadNeedsAtom(key)));
+      return needs;
+    }),
+  );
+}
+
+const APPROVAL_HEADINGS = {
+  command: "Run command",
+  "file-change": "Change files",
+  "file-read": "Read file",
+  permission: "Permission",
+  "mcp-elicitation": "App access",
+} satisfies Record<ThreadPendingApproval["requestKind"], string>;
+
+/** One line for a need: what it asks, as its row and the project chat's bar show it. */
+export function projectNeedSummary(need: ProjectNeed): string {
+  switch (need.kind) {
+    case "approval": {
+      const { approval } = need;
+      const heading =
+        (approval.toolName
+          ? deriveToolRowPresentation({ toolName: approval.toolName, input: approval.toolInput })
+              ?.heading
+          : undefined) ?? APPROVAL_HEADINGS[approval.requestKind];
+      return approval.detail ? `${heading}: ${approval.detail}` : heading;
+    }
+    case "question":
+      return need.userInput.questions[0]?.question ?? "A question";
+    case "report":
+      return need.report.report.question ?? need.report.report.title;
+    case "thread":
+      return need.thread.pendingSubagentRequest
+        ? "A subagent is waiting for you"
+        : "Waiting for you in its thread";
+  }
 }

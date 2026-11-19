@@ -63,19 +63,9 @@ export function CoordinatorReportMessage({
   const [expanded, setExpanded] = useState(false);
   // Opening a reply chip or waiting row for an older version shows it, not its folded line.
   if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
-  const reply = { ref: { messageId: id, key: tag.key, version: tag.version }, title: tag.title };
-  const run = (action: () => Promise<void>) => {
-    setSending(true);
-    setError(null);
-    void action()
-      .catch(() => setError("Could not save your response. Try again."))
-      .finally(() => setSending(false));
-  };
   if (report.state === "replaced" && !expanded)
     return (
       <View className="mb-2 mt-3 flex-row items-center gap-2 border-l-2 border-border pl-3">
@@ -100,43 +90,7 @@ export function CoordinatorReportMessage({
       ) : null}
       {content}
       {report.state === "open" ? (
-        <View className="gap-2 rounded-xl bg-secondary p-3">
-          <Text className="font-t3-medium text-foreground">{tag.question}</Text>
-          {tag.answers?.map((answer, index) => (
-            <Pressable
-              key={answer}
-              accessibilityRole="button"
-              accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.send(answer, reply))}
-              className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
-            >
-              <Text className="flex-1 text-foreground">{answer}</Text>
-              {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
-            </Pressable>
-          ))}
-          <View className="flex-row justify-between">
-            <Button
-              label="Reply…"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => ctx.reply(reply)}
-            />
-            <Button
-              label="Dismiss"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.dismiss(reply))}
-            />
-          </View>
-          {error ? (
-            <Text accessibilityRole="alert" className="text-danger">
-              {error}
-            </Text>
-          ) : null}
-        </View>
+        <ReportAnswerBlock report={report} />
       ) : report.state === "answered" && report.answer ? (
         <AnsweredReport
           answer={report.answer}
@@ -150,6 +104,83 @@ export function CoordinatorReportMessage({
       ) : null}
     </View>
   );
+}
+
+export function replyTo(report: ReportState): ReportReply {
+  const tag = report.message.report!;
+  return {
+    ref: { messageId: report.message.id, key: tag.key, version: tag.version },
+    title: tag.title,
+  };
+}
+
+/** An open report's question and answers in its card, with Reply… and Dismiss. */
+function ReportAnswerBlock(props: { readonly report: ReportState }) {
+  const ctx = use(CoordinatorReportsContext)!;
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const tag = props.report.message.report!;
+  const reply = replyTo(props.report);
+  const disabled = !ctx.canOperate || sending;
+  const run = (action: () => Promise<void>) => {
+    setSending(true);
+    setError(null);
+    void action()
+      .catch(() => setError("Could not save your response. Try again."))
+      .finally(() => setSending(false));
+  };
+  return (
+    <View className="gap-2 rounded-xl bg-secondary p-3">
+      <Text className="font-t3-medium text-foreground">{tag.question}</Text>
+      <ReportAnswerOptions
+        answers={tag.answers ?? []}
+        disabled={disabled}
+        onPick={(answer) => run(() => ctx.send(answer, reply))}
+      />
+      <View className="flex-row items-center justify-between">
+        <Button
+          label="Reply…"
+          size="compact"
+          tone="text"
+          disabled={disabled}
+          onPress={() => ctx.reply(reply)}
+        />
+        <Button
+          label="Dismiss"
+          size="compact"
+          tone="text"
+          disabled={disabled}
+          onPress={() => run(() => ctx.dismiss(reply))}
+        />
+      </View>
+      {error ? (
+        <Text accessibilityRole="alert" className="text-danger">
+          {error}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** A report's answers, the first one recommended; picking one sends it. */
+export function ReportAnswerOptions(props: {
+  readonly answers: readonly string[];
+  readonly disabled: boolean;
+  readonly onPick: (answer: string) => void;
+}) {
+  return props.answers.map((answer, index) => (
+    <Pressable
+      key={answer}
+      accessibilityRole="button"
+      accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
+      disabled={props.disabled}
+      onPress={() => props.onPick(answer)}
+      className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
+    >
+      <Text className="flex-1 text-foreground">{answer}</Text>
+      {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
+    </Pressable>
+  ));
 }
 
 function AnsweredReport(props: {
