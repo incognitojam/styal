@@ -136,10 +136,8 @@ export function trackSwitchBlockReason(input: {
     : null;
 }
 
-// Longer than the client's 5 second pre-update check: this read is the same one
-// that just passed there, and a slow read on a large database must not fail
-// every unconfirmed update. The update request is already long-running.
-const HANDOFF_ACTIVITY_TIMEOUT = Duration.seconds(15);
+// Match the client check so a busy host can finish its final safety report.
+const HANDOFF_ACTIVITY_TIMEOUT = Duration.minutes(1);
 
 const checkUpdateHandoffActivity = <E>(
   input: ServerSelfUpdateInput,

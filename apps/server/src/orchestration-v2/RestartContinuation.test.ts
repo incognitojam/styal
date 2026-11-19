@@ -126,7 +126,6 @@ it.effect.each([false, true])(
     const projection = makeProjection();
     const disabledThreadId = ThreadId.make("thread:disabled-continuation");
     const disabledProjectId = ProjectId.make("disabled-project");
-    const hiddenThreadId = ThreadId.make("thread:outside-snapshot");
     const readIds: ThreadId[] = [];
     return Effect.gen(function* () {
       const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([
@@ -146,8 +145,8 @@ it.effect.each([false, true])(
             },
           }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getRecoveryThreadIds: () =>
-              Effect.succeed([threadId, disabledThreadId, hiddenThreadId]),
+            // The busy snapshot supplies candidates; a global recovery scan can stall it.
+            getRecoveryThreadIds: () => Effect.die("unexpected whole-server recovery scan"),
             getRuntimeRecoveryProjection: (id) =>
               Effect.sync(() => {
                 readIds.push(id);
