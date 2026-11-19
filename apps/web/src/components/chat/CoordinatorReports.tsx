@@ -319,6 +319,11 @@ export function NeedsYou({
   const answeredStatus = answered?.report
     ? (statuses[sent.indexOf(answered.report)] ?? null)
     : null;
+  // Settled responses stop holding their thread's detail open; the latest stays for its summary.
+  const outstanding = sent.filter(
+    (entry, index) => typeof statuses[index] === "object" || entry === answered?.report,
+  );
+  if (outstanding.length !== sent.length) setSent(outstanding);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
