@@ -2,6 +2,12 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import type { MarkdownImageOccurrence, MarkdownImageSource } from "react-native-enriched-markdown";
 import type { MarkdownImageSourceResolver } from "./SelectableMarkdownText.types";
 
+const BLOCK_PLACEMENTS = new Set<MarkdownImageOccurrence["placement"]>([
+  "root",
+  "blockquote",
+  "admonition",
+]);
+
 /**
  * Enriched asks about each image once and reads `resolveImageSource` like an
  * event handler, so a failed image would keep its placeholder until remount.
@@ -24,7 +30,12 @@ export function useRetryingImageSource(resolve: MarkdownImageSourceResolver | un
     if (!enabled) return undefined;
     return (image: MarkdownImageOccurrence) =>
       new Promise<MarkdownImageSource | undefined>((settle) => {
-        const request = { href: image.url, alt: image.altText || null, title: image.title || null };
+        const request = {
+          href: image.url,
+          alt: image.altText || null,
+          title: image.title || null,
+          standalone: BLOCK_PLACEMENTS.has(image.placement),
+        };
         const attempt = () => {
           const current = latestRef.current;
           if (!current) return;

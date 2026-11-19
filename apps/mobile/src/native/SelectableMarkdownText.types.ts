@@ -45,7 +45,10 @@ export interface MarkdownImageRequest {
 export type MarkdownImageRenderer = (image: MarkdownImageRequest) => import("react").ReactNode;
 
 export type MarkdownImageSourceResolver = (
-  image: MarkdownImageRequest,
+  image: MarkdownImageRequest & {
+    /** Alone in its paragraph, where `renderImage` draws it when one is given. */
+    readonly standalone: boolean;
+  },
 ) =>
   | { uri: string; headers?: Record<string, string> }
   | null

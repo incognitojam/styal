@@ -45,3 +45,18 @@ it("asks the next resolver for an image the previous one could not resolve", asy
   expect(resolveImage).toBe(askedOnce);
   act(() => root.unmount());
 });
+
+it("tells the resolver whether an image stands alone in its paragraph", async () => {
+  const root = createRoot(document.createElement("div"));
+  const asked: boolean[] = [];
+  const record: MarkdownImageSourceResolver = (image) => {
+    asked.push(image.standalone);
+    return null;
+  };
+  await act(async () => root.render(<Probe resolve={record} />));
+  for (const placement of ["root", "blockquote", "table", "list", "inline", "link"] as const) {
+    await resolveImage!({ id: placement, url: "shot.png", altText: "", title: "", placement });
+  }
+  expect(asked).toEqual([true, true, false, false, false, false]);
+  act(() => root.unmount());
+});
