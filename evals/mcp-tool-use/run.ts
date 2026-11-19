@@ -56,6 +56,7 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import {
+  answerNotesText,
   sentReport,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
@@ -369,6 +370,8 @@ export const McpToolUseCase = Schema.Struct({
     launchedReport: Schema.optional(Schema.Struct({ question: Schema.Boolean })),
     /** This thread was just made its project's coordinator: T3 puts its note on the prompt. */
     projectCoordinator: Schema.optional(Schema.Boolean),
+    /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
+    answerNotes: Schema.optional(Schema.Array(Schema.String)),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3; for a
@@ -1166,6 +1169,7 @@ export const buildMessages = (sample: Sample) => {
     [
       branchNote(testCase),
       testCase.setup.projectCoordinator === true ? PROJECT_COORDINATOR_NOTE : "",
+      testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
     ]
       .filter((part) => part !== "")
       .join("\n\n"),

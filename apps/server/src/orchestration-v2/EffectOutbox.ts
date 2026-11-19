@@ -38,6 +38,26 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     trigger: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("run"), runId: RunId }),
       Schema.Struct({ kind: Schema.Literal("request"), requestId: RuntimeRequestId }),
+      /** Someone outside the recipient answered or dismissed a request or report here. */
+      Schema.Struct({
+        kind: Schema.Literal("answer"),
+        answered: Schema.Union([
+          Schema.Struct({ kind: Schema.Literal("request"), requestId: RuntimeRequestId }),
+          Schema.Struct({
+            kind: Schema.Literal("report"),
+            messageId: MessageId,
+            answerMessageId: Schema.NullOr(MessageId),
+          }),
+        ]),
+        /** The agent thread that answered; absent for the user. */
+        byThreadId: Schema.optional(ThreadId),
+      }),
+      /** This thread's turn delivered these answer notes, so they are dropped. */
+      Schema.Struct({
+        kind: Schema.Literal("delivered"),
+        providerTurnId: ProviderTurnId,
+        noteIds: Schema.Array(Schema.String),
+      }),
     ]),
   }),
   Schema.Struct({
