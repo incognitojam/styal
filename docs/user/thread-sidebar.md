@@ -32,9 +32,10 @@ if that project exists there. Otherwise it selects an environment that has it.
 To start a thread on a machine that does not have the project yet, open the machine
 menu under the composer and pick **Add to** that machine; the folder the clone will
 use is shown beneath it. The clone starts straight away and the composer shows its
-progress. If ignored files such as `.env` would be copied, or that folder already
-exists there, a dialog asks first. **Add with options…** opens the same dialog to
-choose the folder, the clone protocol and the files to copy.
+progress; **Cancel** calls it off while it is still preparing. If ignored files such
+as `.env` would be copied, that folder already exists there, or either cannot be
+checked, a dialog asks first. **Add with options…** opens the same dialog to choose
+the folder, the clone protocol and the files to copy.
 
 ### Start without a project
 
