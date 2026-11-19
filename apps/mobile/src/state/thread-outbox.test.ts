@@ -86,7 +86,11 @@ import {
   shouldRetryThreadOutboxDelivery,
   type QueuedThreadMessage,
 } from "./thread-outbox-model";
-import { createThreadOutboxManager, ThreadOutboxManagerError } from "./thread-outbox-manager";
+import {
+  createThreadOutboxManager,
+  ReportAlreadyAnsweredError,
+  ThreadOutboxManagerError,
+} from "./thread-outbox-manager";
 import {
   expoThreadOutboxStorage,
   ThreadOutboxStorageError,
@@ -611,12 +615,15 @@ describe("thread outbox", () => {
     });
     const first = answer("answer-1", "Keep both copies");
 
-    // A double tap, then a different answer, both before the first is sent.
-    await Promise.all([
+    // A double tap, then a different answer, both before the first is sent: refused, so a
+    // typed reply's caller keeps its draft.
+    const results = await Promise.allSettled([
       manager.enqueue(first),
       manager.enqueue(answer("answer-2", "Keep both copies")),
       manager.enqueue(answer("answer-3", "Last write wins")),
     ]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected", "rejected"]);
+    expect((results[2] as PromiseRejectedResult).reason).toBeInstanceOf(ReportAlreadyAnsweredError);
     // An answer to a newer version of the report is a new answer.
     const nextVersion = {
       ...answer("answer-4", "Ask each time"),

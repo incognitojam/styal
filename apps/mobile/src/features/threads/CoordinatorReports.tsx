@@ -1,5 +1,5 @@
 import Animated from "react-native-reanimated";
-import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import type {
   ChatAttachment,
@@ -69,16 +69,23 @@ export function CoordinatorReportMessage({
     { readonly answer: string } | { readonly dismiss: true } | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  // A second tap before the re-render that disables the buttons must not send again.
+  const inFlight = useRef(false);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
   const reply = { ref: { messageId: id, key: tag.key, version: tag.version }, title: tag.title };
   const run = (action: () => Promise<void>, choice: NonNullable<typeof sending>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSending(choice);
     setError(null);
     void action()
       .catch(() => setError("Could not save your response. Try again."))
-      .finally(() => setSending(null));
+      .finally(() => {
+        inFlight.current = false;
+        setSending(null);
+      });
   };
   if (report.state === "replaced" && !expanded)
     return (

@@ -9,6 +9,15 @@ import {
 } from "./thread-outbox-model";
 import type { ThreadOutboxStorage } from "./thread-outbox-storage";
 
+export class ReportAlreadyAnsweredError extends Schema.TaggedError<ReportAlreadyAnsweredError>()(
+  "ReportAlreadyAnsweredError",
+  {},
+) {
+  override get message(): string {
+    return "This report already has an answer.";
+  }
+}
+
 export class ThreadOutboxManagerError extends Schema.TaggedError<ThreadOutboxManagerError>()(
   "ThreadOutboxManagerError",
   {
@@ -104,9 +113,10 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
   };
 
   const enqueue = (message: QueuedThreadMessage): Promise<void> => {
-    // A report version takes one answer: a double tap or a second pick while the first waits
-    // to send is dropped, not sent after it.
-    if (isRepeatReportAnswer(currentMessages(), message)) return Promise.resolve();
+    // A report version takes one answer, so a second one waiting to send is refused.
+    if (isRepeatReportAnswer(currentMessages(), message)) {
+      return Promise.reject(new ReportAlreadyAnsweredError({}));
+    }
     bumpRevision(message.messageId);
     setMessages([
       ...currentMessages().filter((candidate) => candidate.messageId !== message.messageId),

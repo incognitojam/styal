@@ -64,6 +64,17 @@ export function coordinatorReports<
   });
 }
 
+/**
+ * Whether an answer to `ref` can still go: its report is open, with no answer recorded, sent or
+ * on its way. A report version takes one answer.
+ */
+export function reportAcceptsAnswer(
+  reports: ReadonlyArray<{ readonly message: { readonly id: string }; readonly state: string }>,
+  ref: Reference,
+): boolean {
+  return reports.some((report) => report.message.id === ref.messageId && report.state === "open");
+}
+
 export function formatReportAnswer(
   report: Pick<CoordinatorReport, "title" | "version">,
   text: string,

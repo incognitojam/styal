@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorReports,
   formatReportAnswer,
+  reportAcceptsAnswer,
   reportAnswerDisplay,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
@@ -66,6 +67,11 @@ describe("coordinator reports", () => {
         [{ ...pending, reportAnswer: { ...pending.reportAnswer, version: 2 } }],
       )[0]?.state,
     ).toBe("open");
+    // A typed reply submitted while that answer is still on its way finds the report taken.
+    expect(
+      reportAcceptsAnswer(coordinatorReports([open], [], [pending]), pending.reportAnswer),
+    ).toBe(false);
+    expect(reportAcceptsAnswer(coordinatorReports([open], []), pending.reportAnswer)).toBe(true);
     const answered = { id: "reply", role: "user", ...pending };
     expect(coordinatorReports([open, answered], [], [pending])[0]?.state).toBe("answered");
   });

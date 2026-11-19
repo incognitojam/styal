@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime";
 import {
   coordinatorReports,
+  reportAcceptsAnswer,
   formatReportAnswer,
   reportAnswers,
   type ReportReply,
@@ -652,6 +653,11 @@ export function useThreadComposerState(input: {
       : getComposerDraftSnapshot(threadKey);
     const reply = reportResponse?.reply ?? activeReportReply;
     if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
+    // The draft stays: an answer to this report version was already given or is on its way.
+    if (reply && !reportAcceptsAnswer(reports, reply.ref)) {
+      if (!reportResponse) setThreadComposerError(threadKey, "This report already has an answer.");
+      return null;
+    }
     const thread = selectedThreadShell;
     const text = draft.text.trim();
     const attachments = draft.attachments;
