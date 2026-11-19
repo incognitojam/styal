@@ -194,8 +194,7 @@ export function ReportAnswerChip({
   );
 }
 
-/** Sits at the top of the composer while the next message replies to a report. */
-/** The report a message will answer, as the last notice above the input, where a reply sits. */
+/** The report a message will answer, as the last notice above the input. */
 export function reportReplyBannerItem({
   title,
   version,
@@ -213,6 +212,7 @@ export function reportReplyBannerItem({
     icon: <ReplyIcon />,
     title: "Replying to",
     description: `${title} · version ${version}${question ? ` · ${question}` : ""}`,
+    keepDescriptionWhenNarrow: true,
     dismissLabel: "Stop replying",
     onDismiss: onCancel,
   };

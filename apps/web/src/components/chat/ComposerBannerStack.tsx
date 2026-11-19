@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
 import { observeResize } from "~/lib/observeResize";
+import { cn } from "~/lib/utils";
 
 /**
  * Where a notice sits in the stack. The machine comes first, then what needs you; the
@@ -19,6 +20,8 @@ export interface ComposerBannerStackItem {
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
+  /** Narrow composers hide descriptions; keep this one, since the title alone says too little. */
+  readonly keepDescriptionWhenNarrow?: boolean;
   readonly children?: ReactNode;
   readonly actions?: ReactNode;
   readonly dismissLabel?: string;
@@ -202,7 +205,10 @@ function NoticeCard({
                   ? `Show details: ${item.title}`
                   : "Show notice details"
               }
-              className="w-0 min-w-0 grow truncate text-muted-foreground @max-[400px]:sr-only"
+              className={cn(
+                "w-0 min-w-0 grow truncate text-muted-foreground",
+                !item.keepDescriptionWhenNarrow && "@max-[400px]:sr-only",
+              )}
             >
               {item.description}
             </NoticeText>
