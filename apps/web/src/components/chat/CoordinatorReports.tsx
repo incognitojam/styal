@@ -4,6 +4,7 @@ import {
   CheckIcon,
   FileTextIcon,
   MessageSquareIcon,
+  PencilIcon,
   ReplyIcon,
   RotateCcwIcon,
   XIcon,
@@ -54,8 +55,11 @@ export type ReportAnswer = { messageId: MessageId; title: string; version: numbe
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   answers: ReadonlyMap<MessageId, ReportAnswer>;
-  answer: (text: string, ref: ReportReference) => void;
+  /** `replaces` names the answer a Change answer replaces. */
+  answer: (text: string, ref: ReportReference, replaces?: MessageId) => void;
   reply: (ref: ReportReference, title: string) => void;
+  /** Stops the composer replying to this report, if it is. */
+  cancelReply: (ref: ReportReference) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
@@ -73,6 +77,8 @@ export function ReportAnswerBar({
   const ctx = use(CoordinatorReportsContext);
   // A resolved question asks again here until the person answers or cancels.
   const [reopened, setReopened] = useState(false);
+  // The answer being changed; the card asks again until a newer answer replaces it.
+  const [changing, setChanging] = useState<MessageId | null>(null);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "dismissed") {
@@ -115,39 +121,72 @@ export function ReportAnswerBar({
       </div>
     );
   }
-  if (report.state === "answered" && report.answer) {
-    const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
-    if (compact) {
-      return (
-        <div className={panelClassName}>
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-            <MessageSquareIcon />
-            You answered: <span className="text-foreground">{text}</span>
-          </span>
-        </div>
-      );
-    }
-    return (
-      <div className={panelClassName}>
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-          <MessageSquareIcon />
-          You answered
-        </span>
-        {renderAnswer(report.answer, text)}
-      </div>
-    );
-  }
-  if (report.state !== "open" && report.state !== "resolved") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
   const disabled = !ctx.canOperate;
+  if (report.state === "answered" && report.answer && changing !== report.answer.id) {
+    const answerId = report.answer.id;
+    const { text, compact } = reportAnswerDisplay(report.answer, tag);
+    return (
+      <div className={panelClassName}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">
+            <MessageSquareIcon />
+            {compact ? (
+              <span className="min-w-0">
+                You answered: <span className="text-foreground">{text}</span>
+              </span>
+            ) : (
+              "You answered"
+            )}
+          </span>
+          {tag.question ? (
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              disabled={disabled}
+              onClick={() => setChanging(answerId)}
+            >
+              <PencilIcon />
+              Change answer
+            </Button>
+          ) : null}
+        </div>
+        {compact ? null : renderAnswer(report.answer, text)}
+      </div>
+    );
+  }
+  if (report.state !== "open" && report.state !== "resolved" && report.state !== "answered")
+    return null;
+  const back = () => {
+    setReopened(false);
+    setChanging(null);
+    ctx.cancelReply(ref);
+  };
   return (
     <div className={panelClassName}>
+      {report.state === "open" && report.reply ? (
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <MessageSquareIcon />
+          You replied · question still open
+        </span>
+      ) : null}
       <span className="font-medium">{tag.question}</span>
       <ReportAnswerOptions
         answers={tag.answers ?? []}
         disabled={disabled}
-        onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
+        current={
+          report.state === "answered" && report.answer
+            ? reportAnswerDisplay(report.answer, tag).text
+            : undefined
+        }
+        onPick={(answer) =>
+          ctx.answer(
+            formatReportAnswer(tag, answer),
+            ref,
+            report.state === "answered" ? report.answer?.id : undefined,
+          )
+        }
       />
       <div className="flex items-center justify-between">
         <Button
@@ -160,13 +199,18 @@ export function ReportAnswerBar({
           Reply…
         </Button>
         {report.state === "resolved" ? (
-          <Button size="xs" variant="ghost-muted" onClick={() => setReopened(false)}>
+          <Button size="xs" variant="ghost-muted" onClick={back}>
             Cancel
+          </Button>
+        ) : report.state === "answered" ? (
+          <Button size="xs" variant="ghost-muted" onClick={back}>
+            Keep answer
           </Button>
         ) : (
           <Button
             size="xs"
-            variant="ghost-muted"
+            // A reply leaves the question open; closing it is up to the agent or this button.
+            variant={report.reply ? "outline" : "ghost-muted"}
             disabled={disabled}
             onClick={() => ctx.dismiss(ref)}
           >
@@ -183,10 +227,13 @@ export function ReportAnswerBar({
 export function ReportAnswerOptions({
   answers,
   disabled,
+  current,
   onPick,
 }: {
   answers: readonly string[];
   disabled: boolean;
+  /** The answer already given, while the person changes it. */
+  current?: string | undefined;
   onPick: (answer: string) => void;
 }) {
   return answers.map((answer, index) => (
@@ -201,6 +248,12 @@ export function ReportAnswerOptions({
       onClick={() => onPick(answer)}
     >
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{answer}</span>
+      {answer === current ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground [&_svg]:size-3">
+          <CheckIcon />
+          Your answer
+        </span>
+      ) : null}
       {index === 0 ? (
         <span className="shrink-0 rounded-full bg-primary/12 px-1.5 text-xs leading-5 text-primary">
           Recommended

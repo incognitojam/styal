@@ -5,6 +5,7 @@ import {
   Button as ComposeButton,
   LoadingIndicator,
   FilledTonalButton,
+  OutlinedButton,
   Row,
   RNHostView,
   Text,
@@ -24,7 +25,13 @@ export function Button(props: ButtonProps) {
   const { scale, mediumIconSize } = useAndroidControlSizing();
   const tone = props.tone ?? "secondary";
   const Component =
-    tone === "text" ? TextButton : tone === "secondary" ? FilledTonalButton : ComposeButton;
+    tone === "text"
+      ? TextButton
+      : tone === "secondary"
+        ? FilledTonalButton
+        : tone === "outline"
+          ? OutlinedButton
+          : ComposeButton;
   const containerColor =
     tone === "contrast"
       ? colors["--color-foreground"]
@@ -32,7 +39,7 @@ export function Button(props: ButtonProps) {
         ? colors["--color-primary"]
         : tone === "danger"
           ? colors["--color-danger"]
-          : tone === "text"
+          : tone === "text" || tone === "outline"
             ? "#00000000"
             : colors["--color-secondary"];
   const contentColor =
@@ -44,7 +51,9 @@ export function Button(props: ButtonProps) {
           ? colors["--color-danger-foreground"]
           : tone === "text"
             ? colors["--color-primary-text"]
-            : colors["--color-secondary-foreground"];
+            : tone === "outline"
+              ? colors["--color-foreground"]
+              : colors["--color-secondary-foreground"];
   return (
     <View
       accessible

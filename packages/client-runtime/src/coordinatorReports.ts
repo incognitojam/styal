@@ -16,7 +16,7 @@ type Message = {
   readonly role: string;
   readonly text: string;
   readonly report?: CoordinatorReport | undefined;
-  readonly reportAnswer?: Reference | undefined;
+  readonly reportAnswer?: (Reference & { readonly typed?: true | undefined }) | undefined;
 };
 
 export function coordinatorReports<M extends Message>(
@@ -25,12 +25,16 @@ export function coordinatorReports<M extends Message>(
 ) {
   const latest = new Map<string, M>();
   const referenceKey = (ref: Reference) => JSON.stringify([ref.messageId, ref.key, ref.version]);
+  // The latest of each: a picked answer closes the question, a typed reply leaves it open.
   const answers = new Map<string, M>();
+  const replies = new Map<string, M>();
   const dismissed = new Set(dismissals.map(referenceKey));
   for (const message of messages) {
     if (message.role === "user" && message.reportAnswer) {
-      const key = referenceKey(message.reportAnswer);
-      if (!answers.has(key)) answers.set(key, message);
+      (message.reportAnswer.typed ? replies : answers).set(
+        referenceKey(message.reportAnswer),
+        message,
+      );
     }
     if (
       message.report &&
@@ -56,8 +60,19 @@ export function coordinatorReports<M extends Message>(
               : tag.question
                 ? "open"
                 : "posted";
-    return [{ message, latest: current, state, answer }];
+    return [{ message, latest: current, state, answer, reply: replies.get(key) }];
   });
+}
+
+/**
+ * A typed reply's reference: it reaches the agent without closing the question. A server that
+ * does not advertise `reportReplies` would count it as an answer, so it gets none.
+ */
+export function reportReplyReference<R extends Reference>(
+  ref: R,
+  serverConfig: { readonly reportReplies?: boolean } | null | undefined,
+) {
+  return serverConfig?.reportReplies === true ? { ...ref, typed: true as const } : undefined;
 }
 
 export function formatReportAnswer(

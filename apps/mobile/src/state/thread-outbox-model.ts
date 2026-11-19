@@ -6,7 +6,7 @@ import {
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import {
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
@@ -55,7 +55,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   messageId: MessageId,
   commandId: CommandId,
   text: Schema.String,
-  reportAnswer: Schema.optional(CoordinatorReportReference),
+  reportAnswer: Schema.optional(CoordinatorReportReply),
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   modelSelection: Schema.optional(ModelSelection),
@@ -88,7 +88,7 @@ export interface QueuedThreadMessage {
   readonly messageId: MessageId;
   readonly commandId: CommandId;
   readonly text: string;
-  readonly reportAnswer?: typeof CoordinatorReportReference.Type;
+  readonly reportAnswer?: typeof CoordinatorReportReply.Type;
   readonly context?: OrchestrationMessageContext;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly modelSelection?: ModelSelectionType;

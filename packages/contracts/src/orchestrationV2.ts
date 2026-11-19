@@ -100,6 +100,11 @@ export const CoordinatorReportReference = Schema.Struct({
   key: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
   version: PositiveInt,
 });
+/** A user message's report reference. A typed reply leaves the question open; a picked answer closes it. */
+export const CoordinatorReportReply = Schema.Struct({
+  ...CoordinatorReportReference.fields,
+  typed: Schema.optional(Schema.Literal(true)),
+});
 export const CoordinatorReportInput = Schema.Struct({
   key: CoordinatorReportReference.fields.key,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(160)),
@@ -1528,7 +1533,7 @@ export type OrchestrationV2MentionedTimes = typeof OrchestrationV2MentionedTimes
 
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   report: Schema.optional(CoordinatorReport),
-  reportAnswer: Schema.optional(CoordinatorReportReference),
+  reportAnswer: Schema.optional(CoordinatorReportReply),
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
@@ -3607,7 +3612,7 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("message.dispatch"),
-    reportAnswer: Schema.optional(CoordinatorReportReference),
+    reportAnswer: Schema.optional(CoordinatorReportReply),
     notification: Schema.optional(OrchestrationV2Notification),
     /** Sends this pending guest message; the server uses the guest's text, not `text`. */
     guestMessageId: Schema.optional(GuestMessageId),

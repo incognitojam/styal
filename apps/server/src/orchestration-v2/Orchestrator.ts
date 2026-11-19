@@ -4133,7 +4133,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ref.version === report?.version;
       // The person's own answer or dismissal stands; a resolve is for questions still open.
       const closedBy = projection.messages.some(
-        (message) => message.role === "user" && same(message.reportAnswer),
+        (message) =>
+          message.role === "user" && !message.reportAnswer?.typed && same(message.reportAnswer),
       )
         ? "answered"
         : (thread.reportDismissals ?? []).some(same)
@@ -15854,7 +15855,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               };
         cancelUnsettledEffects = yield* dispatchMessage(dispatched, events, effects);
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
-        if (command.reportAnswer !== undefined && command.createdBy === "user") {
+        // A typed reply leaves the question open, so the project chat has nothing to hear yet.
+        if (
+          command.reportAnswer !== undefined &&
+          !command.reportAnswer.typed &&
+          command.createdBy === "user"
+        ) {
           const { messageId, reportAnswer } = command;
           yield* Ref.update(effects, (existing) => [
             ...existing,

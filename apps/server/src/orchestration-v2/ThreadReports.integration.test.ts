@@ -95,6 +95,7 @@ const makeHelpers = (input: {
           readonly messageId: MessageId;
           readonly key: string;
           readonly version: number;
+          readonly typed?: true;
         };
       },
     ) =>
@@ -838,6 +839,48 @@ it.effect(
         assert.isUndefined(plain?.outcome);
 
         yield* endTurn(last, "completed");
+
+        // A typed reply leaves the question open and tells the agent it is still open.
+        const replied = yield* send(launcherId, "[Release, version 2] What changed?", {
+          sender: "user",
+          reportAnswer: {
+            messageId: MessageId.make("report:other:2"),
+            key: "issue:9",
+            version: 2,
+            typed: true,
+          },
+        });
+        yield* count(1);
+        assert.include(
+          replied.message.text,
+          'Note: this message replies to your report "Release" (version 2); its question "Merge?" is still open.',
+        );
+        yield* endTurn(replied, "completed");
+        const ref = { messageId: MessageId.make("report:other:2"), key: "issue:9", version: 2 };
+        const merged = yield* send(launcherId, "[Release, version 2] Merge", {
+          sender: "user",
+          reportAnswer: ref,
+        });
+        yield* count(0);
+        yield* endTurn(merged, "completed");
+        // The question is answered now, so a later reply does not call it open.
+        const late = yield* send(launcherId, "[Release, version 2] Thanks", {
+          sender: "user",
+          reportAnswer: { ...ref, typed: true },
+        });
+        assert.notInclude(late.message.text, "is still open");
+        yield* endTurn(late, "completed");
+        // A changed answer names the one it replaces, so the agent can undo what no longer fits.
+        assert.notInclude(merged.message.text, "replaces the earlier answer");
+        const changed = yield* send(launcherId, "[Release, version 2] Wait", {
+          sender: "user",
+          reportAnswer: ref,
+        });
+        assert.include(
+          changed.message.text,
+          'which closes its question. It replaces the earlier answer "Merge": undo what no longer fits.',
+        );
+        yield* endTurn(changed, "completed");
       }),
     ),
 );
@@ -1196,6 +1239,18 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           answered.message.text,
           'Note: this message answers your report "Merge the fix?" (version 1), which closes its question.',
         );
+        yield* endTurn(answered, "completed");
+        // A typed reply is not an answer, so the launcher hears nothing yet.
+        const replied = yield* send(launchedId, "[Ship it?, version 1] Is the changelog in?", {
+          sender: "user",
+          reportAnswer: {
+            messageId: MessageId.make("report:ship"),
+            key: "ship",
+            version: 1,
+            typed: true,
+          },
+        });
+        yield* endTurn(replied, "completed");
         yield* orchestrator.dispatch({
           type: "report.dismiss",
           commandId: CommandId.make("dismiss:plan"),

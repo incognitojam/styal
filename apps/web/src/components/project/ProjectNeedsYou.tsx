@@ -1,5 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "../../state/server";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -50,6 +52,7 @@ import { Textarea } from "../ui/textarea";
 import {
   listProjectNeeds,
   openReports,
+  projectReportResponse,
   type ProjectNeed,
   type ThreadNeeds,
 } from "./projectNeedsYou.logic";
@@ -210,13 +213,15 @@ export function ProjectNeedRow({
 }
 
 export function AnsweredNeedRow({ answered }: { answered: AnsweredNeed }) {
-  const dismissed = answered.report?.response.kind === "dismiss";
+  const response = answered.report?.response;
+  const dismissed = response?.kind === "dismiss";
+  const replied = response?.kind === "answer" && response.ref.typed === true;
   return (
     <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm [&_svg]:size-3.5">
       <MessageSquareIcon className="mt-1 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-muted-foreground">
-          {dismissed ? "Dismissed · " : "Answered · sent to "}
+          {dismissed ? "Dismissed · " : replied ? "Replied · sent to " : "Answered · sent to "}
           <span className="text-foreground">{answered.threadTitle}</span>
         </span>
         {dismissed ? null : (
@@ -407,47 +412,53 @@ function ReportAnswer({
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const [reply, setReply] = useState("");
+  // A plain reply to a server without `reportReplies` skips the response store and its toast.
+  const plain = useAnswerCommand();
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
-  const disabled = !canOperate;
+  const disabled = !canOperate || plain.sending;
   // The answer is the asking thread's next message, so it reaches that thread's agent.
-  const send = (text: string) => {
+  const send = (text: string, typed: boolean) => {
     const answerId = newMessageId();
     const answer = formatReportAnswer(report, text);
-    const response: ReportResponse = {
+    const response = projectReportResponse({
       ref,
-      kind: "answer",
-      ...(report.answers?.includes(text) ? {} : { reply: text }),
+      typed,
+      serverConfig: appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId),
       messageId: answerId,
       text: answer,
       createdAt: new Date().toISOString(),
-    };
-    void respondToReport(
-      thread,
-      response,
-      () =>
-        startTurn({
-          environmentId,
-          input: {
-            threadId,
-            message: {
-              messageId: answerId,
-              role: "user",
-              text: answer,
-              attachments: [],
-              reportAnswer: ref,
-            },
-            runtimeMode,
-            interactionMode,
-            dispatchMode: "queue",
+    });
+    const start = () =>
+      startTurn({
+        environmentId,
+        input: {
+          threadId,
+          message: {
+            messageId: answerId,
+            role: "user",
+            text: answer,
+            attachments: [],
+            ...(response ? { reportAnswer: response.ref } : {}),
           },
-        }),
-      () => onAnswered(text, { need, response }),
-    );
+          runtimeMode,
+          interactionMode,
+          dispatchMode: "queue",
+        },
+      });
+    if (response === undefined) {
+      void plain.run(start, "Could not send your reply. Try again.", () => {});
+      return;
+    }
+    void respondToReport(thread, response, start, () => onAnswered(text, { need, response }));
   };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={send} />
+      <ReportAnswerOptions
+        answers={report.answers ?? []}
+        disabled={disabled}
+        onPick={(answer) => send(answer, false)}
+      />
       <Textarea
         size="sm"
         rows={1}
@@ -457,6 +468,7 @@ function ReportAnswer({
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
+      {plain.alert}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"
@@ -481,7 +493,7 @@ function ReportAnswer({
         <Button
           size="xs"
           disabled={disabled || reply.trim() === ""}
-          onClick={() => send(reply.trim())}
+          onClick={() => send(reply.trim(), true)}
         >
           Send
         </Button>

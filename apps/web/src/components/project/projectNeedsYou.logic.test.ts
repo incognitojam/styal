@@ -13,7 +13,12 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeedsYou.logic";
+import {
+  listProjectNeeds,
+  openReports,
+  projectReportResponse,
+  type ThreadNeeds,
+} from "./projectNeedsYou.logic";
 
 const local = EnvironmentId.make("env-local");
 
@@ -142,5 +147,34 @@ describe("openReports", () => {
     ]) {
       expect(openReports(projection, [pending])).toEqual([]);
     }
+    // A reply typed in the project page's box leaves the question open, while it is on its way
+    // and once the server has it.
+    const typed = (serverConfig: { reportReplies?: boolean }) =>
+      projectReportResponse({
+        ref: openRef,
+        typed: true,
+        serverConfig,
+        messageId: MessageId.make("typed-reply"),
+        text: "[open, version 1] Why keep them?",
+        createdAt: "2026-11-18T10:06:00.000Z",
+      });
+    const sent = typed({ reportReplies: true })!;
+    expect(openReports(projection, [sent]).map((report) => report.messageId)).toEqual(["open"]);
+    const delivered = {
+      ...projection,
+      messages: [
+        ...projection.messages,
+        {
+          id: sent.messageId,
+          role: "user",
+          text: "Why?",
+          createdAt: at(6),
+          reportAnswer: sent.ref,
+        },
+      ],
+    } as unknown as Pick<OrchestrationV2ThreadProjection, "messages" | "thread">;
+    expect(openReports(delivered).map((report) => report.messageId)).toEqual(["open"]);
+    // A server without `reportReplies` would count a marked reply as an answer, so none is sent.
+    expect(typed({})).toBeUndefined();
   });
 });

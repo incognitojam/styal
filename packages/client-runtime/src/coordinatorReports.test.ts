@@ -9,7 +9,9 @@ import {
   pendingReportResponseCount,
   reportAnswerDisplay,
   reportResponseDelivered,
+  reportReplyReference,
   splitReportAnswer,
+  waitingCoordinatorReports,
 } from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
   id,
@@ -85,6 +87,33 @@ describe("coordinator reports", () => {
     ).toEqual(["replaced", "open", "replaced", "open"]);
   });
 
+  it("keeps the question open after a typed reply and shows the latest answer", () => {
+    const ref = { messageId: "a", key: "pr:1", version: 1 };
+    const send = (id: string, text: string, typed: boolean) => ({
+      id,
+      role: "user",
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, text),
+      createdAt: id,
+      reportAnswer: typed ? reportReplyReference(ref, { reportReplies: true }) : ref,
+    });
+    const states = (...sent: ReturnType<typeof send>[]) =>
+      coordinatorReports([{ ...report("a", "pr:1", 1), createdAt: "0" }, ...sent], []);
+
+    const replied = states(send("1", "Merge now, but ask me to check later", true));
+    expect(replied[0]).toMatchObject({ state: "open", reply: { id: "1" } });
+    expect(waitingCoordinatorReports(replied)).toHaveLength(1);
+
+    const answered = states(
+      send("1", "Why?", true),
+      send("2", "Hold", false),
+      send("3", "Merge", false),
+    );
+    expect(answered[0]).toMatchObject({ state: "answered", answer: { id: "3" } });
+    expect(waitingCoordinatorReports(answered)).toHaveLength(0);
+    // An older server would count the marked reply as an answer, so it is sent without one.
+    expect(reportReplyReference(ref, {})).toBeUndefined();
+  });
+
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {
     const report = { title: "#1522 cleanup, ready", version: 2 };
     expect(splitReportAnswer(formatReportAnswer(report, "Wait\nfor 88"), report)).toBe(
@@ -142,6 +171,41 @@ describe("coordinator reports", () => {
     expect(coordinatorReports([...messages, ...pendingReportAnswers(first!)], [])[0]?.state).toBe(
       "answered",
     );
+    // A typed reply on its way shows as a reply, keeps the question open and lowers no count.
+    const typed = claimReportResponse([], {
+      ...answer("m5", "Why?"),
+      ref: { ...ref, typed: true as const },
+    })!;
+    expect(coordinatorReports([...messages, ...pendingReportAnswers(typed)], [])[0]).toMatchObject({
+      state: "open",
+      reply: { id: "m5" },
+    });
+    expect(pendingReportResponseCount(typed)).toBe(0);
+    // The same typed reply again, while its first send's outcome is unknown, is refused.
+    const unknown = acknowledgeReportResponse(
+      claimReportResponse([], { ...typed[0]!, reply: "Why?" } as (typeof typed)[0])!,
+      { ...typed[0]!, reply: "Why?" } as (typeof typed)[0],
+      Number.POSITIVE_INFINITY,
+    );
+    expect(
+      claimReportResponse(unknown, {
+        ...answer("m8", "Why?"),
+        ref: { ...ref, typed: true },
+        reply: "Why?",
+      }),
+    ).toBeNull();
+    expect(
+      claimReportResponse(unknown, {
+        ...answer("m9", "And?"),
+        ref: { ...ref, typed: true },
+        reply: "And?",
+      }),
+    ).not.toBeNull();
+    // A typed reply and an answer to the same report do not block each other.
+    expect(claimReportResponse(first!, typed[0]!)).not.toBeNull();
+    expect(claimReportResponse(typed, answer("m6", "Hold"))).not.toBeNull();
+    // Changing an answer the question already has lowers no count.
+    expect(pendingReportResponseCount([{ ...answer("m7", "Hold"), replaces: "m1" }])).toBe(0);
     const dismissed = claimReportResponse([], { ref, kind: "dismiss" })!;
     expect(coordinatorReports(messages, pendingReportDismissals(dismissed))[0]?.state).toBe(
       "dismissed",

@@ -1,5 +1,5 @@
 import type {
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   EnvironmentId,
   OrchestrationV2ThreadShell,
   ScopedThreadRef,
@@ -29,7 +29,7 @@ export type ReportResponseThreadState = Pick<
   "data" | "status" | "sequence"
 >;
 
-export type ReportResponse = PendingReportResponse<typeof CoordinatorReportReference.Type>;
+export type ReportResponse = PendingReportResponse<typeof CoordinatorReportReply.Type>;
 
 const NO_RESPONSES: readonly ReportResponse[] = [];
 
@@ -142,17 +142,26 @@ export function createReportResponses(
   /**
    * Shows `response` at once; null when its report already has a response pending, or the
    * thread already shows one (a screen that has fallen behind may still offer the buttons).
+   * A typed reply leaves the question open, so it is always sent and blocks nothing; a change
+   * to an answer is sent unless the report was dismissed.
    */
   const begin = (
     thread: ScopedThreadRef,
     response: ReportResponse,
   ): ReportResponseHandle | null => {
     const known = Option.getOrNull(registry.get(threads.stateAtom(thread)).data);
+    const typed = response.kind === "answer" && response.ref.typed === true;
+    const changing = response.kind === "answer" && response.replaces !== undefined;
     if (
       known !== null &&
-      (known.messages.some(
-        (message) => message.reportAnswer && sameRef(message.reportAnswer, response.ref),
-      ) ||
+      !typed &&
+      ((!changing &&
+        known.messages.some(
+          (message) =>
+            message.reportAnswer &&
+            message.reportAnswer.typed !== true &&
+            sameRef(message.reportAnswer, response.ref),
+        )) ||
         (known.thread.reportDismissals ?? []).some((ref) => sameRef(ref, response.ref)))
     )
       return null;

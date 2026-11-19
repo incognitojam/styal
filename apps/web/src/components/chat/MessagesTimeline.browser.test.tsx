@@ -544,7 +544,13 @@ describe("MessagesTimeline messages", () => {
       createdAt: "2026-11-19T10:00:00.000Z",
       report: { key: "shed", title: "Shed", version: 1, question: "Start?", answers: ["Start it"] },
     };
-    const report: ReportState = { message, latest: message, state: "open", answer: undefined };
+    const report: ReportState = {
+      message,
+      latest: message,
+      state: "open",
+      answer: undefined,
+      reply: undefined,
+    };
     await using screen = await render(
       <CoordinatorReportsContext
         value={{
@@ -563,6 +569,7 @@ describe("MessagesTimeline messages", () => {
               send,
             ),
           reply: () => {},
+          cancelReply: () => {},
           dismiss: () => {},
           scroll: () => {},
           canOperate: true,
@@ -612,6 +619,7 @@ describe("MessagesTimeline messages", () => {
             scroll: (messageId) => setTarget({ messageId }),
             answer: () => {},
             reply: () => {},
+            cancelReply: () => {},
             dismiss: () => {},
             canOperate: true,
           }}
@@ -1622,6 +1630,7 @@ describe("MessagesTimeline attachments", () => {
           scroll: () => {},
           answer: () => {},
           reply: () => {},
+          cancelReply: () => {},
           dismiss: () => {},
           canOperate: true,
         }}

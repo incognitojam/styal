@@ -659,9 +659,18 @@ export function sentReport(input: {
   };
 }
 
-/** For a turn started by a person's answer to one of this thread's report questions. */
-export const reportAnswerNote = (report: Pick<CoordinatorReport, "title" | "version">) =>
-  `Note: this message answers your report "${report.title}" (version ${report.version}), which closes its question.`;
+/**
+ * For a turn started by a person's answer or typed reply to one of this thread's report questions.
+ * `replaces` is the answer's earlier answer to the same question, when it changes one.
+ */
+export const reportAnswerNote = (
+  report: Pick<CoordinatorReport, "title" | "version" | "question">,
+  typed: boolean,
+  replaces?: string,
+) =>
+  typed
+    ? `Note: this message replies to your report "${report.title}" (version ${report.version}); its question "${report.question}" is still open. If the reply settles it, act on it, then close it with t3_report \`resolved: true\`. If it asks something, answer and leave the question open.`
+    : `Note: this message answers your report "${report.title}" (version ${report.version}), which closes its question.${replaces === undefined ? "" : ` It replaces the earlier answer "${replaces}": undo what no longer fits.`}`;
 
 export const threadReportNote = (
   target: Pick<OrchestrationV2ThreadReportTarget, "source">,

@@ -1110,17 +1110,47 @@ export const layer: Layer.Layer<
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
       let inlineContextIds: ReadonlyArray<string> = [];
-      const answeredReport = message?.reportAnswer
-        ? projection.messages.find((candidate) => candidate.id === message.reportAnswer?.messageId)
-            ?.report
+      const linked = message?.reportAnswer;
+      const linkedReport = linked
+        ? projection.messages.find((candidate) => candidate.id === linked.messageId)
         : undefined;
+      // A reply's question may have been answered, dismissed or replaced since it was sent.
+      // An answer that changes an earlier one names it, so the agent can undo what no longer fits.
+      const replacedAnswer = (() => {
+        const report = linkedReport?.report;
+        if (linked === undefined || linked.typed || report === undefined || !message) return;
+        const earlier = projection.messages
+          .filter(
+            (candidate) =>
+              candidate.role === "user" &&
+              candidate.id !== message.id &&
+              candidate.reportAnswer?.typed !== true &&
+              candidate.reportAnswer?.messageId === linked.messageId &&
+              candidate.reportAnswer.version === linked.version &&
+              !DateTime.isGreaterThan(candidate.createdAt, message.createdAt),
+          )
+          .at(-1);
+        if (earlier === undefined) return;
+        const prefix = `[${report.title}, version ${report.version}] `;
+        return earlier.text.startsWith(prefix) ? earlier.text.slice(prefix.length) : earlier.text;
+      })();
+      const linkedNote =
+        linked === undefined || linkedReport?.report?.question === undefined
+          ? ""
+          : !linked.typed
+            ? reportAnswerNote(linkedReport.report, false, replacedAnswer)
+            : ProjectionStore.openReportQuestions(projection).some(
+                  (open) => open.id === linkedReport.id,
+                )
+              ? reportAnswerNote(linkedReport.report, true)
+              : "";
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
         projection.thread.reportTo != null && reportsTo !== null
           ? threadReportNote(projection.thread.reportTo, reportsTo)
           : "",
         branchNote,
-        answeredReport?.question === undefined ? "" : reportAnswerNote(answeredReport),
+        linkedNote,
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),

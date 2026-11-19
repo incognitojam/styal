@@ -33,6 +33,7 @@ import {
   wasBootstrapThreadDeleted,
 } from "@t3tools/client-runtime/errors";
 import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachments";
+import { reportReplyReference } from "@t3tools/client-runtime/coordinator-reports";
 import {
   declinePendingApprovals,
   sendApprovalFeedback,
@@ -884,6 +885,12 @@ export function useComposerSend(input: ComposerSendInput) {
     const outgoingMessageContext = buildOutgoingMessageContext(
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
     );
+    const typedReportReply = input.reportReply
+      ? reportReplyReference(
+          input.reportReply.ref,
+          appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId),
+        )
+      : undefined;
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -1146,13 +1153,13 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
     }
-    // Every surface that shows the report counts this reply as given until the server has it;
-    // one answered elsewhere while this send waited is not answered twice.
-    // A send to several models uses its own messages, so it makes no claim.
+    // Every surface that shows the report shows this reply until the server has it, and another
+    // response to the report waits for it. A send to several models makes no claim. A server
+    // without `reportReplies` gets a plain message, which leaves the question open there.
     const reportReply =
-      input.reportReply && multipleModelSelections === null
+      typedReportReply && multipleModelSelections === null
         ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
-            ref: input.reportReply.ref,
+            ref: typedReportReply,
             kind: "answer",
             reply: messageTextForSend,
             messageId: messageIdForSend,
@@ -1162,7 +1169,12 @@ export function useComposerSend(input: ComposerSendInput) {
         : undefined;
     if (reportReply === null) {
       sendInFlightRef.current = false;
-      setThreadError(threadIdForSend, "This report already has a response.");
+      setThreadError(
+        threadIdForSend,
+        hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), messageTextForSend)
+          ? "This reply may already have been sent. Wait for it to sync."
+          : "This report already has a response.",
+      );
       return;
     }
     // A reply restored after an unknown outcome, sent again without its report link.
@@ -1227,7 +1239,7 @@ export function useComposerSend(input: ComposerSendInput) {
       id: messageIdForSend,
       role: "user",
       text: outgoingMessageText,
-      ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
+      ...(typedReportReply ? { reportAnswer: typedReportReply } : {}),
       ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
       ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
       runId: null,
@@ -1392,7 +1404,7 @@ export function useComposerSend(input: ComposerSendInput) {
         input: {
           threadId: threadIdForSend,
           message: {
-            ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
+            ...(typedReportReply ? { reportAnswer: typedReportReply } : {}),
             messageId: messageIdForSend,
             role: "user",
             attachments: turnAttachmentsResult.value,
@@ -1564,7 +1576,7 @@ export function useComposerSend(input: ComposerSendInput) {
               failure: squashAtomCommandFailure(failure),
               registry: appAtomRegistry,
               target: scopeThreadRef(environmentId, threadIdForSend),
-              ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
+              ...(typedReportReply ? { reportAnswer: typedReportReply } : {}),
               messageId: messageIdForSend,
               messagesAtom: Atom.make((get) => {
                 const target = scopeThreadRef(environmentId, threadIdForSend);

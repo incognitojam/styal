@@ -1744,7 +1744,9 @@ const linkCardStillAsks = (
   latestUserAuthoredMessageAt === null ||
   !DateTime.isGreaterThan(latestUserAuthoredMessageAt, item.startedAt ?? item.updatedAt);
 
-function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
+export function openReportQuestions(
+  projection: Pick<OrchestrationV2ThreadProjection, "messages" | "thread">,
+) {
   const latest = new Map<string, OrchestrationV2ThreadProjection["messages"][number]>();
   const referenceKey = (ref: {
     readonly messageId: string;
@@ -1753,7 +1755,9 @@ function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
   }) => JSON.stringify([ref.messageId, ref.key, ref.version]);
   const answered = new Set(
     projection.messages.flatMap((message) =>
-      message.role === "user" && message.reportAnswer ? [referenceKey(message.reportAnswer)] : [],
+      message.role === "user" && message.reportAnswer && !message.reportAnswer.typed
+        ? [referenceKey(message.reportAnswer)]
+        : [],
     ),
   );
   const dismissed = new Set((projection.thread.reportDismissals ?? []).map(referenceKey));
@@ -5329,12 +5333,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
-                -- The report the run's message answers, for the note about its question.
-                OR message_id IN (
+                -- Every version of the report the run's message answers or replies to, and every
+                -- answer to it, so the turn's note can tell whether its question is still open.
+                OR json_extract(payload_json, '$.report.key') = (
+                  SELECT json_extract(answer.payload_json, '$.reportAnswer.key')
+                  FROM orchestration_v2_projection_messages AS answer
+                  WHERE answer.thread_id = ${threadId}
+                    AND answer.message_id = (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                      WHERE thread_id = ${threadId} AND run_id = ${runId})
+                )
+                OR json_extract(payload_json, '$.reportAnswer.messageId') = (
                   SELECT json_extract(answer.payload_json, '$.reportAnswer.messageId')
                   FROM orchestration_v2_projection_messages AS answer
                   WHERE answer.thread_id = ${threadId}
-                    AND answer.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                    AND answer.message_id = (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                       WHERE thread_id = ${threadId} AND run_id = ${runId})
                 )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
@@ -7068,6 +7080,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_extract(answer.payload_json, '$.reportAnswer.messageId') = report.message_id
             AND json_extract(answer.payload_json, '$.reportAnswer.key') = json_extract(report.payload_json, '$.report.key')
             AND json_extract(answer.payload_json, '$.reportAnswer.version') = json_extract(report.payload_json, '$.report.version')
+            AND json_extract(answer.payload_json, '$.reportAnswer.typed') IS NULL
         )
         AND NOT EXISTS (
           SELECT 1 FROM json_each(t.payload_json, '$.reportDismissals') dismissal

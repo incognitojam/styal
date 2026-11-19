@@ -1,6 +1,12 @@
 import type { CoordinatorReport } from "@t3tools/contracts";
 
-type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
+type Reference = {
+  readonly messageId: string;
+  readonly key: string;
+  readonly version: number;
+  /** A typed reply, which leaves the question open. */
+  readonly typed?: true | undefined;
+};
 
 /**
  * A response this client sent that the thread list does not reflect yet; one per report, so
@@ -16,12 +22,24 @@ export type PendingReportResponse<R extends Reference = Reference> = (
       readonly createdAt: string;
       /** The typed text, when typed rather than one of the offered answers. */
       readonly reply?: string;
+      /** The earlier answer this one deliberately replaces (Change answer). */
+      readonly replaces?: R["messageId"];
     }
   | { readonly ref: R; readonly kind: "dismiss" }
 ) & { readonly acknowledgedAt?: number };
 
 const sameReport = (a: Reference, b: Reference) =>
   a.messageId === b.messageId && a.key === b.key && a.version === b.version;
+
+/**
+ * Whether `response` closes its question: a dismissal or a picked answer, but not a typed reply
+ * or a change to an answer the question already has.
+ */
+function closesReportQuestion(response: PendingReportResponse): boolean {
+  return (
+    response.kind === "dismiss" || (response.ref.typed !== true && response.replaces === undefined)
+  );
+}
 
 /** The same response: same report, and for an answer the same message. */
 export function sameReportResponse(a: PendingReportResponse, b: PendingReportResponse): boolean {
@@ -67,8 +85,8 @@ export function reportResponseOutcomeUnknown(response: PendingReportResponse): b
 }
 
 /**
- * How many responses in `pending` are missing from a view that reflects commits up to
- * `reflectedThrough`, when that is known.
+ * How many responses in `pending` that close a question are missing from a view that reflects
+ * commits up to `reflectedThrough`, when that is known.
  */
 export function pendingReportResponseCount(
   pending: readonly PendingReportResponse[],
@@ -76,6 +94,8 @@ export function pendingReportResponseCount(
 ): number {
   return pending.filter(
     (entry) =>
+      // Only a response that closes its question lowers a count.
+      closesReportQuestion(entry) &&
       !(
         reflectedThrough !== undefined &&
         entry.acknowledgedAt !== undefined &&
@@ -84,12 +104,34 @@ export function pendingReportResponseCount(
   ).length;
 }
 
-/** `pending` with `response` added, or null when its report already has a response pending. */
+/**
+ * `pending` with `response` added, or null when its report already has an answer or dismissal
+ * pending and `response` is one too. A typed reply leaves the question open, so it never blocks
+ * and is only refused when the same reply's earlier send may already have reached the server.
+ */
 export function claimReportResponse<R extends Reference>(
   pending: readonly PendingReportResponse<R>[],
   response: PendingReportResponse<R>,
 ): readonly PendingReportResponse<R>[] | null {
-  if (pending.some((entry) => sameReport(entry.ref, response.ref))) return null;
+  const closing = (entry: PendingReportResponse<R>) =>
+    entry.kind === "dismiss" || entry.ref.typed !== true;
+  if (
+    closing(response) &&
+    pending.some((entry) => sameReport(entry.ref, response.ref) && closing(entry))
+  )
+    return null;
+  if (
+    response.kind === "answer" &&
+    response.reply !== undefined &&
+    pending.some(
+      (entry) =>
+        entry.kind === "answer" &&
+        sameReport(entry.ref, response.ref) &&
+        entry.reply === response.reply &&
+        reportResponseOutcomeUnknown(entry),
+    )
+  )
+    return null;
   return [...pending, response];
 }
 

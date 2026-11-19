@@ -3,6 +3,7 @@ import {
   coordinatorReports,
   formatReportAnswer,
   reportAnswers,
+  reportReplyReference,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { serverEnvironment } from "./server";
@@ -852,7 +853,12 @@ export function useThreadComposerState(input: {
     const queuedText = reply
       ? formatReportAnswer({ title: reply.title, version: reply.ref.version }, text)
       : text;
-    const reportAnswer = reply?.ref ?? draft.reportAnswer;
+    // A tapped answer closes the question; a reply typed in the composer leaves it open.
+    const reportAnswer = reportResponse
+      ? reportResponse.reply.ref
+      : activeReportReply
+        ? reportReplyReference(activeReportReply.ref, selectedEnvironmentRuntime?.serverConfig)
+        : draft.reportAnswer;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,

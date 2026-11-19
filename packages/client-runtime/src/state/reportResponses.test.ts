@@ -269,6 +269,51 @@ it("refuses a response to a report the thread already shows answered", async () 
   );
   expect(accepted).toBe(false);
   expect(sent).toBe(0);
+
+  // A typed reply leaves the question open, so it neither blocks nor is blocked by an answer;
+  // a deliberate Change answer replaces the answer it names.
+  const send = async () => {
+    sent += 1;
+    return AsyncResult.success({ sequence: 7 });
+  };
+  const response = (id: string, extra: object = {}) => ({
+    ref,
+    kind: "answer" as const,
+    messageId: MessageId.make(id),
+    text: "[Shed, version 1] Start it",
+    createdAt: "2026-11-19T10:00:00.000Z",
+    ...extra,
+  });
+  expect(await respond(thread, response("typed", { ref: { ...ref, typed: true } }), send)).toBe(
+    true,
+  );
+  expect(await respond(thread, response("typed-2", { ref: { ...ref, typed: true } }), send)).toBe(
+    true,
+  );
+  expect(
+    await respond(thread, response("changed", { replaces: MessageId.make("first") }), send),
+  ).toBe(true);
+  expect(sent).toBe(3);
+
+  const replyOnly = Atom.make<ReportResponseThreadState>({
+    data: Option.some({
+      ...projection,
+      messages: [
+        projection.messages[0]!,
+        {
+          id: MessageId.make("why"),
+          role: "user",
+          text: "Why?",
+          reportAnswer: { ...ref, typed: true },
+        },
+      ],
+    } as unknown as Option.Option.Value<ReportResponseThreadState["data"]>),
+    status: "live",
+    sequence: 5,
+  });
+  expect(
+    await store(AtomRegistry.make(), replyOnly).respond(thread, response("after-reply"), send),
+  ).toBe(true);
 });
 
 it("drops a response that fails before it is sent", () => {

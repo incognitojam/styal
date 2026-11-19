@@ -1129,12 +1129,15 @@ export default function ChatView(props: ChatViewProps) {
         ],
       )
     : [];
-  // A reply to a report that has since been answered or dismissed is no longer a reply.
+  // A reply to a report that has since been dismissed or replaced is no longer a reply; one that
+  // was answered or resolved still is, since a typed reply leaves an answer as it is.
   // Kept while a reply's outcome is unknown, so resending the restored draft is refused, not sent plainly.
   const activeReportReply =
     reportReply?.threadKey === activeThreadKey &&
     (reportStates.some(
-      (report) => report.state === "open" && report.message.id === reportReply.ref.messageId,
+      (report) =>
+        (report.state === "open" || report.state === "answered" || report.state === "resolved") &&
+        report.message.id === reportReply.ref.messageId,
     ) ||
       reportResponses.some(
         (response) =>
@@ -3770,7 +3773,7 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           answers: reportAnswerMessages,
-                          answer: (text, ref) => {
+                          answer: (text, ref, replaces) => {
                             if (activeThreadRef === null || activeThreadId === null) return;
                             const messageId = newMessageId();
                             void respondToReport(
@@ -3781,6 +3784,7 @@ export default function ChatView(props: ChatViewProps) {
                                 messageId,
                                 text,
                                 createdAt: new Date().toISOString(),
+                                ...(replaces ? { replaces } : {}),
                               },
                               () =>
                                 startThreadTurn({
@@ -3805,6 +3809,10 @@ export default function ChatView(props: ChatViewProps) {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
                             scheduleComposerFocus();
                           },
+                          cancelReply: (ref) =>
+                            setReportReply((current) =>
+                              current?.ref.messageId === ref.messageId ? null : current,
+                            ),
                           dismiss: (ref) => {
                             if (activeThreadRef === null || activeThreadId === null) return;
                             void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>

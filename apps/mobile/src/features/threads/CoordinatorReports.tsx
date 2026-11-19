@@ -4,7 +4,7 @@ import { Pressable, View } from "react-native";
 import type {
   ChatAttachment,
   CoordinatorReport,
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   MessageId,
   OrchestrationMessageContext,
 } from "@t3tools/contracts";
@@ -22,7 +22,7 @@ type ReportMessage = {
   text: string;
   createdAt: string;
   report?: CoordinatorReport;
-  reportAnswer?: typeof CoordinatorReportReference.Type;
+  reportAnswer?: typeof CoordinatorReportReply.Type;
   context?: OrchestrationMessageContext;
   attachments?: readonly ChatAttachment[];
 };
@@ -45,6 +45,8 @@ export const CoordinatorReportsContext = createContext<{
   canOperate: boolean;
   send: (text: string, reply: ReportReply) => Promise<void>;
   reply: (reply: ReportReply) => void;
+  /** Stops the composer replying to this report, if it is. */
+  cancelReply: (reply: ReportReply) => void;
   dismiss: (reply: ReportReply) => Promise<void>;
 } | null>(null);
 
@@ -67,10 +69,16 @@ export function CoordinatorReportMessage({
   const [error, setError] = useState<string | null>(null);
   // A resolved question asks again here until the person answers or cancels.
   const [reopened, setReopened] = useState(false);
+  // The answer being changed; the card asks again until a newer answer replaces it.
+  const [changing, setChanging] = useState<MessageId | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
   const reply = { ref: { messageId: id, key: tag.key, version: tag.version }, title: tag.title };
+  const currentAnswer =
+    report.state === "answered" && report.answer
+      ? reportAnswerDisplay(report.answer, tag).text
+      : undefined;
   const run = (action: () => Promise<void>) => {
     setSending(true);
     setError(null);
@@ -101,19 +109,31 @@ export function CoordinatorReportMessage({
         <Text className="text-warning-foreground">A newer version is below</Text>
       ) : null}
       {content}
-      {report.state === "open" || (report.state === "resolved" && reopened) ? (
+      {report.state === "open" ||
+      (report.state === "resolved" && reopened) ||
+      (report.state === "answered" && report.answer && changing === report.answer.id) ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
+          {report.state === "open" && report.reply ? (
+            <Text className="text-foreground-secondary">You replied · question still open</Text>
+          ) : null}
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
           {tag.answers?.map((answer, index) => (
             <Pressable
               key={answer}
               accessibilityRole="button"
-              accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
+              accessibilityLabel={[
+                answer,
+                ...(answer === currentAnswer ? ["your answer"] : []),
+                ...(index === 0 ? ["recommended"] : []),
+              ].join(", ")}
               disabled={!ctx.canOperate || sending}
               onPress={() => run(() => ctx.send(answer, reply))}
               className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
             >
               <Text className="flex-1 text-foreground">{answer}</Text>
+              {answer === currentAnswer ? (
+                <Text className="text-xs text-foreground-secondary">Your answer</Text>
+              ) : null}
               {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
             </Pressable>
           ))}
@@ -125,20 +145,26 @@ export function CoordinatorReportMessage({
               disabled={!ctx.canOperate || sending}
               onPress={() => ctx.reply(reply)}
             />
-            {report.state === "resolved" ? (
-              <Button
-                label="Cancel"
-                size="compact"
-                tone="text"
-                onPress={() => setReopened(false)}
-              />
-            ) : (
+            {report.state === "open" ? (
               <Button
                 label="Dismiss"
                 size="compact"
-                tone="text"
+                // A reply leaves the question open; closing it is up to the agent or this button.
+                tone={report.reply ? "outline" : "text"}
                 disabled={!ctx.canOperate || sending}
                 onPress={() => run(() => ctx.dismiss(reply))}
+              />
+            ) : (
+              <Button
+                label={report.state === "answered" ? "Keep answer" : "Cancel"}
+                size="compact"
+                tone="text"
+                disabled={sending}
+                onPress={() => {
+                  setReopened(false);
+                  setChanging(null);
+                  ctx.cancelReply(reply);
+                }}
               />
             )}
           </View>
@@ -153,6 +179,14 @@ export function CoordinatorReportMessage({
           answer={report.answer}
           display={reportAnswerDisplay(report.answer, tag)}
           renderAnswer={renderAnswer}
+          {...(tag.question
+            ? {
+                change: {
+                  disabled: !ctx.canOperate || sending,
+                  onPress: () => setChanging(report.answer!.id),
+                },
+              }
+            : {})}
         />
       ) : report.state === "resolved" ? (
         <View className="gap-1 rounded-xl bg-secondary p-3">
@@ -186,12 +220,30 @@ function AnsweredReport(props: {
   answer: ReportMessage;
   display: { text: string; compact: boolean };
   renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
+  change?: { disabled: boolean; onPress: () => void };
 }) {
+  const change = props.change ? (
+    <Button
+      label="Change answer"
+      size="compact"
+      tone="text"
+      disabled={props.change.disabled}
+      onPress={props.change.onPress}
+    />
+  ) : null;
   if (props.display.compact)
-    return <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>;
+    return (
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="shrink text-foreground-secondary">You answered: {props.display.text}</Text>
+        {change}
+      </View>
+    );
   return (
     <View className="gap-1 rounded-xl bg-secondary p-3">
-      <Text className="text-foreground-secondary">You answered</Text>
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="text-foreground-secondary">You answered</Text>
+        {change}
+      </View>
       {props.renderAnswer(props.answer, props.display.text)}
     </View>
   );

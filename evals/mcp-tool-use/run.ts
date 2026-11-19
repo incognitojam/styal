@@ -373,8 +373,17 @@ export const McpToolUseCase = Schema.Struct({
     projectCoordinator: Schema.optional(Schema.Boolean),
     /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
     answerNotes: Schema.optional(Schema.Array(Schema.String)),
-    /** The prompt answers this report of the thread's, as a picked answer reaches it in T3. */
-    reportAnswer: Schema.optional(Schema.Struct({ title: Schema.String, version: Schema.Number })),
+    /** The prompt answers this report of the thread's, or replies to it when `reply` is set. */
+    reportAnswer: Schema.optional(
+      Schema.Struct({
+        title: Schema.String,
+        version: Schema.Number,
+        question: Schema.optional(Schema.String),
+        typed: Schema.optional(Schema.Boolean),
+        /** The earlier answer this one changes. */
+        replaces: Schema.optional(Schema.String),
+      }),
+    ),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3; for a
@@ -1208,7 +1217,11 @@ export const buildMessages = (sample: Sample) => {
       testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
       testCase.setup.reportAnswer === undefined
         ? ""
-        : reportAnswerNote(testCase.setup.reportAnswer),
+        : reportAnswerNote(
+            testCase.setup.reportAnswer,
+            testCase.setup.reportAnswer.typed === true,
+            testCase.setup.reportAnswer.replaces,
+          ),
     ]
       .filter((part) => part !== "")
       .join("\n\n"),

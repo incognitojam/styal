@@ -8,12 +8,13 @@ import {
   coordinatorReports,
   pendingReportAnswers,
   pendingReportDismissals,
+  reportReplyReference,
   waitingCoordinatorReports,
   type PendingReportResponse,
 } from "@t3tools/client-runtime/coordinator-reports";
 import type {
   CoordinatorReport,
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   MessageId,
   OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
@@ -51,7 +52,7 @@ export type ProjectNeed = NeedBase &
 /** Report questions still waiting, counting responses this client has sent as given. */
 export function openReports(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "thread">,
-  pending: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReference.Type>> = [],
+  pending: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReply.Type>> = [],
 ): ReadonlyArray<OpenReport> {
   const messages = projection.messages.map((message) => ({
     ...message,
@@ -67,6 +68,33 @@ export function openReports(
     report: message.report!,
     createdAt: message.createdAt,
   }));
+}
+
+/**
+ * The pending response a project-page answer sends. A typed reply carries the marked reference,
+ * which leaves the question open; a server without `reportReplies` would count it as an answer,
+ * so the reply goes as a plain message with no response.
+ */
+export function projectReportResponse(input: {
+  readonly ref: typeof CoordinatorReportReply.Type;
+  readonly typed: boolean;
+  readonly serverConfig: { readonly reportReplies?: boolean } | null | undefined;
+  readonly messageId: MessageId;
+  readonly text: string;
+  readonly createdAt: string;
+}):
+  | Extract<PendingReportResponse<typeof CoordinatorReportReply.Type>, { kind: "answer" }>
+  | undefined {
+  const ref = input.typed ? reportReplyReference(input.ref, input.serverConfig) : input.ref;
+  return ref === undefined
+    ? undefined
+    : {
+        ref,
+        kind: "answer",
+        messageId: input.messageId,
+        text: input.text,
+        createdAt: input.createdAt,
+      };
 }
 
 /**

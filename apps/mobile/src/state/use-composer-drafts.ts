@@ -3,7 +3,7 @@ import {
   EnvironmentId as EnvironmentIdSchema,
   ModelSelection as ModelSelectionSchema,
   ComposerContextId,
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   ComposerContextRecord,
   COMPOSER_CONTEXT_MAX_RECORDS,
   ForwardCompatibleArray,
@@ -400,7 +400,7 @@ const isComposerDraftPersistenceError = Schema.is(ComposerDraftPersistenceError)
 export interface ComposerDraft {
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
-  readonly reportAnswer?: typeof CoordinatorReportReference.Type;
+  readonly reportAnswer?: typeof CoordinatorReportReply.Type;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly importedShareIds?: ReadonlyArray<string>;
   readonly modelSelection?: ModelSelection;
@@ -421,7 +421,7 @@ export interface ComposerDraftProject {
 export interface ComposerDraftContent {
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
-  readonly reportAnswer?: typeof CoordinatorReportReference.Type;
+  readonly reportAnswer?: typeof CoordinatorReportReply.Type;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly sourceShareId?: string;
 }
@@ -474,7 +474,7 @@ const PersistedComposerContextSchema = Schema.Struct({
 const ComposerDraftSchema = Schema.Struct({
   text: Schema.String,
   context: Schema.optional(PersistedComposerContextSchema),
-  reportAnswer: Schema.optional(CoordinatorReportReference),
+  reportAnswer: Schema.optional(CoordinatorReportReply),
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   importedShareIds: Schema.optional(Schema.Array(Schema.String)),
   modelSelection: Schema.optional(ModelSelectionSchema),

@@ -934,7 +934,11 @@ export function createThreadOutboxDelivery(): {
         message: {
           messageId: queuedMessage.messageId,
           role: "user",
-          ...(queuedMessage.reportAnswer ? { reportAnswer: queuedMessage.reportAnswer } : {}),
+          // A server that does not take typed replies would count a marked one as an answer.
+          ...(queuedMessage.reportAnswer &&
+          (!queuedMessage.reportAnswer.typed || serverConfig.reportReplies === true)
+            ? { reportAnswer: queuedMessage.reportAnswer }
+            : {}),
           ...serializeComposerMessageForServer(
             queuedMessage.text,
             uploadedComposerContext(
