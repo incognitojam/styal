@@ -27,7 +27,7 @@ describe("native updater lifecycle", () => {
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     },
   );
-  it.effect("downloads automatically without staging an installation", () => {
+  it.effect("downloads only on request without staging an installation", () => {
     const harness = makeHarness();
     return Effect.scoped(
       Effect.gen(function* () {
@@ -35,6 +35,8 @@ describe("native updater lifecycle", () => {
         yield* updates.configure;
         harness.emit("update-available", { version: "1.2.4" });
         yield* flushCallbacks;
+        assert.equal(harness.downloadCount(), 0);
+        yield* updates.download;
         assert.equal(harness.downloadCount(), 1);
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
@@ -199,6 +201,7 @@ describe("native updater lifecycle", () => {
           assert.equal((yield* updates.getState).channel, "latest");
           harness.emit("update-available", { version: "1.2.5" });
           yield* flushCallbacks;
+          yield* updates.download;
           assert.equal(harness.downloadCount(), 1);
           harness.emit("update-downloaded", { version: "1.2.5" });
           yield* flushCallbacks;
