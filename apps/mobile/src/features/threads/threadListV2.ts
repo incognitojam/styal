@@ -379,6 +379,9 @@ export interface ThreadListV2ProjectHeader {
   readonly title: string;
   readonly project: EnvironmentProject;
   readonly pinned: boolean;
+  /** The project's chat (`environmentId:threadId`): the header opens it and stands in for its row. */
+  readonly chatThreadKey?: string;
+  readonly statusLine?: string | null;
 }
 
 export interface ThreadListV2ProjectGrouping {
@@ -470,6 +473,8 @@ export interface ThreadListV2ProjectHeaderListItem {
   readonly title: string;
   readonly project: EnvironmentProject | null;
   readonly pinned: boolean;
+  readonly chatThreadKey: string | null;
+  readonly statusLine: string | null;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -559,7 +564,9 @@ export function threadListV2ListItemsAreEqual(
         previous.key === item.key &&
         previous.title === item.title &&
         previous.project === item.project &&
-        previous.pinned === item.pinned
+        previous.pinned === item.pinned &&
+        previous.chatThreadKey === item.chatThreadKey &&
+        previous.statusLine === item.statusLine
       );
     case "v2-pending":
       return (
@@ -684,17 +691,25 @@ export function buildThreadListV2ListItems(input: {
     let currentGroup: string | undefined;
     for (const row of rows) {
       const group = row.type === "v2-thread" ? row.item.projectGroup : undefined;
+      const header = group === undefined ? undefined : input.projectHeaders.get(group);
       if (group !== undefined && group !== currentGroup) {
-        const header = input.projectHeaders.get(group);
         result.push({
           type: "v2-project-header",
           key: `v2-project-header:${section}:${group}`,
           title: header?.title ?? "",
           project: header?.project ?? null,
           pinned: header?.pinned === true,
+          chatThreadKey: header?.chatThreadKey ?? null,
+          statusLine: header?.statusLine ?? null,
         });
       }
       currentGroup = group;
+      if (
+        row.type === "v2-thread" &&
+        header?.chatThreadKey === `${row.item.thread.environmentId}:${row.item.thread.id}`
+      ) {
+        continue;
+      }
       result.push(row);
     }
     return result;

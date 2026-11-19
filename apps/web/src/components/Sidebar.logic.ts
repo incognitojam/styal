@@ -2,6 +2,11 @@ import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
+import {
+  resolveThreadListStatus,
+  type ThreadListStatus,
+  type ThreadListStatusInput,
+} from "@t3tools/client-runtime/state/thread-list-status";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
@@ -1013,19 +1018,8 @@ export function resolveAdjacentThreadId<T>(input: {
   return currentIndex < threadIds.length - 1 ? (threadIds[currentIndex + 1] ?? null) : null;
 }
 
-export type SidebarThreadStatus =
-  | "approval"
-  | "input"
-  | "request"
-  | "preparing"
-  | "working"
-  | "waiting"
-  | "failed"
-  | "limited"
-  | "ready";
-
 export function shouldRecedeSidebarThread(input: {
-  status: SidebarThreadStatus;
+  status: ThreadListStatus;
   isUnread: boolean;
   isWoke: boolean;
   isActive: boolean;
@@ -1051,53 +1045,6 @@ export function shouldRecedeSidebarThread(input: {
     return input.isFailureSeen === true;
   }
   return false;
-}
-
-type SidebarThreadStatusInput = Pick<
-  SidebarThreadSummary,
-  | "hasPendingApprovals"
-  | "hasPendingUserInput"
-  | "openReportQuestionCount"
-  | "pendingSubagentRequest"
-  | "pendingGuestMessageCount"
-  | "runtime"
-  | "blockedOnThreadWait"
->;
-
-export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
-  if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
-    return "approval";
-  }
-  if (
-    thread.hasPendingUserInput ||
-    (thread.openReportQuestionCount ?? 0) > 0 ||
-    thread.pendingSubagentRequest === "user_input"
-  ) {
-    return "input";
-  }
-  // A guest is waiting on the owner; the agent's own requests come first.
-  if ((thread.pendingGuestMessageCount ?? 0) > 0) {
-    return "request";
-  }
-  if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
-    return "waiting";
-  }
-  if (thread.runtime?.status === "preparing") {
-    return "preparing";
-  }
-  if (
-    thread.runtime !== null &&
-    ["queued", "starting", "running", "waiting"].includes(thread.runtime.status)
-  ) {
-    return "working";
-  }
-  if (thread.runtime?.status === "idle") {
-    return "waiting";
-  }
-  if (thread.runtime?.status === "failed") {
-    return thread.runtime.lastErrorClass === "usage_limit" ? "limited" : "failed";
-  }
-  return "ready";
 }
 
 // What a thread is waiting on the user for, matching the precedence of a
@@ -1135,7 +1082,7 @@ export function isSidebarThreadWoke(input: {
 }
 
 export function resolveSidebarThreadAttention(input: {
-  status: SidebarThreadStatus;
+  status: ThreadListStatus;
   isUnread: boolean;
   isWoke: boolean;
 }): SidebarThreadAttention | null {
@@ -1194,9 +1141,9 @@ export function resolveNextAttentionThread(
  * hidden threads. Waiting threads stay quiet, like their rows.
  */
 export function resolveSidebarFolderDot(
-  threads: ReadonlyArray<ThreadStatusInput & SidebarThreadStatusInput>,
+  threads: ReadonlyArray<ThreadStatusInput & ThreadListStatusInput>,
 ): "attention" | "failed" | "unread" | "working" | null {
-  const statuses = new Set(threads.map(resolveSidebarThreadStatus));
+  const statuses = new Set(threads.map(resolveThreadListStatus));
   if (
     statuses.has("input") ||
     statuses.has("approval") ||
@@ -1208,7 +1155,7 @@ export function resolveSidebarFolderDot(
   if (statuses.has("failed")) return "failed";
   // Rows show Done only for ready threads, so the dot follows the same rule.
   const hasUnread = threads.some(
-    (thread) => resolveSidebarThreadStatus(thread) === "ready" && hasUnseenCompletion(thread),
+    (thread) => resolveThreadListStatus(thread) === "ready" && hasUnseenCompletion(thread),
   );
   if (hasUnread) return "unread";
   if (statuses.has("working") || statuses.has("preparing")) return "working";

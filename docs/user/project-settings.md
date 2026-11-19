@@ -327,6 +327,14 @@ than one machine, choose the machine under the composer before sending; it start
 where the project was last active. The chat stays on that machine, and only threads on it report
 to the chat. A machine with project coordinators off is named there instead of offered.
 
+On mobile, a project with a chat shows it as the project's row in the thread list: the project's
+name and how many of its threads are working or need you. With **Group threads by project** on,
+tap the project's header instead; the chat has no row of its own there. The chat opens with the
+project's name as its title, how many threads are working, and its machine. **New thread** starts
+a thread in the project, and the menu holds **Project settings**, the files and the terminal. A
+notification about the chat, and a `styal://projects/<environment>/<project>` link, open it too.
+Starting a project's first chat still happens on web or desktop.
+
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it
 there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the

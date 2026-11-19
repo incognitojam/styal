@@ -24,8 +24,12 @@ import type {
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
-import { scopedProjectKey } from "../../lib/scopedEntities";
-import type { ThreadListV2ProjectGrouping } from "../threads/threadListV2";
+import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
+import type { ProjectChat } from "../projects/projectChats.logic";
+import type {
+  ThreadListV2ProjectGrouping,
+  ThreadListV2ProjectHeader,
+} from "../threads/threadListV2";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 
 export type HomeProjectSortOrder = Exclude<SidebarProjectSortOrder, "manual">;
@@ -112,9 +116,13 @@ export function findHomeProjectScope(
   );
 }
 
-/** Project headers for the thread list, from the same scopes as the project filter. */
+/**
+ * Project headers for the thread list, from the same scopes as the project filter. A project
+ * with a chat heads its rows with the chat, which then has no row of its own.
+ */
 export function buildHomeThreadProjectGrouping(
   scopes: ReadonlyArray<HomeProjectScope>,
+  chatsByScopeKey: ReadonlyMap<string, ProjectChat>,
 ): ThreadListV2ProjectGrouping {
   return {
     groupByProjectKey: new Map(
@@ -127,15 +135,7 @@ export function buildHomeThreadProjectGrouping(
     ),
     headerByGroup: new Map(
       scopes.map(
-        (scope) =>
-          [
-            scope.key,
-            {
-              title: scope.title,
-              project: scope.representative,
-              pinned: scope.pinned,
-            },
-          ] as const,
+        (scope) => [scope.key, projectHeader(scope, chatsByScopeKey.get(scope.key))] as const,
       ),
     ),
     pinnedGroupKeys: sortPinnedProjectsFirst(
@@ -144,6 +144,20 @@ export function buildHomeThreadProjectGrouping(
     groupKeys: scopes.map((scope) => scope.key),
   };
 }
+function projectHeader(
+  scope: HomeProjectScope,
+  chat: ProjectChat | undefined,
+): ThreadListV2ProjectHeader {
+  const header = { title: scope.title, project: scope.representative, pinned: scope.pinned };
+  return chat === undefined
+    ? header
+    : {
+        ...header,
+        chatThreadKey: scopedThreadKey(chat.chat.environmentId, chat.chat.id),
+        statusLine: chat.statusLine,
+      };
+}
+
 export function sortHomeProjectScopes(input: {
   readonly scopes: ReadonlyArray<HomeProjectScope>;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;

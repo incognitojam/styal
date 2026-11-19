@@ -1,6 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-
-import { resolveSidebarThreadStatus } from "../Sidebar.logic";
+import { resolveThreadListStatus } from "@t3tools/client-runtime/state/thread-list-status";
 
 /**
  * What the project chat's list of started threads says about one: still working, or waiting on
@@ -10,7 +9,7 @@ export function startedThreadState(
   thread: EnvironmentThreadShell | null,
 ): "working" | "needs-you" | null {
   if (thread === null || thread.archivedAt !== null) return null;
-  switch (resolveSidebarThreadStatus(thread)) {
+  switch (resolveThreadListStatus(thread)) {
     case "approval":
     case "input":
     case "request":
