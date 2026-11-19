@@ -31,6 +31,9 @@ import {
 /** Use known feed width immediately; later image measurement would move already-positioned rows. */
 export const MarkdownImageAvailableWidthContext = createContext(0);
 
+/** In a thumbnail row: the frame fills its cell's height, fitting the image inside, so a row's frames line up. */
+export const MarkdownImageFillContext = createContext(false);
+
 type ImageSize = { readonly width: number; readonly height: number };
 
 class SvgLoadError extends Schema.TaggedError<SvgLoadError>()("SvgLoadError", {
@@ -108,6 +111,7 @@ export function ThreadMarkdownImageView(props: {
   const sourceIdentifier = useId();
   const mediaActions = useMediaActions(props.actionsSource);
   const contextWidth = useContext(MarkdownImageAvailableWidthContext);
+  const fill = useContext(MarkdownImageFillContext);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const availableWidth =
     measuredWidth > 0 && contextWidth > 0
@@ -156,21 +160,28 @@ export function ThreadMarkdownImageView(props: {
       decodedSize?.width ??
       Infinity,
   );
-  const frameStyle: ViewStyle = props.reserveFrame
+  const naturalFrameStyle: ViewStyle = props.reserveFrame
     ? {
         width: availableWidth > 0 ? Math.min(availableWidth, cap) : "100%",
         maxWidth: cap,
         aspectRatio: ratio,
       }
     : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
+  const frameStyle: ViewStyle = fill
+    ? {
+        width: "100%",
+        flexGrow: 1,
+        minHeight: displaySize?.height ?? (availableWidth > 0 ? (availableWidth * 9) / 16 : 0),
+      }
+    : naturalFrameStyle;
 
   return (
     <View
       onLayout={(event) => setMeasuredWidth(event.nativeEvent.layout.width)}
-      style={{ alignSelf: "stretch", gap: 6 }}
+      style={{ alignSelf: "stretch", gap: 6, flexGrow: fill ? 1 : 0 }}
     >
       {props.uri === null || failed ? (
-        <MediaActionsMenu media={mediaActions}>
+        <MediaActionsMenu media={mediaActions} style={fill ? { flexGrow: 1 } : undefined}>
           <Pressable
             accessibilityRole="imagebutton"
             onPress={failed ? props.onViewOriginal : undefined}
@@ -208,8 +219,11 @@ export function ThreadMarkdownImageView(props: {
           </Pressable>
         </MediaActionsMenu>
       ) : (
-        <PresentationSource identifier={sourceIdentifier} style={{ alignSelf: "flex-start" }}>
-          <MediaActionsMenu media={mediaActions}>
+        <PresentationSource
+          identifier={sourceIdentifier}
+          style={fill ? { flexGrow: 1 } : { alignSelf: "flex-start" }}
+        >
+          <MediaActionsMenu media={mediaActions} style={fill ? { flexGrow: 1 } : undefined}>
             <Pressable
               accessibilityRole="imagebutton"
               accessibilityLabel={props.alt ?? "Markdown image"}
@@ -227,7 +241,7 @@ export function ThreadMarkdownImageView(props: {
                   }),
                 )
               }
-              style={{ alignSelf: "flex-start" }}
+              style={fill ? { flexGrow: 1 } : { alignSelf: "flex-start" }}
             >
               <View
                 className="items-center justify-center overflow-hidden rounded-[10px] bg-md-code-bg"
@@ -240,6 +254,7 @@ export function ThreadMarkdownImageView(props: {
                     key={props.sourceKey}
                     uri={props.uri}
                     cacheKey={props.cacheKey}
+                    size={fill ? displaySize : null}
                     onLoad={(size) =>
                       // Only the first decode counts: later loads report the bitmap
                       // downsampled for the current frame (969 vs 970 wide), so keeping
@@ -276,6 +291,8 @@ function ThreadMarkdownImageRequest(props: {
   readonly placeholderUri?: string | undefined;
   readonly uri: string;
   readonly cacheKey: string | undefined;
+  /** A fixed size the frame centres; otherwise the image fills the frame. */
+  readonly size: ImageSize | null;
   readonly onLoad: (sourceSize: ImageSize) => void;
   readonly onError: () => void;
 }) {
@@ -292,19 +309,22 @@ function ThreadMarkdownImageRequest(props: {
           onLoad={(event) => props.onPlaceholderLoad(event.source)}
         />
       ) : null}
-      <Image
-        placeholderContentFit="contain"
-        source={{ uri: props.uri, cacheKey: props.cacheKey }}
-        contentFit="contain"
-        cachePolicy="memory-disk"
-        accessible={false}
-        onLoad={(event) => {
-          setLoaded(true);
-          props.onLoad(event.source);
-        }}
-        onError={props.onError}
-        style={{ width: "100%", height: "100%", opacity: loaded ? 1 : 0 }}
-      />
+      {/* A plain view takes the size: Android did not move the image view itself when its row grew. */}
+      <View style={props.size ?? StyleSheet.absoluteFill}>
+        <Image
+          placeholderContentFit="contain"
+          source={{ uri: props.uri, cacheKey: props.cacheKey }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          accessible={false}
+          onLoad={(event) => {
+            setLoaded(true);
+            props.onLoad(event.source);
+          }}
+          onError={props.onError}
+          style={[StyleSheet.absoluteFill, { opacity: loaded ? 1 : 0 }]}
+        />
+      </View>
       {loaded ? null : <ThreadMarkdownImageLoading />}
     </>
   );
