@@ -3,7 +3,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { DraftId } from "../composerDraftStore";
-import { readPreparingAdd } from "../lib/addProjectToMachine";
+import { readPreparingAdd, setPreparingAdd } from "../lib/addProjectToMachine";
 import { act, render } from "../../test/render";
 
 const project = vi.hoisted(() => {
@@ -163,5 +163,33 @@ describe("AddProjectToMachineDialog", () => {
     await act(() => project.set(PROJECT));
     await act(quickAdd);
     await expect.element(screen.getByText("Clone to machine-a")).toBeInTheDocument();
+  });
+
+  it("keeps a draft's row while its clone is being sent, even when another add replaces it", async () => {
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+    const sendingDraft = DraftId.make("draft-3");
+
+    await act(() =>
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId: sendingDraft,
+      }),
+    );
+    await expect.element(screen.getByText("Clone to machine-a")).toBeInTheDocument();
+    // As if its clone request were out.
+    setPreparingAdd(sendingDraft, { title: "Adding to machine-a", sending: true });
+
+    await act(() =>
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: null,
+        draftId: DraftId.make("draft-4"),
+      }),
+    );
+    expect(readPreparingAdd(sendingDraft)).toEqual({ title: "Adding to machine-a", sending: true });
   });
 });

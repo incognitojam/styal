@@ -118,6 +118,8 @@ export interface PreparingAdd {
   readonly title: string;
   /** Calls the add off; absent once the clone is being sent. */
   readonly onCancel?: () => void;
+  /** The clone request is out: the row and its holds stay until it settles, dialog or not. */
+  readonly sending?: boolean;
 }
 
 /** One-click adds still checking whether to ask, keyed by the draft that moves with the clone. */

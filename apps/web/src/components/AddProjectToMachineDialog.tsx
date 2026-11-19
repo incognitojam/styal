@@ -116,7 +116,7 @@ const addingTitle = (label: string | undefined) => `Adding to ${label ?? "anothe
 /** The open request's Preparing row goes with it, even if its dialog never mounted. */
 function endPreparing() {
   const draftId = useRequest.getState().request?.draftId;
-  if (draftId) setPreparingAdd(draftId, null);
+  if (draftId && !readPreparingAdd(draftId)?.sending) setPreparingAdd(draftId, null);
 }
 
 /** Ends the request; with `session`, only if that request is still the open one. */
@@ -289,10 +289,11 @@ function AddProjectToMachineDialog({
   const startClone = useStableCallback(async () => {
     if (!project || !target || starting.current) return;
     starting.current = true;
-    // Once the clone is being sent it can no longer be called off from the row.
-    if (request.draftId && readPreparingAdd(request.draftId) !== null) {
-      setPreparingAdd(request.draftId, { title: addingTitle(target.label) });
-    }
+    // Once the clone is being sent it can no longer be called off from the row, and the row stays
+    // until the request settles, even if another add replaces this dialog meanwhile.
+    const draftId = request.draftId;
+    const sendingRow = draftId !== undefined && readPreparingAdd(draftId) !== null;
+    if (sendingRow) setPreparingAdd(draftId, { title: addingTitle(target.label), sending: true });
     try {
       const projectId = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
@@ -313,6 +314,8 @@ function AddProjectToMachineDialog({
       starting.current = false;
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
+    } finally {
+      if (sendingRow) setPreparingAdd(draftId, null);
     }
   });
 
@@ -337,16 +340,14 @@ function AddProjectToMachineDialog({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shows the quick add in the source composer's banner, which this hidden dialog does not render
   useEffect(() => {
     const draftId = request.draftId;
-    if (!draftId) return;
+    if (!draftId || starting.current) return;
     setPreparingAdd(
       draftId,
-      preparingTitle === null
-        ? null
-        : starting.current
-          ? { title: preparingTitle }
-          : { title: preparingTitle, onCancel: () => close(session) },
+      preparingTitle === null ? null : { title: preparingTitle, onCancel: () => close(session) },
     );
-    return () => setPreparingAdd(draftId, null);
+    return () => {
+      if (!readPreparingAdd(draftId)?.sending) setPreparingAdd(draftId, null);
+    };
   }, [preparingTitle, request.draftId, session]);
   if (!showDialog) return null;
 
