@@ -20,3 +20,5 @@ if (process.env.T3CODE_TEST_KEEP_PROVIDER_ENV !== "1") {
     }
   }
 }
+
+process.env.T3CODE_EVENT_PRUNING ||= "0";
