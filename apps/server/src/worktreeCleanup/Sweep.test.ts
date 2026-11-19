@@ -804,11 +804,13 @@ it.effect("Windows service removes a real pnpm install without changing its stor
           for (const name of (await physical.readdir(directory)).sort()) {
             const file = f.path.join(directory, name);
             const stat = await physical.lstat(file);
-            if (stat.isDirectory()) await visit(file);
+            if (stat.isSymbolicLink())
+              entries.push(`${f.path.relative(store, file)}:link:${await physical.readlink(file)}`);
+            else if (stat.isDirectory()) await visit(file);
             else {
               expect(stat.isFile()).toBe(true);
               entries.push(
-                `${f.path.relative(store, file)}:${NodeCrypto.createHash("sha256")
+                `${f.path.relative(store, file)}:file:${NodeCrypto.createHash("sha256")
                   .update(await physical.readFile(file))
                   .digest("hex")}`,
               );
@@ -819,7 +821,7 @@ it.effect("Windows service removes a real pnpm install without changing its stor
         return entries;
       });
     const before = yield* snapshot();
-    expect(before.length).toBeGreaterThan(0);
+    expect(before.some((entry) => entry.includes(":file:"))).toBe(true);
     const report: StorageCleanupReportEntry[] = [];
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
