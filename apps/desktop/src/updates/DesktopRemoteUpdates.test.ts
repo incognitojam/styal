@@ -146,7 +146,7 @@ describe("DesktopRemoteUpdates", () => {
             yield* settle;
             assert.equal(harness.quitAndInstalls(), 1);
             assert.equal(harness.downloadCount(), 1);
-            assert.equal(harness.checkCount(), 4);
+            assert.equal(harness.checkCount(), 2);
             assert.equal(harness.idleRestart.inspections, 2);
           }),
       );

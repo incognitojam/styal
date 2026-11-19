@@ -370,6 +370,9 @@ describe("combined sidebar update", () => {
       await using screen = await renderPill();
       await click(screen.container.querySelector<HTMLButtonElement>("button")!);
       await vi.waitFor(() => expect(testState.install).toHaveBeenCalledOnce());
+      expect(
+        JSON.parse(localStorage.getItem("t3code:update-everything-result:v1") ?? "null"),
+      ).toMatchObject({ localVersion: version });
       if (version === localVersion) {
         expect(testState.install).toHaveBeenCalledWith({
           expectedVersion: localVersion,
