@@ -3850,10 +3850,13 @@ function webSearchPatternsFromClaudeTool(input: {
 
 function webSearchResultsFromClaudeOutput(
   output: ClaudeNativeToolOutput,
+  normalizedToolName: string,
 ): ReadonlyArray<OrchestrationV2WebSearchResult> {
   const value = claudeNativeToolOutputValue(output);
   if (!isClaudeWebSearchOutput(value)) {
-    return [];
+    return normalizedToolName === "websearch" && typeof value === "string"
+      ? webSearchResultsFromClaudeText(value)
+      : [];
   }
 
   return value.results.flatMap((result) => {
@@ -3865,6 +3868,35 @@ function webSearchResultsFromClaudeOutput(
       url: content.url,
     }));
   });
+}
+
+const ClaudeWebSearchLinks = Schema.Array(
+  Schema.Struct({ title: Schema.optional(Schema.String), url: Schema.String }),
+);
+const decodeClaudeWebSearchLinks = Schema.decodeUnknownOption(
+  Schema.fromJsonString(ClaudeWebSearchLinks),
+);
+
+/**
+ * A subagent's WebSearch result has no structured `tool_use_result`, only its text:
+ * `Web search results for query: "…"`, a blank line, `Links: [{"title","url"},…]` lines, then
+ * the model's summary. Only the `Links:` lines right after the header count; the summary can
+ * quote anything.
+ */
+function webSearchResultsFromClaudeText(
+  text: string,
+): ReadonlyArray<OrchestrationV2WebSearchResult> {
+  const [header, ...lines] = text.split("\n");
+  if (!header?.startsWith("Web search results for query:")) return [];
+  const results: OrchestrationV2WebSearchResult[] = [];
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    if (!line.startsWith("Links: ")) break;
+    results.push(
+      ...Option.getOrElse(decodeClaudeWebSearchLinks(line.slice("Links: ".length)), () => []),
+    );
+  }
+  return results;
 }
 
 function summarizeClaudeToolRequest(toolName: string, input: ClaudeNativeToolInput): string {
@@ -6840,7 +6872,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             toolInput: input.toolInput,
             output: input.output,
           });
-          const webSearchResults = webSearchResultsFromClaudeOutput(input.output);
+          const webSearchResults = webSearchResultsFromClaudeOutput(
+            input.output,
+            input.classification.normalizedName,
+          );
           const webFetchUrl = firstStringInputField(input.toolInput, ["url"])?.trim();
           const outputValue = claudeNativeToolOutputValue(input.output);
           const outputText =

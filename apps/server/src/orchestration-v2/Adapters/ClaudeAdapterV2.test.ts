@@ -11638,6 +11638,262 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("reads WebSearch results from the structured result and from a subagent's text", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-web-search"),
+            text: "Search for the example domains.",
+            attachments: [],
+          }),
+        );
+        const search = (id: string, uuid: string, query: string, parent: string | null = null) =>
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              model: "claude-haiku-4-5",
+              id: `msg_${id}`,
+              type: "message",
+              role: "assistant",
+              content: [{ type: "tool_use", id, name: "WebSearch", input: { query } }],
+              stop_reason: "tool_use",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            },
+            parent_tool_use_id: parent,
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+        const links = [
+          { title: "Example domains", url: "https://docs.example.com/domains" },
+          { title: "Reserved names", url: "https://legal.example.net/reserved" },
+        ];
+        // The summary after the links can quote anything, including another Links line.
+        const text = (query: string) =>
+          `Web search results for query: "${query}"\n\nLinks: ${JSON.stringify(links)}\n\nBoth pages list the reserved example domains, for example:\nLinks: [{"title":"Quoted","url":"https://quoted.example.org/"}]`;
+        // The shapes Claude Code sent on a live Claude Haiku 4.5 turn: a search by the agent
+        // itself carries a structured `tool_use_result`; one inside a subagent only the text.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          search(
+            "tool-search-structured",
+            "00000000-0000-4000-8000-000000000701",
+            "example domains",
+          ),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "tool-search-structured",
+                  content: text("example domains"),
+                },
+              ],
+            },
+            tool_use_result: {
+              query: "example domains",
+              results: [{ tool_use_id: "srvtoolu_example", content: links }],
+              durationSeconds: 2.1,
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000702",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        // The text-only shape comes from a search inside a subagent.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              model: "claude-haiku-4-5",
+              id: "msg_tool-agent",
+              type: "message",
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tool-agent",
+                  name: "Agent",
+                  input: {
+                    description: "Search reserved names",
+                    prompt: "Search for reserved names.",
+                    subagent_type: "general-purpose",
+                  },
+                },
+              ],
+              stop_reason: "tool_use",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000710",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        // Registers the subagent, so frames under its tool use are routed to it.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_started",
+            task_id: "task-tool-agent",
+            tool_use_id: "tool-agent",
+            description: "Search reserved names",
+            task_type: "local_agent",
+            uuid: "00000000-0000-4000-8000-000000000712",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          search(
+            "tool-search-text",
+            "00000000-0000-4000-8000-000000000703",
+            "reserved names",
+            "tool-agent",
+          ),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "tool-search-text",
+                  content: text("reserved names"),
+                },
+              ],
+            },
+            parent_tool_use_id: "tool-agent",
+            uuid: "00000000-0000-4000-8000-000000000704",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [{ type: "tool_result", tool_use_id: "tool-agent", content: "Found both." }],
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000711",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        // A fetched page that quotes a search transcript is still a page, not a search.
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              model: "claude-haiku-4-5",
+              id: "msg_tool-fetch",
+              type: "message",
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tool-fetch",
+                  name: "WebFetch",
+                  input: { url: "https://docs.example.com/transcript", prompt: "Summarize" },
+                },
+              ],
+              stop_reason: "tool_use",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000713",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "tool-fetch",
+                  content: text(
+                    `Web search results for query: "example"\n\nLinks: ${JSON.stringify(links)}`,
+                  ),
+                },
+              ],
+            },
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000714",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000705", result: "Found." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+
+        const items = new Map(
+          harness.events.flatMap((event) =>
+            event.type === "turn_item.updated"
+              ? [[String(event.turnItem.nativeItemRef?.nativeId), event.turnItem]]
+              : [],
+          ),
+        );
+        for (const id of ["tool-search-structured", "tool-search-text"]) {
+          const item = items.get(id);
+          assert.deepEqual(item?.type === "web_search" ? item.results : undefined, links, id);
+        }
+        const fetch = items.get("tool-fetch");
+        assert.deepEqual(
+          fetch?.type === "web_search" ? fetch.results?.map((result) => result.url) : undefined,
+          ["https://docs.example.com/transcript"],
+        );
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("persists a todo_list from inline Claude task-tool frames", () =>
     Effect.gen(function* () {
       let sequence = 700;
