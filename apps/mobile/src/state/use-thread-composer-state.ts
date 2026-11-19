@@ -271,7 +271,7 @@ export function useThreadComposerState(input: {
       : NO_SETTINGS,
   );
   const reportReply = useAtomValue(reportReplyAtom(selectedThreadKey ?? ""));
-  const activeReportReply = reportSettings?.coordinatorReportsEnabled ? reportReply : null;
+
   const reports = reportSettings?.coordinatorReportsEnabled
     ? coordinatorReports(
         (selectedThreadMessages ?? []).map((message) => ({
@@ -281,6 +281,15 @@ export function useThreadComposerState(input: {
         selectedThreadProjection?.projection.thread.reportDismissals ?? [],
       )
     : [];
+  // A reply kept across screens lapses once its report has an answer, from here or elsewhere; a
+  // report not loaded yet keeps it.
+  const activeReportReply =
+    reportSettings?.coordinatorReportsEnabled &&
+    !reports.some(
+      (report) => report.message.id === reportReply?.ref.messageId && report.answer !== undefined,
+    )
+      ? reportReply
+      : null;
   const reportAnswerMessages = reportSettings?.coordinatorReportsEnabled
     ? reportAnswers(selectedThreadMessages ?? [])
     : undefined;

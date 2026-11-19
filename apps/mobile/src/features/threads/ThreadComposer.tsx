@@ -267,7 +267,8 @@ export interface ThreadComposerProps {
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
   ) => Promise<MessageId | null>;
-  readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
+  /** Absent where there is no limits panel to show; the usage-limits command is then not offered. */
+  readonly onShowUsageLimits?: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
   readonly onHeightChange?: (height: number) => void;
   readonly onEditorFocusChange?: (focused: boolean) => void;
@@ -534,6 +535,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   };
   const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
   const usageLimitsOffered =
+    onShowUsageLimits !== undefined &&
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
       selectedProviderStatus.driver,
@@ -547,7 +549,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.serverConfig?.usageLimitSources ?? [],
       Date.now(),
     );
-    onShowUsageLimits(report);
+    onShowUsageLimits?.(report);
     if (!report) {
       Dialog.alert("Usage limits unavailable", "This provider does not currently report limits.");
     }

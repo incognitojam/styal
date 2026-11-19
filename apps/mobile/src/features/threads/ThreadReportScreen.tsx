@@ -167,7 +167,7 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
   const popoverHeight = useSharedValue(0);
   const dictationRef = useRef<{ readonly start: () => boolean }>(null);
   const startDictation = useRef(false);
-  const voiceAvailable = useGlobalVoiceInput().isAvailable;
+  const { isAvailable: voiceAvailable, session: voiceSession } = useGlobalVoiceInput();
   const replying = report !== null && composer.reportReply?.ref.messageId === report.message.id;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts dictation in the composer that Reply by voice just mounted; its handle exists only after mount
   useEffect(() => {
@@ -257,7 +257,11 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
                       title={tag.title}
                       version={tag.version}
                       question={tag.question}
-                      onCancel={() => composer.onReportReply(null)}
+                      onCancel={() => {
+                        if (composer.composerDraftKey)
+                          voiceSession.cancel(composer.composerDraftKey);
+                        composer.onReportReply(null);
+                      }}
                     />
                   }
                   canOperateThread={canOperate}
@@ -287,7 +291,6 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
                   onStopThread={() => undefined}
                   onResumeQueue={null}
                   onSendMessage={(followUp) => composer.onSendMessage(followUp)}
-                  onShowUsageLimits={() => undefined}
                   canSwitchProvider={composer.canSwitchThreadProvider}
                 />
               </ComposerPopoverHost>
