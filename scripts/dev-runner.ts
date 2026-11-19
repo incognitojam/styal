@@ -358,6 +358,7 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   // Each worktree has its own state, so a dev server would count as a new
   // install of the developer's real accounts. Set it explicitly to opt in.
   output.T3CODE_TELEMETRY_ENABLED = baseEnv.T3CODE_TELEMETRY_ENABLED ?? "false";
+  output.T3CODE_EVENT_PRUNING = baseEnv.T3CODE_EVENT_PRUNING || "0";
 
   if (!isDesktopMode) {
     output.T3CODE_PORT = String(serverPort);
