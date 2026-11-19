@@ -430,3 +430,53 @@ it.live("stops the isolated worker when removal is interrupted", () =>
     }),
   ),
 );
+
+it.effect.each([
+  "staged",
+  "staged-descendant",
+  "unignored",
+  "unignored-empty",
+  "incomplete",
+  "git-error",
+  "expired",
+])("keeps a match when Git protection becomes %s after inspection", (mode) =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* setup;
+      const file = mode === "staged-descendant" ? "dist/deep/keep" : "dist/keep";
+      yield* f.write(file);
+      const selected = yield* f.deletion.inspect(f.worktree, ["dist"]);
+      expect(selected).toEqual([`${f.worktree}/dist`]);
+      if (mode.startsWith("staged")) yield* f.command(f.worktree, ["add", "-f", file]);
+      if (mode.startsWith("unignored")) yield* f.fs.writeFileString(`${f.worktree}/.gitignore`, "");
+      if (mode === "unignored-empty") {
+        yield* f.fs.remove(`${f.worktree}/${file}`);
+        yield* f.fs.makeDirectory(`${f.worktree}/dist/empty`);
+      }
+      let commands = 0;
+      const deletion = yield* makeDeletion.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, {
+          ...f.git,
+          execute: (input) => {
+            commands++;
+            return f.git.execute(input).pipe(
+              Effect.map((result) => ({
+                ...result,
+                stdoutTruncated: mode === "incomplete" || result.stdoutTruncated,
+                exitCode: mode === "git-error" ? 128 : result.exitCode,
+              })),
+            );
+          },
+        }),
+      );
+      const result = yield* deletion
+        .remove(f.worktree, selected[0]!, mode === "expired" ? 0 : 600_000)
+        .pipe(Effect.result);
+      if (mode === "expired") expect(commands).toBe(0);
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "WorktreeCleanupError" } });
+      if (mode === "unignored-empty")
+        expect(yield* f.fs.exists(`${f.worktree}/dist/empty`)).toBe(true);
+      else expect(yield* f.fs.readFileString(`${f.worktree}/${file}`)).toBe("synthetic");
+    }),
+  ),
+);
