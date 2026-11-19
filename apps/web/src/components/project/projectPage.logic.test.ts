@@ -4,6 +4,7 @@ import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  coordinatedProjectKey,
   countProjectThreads,
   staysOnProjectPage,
   formatProjectStatusLine,
@@ -359,5 +360,84 @@ describe("resolveProjectChatView", () => {
       show: { kind: "thread", ref: chat },
       openDraft: false,
     });
+  });
+});
+
+describe("coordinatedProjectKey", () => {
+  const named = (threadId: ThreadId | null, enabled = true) => ({
+    projectCoordinatorsEnabled: enabled,
+    projectCoordinators: threadId === null ? {} : { [project]: { threadId } },
+  });
+  const group = (extra: object = {}) => ({
+    projectKey: "orchard-key",
+    isScratch: false,
+    archived: false,
+    memberProjects: [
+      { environmentId: local, id: project },
+      { environmentId: remote, id: project },
+    ],
+    ...extra,
+  });
+  const thread = { environmentId: local, threadId: chatId, projectId: project };
+
+  it("names the project page a coordinator's thread address opens", () => {
+    expect(
+      coordinatedProjectKey(
+        thread,
+        (id) => (id === local ? named(chatId) : named(null)),
+        () => group(),
+      ),
+    ).toBe("orchard-key");
+  });
+
+  it("leaves the thread view where the page would not show this thread", () => {
+    const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
+    expect(
+      coordinatedProjectKey({ ...thread, threadId: ThreadId.make("other") }, settingsFor, () =>
+        group(),
+      ),
+    ).toBeNull();
+    // Named for this project but a thread of another one: not this project's chat.
+    expect(
+      coordinatedProjectKey(
+        { ...thread, projectId: ProjectId.make("elsewhere") },
+        settingsFor,
+        () => group(),
+      ),
+    ).toBeNull();
+    expect(
+      coordinatedProjectKey(
+        thread,
+        () => named(chatId, false),
+        () => group(),
+      ),
+    ).toBeNull();
+    expect(
+      coordinatedProjectKey(
+        thread,
+        () => undefined,
+        () => group(),
+      ),
+    ).toBeNull();
+    // Scratch and archived projects have no page.
+    expect(coordinatedProjectKey(thread, settingsFor, () => group({ isScratch: true }))).toBeNull();
+    expect(coordinatedProjectKey(thread, settingsFor, () => group({ archived: true }))).toBeNull();
+    expect(coordinatedProjectKey(thread, settingsFor, () => null)).toBeNull();
+    // Another machine names a chat too: the page may show that one.
+    expect(
+      coordinatedProjectKey(
+        thread,
+        (id) => (id === local ? named(chatId) : named(ThreadId.make("theirs"))),
+        () => group(),
+      ),
+    ).toBeNull();
+    // Another machine's settings have not loaded: it may name one.
+    expect(
+      coordinatedProjectKey(
+        thread,
+        (id) => (id === local ? named(chatId) : undefined),
+        () => group(),
+      ),
+    ).toBeNull();
   });
 });

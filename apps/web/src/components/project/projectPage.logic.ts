@@ -100,6 +100,48 @@ export function resolveProjectChatHost<Checkout extends ProjectCheckout>(
 }
 
 /**
+ * The project whose page a thread's address opens instead: the thread is its project's coordinator
+ * on its machine, with project coordinators on there, the project has a page (not Scratch or
+ * archived), and every other machine of the project has loaded its settings and names no chat the
+ * page could show instead.
+ */
+export function coordinatedProjectKey(
+  thread: {
+    readonly environmentId: EnvironmentId;
+    readonly threadId: ThreadId;
+    readonly projectId: ProjectId;
+  },
+  settingsFor: (environmentId: EnvironmentId) => CoordinatorSettings | undefined,
+  groupOf: (
+    environmentId: EnvironmentId,
+    projectId: ProjectId,
+  ) => {
+    readonly projectKey: string;
+    readonly isScratch?: boolean | undefined;
+    readonly archived?: boolean | undefined;
+    readonly memberProjects: ReadonlyArray<ProjectCheckout>;
+  } | null,
+): string | null {
+  const settings = settingsFor(thread.environmentId);
+  if (!settings || projectCoordinatorThreadId(settings, thread.projectId) !== thread.threadId) {
+    return null;
+  }
+  const group = groupOf(thread.environmentId, thread.projectId);
+  if (!group || group.isScratch || group.archived) return null;
+  const otherChat = group.memberProjects.some((member) => {
+    if (member.environmentId === thread.environmentId && member.id === thread.projectId) {
+      return false;
+    }
+    // Settings not loaded yet may name a chat the page would show instead.
+    const memberSettings = settingsFor(member.environmentId);
+    return (
+      memberSettings === undefined || projectCoordinatorThreadId(memberSettings, member.id) !== null
+    );
+  });
+  return otherChat ? null : group.projectKey;
+}
+
+/**
  * Before the project is known, the route can only tell that every machine has the switch off;
  * null is a machine whose settings have not loaded, and the page decides once they have.
  */
