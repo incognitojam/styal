@@ -47,12 +47,12 @@ export function coordinatorReports<M extends Message>(
     const state =
       current !== message
         ? "replaced"
-        : tag.resolved
-          ? "resolved"
-          : answer
-            ? "answered"
-            : dismissed.has(key)
-              ? "dismissed"
+        : answer
+          ? "answered"
+          : dismissed.has(key)
+            ? "dismissed"
+            : tag.resolved
+              ? "resolved"
               : tag.question
                 ? "open"
                 : "posted";

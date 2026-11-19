@@ -57,6 +57,7 @@ import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrat
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import {
   answerNotesText,
+  reportAnswerNote,
   sentReport,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
@@ -372,6 +373,8 @@ export const McpToolUseCase = Schema.Struct({
     projectCoordinator: Schema.optional(Schema.Boolean),
     /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
     answerNotes: Schema.optional(Schema.Array(Schema.String)),
+    /** The prompt answers this report of the thread's, as a picked answer reaches it in T3. */
+    reportAnswer: Schema.optional(Schema.Struct({ title: Schema.String, version: Schema.Number })),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3; for a
@@ -1203,6 +1206,9 @@ export const buildMessages = (sample: Sample) => {
     [
       branchNote(testCase),
       testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
+      testCase.setup.reportAnswer === undefined
+        ? ""
+        : reportAnswerNote(testCase.setup.reportAnswer),
     ]
       .filter((part) => part !== "")
       .join("\n\n"),

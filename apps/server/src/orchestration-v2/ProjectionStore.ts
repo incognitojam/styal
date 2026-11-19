@@ -5329,6 +5329,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
+                -- The report the run's message answers, for the note about its question.
+                OR message_id IN (
+                  SELECT json_extract(answer.payload_json, '$.reportAnswer.messageId')
+                  FROM orchestration_v2_projection_messages AS answer
+                  WHERE answer.thread_id = ${threadId}
+                    AND answer.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                      WHERE thread_id = ${threadId} AND run_id = ${runId})
+                )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')

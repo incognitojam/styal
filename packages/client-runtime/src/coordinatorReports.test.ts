@@ -60,6 +60,13 @@ describe("coordinator reports", () => {
     expect(coordinatorReports([...messages.slice(0, 2), resolved], []).map((x) => x.state)).toEqual(
       ["replaced", "open", "resolved"],
     );
+    // A person's answer, even one an older client sent after the resolve, stands.
+    expect(
+      coordinatorReports(
+        [resolved, { ...answer, reportAnswer: { messageId: "c", key: "pr:1", version: 2 } }],
+        [],
+      )[0]?.state,
+    ).toBe("answered");
     expect(
       coordinatorReports([...messages.slice(0, 2), resolved, report("d", "pr:1", 3)], []).map(
         (x) => x.state,

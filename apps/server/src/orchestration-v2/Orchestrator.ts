@@ -4117,15 +4117,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         undefined,
       );
       const report = latest?.report;
-      if (!latest || !report?.question || report.resolved) {
+      const same = (ref: { messageId: string; key: string; version: number } | undefined) =>
+        ref !== undefined &&
+        ref.messageId === latest?.id &&
+        ref.key === report?.key &&
+        ref.version === report?.version;
+      // The person's own answer or dismissal stands; a resolve is for questions still open.
+      const closedBy = projection.messages.some(
+        (message) => message.role === "user" && same(message.reportAnswer),
+      )
+        ? "answered"
+        : (thread.reportDismissals ?? []).some(same)
+          ? "dismissed"
+          : report?.resolved
+            ? "resolved"
+            : null;
+      if (!latest || !report?.question || closedBy !== null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
           cause: !report
             ? `No report has key "${command.key}".`
-            : report.resolved
-              ? `Version ${report.version} of report "${command.key}" is already resolved.`
-              : `Version ${report.version} of report "${command.key}" asks no question.`,
+            : !report.question
+              ? `Version ${report.version} of report "${command.key}" asks no question.`
+              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.`,
         });
       }
       yield* emitEvent({

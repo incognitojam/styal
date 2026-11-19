@@ -791,6 +791,7 @@ it.effect(
         for (const [key, cause] of [
           ["issue:9", 'Version 1 of report "issue:9" is already resolved.'],
           ["issue:404", 'No report has key "issue:404".'],
+          ["pr:214", 'Version 3 of report "pr:214" is already dismissed.'],
         ] as const) {
           assert.include(String((yield* Effect.flip(resolve(key, `resolve:${key}`))).cause), cause);
         }
@@ -1142,16 +1143,20 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             key,
             title: key === "merge" ? "Merge the fix?" : key === "ship" ? "Ship it?" : "Old plan",
             body: "Ready.",
-            ...(key === "ship" ? { question: "Ship?" } : {}),
+            ...(key === "plan" ? {} : { question: `${key}?` }),
           });
         yield* post("merge");
         yield* post("plan");
         yield* post("ship");
         yield* endTurn(turn, "completed");
-        yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
+        const answered = yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
           sender: "user",
           reportAnswer: { messageId: MessageId.make("report:merge"), key: "merge", version: 1 },
         });
+        assert.include(
+          answered.message.text,
+          'Note: this message answers your report "Merge the fix?" (version 1), which closes its question.',
+        );
         yield* orchestrator.dispatch({
           type: "report.dismiss",
           commandId: CommandId.make("dismiss:plan"),
@@ -1167,6 +1172,20 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           key: "ship",
           outcome: "Shipped",
         });
+        // The person's answer stands.
+        assert.include(
+          String(
+            (yield* Effect.flip(
+              orchestrator.dispatch({
+                type: "report.resolve",
+                commandId: CommandId.make("resolve:merge"),
+                threadId: launchedId,
+                key: "merge",
+              }),
+            )).cause,
+          ),
+          'Version 1 of report "merge" is already answered.',
+        );
         yield* worker.drain();
         assert.deepEqual(
           (yield* notes()).map((note) => note.text),

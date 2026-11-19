@@ -2,6 +2,7 @@ import {
   orchestratorMcpPendingQuestionNext,
   orchestratorMcpPendingApprovalNext,
   CommandId,
+  type CoordinatorReport,
   type EnvironmentId,
   MessageId,
   type OrchestrationV2AppThread,
@@ -657,6 +658,10 @@ export function sentReport(input: {
     notification: reportNotification(input.thread, input.source, "updated", "sent a report"),
   };
 }
+
+/** For a turn started by a person's answer to one of this thread's report questions. */
+export const reportAnswerNote = (report: Pick<CoordinatorReport, "title" | "version">) =>
+  `Note: this message answers your report "${report.title}" (version ${report.version}), which closes its question.`;
 
 export const threadReportNote = (
   target: Pick<OrchestrationV2ThreadReportTarget, "source">,

@@ -65,6 +65,8 @@ export function CoordinatorReportMessage({
   if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A resolved question asks again here until the person answers or cancels.
+  const [reopened, setReopened] = useState(false);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
@@ -99,7 +101,7 @@ export function CoordinatorReportMessage({
         <Text className="text-warning-foreground">A newer version is below</Text>
       ) : null}
       {content}
-      {report.state === "open" ? (
+      {report.state === "open" || (report.state === "resolved" && reopened) ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
           {tag.answers?.map((answer, index) => (
@@ -123,13 +125,22 @@ export function CoordinatorReportMessage({
               disabled={!ctx.canOperate || sending}
               onPress={() => ctx.reply(reply)}
             />
-            <Button
-              label="Dismiss"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.dismiss(reply))}
-            />
+            {report.state === "resolved" ? (
+              <Button
+                label="Cancel"
+                size="compact"
+                tone="text"
+                onPress={() => setReopened(false)}
+              />
+            ) : (
+              <Button
+                label="Dismiss"
+                size="compact"
+                tone="text"
+                disabled={!ctx.canOperate || sending}
+                onPress={() => run(() => ctx.dismiss(reply))}
+              />
+            )}
           </View>
           {error ? (
             <Text accessibilityRole="alert" className="text-danger">
@@ -144,9 +155,24 @@ export function CoordinatorReportMessage({
           renderAnswer={renderAnswer}
         />
       ) : report.state === "resolved" ? (
-        <Text className="text-foreground-secondary">
-          {tag.resolved?.outcome ? `Resolved: ${tag.resolved.outcome}` : "Resolved"}
-        </Text>
+        <View className="gap-1 rounded-xl bg-secondary p-3">
+          <Text className="text-foreground-secondary">{tag.question}</Text>
+          <View className="flex-row items-start justify-between gap-2">
+            <Text className="shrink text-foreground-secondary">
+              Resolved by the agent
+              {tag.resolved?.outcome ? (
+                <Text className="text-foreground">: {tag.resolved.outcome}</Text>
+              ) : null}
+            </Text>
+            <Button
+              label="Reopen"
+              size="compact"
+              tone="text"
+              disabled={!ctx.canOperate}
+              onPress={() => setReopened(true)}
+            />
+          </View>
+        </View>
       ) : report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
           Dismissed. The agent hears it on its next turn.
