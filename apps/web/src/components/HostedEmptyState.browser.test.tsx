@@ -18,7 +18,7 @@ const discovery = vi.hoisted(() => ({
 vi.mock(import("../cloud/useRelayAccount"), () => ({
   useRelayAccount: (() => ({ isLoaded: true, isSignedIn: true })) as never,
 }));
-vi.mock(import("./relay-auth/relayAuthDialogs"), () => ({
+vi.mock(import("./relay-auth/relayAuthDialogState"), () => ({
   openRelaySignIn: vi.fn(),
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => {

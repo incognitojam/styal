@@ -3,7 +3,7 @@ import { managedCapabilityDenial } from "@t3tools/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useRelayAccount } from "../../cloud/useRelayAccount";
-import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 import { Button } from "../ui/button";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";

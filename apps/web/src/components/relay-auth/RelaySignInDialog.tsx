@@ -9,7 +9,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { relaySignInDialogOpenAtom } from "./relayAuthDialogs";
+import { relaySignInDialogOpenAtom } from "./relayAuthDialogState";
 import { RelayEmailSignInForm } from "./RelayEmailSignInForm";
 
 export function RelaySignInDialog() {

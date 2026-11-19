@@ -1,7 +1,7 @@
 import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { signOutOfRelay } from "../../cloud/relaySession";
 import { runtime } from "../../lib/runtime";
-import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import {

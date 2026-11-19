@@ -14,7 +14,7 @@ import {
 } from "../ui/alert-dialog";
 import { Button, InlineButton } from "../ui/button";
 import { useRelayAccount } from "../../cloud/useRelayAccount";
-import { openRelayAccount } from "../relay-auth/relayAuthDialogs";
+import { openRelayAccount } from "../relay-auth/relayAuthDialogState";
 
 export function RemoveT3ConnectEnvironmentDialog({
   environmentLabel,

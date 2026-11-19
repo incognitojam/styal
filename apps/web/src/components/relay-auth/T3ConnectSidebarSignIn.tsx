@@ -4,7 +4,7 @@ import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { Button } from "../ui/button";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
-import { openRelayAccount, openRelaySignIn } from "./relayAuthDialogs";
+import { openRelayAccount, openRelaySignIn } from "./relayAuthDialogState";
 
 export function T3ConnectSidebarSignIn() {
   const { isLoaded, isSignedIn } = useRelayAccount();

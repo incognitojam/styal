@@ -52,7 +52,7 @@ vi.mock(import("../clerk/ClerkUserProfilePage"), async (original) => ({
 
 import { appAtomRegistry, AppAtomRegistryProvider } from "../../rpc/atomRegistry";
 import { RelayAccountDialog } from "./RelayAccountDialog";
-import { relayAccountDialogOpenAtom } from "./relayAuthDialogs";
+import { relayAccountDialogOpenAtom } from "./relayAuthDialogState";
 
 function account(id: string) {
   return {

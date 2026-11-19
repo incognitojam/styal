@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { signInFailureMessage } from "./RelayEmailSignInForm.logic";
-import { relayAccountDialogOpenAtom } from "./relayAuthDialogs";
+import { relayAccountDialogOpenAtom } from "./relayAuthDialogState";
 
 const CLIENT_LABELS: Record<RelayAccountSessionRecord["clientId"], string> = {
   "t3-web": "Web or desktop",

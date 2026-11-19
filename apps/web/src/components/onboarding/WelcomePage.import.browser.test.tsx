@@ -93,7 +93,7 @@ vi.mock(import("../../cloud/useRelayAccount"), async (original) => ({
   ...(await original()),
   useRelayAccount: (() => ({ ...state.auth, accountId: state.auth.userId })) as never,
 }));
-vi.mock(import("../relay-auth/relayAuthDialogs"), async (original) => ({
+vi.mock(import("../relay-auth/relayAuthDialogState"), async (original) => ({
   ...(await original()),
   openRelaySignIn: () => {},
 }));

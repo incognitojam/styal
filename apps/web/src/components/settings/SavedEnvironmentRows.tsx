@@ -58,7 +58,7 @@ import {
   ServerUpdateAction,
   ServerUpdateProgress,
 } from "../ServerUpdateAction";
-import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;

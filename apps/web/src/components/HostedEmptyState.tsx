@@ -9,7 +9,7 @@ import { isElectron } from "../env";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { InstallT3Commands } from "./InstallT3Commands";
 import { useRelayAccount } from "../cloud/useRelayAccount";
-import { openRelaySignIn } from "./relay-auth/relayAuthDialogs";
+import { openRelaySignIn } from "./relay-auth/relayAuthDialogState";
 import { CloudEnvironmentConnectRows } from "./cloud/CloudEnvironmentConnectList";
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";

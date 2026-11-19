@@ -55,7 +55,7 @@ vi.mock(import("../components/chat/GuestShareControls"), async (original) => ({
 import {
   openRelaySignIn,
   relaySignInDialogOpenAtom,
-} from "../components/relay-auth/relayAuthDialogs";
+} from "../components/relay-auth/relayAuthDialogState";
 import { AppAtomRegistryProvider, appAtomRegistry } from "../rpc/atomRegistry";
 import { Route } from "./__root";
 

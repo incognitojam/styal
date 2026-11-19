@@ -21,7 +21,7 @@ import { useEnvironments } from "../../state/environments";
 import { environmentProjects } from "../../state/projects";
 import { environmentThreadShells } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmentConnectionPresentation";
 import { InstallT3Commands } from "../InstallT3Commands";
