@@ -10,7 +10,16 @@ const FAVICON = "data:image/png;base64,iVBORw0KGgo=";
 
 describe("projectIconSource", () => {
   it.each([
-    ["the cached favicon", { title: "Acme Web" }, FAVICON, { kind: "image", dataUrl: FAVICON }],
+    [
+      "the cached favicon, with the initials tile behind it",
+      { title: "Acme Web" },
+      FAVICON,
+      {
+        kind: "image",
+        dataUrl: FAVICON,
+        fallback: { kind: "monogram", text: "AW", color: expect.any(String) },
+      },
+    ],
     [
       "the initials tile without a favicon",
       { title: "Acme Web" },

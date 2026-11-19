@@ -2,9 +2,16 @@ import type { ProjectIconColor, ProjectIconOverride } from "@t3tools/contracts";
 
 import { deriveProjectIdentity } from "./projectIdentity";
 
+type MonogramSource = {
+  readonly kind: "monogram";
+  readonly text: string;
+  readonly color: ProjectIconColor;
+};
+
 export type ProjectIconSource =
-  | { readonly kind: "image"; readonly dataUrl: string }
-  | { readonly kind: "monogram"; readonly text: string; readonly color: ProjectIconColor }
+  /** `fallback` is drawn instead when the image cannot be decoded. */
+  | { readonly kind: "image"; readonly dataUrl: string; readonly fallback: MonogramSource }
+  | MonogramSource
   | { readonly kind: "emoji"; readonly emoji: string };
 
 /**
@@ -22,11 +29,11 @@ export function projectIconSource(
   const icon = project.projectIcon;
   if (icon?.kind === "monogram") return { kind: "monogram", text: icon.text, color: icon.color };
   if (icon?.kind === "emoji") return { kind: "emoji", emoji: icon.emoji };
-  if (icon?.kind !== "lucide" && cachedFavicon?.startsWith("data:image/")) {
-    return { kind: "image", dataUrl: cachedFavicon };
-  }
   const identity = deriveProjectIdentity(project.title);
-  return { kind: "monogram", text: identity.monogram, color: identity.color };
+  const tile: MonogramSource = { kind: "monogram", text: identity.monogram, color: identity.color };
+  return icon?.kind !== "lucide" && cachedFavicon?.startsWith("data:image/")
+    ? { kind: "image", dataUrl: cachedFavicon, fallback: tile }
+    : tile;
 }
 
 /**

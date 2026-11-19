@@ -26,42 +26,62 @@ function tileStyle(color: Extract<ProjectIconSource, { kind: "monogram" }>["colo
   }
 }
 
+function drawTile(
+  context: CanvasRenderingContext2D,
+  tile: Extract<ProjectIconSource, { kind: "monogram" }>,
+) {
+  const scale = ICON_SIZE / TILE.size;
+  const style = tileStyle(tile.color);
+  context.fillStyle = style.color;
+  context.globalAlpha = TILE.backgroundOpacity;
+  context.beginPath();
+  context.roundRect(0, 0, ICON_SIZE, ICON_SIZE, TILE.cornerRadius * scale);
+  context.fill();
+  context.globalAlpha = 1;
+  context.font = `${TILE.fontWeight} ${TILE.fontSize * scale}px ${style.fontFamily}`;
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+  const width = context.measureText(tile.text).width;
+  context.translate(TILE.textX * scale, TILE.textBaseline * scale);
+  // Stretched to a fixed width, as the SVG's textLength does.
+  if (width > 0) context.scale((TILE.textWidth(tile.text) * scale) / width, 1);
+  context.fillText(tile.text, 0, 0);
+}
+
+async function decodedImage(dataUrl: string): Promise<HTMLImageElement | null> {
+  const image = new Image();
+  image.src = dataUrl;
+  try {
+    await image.decode();
+    return image.naturalWidth > 0 && image.naturalHeight > 0 ? image : null;
+  } catch {
+    return null;
+  }
+}
+
 async function drawProjectIcon(source: ProjectIconSource): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = ICON_SIZE;
   canvas.height = ICON_SIZE;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas is unavailable.");
-  const scale = ICON_SIZE / TILE.size;
-  if (source.kind === "image") {
-    const image = new Image();
-    image.src = source.dataUrl;
-    await image.decode();
-    const fit = Math.min(ICON_SIZE / image.naturalWidth, ICON_SIZE / image.naturalHeight);
-    const width = image.naturalWidth * fit;
-    const height = image.naturalHeight * fit;
-    context.drawImage(image, (ICON_SIZE - width) / 2, (ICON_SIZE - height) / 2, width, height);
-  } else if (source.kind === "emoji") {
+  if (source.kind === "emoji") {
     context.font = `${ICON_SIZE * 0.8}px sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(source.emoji, ICON_SIZE / 2, ICON_SIZE / 2);
+  } else if (source.kind === "monogram") {
+    drawTile(context, source);
   } else {
-    const style = tileStyle(source.color);
-    context.fillStyle = style.color;
-    context.globalAlpha = TILE.backgroundOpacity;
-    context.beginPath();
-    context.roundRect(0, 0, ICON_SIZE, ICON_SIZE, TILE.cornerRadius * scale);
-    context.fill();
-    context.globalAlpha = 1;
-    context.font = `${TILE.fontWeight} ${TILE.fontSize * scale}px ${style.fontFamily}`;
-    context.textAlign = "center";
-    context.textBaseline = "alphabetic";
-    const width = context.measureText(source.text).width;
-    context.translate(TILE.textX * scale, TILE.textBaseline * scale);
-    // Stretched to a fixed width, as the SVG's textLength does.
-    if (width > 0) context.scale((TILE.textWidth(source.text) * scale) / width, 1);
-    context.fillText(source.text, 0, 0);
+    const image = await decodedImage(source.dataUrl);
+    if (image === null) {
+      drawTile(context, source.fallback);
+    } else {
+      const fit = Math.min(ICON_SIZE / image.naturalWidth, ICON_SIZE / image.naturalHeight);
+      const width = image.naturalWidth * fit;
+      const height = image.naturalHeight * fit;
+      context.drawImage(image, (ICON_SIZE - width) / 2, (ICON_SIZE - height) / 2, width, height);
+    }
   }
   return canvas.toDataURL("image/png");
 }
