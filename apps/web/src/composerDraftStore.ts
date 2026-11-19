@@ -5026,7 +5026,8 @@ export function ensureProjectChatDraft(input: {
           input.threadId,
           logicalProjectDraftKey(input.logicalProjectKey),
           undefined,
-          { envMode: "local", branch: null, worktreePath: null },
+          // The page shows the machine it starts on; balancing must not move it there unseen.
+          { envMode: "local", branch: null, worktreePath: null, environmentSelection: "manual" },
         ),
       },
       promotedDraftRedirects,

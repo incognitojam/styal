@@ -317,7 +317,11 @@ project's folder, or, in the flat list, the chat's own row. Each shows how many 
 threads are working or need you; in folders the chat has no row of its own, and the folder's
 chevron still opens and closes it. **Project settings** links open the page, and its gear
 button opens the settings. A project without a coordinator shows an empty chat: the first message
-starts a thread in the project's folder, without a worktree, and makes it the coordinator.
+starts a thread in the project's folder, without a worktree, and makes it the coordinator. When the
+project is on more than one machine, choose the machine under the composer before sending; it
+starts on the machine where the project was last active. The chat stays on that machine, and only
+threads on it report to the chat. A machine with project coordinators off is named there instead
+of offered.
 
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it
