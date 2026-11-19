@@ -251,8 +251,8 @@ export interface ThreadComposerProps {
   readonly canSteerActiveTurn: boolean;
   readonly hidden: boolean;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
-  /** Starts dictation into this composer, as its mic button does. */
-  readonly dictationRef?: Ref<{ readonly start: () => void }>;
+  /** Starts dictation into this composer, as its mic button does; false when it can't. */
+  readonly dictationRef?: Ref<{ readonly start: () => boolean }>;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftMedia: () => Promise<void>;
   readonly onPickDraftFiles: () => Promise<void>;
@@ -597,7 +597,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     onChangeSelection: composerMenu.onSelectionChange,
   });
-  useImperativeHandle(props.dictationRef, () => ({ start: voiceInput.start }), [voiceInput.start]);
+  const canStartDictation = voiceInput.isAvailable && !voiceInput.isBusy;
+  useImperativeHandle(
+    props.dictationRef,
+    () => ({
+      start: () => {
+        if (!canStartDictation) return false;
+        voiceInput.start();
+        return true;
+      },
+    }),
+    [canStartDictation, voiceInput.start],
+  );
   const isSubmissionLocked =
     props.interactionLocked === true || queuedEdit?.saving === true || voiceInput.blocksSubmission;
   const voicePresentation = resolveVoiceComposerPresentation(

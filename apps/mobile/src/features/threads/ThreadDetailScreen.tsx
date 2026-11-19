@@ -544,7 +544,7 @@ function ThreadDetailBody(
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
   const agentsSegment = resolveSubagentPillSegment(turnSubagents);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
-  const composerDictationRef = useRef<{ readonly start: () => void }>(null);
+  const composerDictationRef = useRef<{ readonly start: () => boolean }>(null);
   const chatRef = scopeThreadRef(props.environmentId, props.selectedThread.id);
   const projectChat = useProjectChatHeader(props.draftMode ? null : chatRef);
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
@@ -1791,8 +1791,8 @@ function ThreadDetailBody(
                           send: reportContext.send,
                           reply: reportContext.reply,
                           replyByVoice: (reply) => {
-                            props.onReportReply?.(reply);
-                            composerDictationRef.current?.start();
+                            // A recording already under way keeps its own reply target.
+                            if (composerDictationRef.current?.start()) props.onReportReply?.(reply);
                           },
                         }}
                       />

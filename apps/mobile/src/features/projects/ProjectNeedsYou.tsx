@@ -15,7 +15,6 @@ import {
 } from "@t3tools/client-runtime/state/pending-user-input";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { seedUserInputDraftAnswers } from "@t3tools/client-runtime/state/thread-requests";
 import {
   AuthOrchestrationOperateScope,
   MessageId,
@@ -39,6 +38,7 @@ import { ChildApproval } from "../threads/ChildThreadApprovals";
 import { ReportAnswerOptions, type ReportState } from "../threads/CoordinatorReports";
 import { WorkflowRunReviewCard } from "../threads/WorkflowRunReviewCard";
 import { useProjectChatNeedYou } from "./projectChats";
+import { oldestFirst, oneTapQuestion } from "./projectNeedsYou.logic";
 
 const projectNeedsAtom = createProjectNeedsAtom(environmentThreadDetails);
 
@@ -74,11 +74,19 @@ export function ProjectNeedsYou({
   const [open, setOpen] = useState(false);
   const threads = useProjectChatNeedYou(chat);
   const needs = useNeeds(threads);
-  const rows: Row[] = [
-    ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
-    ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
-    ...needs.map((need) => ({ kind: "need" as const, need })),
-  ];
+  const rows = oldestFirst<Row>(
+    [
+      ...runs
+        .filter((run) => run.review !== undefined)
+        .map((run) => ({ kind: "run" as const, run })),
+      ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
+      ...needs.map((need) => ({ kind: "need" as const, need })),
+    ],
+    rowCreatedAt,
+    rowKey,
+  );
+  // The sheet closes with its last item, so the next one shows the bar, not the sheet.
+  if (rows.length === 0 && open) setOpen(false);
   if (rows.length === 0) return null;
   const first = rows[0]!;
   return (
@@ -135,6 +143,28 @@ function useNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) {
   return listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null);
 }
 
+function rowCreatedAt(row: Row): string {
+  switch (row.kind) {
+    case "run":
+      return row.run.startedAt;
+    case "report":
+      return row.report.message.createdAt;
+    case "need":
+      return row.need.createdAt;
+  }
+}
+
+function rowKey(row: Row): string {
+  switch (row.kind) {
+    case "run":
+      return `run:${row.run.host}/${row.run.repository}/${row.run.runId}`;
+    case "report":
+      return `report:${row.report.message.id}`;
+    case "need":
+      return `need:${row.need.key}`;
+  }
+}
+
 function rowSummary(row: Row): string {
   switch (row.kind) {
     case "run":
@@ -188,7 +218,7 @@ function ChatReportItem(props: {
   readonly close: () => void;
 }) {
   const { sending, run, alert } = useSend();
-  const { isAvailable: voiceAvailable } = useGlobalVoiceInput();
+  const voice = useGlobalVoiceInput();
   const tag = props.report.message.report!;
   const reply = {
     ref: { messageId: props.report.message.id, key: tag.key, version: tag.version },
@@ -209,13 +239,13 @@ function ChatReportItem(props: {
         }
       />
       <View className="flex-row justify-between">
-        {voiceAvailable ? (
+        {voice.isAvailable ? (
           <Button
             label="Reply by voice"
             icon="mic"
             size="compact"
             tone="text"
-            disabled={disabled}
+            disabled={disabled || voice.isBusy}
             onPress={() => {
               props.close();
               props.actions.replyByVoice(reply);
@@ -329,9 +359,8 @@ function QuestionAnswer(props: { readonly need: Extract<ProjectNeed, { kind: "qu
   const respond = useAtomCommand(threadEnvironment.respondToUserInput, { reportFailure: false });
   const { sending, run, alert } = useSend();
   const { requestId, questions, responseCapability } = props.need.userInput;
-  const question = questions.length === 1 ? questions[0] : undefined;
-  if (question === undefined || question.options.length === 0) return null;
-  const seeded = seedUserInputDraftAnswers(questions, {});
+  const question = oneTapQuestion(props.need.userInput);
+  if (question === null) return null;
   const disabled = !canOperate || sending || responseCapability === "not_resumable";
   return (
     <>
@@ -344,12 +373,7 @@ function QuestionAnswer(props: { readonly need: Extract<ProjectNeed, { kind: "qu
             disabled={disabled}
             onPress={() => {
               const answers = buildPendingUserInputAnswers(questions, {
-                ...seeded,
-                [question.id]: togglePendingUserInputOptionSelection(
-                  question,
-                  seeded[question.id],
-                  value,
-                ),
+                [question.id]: togglePendingUserInputOptionSelection(question, undefined, value),
               });
               if (answers === null) return;
               run(async () => {
