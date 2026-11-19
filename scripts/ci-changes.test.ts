@@ -46,6 +46,32 @@ describe("fork CI change gates", () => {
     }
   });
 
+  it("runs only the scripts tests for intake state, CI helpers and ungated workflows", () => {
+    for (const file of [
+      ".github/upstream-tracked-prs.json",
+      ".github/upstream-intake.json",
+      ".github/scripts/release-changelog.sh",
+      ".github/workflows/fork-nightly.yml",
+    ]) {
+      const { affected, outputs } = decide([file], packages, false);
+      expect(affected).toEqual(["@t3tools/scripts"]);
+      expect(outputs.build).toBe(false);
+      expect(suites(outputs)).toEqual(["Other"]);
+    }
+  });
+
+  it("runs every lane when a workflow this gate controls changes", () => {
+    for (const file of [".github/workflows/fork-ci.yml", ".github/workflows/ci.yml"]) {
+      expect(suites(gates([file]))).toEqual(["Web 1/2", "Web 2/2", "Clients", "E2E", "Other"]);
+    }
+  });
+
+  it("builds and tests the clients that bundle third-party notices", () => {
+    const output = gates(["third-party-licenses.config.json"]);
+    expect(output.build).toBe(true);
+    expect(suites(output)).toEqual(expect.arrayContaining(["Web 1/2", "Clients", "Other"]));
+  });
+
   it("isolates web changes while retaining calibration, E2E, runtime and scripts tests", () => {
     const output = gates(["apps/web/src/example.ts"]);
     expect(output.test_server).toBe(false);
