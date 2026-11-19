@@ -397,3 +397,24 @@ export function sortProjectsByGroupOrder<
     rankByProject.get(`${project.environmentId}\0${project.id}`) ?? groups.length;
   return [...projects].sort((left, right) => rankOf(left) - rankOf(right));
 }
+
+/** The label of the group a project is in, as the sidebar and the project page show it. */
+export function projectGroupLabel<TProject extends EnvironmentProject>(input: {
+  readonly projects: ReadonlyArray<TProject>;
+  readonly settings: ProjectGroupingSettings;
+  readonly preferredEnvironmentId: EnvironmentId | null;
+  readonly project: ScopedProjectRef;
+}): string | null {
+  const { environmentId, projectId } = input.project;
+  return (
+    buildProjectGroups({
+      projects: input.projects,
+      settings: input.settings,
+      preferredEnvironmentId: input.preferredEnvironmentId,
+    }).find((group) =>
+      group.memberProjectRefs.some(
+        (ref) => ref.environmentId === environmentId && ref.projectId === projectId,
+      ),
+    )?.label ?? null
+  );
+}
