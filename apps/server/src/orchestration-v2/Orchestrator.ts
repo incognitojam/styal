@@ -6152,6 +6152,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly modelSelection: ModelSelection;
     readonly targetRunId: OrchestrationV2Run["id"];
     readonly messageId: OrchestrationV2ConversationMessage["id"];
+    readonly reportAnswer?: OrchestrationV2ConversationMessage["reportAnswer"];
     readonly text: string;
     readonly attachments: ReadonlyArray<ChatAttachment>;
     readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
@@ -6311,9 +6312,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           runId: messageInput.runId,
           nodeId: messageInput.nodeId,
           role: "user",
-          ...(input.command.type === "message.dispatch" && input.command.reportAnswer
-            ? { reportAnswer: input.command.reportAnswer }
-            : {}),
+          ...(input.reportAnswer === undefined ? {} : { reportAnswer: input.reportAnswer }),
           text: input.text,
           attachments: input.attachments,
           ...(input.context ? { context: input.context } : {}),
@@ -7614,6 +7613,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.notification === undefined ? {} : { notification: command.notification }),
         targetRunId: dispatchMode.targetRunId,
         messageId: command.messageId,
+        ...(command.reportAnswer === undefined ? {} : { reportAnswer: command.reportAnswer }),
         text: dispatchText,
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
@@ -12130,6 +12130,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       modelSelection: queuedRun.modelSelection,
       targetRunId: command.targetRunId,
       messageId: queuedMessage.id,
+      ...(queuedMessage.reportAnswer === undefined
+        ? {}
+        : { reportAnswer: queuedMessage.reportAnswer }),
       text: queuedMessage.text,
       attachments: queuedMessage.attachments,
       ...(queuedMessage.context ? { context: queuedMessage.context } : {}),

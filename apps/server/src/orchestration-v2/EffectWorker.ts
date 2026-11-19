@@ -329,6 +329,9 @@ export const layerExecutor: Layer.Layer<
                             }
                           : {}),
                         text: message.text,
+                        ...(message.reportAnswer === undefined
+                          ? {}
+                          : { reportAnswer: message.reportAnswer }),
                         ...(message.context ? { context: message.context } : {}),
                         attachments: message.attachments,
                         ...(error.steerDeclined && effect.request.modelSelection !== undefined
