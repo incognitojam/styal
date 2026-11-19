@@ -164,6 +164,34 @@ describe("serverSettings helpers", () => {
     expect(off.projectCoordinators[docs]?.threadId).toBe("thread:docs-coordinator");
   });
 
+  it("keeps a project's seen mark with its coordinator, and drops it when the coordinator changes", () => {
+    const app = ProjectId.make("project:app");
+    const chat = ThreadId.make("thread:app-coordinator");
+    const seen = applyServerSettingsPatch(
+      { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+      { projectCoordinators: { [app]: { threadId: chat, seenAt: "2026-11-18T18:00:00.000Z" } } },
+    );
+    expect(seen.projectCoordinators[app]).toEqual({
+      threadId: chat,
+      seenAt: "2026-11-18T18:00:00.000Z",
+    });
+    // Stored settings and patches keep it through decoding.
+    expect(
+      decodeServerSettings({
+        projectCoordinators: { [app]: { threadId: chat, seenAt: "2026-11-18T18:00:00.000Z" } },
+      }).projectCoordinators[app]?.seenAt,
+    ).toBe("2026-11-18T18:00:00.000Z");
+    expect(
+      decodeServerSettingsPatch({
+        projectCoordinators: { [app]: { threadId: chat, seenAt: "2026-11-18T18:00:00.000Z" } },
+      }).projectCoordinators?.[app]?.seenAt,
+    ).toBe("2026-11-18T18:00:00.000Z");
+    const replaced = applyServerSettingsPatch(seen, {
+      projectCoordinators: { [app]: { threadId: ThreadId.make("thread:new-chat") } },
+    });
+    expect(replaced.projectCoordinators[app]?.seenAt).toBeUndefined();
+  });
+
   it("keeps a source control host's saved tokens when a patch sets another host's token", () => {
     const reference = { provider: "vault", reference: "github/token" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {

@@ -6,18 +6,26 @@ import {
 } from "@t3tools/client-runtime/environment";
 import { coordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import {
-  type CapturedSinceLastVisit,
+  SINCE_LAST_SEEN_DAYS,
   sinceLastVisitGroups,
   sinceLastVisitHistoryGap,
   sinceLastVisitLayout,
   sinceLastVisitReportLines,
+  sinceLastVisitSeenAt,
+  sinceLastVisitThreadLines,
+  sinceLastVisitUnloadedBefore,
+  sinceLastVisitWindow,
   type SinceLastVisitGroup,
   type SinceLastVisitLine,
   type SinceLastVisitSection,
+  type SinceLastVisitThreadLine,
 } from "@t3tools/client-runtime/project-since-last-visit";
+import { projectSeenPatch } from "@t3tools/client-runtime/state/project-coordinators";
 import type {
   CoordinatorReport,
+  EnvironmentId,
   MessageId,
+  ProjectId,
   ScopedThreadRef,
   TimestampFormat,
 } from "@t3tools/contracts";
@@ -29,8 +37,14 @@ import { type MouseEvent, useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
-import { useThreadHistory } from "../../state/entities";
-import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
+import { useQuietThreadShell, useThreadHistory } from "../../state/entities";
+import { serverEnvironment } from "../../state/server";
+import {
+  environmentThreadDetails,
+  environmentThreadShells,
+  olderSettledThreads,
+  threadEnvironment,
+} from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp, formatRelativeTimeLabel } from "../../timestampFormat";
@@ -100,6 +114,63 @@ const chatReportsAtom = Atom.family((threadKey: string) => {
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`project-since-last-visit-reports:${threadKey}`));
 });
 
+/** What the project page fixes for the card when the chat's snapshot is first live. */
+export interface ProjectSinceLastVisitSource {
+  /** The chat's project on the chat's machine, whose settings hold the seen mark. */
+  readonly projectId: ProjectId;
+  /** Every checkout of the project, on any machine. */
+  readonly members: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly id: ProjectId;
+  }>;
+  /** When the page opened, read once: for the 14-day limit and time labels. */
+  readonly openedAt: number;
+  /** The chat's last change when the page opened: the card sits after it in the timeline. */
+  readonly anchorAt: string;
+}
+
+interface ProjectThreadLines {
+  readonly key: string;
+  readonly lines: ReadonlyArray<SinceLastVisitThreadLine>;
+  readonly unloadedBefore: number | null;
+}
+
+/**
+ * The project's thread lines after `since`, from every machine's shells held through streaming
+ * ticks; kept while the same lines result, so a turn streaming anywhere does not re-render the card.
+ */
+const projectThreadLinesAtom = Atom.family((key: string) => {
+  const { chatKey, members, since } = JSON.parse(key) as {
+    readonly chatKey: string;
+    readonly members: ReadonlyArray<readonly [EnvironmentId, ProjectId]>;
+    readonly since: number;
+  };
+  const chatRef = parseScopedThreadKey(chatKey)!;
+  const memberKeys = new Set(members.map(([environmentId, id]) => `${environmentId}:${id}`));
+  const machines = [...new Set(members.map(([environmentId]) => environmentId))].map(
+    (environmentId) => ({
+      environmentId,
+      projectIds: new Set(members.filter(([env]) => env === environmentId).map(([, id]) => id)),
+    }),
+  );
+  let previous: ProjectThreadLines = { key: "", lines: [], unloadedBefore: null };
+  return Atom.make((get): ProjectThreadLines => {
+    const threads = get(environmentThreadShells.quietThreadShellsAtom).filter((thread) =>
+      memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
+    );
+    const lines = sinceLastVisitThreadLines(threads, chatRef, since);
+    const unloadedBefore = sinceLastVisitUnloadedBefore(
+      machines.map(({ environmentId, projectIds }) => ({
+        projectIds,
+        olderSettled: get(olderSettledThreads.olderSettledAtom(environmentId)),
+      })),
+    );
+    const next = JSON.stringify([lines, unloadedBefore]);
+    if (next !== previous.key) previous = { key: next, lines, unloadedBefore };
+    return previous;
+  }).pipe(Atom.setIdleTTL(0), Atom.withLabel("project-since-last-visit-threads"));
+});
+
 const GROUP_LABEL: Record<SinceLastVisitGroup, string> = {
   failed: "Failed",
   reports: "Reports",
@@ -108,44 +179,74 @@ const GROUP_LABEL: Record<SinceLastVisitGroup, string> = {
 };
 
 /**
- * What happened in the project between the user's last visit and this page view, from the
- * capture the page took when it opened. Reports come from the chat's loaded history.
+ * What happened in the project since the user last marked it seen or wrote in its chat, on any
+ * device. It shows when the page opens with something to list, stays while the page is open, and
+ * goes away when the mark moves, here or elsewhere; it does not appear mid-view.
  */
 export function ProjectSinceLastVisit({
   chatRef,
-  captured,
+  source,
   onOpenReport,
 }: {
   chatRef: ScopedThreadRef;
-  captured: CapturedSinceLastVisit;
+  source: ProjectSinceLastVisitSource;
   onOpenReport: (messageId: MessageId) => void;
 }) {
-  const { window, threadLines } = captured;
+  const settings = useEnvironmentSettings(chatRef.environmentId);
+  const { timestampFormat } = settings;
+  const chatShell = useQuietThreadShell(chatRef);
+  const window = sinceLastVisitWindow(
+    {
+      seenAt: settings.projectCoordinators[source.projectId]?.seenAt,
+      chat: {
+        createdAt: chatShell?.createdAt ?? new Date(source.openedAt).toISOString(),
+        latestUserAuthoredMessageAt: chatShell?.latestUserAuthoredMessageAt ?? null,
+      },
+    },
+    source.openedAt,
+  );
+  const threads = useAtomValue(
+    projectThreadLinesAtom(
+      JSON.stringify({
+        chatKey: scopedThreadKey(chatRef),
+        members: source.members.map((member) => [member.environmentId, member.id]),
+        since: window.since,
+      }),
+    ),
+  );
   const chat = useAtomValue(chatReportsAtom(scopedThreadKey(chatRef)));
   const history = useThreadHistory(chatRef);
-  const { timestampFormat } = useEnvironmentSettings(chatRef.environmentId);
   const loadEarlier = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
     reportFailure: false,
   });
+  const saveSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "mark the project seen",
+  });
   const navigate = useNavigate();
   const openPrLink = useOpenPrLink();
   const [expanded, setExpanded] = useState<ReadonlySet<SinceLastVisitGroup>>(new Set());
+  const [phase, setPhase] = useState<"opening" | "showing" | "done">("opening");
 
-  const reports = coordinatorReports(chat.messages, chat.dismissals);
+  const reportLines = sinceLastVisitReportLines(
+    coordinatorReports(chat.messages, chat.dismissals),
+    window,
+  );
   const gap = sinceLastVisitHistoryGap(
     { hasMoreHistory: history.hasMoreHistory, earliestLoadedAt: chat.earliestLoadedAt },
     window,
   );
-  const layout = sinceLastVisitLayout(
-    sinceLastVisitGroups(threadLines, sinceLastVisitReportLines(reports, chat.dismissals, window)),
-    expanded,
-  );
+  const layout = sinceLastVisitLayout(sinceLastVisitGroups(threads.lines, reportLines), expanded);
+  if (phase === "opening") setPhase(layout.total > 0 ? "showing" : "done");
+  if (phase === "showing" && layout.total === 0) setPhase("done");
+  if (phase !== "showing" || layout.total === 0) return null;
 
   const sinceIso = new Date(window.since).toISOString();
-  const sinceLabel = `${formatDayAwareTimestamp(sinceIso, timestampFormat, window.until)}, ${formatRelativeTimeLabel(sinceIso, window.until)}`;
+  const sinceLabel = window.capped
+    ? `the last ${SINCE_LAST_SEEN_DAYS} days`
+    : `${formatDayAwareTimestamp(sinceIso, timestampFormat, source.openedAt)}, ${formatRelativeTimeLabel(sinceIso, source.openedAt)}`;
   const time = (at: number) =>
-    formatDayAwareTimestamp(new Date(at).toISOString(), timestampFormat, window.until);
+    formatDayAwareTimestamp(new Date(at).toISOString(), timestampFormat, source.openedAt);
   const loadEarlierControl = gap ? (
     <>
       {gap.loadedFrom === null
@@ -166,26 +267,21 @@ export function ProjectSinceLastVisit({
       </InlineButton>
     </>
   ) : null;
-
   const unloadedNote =
-    captured.unloadedBefore === null
+    threads.unloadedBefore === null
       ? null
-      : `Threads settled before ${time(captured.unloadedBefore)} aren't checked.`;
-
-  if (layout.total === 0) {
-    return (
-      <div
-        data-testid="project-since-last-visit"
-        className="flex items-center gap-3 py-1 text-muted-foreground text-xs before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"
-      >
-        <span>
-          Nothing new since your last visit, {formatRelativeTimeLabel(sinceIso, window.until)}
-          {loadEarlierControl ? <> · {loadEarlierControl}</> : null}
-          {unloadedNote ? <> · {unloadedNote}</> : null}
-        </span>
-      </div>
-    );
-  }
+      : `Threads settled before ${time(threads.unloadedBefore)} aren't checked.`;
+  const markSeen = () =>
+    void saveSettings({
+      environmentId: chatRef.environmentId,
+      input: {
+        patch: projectSeenPatch(
+          source.projectId,
+          chatRef.threadId,
+          sinceLastVisitSeenAt(window, [...threads.lines, ...reportLines]),
+        ),
+      },
+    });
 
   const openThread = (line: SinceLastVisitLine) => {
     if (line.kind === "report") {
@@ -208,35 +304,43 @@ export function ProjectSinceLastVisit({
   const expand = (group: SinceLastVisitGroup) => setExpanded(new Set(expanded).add(group));
 
   return (
-    <div
-      data-testid="project-since-last-visit"
-      className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
-    >
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-muted-foreground text-xs">
-        <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">Since your last visit</span> · {sinceLabel}
-        </span>
-        <span className="shrink-0">{layout.total}</span>
-      </div>
-      <div className="flex flex-col divide-y divide-border/60">
-        {layout.sections.map((section) => (
-          <SinceLastVisitSectionRows
-            key={section.group}
-            section={section}
-            grouped={layout.grouped}
-            time={time}
-            timestampFormat={timestampFormat}
-            onOpen={openLine}
-            onExpand={() => expand(section.group)}
-            footer={section.group === "reports" ? loadEarlierControl : null}
-          />
-        ))}
-        {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
-          <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
-        ) : null}
-        {unloadedNote ? (
-          <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
-        ) : null}
+    <div className="pb-4">
+      <div
+        data-testid="project-since-last-visit"
+        className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-muted-foreground text-xs">
+          <span className="min-w-0 truncate">
+            <span className="font-medium text-foreground">Since you last checked</span> ·{" "}
+            {sinceLabel}
+          </span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {layout.total} ·
+            <InlineButton tone="muted" onClick={markSeen}>
+              Mark as seen
+            </InlineButton>
+          </span>
+        </div>
+        <div className="flex flex-col divide-y divide-border/60">
+          {layout.sections.map((section) => (
+            <SinceLastVisitSectionRows
+              key={section.group}
+              section={section}
+              grouped={layout.grouped}
+              time={time}
+              timestampFormat={timestampFormat}
+              onOpen={openLine}
+              onExpand={() => expand(section.group)}
+              footer={section.group === "reports" ? loadEarlierControl : null}
+            />
+          ))}
+          {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
+            <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
+          ) : null}
+          {unloadedNote ? (
+            <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
