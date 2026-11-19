@@ -1389,8 +1389,10 @@ const layerMakeServer = Layer.unwrap(
     );
     return Layer.fromBuild((memoMap, scope) =>
       Effect.gen(function* () {
+        const pruningEnabled = yield* ServerConfig.eventPruningEnabled;
+        if (!pruningEnabled) yield* PreEventPruneSafety.cleanupInterruptedCopy(config.dbPath);
         yield* Startup.prepareBeforeRuntime(
-          yield* ServerConfig.eventPruningEnabled,
+          pruningEnabled,
           Effect.gen(function* () {
             const observability = yield* Layer.buildWithMemoMap(
               layerApplicationObservability,

@@ -300,8 +300,8 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
       return { deletedEventCount, deletedReceiptCount };
     });
 
-    // A pass prunes through the mark the previous pass left once that mark is a day old, so
-    // at least RETAINED_EVENT_HISTORY of events always remains. Receipts stay for idempotency.
+    // Native V2 events use the previous pass's day-old mark; imported V1 history has its own gate.
+    // Native V2 receipts stay for idempotency.
     const pruneEventStore = Effect.fn("ProjectionMaintenance.pruneEventStore")(
       function* (betweenPages: Effect.Effect<void> = Effect.void) {
         if (!(yield* eventPruningEnabled)) {
