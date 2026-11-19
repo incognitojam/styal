@@ -327,7 +327,10 @@ project without a coordinator shows an empty chat: the first message starts a th
 project's folder, without a worktree, and makes it the coordinator. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine
 where the project was last active. The chat stays on that machine, and only threads on it report
-to the chat. A machine with project coordinators off is named there instead of offered.
+to the chat. A machine with project coordinators off is named there instead of offered. **Add to
+another machine** in the same menu offers connected machines with project coordinators on that do
+not have the project yet; the chat waits there while the project clones, then starts on that
+machine.
 
 On mobile, a project with a chat shows it as the project's row in the thread list: the project's
 name and how many of its threads are working or need you. With **Group threads by project** on,

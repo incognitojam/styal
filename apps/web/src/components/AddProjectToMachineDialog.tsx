@@ -57,6 +57,10 @@ import { Toggle, ToggleGroup } from "./ui/toggle-group";
 interface AddProjectToMachineRequest {
   readonly projectRef: ScopedProjectRef;
   readonly targetEnvironmentId: EnvironmentId | null;
+  /** The draft that moves to the new machine; defaults to the draft the route shows. */
+  readonly draftId?: DraftId | undefined;
+  /** Limits the machines offered, such as to those where a project chat can start. */
+  readonly onlyTargets?: ReadonlyArray<EnvironmentId> | undefined;
 }
 
 const useRequest = create<{ request: AddProjectToMachineRequest | null; session: number }>(() => ({
@@ -96,7 +100,10 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   const handleNewThread = useNewThreadHandler();
   const { draftId: routeDraftId } = useParams({ strict: false });
   const { environments } = useEnvironments();
-  const targets = useAddProjectTargets(project, useLogicalProjectEnvironments(project, false));
+  const targets = useAddProjectTargets(
+    project,
+    useLogicalProjectEnvironments(project, false),
+  ).filter((t) => request.onlyTargets?.includes(t.environmentId) ?? true);
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
   const target = targets.find((t) => t.environmentId === targetId) ?? targets[0] ?? null;
   const source = environments.find((env) => env.environmentId === request.projectRef.environmentId);
@@ -162,7 +169,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   // over with whatever was typed in it.
   const openClonedProject = (targetRef: ScopedProjectRef) => {
     const drafts = useComposerDraftStore.getState();
-    const draftId = routeDraftId as DraftId | undefined;
+    const draftId = request.draftId ?? (routeDraftId as DraftId | undefined);
     const draft = draftId ? drafts.getDraftSession(draftId) : null;
     if (
       draftId &&
