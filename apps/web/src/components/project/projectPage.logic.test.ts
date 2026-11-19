@@ -7,6 +7,7 @@ import {
   coordinatedProjectKey,
   staysOnProjectPage,
   managedByProjectChat,
+  projectChatTakesReports,
   isProjectChatDraftId,
   projectChatDraftId,
   resolveProjectChatView,
@@ -94,6 +95,38 @@ describe("staysOnProjectPage", () => {
     for (const thread of [inProject, person, elsewhere, otherMachine]) {
       expect([thread.id, managedByProjectChat(thread, chats)]).toEqual([thread.id, false]);
     }
+  });
+
+  // Managed threads are the chat's to handle, so the chat itself must stay reachable.
+  it("never counts the chat as managed, even when it failed or asks you something", () => {
+    for (const chat of [
+      shell("thread-chat", { latestRun: { status: "failed" } } as Partial<EnvironmentThreadShell>),
+      shell("thread-chat", { openReportQuestionCount: 1 }),
+    ]) {
+      expect(managedByProjectChat(chat, chats)).toBe(false);
+    }
+  });
+
+  it("stops counting a thread as managed once its chat is replaced, unassigned or stops taking reports", () => {
+    const thread = started("orphan");
+    expect(managedByProjectChat(thread, chats)).toBe(true);
+    // Another thread became the project's chat.
+    expect(managedByProjectChat(thread, new Set([`${local}:thread-new-chat`]))).toBe(false);
+    // The chat was unassigned, or project coordinators were turned off: the project has no chat.
+    expect(managedByProjectChat(thread, new Set())).toBe(false);
+    const chat = { archivedAt: null, deletedAt: null, settledOverride: null, settleReason: null };
+    expect(projectChatTakesReports(chat)).toBe(true);
+    expect(projectChatTakesReports({ ...chat, archivedAt: "2026-11-18T10:00:00.000Z" })).toBe(
+      false,
+    );
+    expect(projectChatTakesReports({ ...chat, deletedAt: "2026-11-18T10:00:00.000Z" })).toBe(false);
+    expect(
+      projectChatTakesReports({
+        ...chat,
+        settledOverride: "settled",
+        settleReason: { kind: "user" },
+      }),
+    ).toBe(false);
   });
 });
 
