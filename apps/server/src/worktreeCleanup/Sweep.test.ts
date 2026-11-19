@@ -404,7 +404,7 @@ it.effect.each(["/", "/.", "/../quiet", "symlink"])(
 it.effect("serializes leases through a symbolic link to the same checkout", () =>
   Effect.gen(function* () {
     const f = yield* setup;
-    const alias = `${f.base}/checkout-link`;
+    const alias = f.path.join(f.base, "checkout-link");
     yield* f.linkDirectory(f.worktree, alias);
     const real = yield* f.fs.realPath(alias);
     const lease = yield* makeWorkspaceLease.pipe(
@@ -775,11 +775,12 @@ it.effect("Windows service removes a real pnpm install without changing its stor
             "vp",
             [
               "install",
+              "--ignore-scripts",
+              "--no-frozen-lockfile",
+              "--",
               "--ignore-workspace",
               "--store-dir",
               store,
-              "--ignore-scripts",
-              "--no-frozen-lockfile",
             ],
             { cwd: f.worktree },
             (error, stdout, stderr) =>

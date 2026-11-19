@@ -141,7 +141,7 @@ describe("regenerable path deletion", () => {
             Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
             Effect.provideService(DeletionLimits, {
               entries: mode === "cap" ? 1 : 100,
-              mounts: mode === "mount" ? [`${f.worktree}/dist`] : [],
+              mounts: mode === "mount" ? [f.path.join(f.worktree, "dist")] : [],
               ...(mode === "device"
                 ? {
                     device: (target: string, actual: number) =>
