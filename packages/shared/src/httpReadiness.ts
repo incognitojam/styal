@@ -43,6 +43,7 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
     readonly requestUrl: string;
     readonly probeTimeoutMs: number;
     readonly attempt: number;
+    readonly startupCopy?: ServerStartupCopyProgress;
     readonly cause: unknown;
   }) => E;
 }) {
@@ -55,6 +56,7 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
   const now = () => Number(clock.monotonicTimeNanosUnsafe() / 1_000_000n);
   let deadline = now() + timeoutMs;
   let copying = false;
+  let startupCopy: ServerStartupCopyProgress | undefined;
   let attempt = 0;
   let cause: unknown;
   yield* Effect.logDebug("httpReadiness.start", {
@@ -72,6 +74,7 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
       cause = { kind: "http-status", status: response.status };
       let copy: ServerStartupCopyProgress | null = null;
       const status = decodeStatus(text);
+      startupCopy = Option.isSome(status) ? (status.value.copy ?? undefined) : undefined;
       if (Option.isSome(status) && status.value.copy !== null && status.value.copy.leaseMs > 0) {
         copy = status.value.copy;
       }
@@ -118,6 +121,7 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
       requestUrl,
       probeTimeoutMs,
       attempt,
+      ...(startupCopy === undefined ? {} : { startupCopy }),
       cause: {
         kind: "overall-timeout",
         baseUrl: input.baseUrl,
