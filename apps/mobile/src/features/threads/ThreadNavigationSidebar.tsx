@@ -43,6 +43,7 @@ import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useThreadListV2 } from "./useThreadListV2";
+import { useProjectChats } from "../projects/projectChats";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
@@ -195,8 +196,9 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     key: scope.key,
     label: scope.title,
   }));
+  const projectChats = useProjectChats();
   const projectGrouping = useMobileThreadGroupingByProject()
-    ? buildHomeThreadProjectGrouping(projectScopes)
+    ? buildHomeThreadProjectGrouping(projectScopes, projectChats.byScopeKey)
     : null;
   const projectTitleByProjectKey = useMemo(
     () =>
@@ -345,6 +347,12 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     onSelectThread(thread);
     openSwipeableRef.current?.close();
   };
+  const projectChatOf = (thread: EnvironmentThreadShell) =>
+    projectChats.byChatKey.get(scopedThreadKey(thread.environmentId, thread.id));
+  const openProjectChat = (chatThreadKey: string | null) => {
+    const chat = chatThreadKey === null ? undefined : projectChats.byChatKey.get(chatThreadKey);
+    return chat === undefined ? undefined : () => handleSelectThread(chat.chat);
+  };
   const handleOpenThreadPullRequests = (
     thread: EnvironmentThreadShell,
     pr: ThreadPrPresentation,
@@ -425,6 +433,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             project={item.project}
             pinned={item.pinned}
             pane="sidebar"
+            statusLine={item.statusLine}
+            onOpenProject={openProjectChat(item.chatThreadKey)}
           />
         );
       case "v2-thread": {
@@ -441,6 +451,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
               `${thread.environmentId}:${thread.projectId}:${thread.id}`,
             )}
             projectCoordinatorsEnabled={coordinatorEnvironmentIds.has(thread.environmentId)}
+            projectChatTitle={projectChatOf(thread)?.title}
+            projectChatStatusLine={projectChatOf(thread)?.statusLine}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}
             wokeAt={item.item.wokeAt}

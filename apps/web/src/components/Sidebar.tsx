@@ -1,4 +1,5 @@
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
+import { resolveThreadListStatus } from "@t3tools/client-runtime/state/thread-list-status";
 import {
   SIDEBAR_FOLDER_HEADER_HEIGHT,
   SidebarProjectFolderHeader,
@@ -238,7 +239,6 @@ import {
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
   resolveSidebarThreadSection,
-  resolveSidebarThreadStatus,
   isLatestFailureSeen,
   resolveSidebarThreadAttention,
   resolveNextAttentionThread,
@@ -3385,7 +3385,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     );
     const wokeAt = threadWokeAt(thread, { now: snoozeNow });
     const rowAttention = resolveSidebarThreadAttention({
-      status: resolveSidebarThreadStatus(thread),
+      status: resolveThreadListStatus(thread),
       isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
       isWoke: isSidebarThreadWoke({
         wokeAt,
