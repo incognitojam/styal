@@ -3853,7 +3853,7 @@ function webSearchResultsFromClaudeOutput(
 ): ReadonlyArray<OrchestrationV2WebSearchResult> {
   const value = claudeNativeToolOutputValue(output);
   if (!isClaudeWebSearchOutput(value)) {
-    return [];
+    return webSearchResultsFromClaudeText(claudeNativeToolOutputText(output));
   }
 
   return value.results.flatMap((result) => {
@@ -3865,6 +3865,30 @@ function webSearchResultsFromClaudeOutput(
       url: content.url,
     }));
   });
+}
+
+const ClaudeWebSearchLinks = Schema.Array(
+  Schema.Struct({ title: Schema.optional(Schema.String), url: Schema.String }),
+);
+const decodeClaudeWebSearchLinks = Schema.decodeUnknownOption(
+  Schema.fromJsonString(ClaudeWebSearchLinks),
+);
+
+/**
+ * A subagent's WebSearch result has no structured `tool_use_result`, only its text:
+ * `Web search results for query: "…"`, then a `Links: [{"title","url"},…]` line per search.
+ */
+function webSearchResultsFromClaudeText(
+  text: string,
+): ReadonlyArray<OrchestrationV2WebSearchResult> {
+  if (!text.startsWith("Web search results for query:")) return [];
+  return text
+    .split("\n")
+    .flatMap((line) =>
+      line.startsWith("Links: ")
+        ? Option.getOrElse(decodeClaudeWebSearchLinks(line.slice("Links: ".length)), () => [])
+        : [],
+    );
 }
 
 function summarizeClaudeToolRequest(toolName: string, input: ClaudeNativeToolInput): string {
