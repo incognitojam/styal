@@ -1,4 +1,6 @@
 import {
+  orchestratorMcpPendingQuestionNext,
+  orchestratorMcpPendingApprovalNext,
   CommandId,
   type EnvironmentId,
   MessageId,
@@ -20,6 +22,8 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+
+import { pendingRequestNeedsAttention } from "../mcp/pendingRequests.ts";
 
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import type { ThreadManagementServiceShape } from "./ThreadManagementService.ts";
@@ -167,6 +171,32 @@ function excerpt(text: string): string {
 
 type ReportSource = OrchestrationV2ThreadReportTarget["source"];
 
+type PendingReportRequest = Pick<
+  OrchestrationV2RuntimeRequest,
+  "id" | "kind" | "status" | "responseCapability"
+>;
+
+export function pendingThreadReportNext(
+  threadId: ThreadId,
+  environmentId: EnvironmentId | undefined,
+  requests: ReadonlyArray<PendingReportRequest>,
+): string | undefined {
+  const pending = requests.filter(pendingRequestNeedsAttention);
+  if (pending.length === 0) return undefined;
+  const link =
+    environmentId === undefined ? threadId : formatThreadLink({ environmentId, threadId });
+  return (
+    pending
+      .map((request) =>
+        request.kind === "user_input"
+          ? orchestratorMcpPendingQuestionNext({ threadId, requestId: request.id })
+          : orchestratorMcpPendingApprovalNext({ link }) +
+            ` t3_pending_request cannot approve request ${request.id}.`,
+      )
+      .join("\n") + " t3_thread_send will not answer or approve a pending request."
+  );
+}
+
 function reportMessage(input: {
   readonly environmentId: EnvironmentId | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "id" | "title">;
@@ -174,6 +204,7 @@ function reportMessage(input: {
   readonly situation: string;
   readonly body: string | undefined;
   readonly next: string;
+  readonly pendingRequests?: ReadonlyArray<PendingReportRequest>;
 }): string {
   const link =
     input.environmentId === undefined
@@ -183,12 +214,19 @@ function reportMessage(input: {
     input.source === "project-coordinator"
       ? "Thread in the project you coordinate"
       : "Thread you launched";
-  const head = `${who}, "${input.thread.title}" (${input.thread.id}${link}), ${input.situation}`;
+  const pendingNext = pendingThreadReportNext(
+    input.thread.id,
+    input.environmentId,
+    input.pendingRequests ?? [],
+  );
+  const situation =
+    pendingNext === undefined ? input.situation : "has pending input and needs attention.";
+  const head = `${who}, "${input.thread.title}" (${input.thread.id}${link}), ${situation}`;
   const body =
     input.body === undefined || input.body.trim() === ""
       ? ""
       : `\n\n${DATA_FRAMING}\n\n<thread-report>\n${excerpt(input.body)}\n</thread-report>`;
-  return `${head}${body}\n\n${input.next}`;
+  return `${head}${body}\n\n${pendingNext ?? input.next}`;
 }
 
 const reportNotification = (
@@ -360,7 +398,9 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
             ? `has been blocked on ${asks} for over ${Duration.toMinutes(BLOCKED_REPORT_DELAY)} minutes and cannot continue until it is answered.`
             : "stopped with a question unanswered and will not continue until someone replies.",
         body: undefined,
-        next: `Read it with t3_pending_request action read, threadId ${thread.id}, and requestId ${requestId}. Answer it with action respond when the answer follows from the task or the user's instructions; otherwise ask the user, then answer it. If it is no longer pending, it was answered or dismissed.`,
+        next:
+          pendingThreadReportNext(thread.id, environmentId, [request]) ??
+          `Inspect the request with t3_pending_request action read, threadId ${thread.id}, requestId ${requestId}. If it is no longer pending, it was answered or dismissed.`,
       }),
       notification: reportNotification(thread, source, "updated", "is blocked and needs an answer"),
     });
@@ -413,6 +453,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       situation: copy.situation,
       body: subagentResultForRun(history, run).text,
       next: copy.next,
+      pendingRequests: records.runtimeRequests,
     }),
     notification: reportNotification(thread, source, copy.outcome, copy.ending),
   });
@@ -442,6 +483,7 @@ export function sentReport(input: {
   readonly thread: Pick<OrchestrationV2AppThread, "id" | "title">;
   readonly source: ReportSource;
   readonly message: string;
+  readonly pendingRequests?: ReadonlyArray<PendingReportRequest>;
 }) {
   return {
     text: reportMessage({
@@ -450,6 +492,7 @@ export function sentReport(input: {
       source: input.source,
       situation: "sent you a report.",
       body: input.message,
+      ...(input.pendingRequests === undefined ? {} : { pendingRequests: input.pendingRequests }),
       next: "Read more with t3_thread_read. Reply with t3_thread_send.",
     }),
     notification: reportNotification(input.thread, input.source, "updated", "sent a report"),

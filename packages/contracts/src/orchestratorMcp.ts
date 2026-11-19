@@ -634,6 +634,7 @@ export const OrchestratorMcpThreadSendResult = Schema.Struct({
   delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),
   /** Sent as a report to the launcher this thread reports to. */
   report: Schema.optional(Schema.Boolean),
+  next: Schema.optional(Schema.String),
 });
 export type OrchestratorMcpThreadSendResult = typeof OrchestratorMcpThreadSendResult.Type;
 

@@ -55,7 +55,10 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { renderStyalProductName } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
-import { threadReportNote } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
+import {
+  sentReport,
+  threadReportNote,
+} from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
 import { PROJECT_COORDINATOR_NOTE } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
 import { worktreeBranchNote } from "../../apps/server/src/orchestration-v2/WorktreeBranchNote.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
@@ -363,6 +366,7 @@ export const McpToolUseCase = Schema.Struct({
     branchNote: Schema.optional(Schema.Literals(["temporary", "renamed"])),
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
+    launchedReport: Schema.optional(Schema.Struct({ question: Schema.Boolean })),
     /** This thread was just made its project's coordinator: T3 puts its note on the prompt. */
     projectCoordinator: Schema.optional(Schema.Boolean),
     /**
@@ -1166,7 +1170,27 @@ export const buildMessages = (sample: Sample) => {
       .filter((part) => part !== "")
       .join("\n\n"),
     testCase.promptContext === undefined
-      ? testCase.prompt
+      ? testCase.setup.launchedReport === undefined
+        ? testCase.prompt
+        : sentReport({
+            environmentId: undefined,
+            thread: {
+              id: ThreadId.make("55555555-5555-4555-8555-555555555555"),
+              title: "Fix login",
+            },
+            source: undefined,
+            message: testCase.prompt,
+            pendingRequests: testCase.setup.launchedReport.question
+              ? [
+                  {
+                    id: Contracts.RuntimeRequestId.make("request:login"),
+                    kind: "user_input",
+                    status: "pending",
+                    responseCapability: { type: "message" },
+                  },
+                ]
+              : [],
+          }).text
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext }),
   );
   const prompt =
