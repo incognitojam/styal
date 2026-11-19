@@ -1953,45 +1953,56 @@ describe("threads grouped by project", () => {
   });
 
   it("lets a project's chat head its rows instead of listing it, even when it is the only one", () => {
-    const listItems = buildThreadListV2ListItems({
-      items: layoutOf(threads, grouping(["B"])).items,
-      pendingTasks: [],
-      projectHeaders: new Map([
-        [
-          "B",
-          {
-            title: "Project B",
-            project: {} as EnvironmentProject,
-            pinned: true,
-            chatThreadKey: `${environmentId}:b1`,
-            statusLine: "1 working",
-          },
-        ],
-        [
-          "A",
-          {
-            title: "Project A",
-            project: {} as EnvironmentProject,
-            pinned: false,
-            chatThreadKey: `${environmentId}:a1`,
-            statusLine: null,
-          },
-        ],
-      ]),
-    });
-
-    expect(
+    const listItemsOf = (searching: boolean) =>
+      buildThreadListV2ListItems({
+        items: layoutOf(threads, grouping(["B"])).items,
+        pendingTasks: [],
+        searching,
+        projectHeaders: new Map([
+          [
+            "B",
+            {
+              title: "Project B",
+              project: {} as EnvironmentProject,
+              pinned: true,
+              chatThreadKey: `${environmentId}:b1`,
+              statusLine: "1 working",
+            },
+          ],
+          [
+            "A",
+            {
+              title: "Project A",
+              project: {} as EnvironmentProject,
+              pinned: false,
+              chatThreadKey: `${environmentId}:a1`,
+              statusLine: null,
+            },
+          ],
+        ]),
+      });
+    const shown = (listItems: ReturnType<typeof listItemsOf>) =>
       listItems.map((item) =>
         item.type === "v2-project-header"
           ? `header:${item.title}:${item.chatThreadKey}:${item.statusLine}`
           : item.type === "v2-thread"
             ? item.item.thread.id
             : item.type,
-      ),
-    ).toEqual([
+      );
+
+    expect(shown(listItemsOf(false))).toEqual([
       "pinned",
       `header:Project B:${environmentId}:b1:1 working`,
       `header:Project A:${environmentId}:a1:null`,
+      "a2",
+    ]);
+    // A search lists the chat itself, so a match in its messages shows and opens there.
+    expect(shown(listItemsOf(true))).toEqual([
+      "pinned",
+      `header:Project B:${environmentId}:b1:1 working`,
+      "b1",
+      `header:Project A:${environmentId}:a1:null`,
+      "a1",
       "a2",
     ]);
   });

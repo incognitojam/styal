@@ -115,29 +115,39 @@ describe("buildProjectChats", () => {
 describe("resolveProjectLink", () => {
   const settled = {
     chat: undefined,
-    environmentSaved: true,
-    connected: true,
+    catalogReady: true,
+    connection: "connected" as const,
     shellLive: true,
     shellCacheRead: true,
   };
 
-  it("opens the chat, waits while the machine's threads load, and otherwise falls back to the list", () => {
+  it("opens the chat, waits through startup, and otherwise falls back to the list", () => {
     const chat = buildProjectChats({
       scopes: [scope],
       threads: [shell(server, onServer, "chat")],
       settingsFor: (id) => (id === server ? chatOn("chat") : undefined),
       connected: () => true,
     }).byChatKey.get(`${server}:chat`);
-    expect(resolveProjectLink({ ...settled, chat, shellLive: false })).toBe("chat");
+    expect(resolveProjectLink({ ...settled, chat, catalogReady: false })).toBe("chat");
     expect(resolveProjectLink(settled)).toBe("list");
-    expect(resolveProjectLink({ ...settled, environmentSaved: false, shellLive: false })).toBe(
+    // Saved connections still loading: an unknown machine may be a saved one.
+    expect(resolveProjectLink({ ...settled, catalogReady: false, connection: null })).toBe("wait");
+    expect(resolveProjectLink({ ...settled, connection: null })).toBe("list");
+    // The first connection and its threads are still on their way.
+    expect(resolveProjectLink({ ...settled, connection: "connecting" })).toBe("wait");
+    expect(resolveProjectLink({ ...settled, connection: "available" })).toBe("wait");
+    expect(resolveProjectLink({ ...settled, shellLive: false })).toBe("wait");
+    // A machine that could not be reached settles on what it had cached.
+    expect(resolveProjectLink({ ...settled, connection: "reconnecting", shellLive: false })).toBe(
       "list",
     );
-    expect(resolveProjectLink({ ...settled, shellLive: false })).toBe("wait");
-    // An offline machine settles on what it had cached.
-    expect(resolveProjectLink({ ...settled, connected: false, shellLive: false })).toBe("list");
     expect(
-      resolveProjectLink({ ...settled, connected: false, shellLive: false, shellCacheRead: false }),
+      resolveProjectLink({
+        ...settled,
+        connection: "offline",
+        shellLive: false,
+        shellCacheRead: false,
+      }),
     ).toBe("wait");
   });
 });

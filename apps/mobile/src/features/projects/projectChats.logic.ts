@@ -8,6 +8,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId, ProjectId, ServerSettings } from "@t3tools/contracts";
 
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
@@ -154,17 +155,31 @@ export function projectChatHeadersEqual(
 
 /**
  * Where a `projects/<environmentId>/<projectId>` link goes: the project's chat, or the thread
- * list once it is clear the project has none. It waits while the machine's threads load.
+ * list once it is clear the project has none. It waits while the saved connections load and the
+ * machine's first connection is under way; a machine that is offline settles on its cache.
  */
 export function resolveProjectLink(input: {
   readonly chat: ProjectChat | undefined;
-  readonly environmentSaved: boolean;
-  readonly connected: boolean;
+  readonly catalogReady: boolean;
+  /** null when this app has no saved connection to the machine. */
+  readonly connection: EnvironmentConnectionPhase | null;
   readonly shellLive: boolean;
   readonly shellCacheRead: boolean;
 }): "chat" | "list" | "wait" {
   if (input.chat !== undefined) return "chat";
-  if (!input.environmentSaved) return "list";
-  if (input.connected ? input.shellLive : input.shellCacheRead) return "list";
-  return "wait";
+  if (!input.catalogReady) return "wait";
+  switch (input.connection) {
+    case null:
+      return "list";
+    case "available":
+    case "connecting":
+      return "wait";
+    case "connected":
+      return input.shellLive ? "list" : "wait";
+    case "reconnecting":
+    case "offline":
+    case "error":
+    case "unsupported":
+      return input.shellCacheRead ? "list" : "wait";
+  }
 }

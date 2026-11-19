@@ -639,6 +639,8 @@ export function buildThreadListV2ListItems(input: {
   readonly moveAvailability?: ReadonlyMap<string, ThreadMoveAvailability>;
   readonly shelfPreferencesLoading?: boolean;
   readonly projectHeaders?: ReadonlyMap<string, ThreadListV2ProjectHeader>;
+  /** Search lists a project's chat as its own row, so a message match shows and opens there. */
+  readonly searching?: boolean;
 }): ThreadListV2ListItem[] {
   const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
@@ -705,6 +707,7 @@ export function buildThreadListV2ListItems(input: {
       }
       currentGroup = group;
       if (
+        !input.searching &&
         row.type === "v2-thread" &&
         header?.chatThreadKey === `${row.item.thread.environmentId}:${row.item.thread.id}`
       ) {

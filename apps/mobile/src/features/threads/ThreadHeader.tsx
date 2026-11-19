@@ -54,7 +54,8 @@ export function ThreadHeader(props: {
       title={props.title}
       subtitle={props.subtitle}
       onBackToList={goBack}
-      onCompose={props.draft ? undefined : startNewTask}
+      // The project's own New thread action replaces split view's generic one.
+      onCompose={props.draft || props.project ? undefined : startNewTask}
       backInSplitView={
         props.onReturnToThread
           ? {

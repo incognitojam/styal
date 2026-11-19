@@ -1,13 +1,11 @@
-import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { useEffect } from "react";
 
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedProjectKey } from "../../lib/scopedEntities";
-import { connectedEnvironmentIdsAtom } from "../../state/presentation";
+import { useEnvironmentPresentation } from "../../state/presentation";
 import { useEnvironmentShellReadiness } from "../../state/shell";
-import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
 import { useProjectChats } from "./projectChats";
 import { resolveProjectLink } from "./projectChats.logic";
 
@@ -25,8 +23,7 @@ export function ProjectRouteScreen(
   const projectIdRaw = first(props.route.params?.projectId) ?? "";
   const environmentId = environmentIdRaw ? EnvironmentId.make(environmentIdRaw) : null;
   const chats = useProjectChats();
-  const saved = useAtomValue(savedConnectionsByIdAtom);
-  const connected = useAtomValue(connectedEnvironmentIdsAtom);
+  const { isReady, presentation } = useEnvironmentPresentation(environmentId);
   const shell = useEnvironmentShellReadiness(environmentId);
   const chat =
     environmentId === null
@@ -34,8 +31,8 @@ export function ProjectRouteScreen(
       : chats.byCheckoutKey.get(scopedProjectKey(environmentId, ProjectId.make(projectIdRaw)));
   const target = resolveProjectLink({
     chat,
-    environmentSaved: environmentId !== null && saved[environmentId] !== undefined,
-    connected: environmentId !== null && connected.includes(environmentId),
+    catalogReady: isReady,
+    connection: presentation?.connection.phase ?? null,
     shellLive: shell.status === "live" || shell.hasError,
     shellCacheRead: shell.cacheRead,
   });
