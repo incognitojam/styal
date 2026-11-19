@@ -1,10 +1,11 @@
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
 import {
   type SidebarProjectGroupingMode,
   type EnvironmentId,
@@ -667,15 +668,26 @@ function ProjectDetail({
     if (members) members.push(member);
     else checkoutsByEnvironment.set(member.environmentId, [member]);
   }
-  // Cloned from the primary machine's checkout when it has one; the dialog reads its ignored files.
-  const cloneSource =
-    allMembers.find(
-      (member) =>
-        member.environmentId === primaryEnvironmentId &&
-        member.repositoryIdentity?.locator.remoteUrl,
-    ) ??
-    allMembers.find((member) => member.repositoryIdentity?.locator.remoteUrl) ??
-    null;
+  // The dialog lists and copies the source's ignored files, so a checkout this client can read on
+  // a connected machine comes first, then the primary machine's.
+  const readableIds = useEnvironmentsWithScope(allMembers, AuthFilesystemReadScope);
+  const isReadableSource = (member: SidebarProjectGroupMember) => {
+    const connection = environmentById.get(member.environmentId)?.connection.phase;
+    return (
+      readableIds.has(member.environmentId) &&
+      connection !== undefined &&
+      canCreateProjectInEnvironment(connection)
+    );
+  };
+  const cloneSources = allMembers
+    .filter((member) => member.repositoryIdentity?.locator.remoteUrl)
+    .toSorted(
+      (a, b) =>
+        Number(isReadableSource(b)) - Number(isReadableSource(a)) ||
+        Number(b.environmentId === primaryEnvironmentId) -
+          Number(a.environmentId === primaryEnvironmentId),
+    );
+  const cloneSource = cloneSources[0] ?? null;
   const addTargets = useAddProjectTargets(cloneSource, allMembers);
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
