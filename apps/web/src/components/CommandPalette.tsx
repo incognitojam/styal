@@ -60,7 +60,7 @@ import {
   SourceControlRepositoryError,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -206,6 +206,7 @@ import {
 } from "../wslPaths";
 import {
   resolveCommandPaletteProject,
+  resolveProjectSettingsGroup,
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
@@ -536,6 +537,10 @@ function OpenCommandPaletteDialog(props: {
 }) {
   const navigate = useNavigate();
   const projectPages = useProjectPages();
+  const projectPageKey = useParams({
+    strict: false,
+    select: (params) => params.projectKey ?? null,
+  });
   const pathname = useLocation({ select: (location) => location.pathname });
   const { openChildSearch, setOpen } = props;
   // Keyed by palette session: the intent and restored search only seed this
@@ -2155,7 +2160,11 @@ function OpenCommandPaletteDialog(props: {
       run: async () => toggleProjectGroupPin(currentProjectGroup),
     });
   }
-  const contextualProjectGroup = currentProjectGroup ?? projectGroups[0] ?? null;
+  const contextualProjectGroup = resolveProjectSettingsGroup(
+    projectGroups,
+    currentProjectGroup,
+    projectPageKey,
+  );
   if (contextualProjectGroup) {
     actionItems.push({
       kind: "action",
@@ -2179,8 +2188,8 @@ function OpenCommandPaletteDialog(props: {
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({
-          to: "/projects/$projectKey",
-          params: { projectKey: contextualProjectGroup.projectKey },
+          to: "/settings/projects",
+          search: { project: contextualProjectGroup.projectKey, machine: undefined },
         });
       },
     });
