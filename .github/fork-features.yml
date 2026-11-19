@@ -3113,6 +3113,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream preserves historical checkpoints and original answer links during V2 migration and exposes their diffs without ordinal collisions with new runs.
 
+  - id: idle-compaction-restart-admission
+    title: Bound automatic idle compaction recovery after a restart
+    status: maintained
+    tier: keep
+    prs: [1613]
+    invariants:
+      - At most one interrupted before-cache-expiry compaction can retry per server lifetime; ordinary turns, manual compactions and compact-on-return retain their normal restart behavior.
+      - Newer input, including queued or cancelled-before-start runs, and pending work prevent an idle retry at the serialized dispatch boundary.
+      - An automatic compaction continuation is not automatically compacted again after failure or another restart; declined admission updates its server-recovery notice without sending a provider prompt.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
+      - apps/server/src/orchestration-v2/RestartBackgroundNote.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
+      - apps/server/src/orchestration-v2/RestartBackgroundNote.ts
+      - apps/server/src/orchestration-v2/RestartContinuation.ts
+    tests:
+      - apps/server/src/orchestration-v2/RestartContinuation.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/30207
+      retire_when: Upstream recovery bounds automatic compaction provider work and retries, preserves idle eligibility at dispatch and explains skipped retries.
+    rationale: Restart continuation may recover many threads together. Automatic compaction spends a provider read without a new user request, so recovery has a stricter budget than user turns.
+
   - id: inline-code-file-chips-need-a-target
     title: Inline-code paths become file chips only when they open something
     status: maintained

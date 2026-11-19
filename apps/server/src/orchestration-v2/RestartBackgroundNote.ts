@@ -7,6 +7,9 @@ import type {
   OrchestrationV2RunAttempt,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
+import { latestProviderTurnForAttempt } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
 import { latestRootProviderFailure, runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
@@ -385,4 +388,52 @@ export function mergeRestartCancelledBackgroundWork(
     merged.push(entry);
   }
   return merged;
+}
+
+export function restartContinuationBlocked(
+  projection: Pick<
+    ProjectionRuntimeRecoveryState,
+    "thread" | "runtimeRequests" | "providerTurns" | "turnItems"
+  >,
+  source: OrchestrationV2Run,
+  now: DateTime.Utc,
+  settled: boolean,
+): boolean {
+  const { thread } = projection;
+  if (
+    thread.archivedAt !== null ||
+    thread.deletedAt !== null ||
+    thread.settledOverride === "settled" ||
+    (thread.snoozedUntil != null && DateTime.isGreaterThan(thread.snoozedUntil, now))
+  )
+    return true;
+  const turn = latestProviderTurnForAttempt(projection.providerTurns, source.activeAttemptId);
+  if (
+    !settled &&
+    turn !== undefined &&
+    (turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted")
+  )
+    return true;
+  const waitingRequest = projection.runtimeRequests.some(
+    (request) =>
+      request.kind !== "dynamic_tool_call" &&
+      request.kind !== "auth_refresh" &&
+      request.responseCapability.type !== "message" &&
+      (request.status === "pending" ||
+        ((request.status === "expired" || request.status === "cancelled") &&
+          request.responseCapability.type === "not_resumable" &&
+          turn !== undefined &&
+          turn.id === request.providerTurnId)),
+  );
+  if (waitingRequest) return true;
+  return projection.turnItems.some(
+    (item) =>
+      item.type === "secret_request" &&
+      item.runId === source.id &&
+      (item.secretStatus === "pending" ||
+        (item.secretStatus === "cancelled" &&
+          item.completedAt !== null &&
+          source.completedAt !== null &&
+          DateTime.Equivalence(item.completedAt, source.completedAt))),
+  );
 }

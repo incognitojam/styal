@@ -84,8 +84,15 @@ provider's settings can override it:
 - **Before the cache expires (beta)** tries to compact an idle thread with at least
   200,000 tokens shortly before its prompt cache expires, while the history is still cached.
   The compaction appears in the thread as a `/compact` turn sent by styal.
-  If the window is missed, such as when you enable this mode after the cache has
-  expired or the server restarts before compaction runs, it falls back to
+  With **Continue threads after a server update** enabled, a restart that interrupts a
+  running compaction retries it once if the thread is still idle. This can happen after
+  the cache expires: the retry pays for a full read, but avoids that full read on your
+  next message. Each server start retries at most one interrupted idle compaction;
+  newer input, pending work, or a failed or interrupted retry prevents another attempt.
+  A notice beside the cancelled compaction explains when an automatic retry is skipped,
+  and you can still send `/compact` yourself.
+  If the window is missed before compaction starts, such as when you enable this mode
+  after the cache has expired or restart while its timer is waiting, it falls back to
   **When you return**. Switch the chip to **Keep** to keep the full history for that message.
 - **Never** skips idle compaction and Claude's resume prompt. **Auto-compact after**
   still applies, and you can still compact by hand.
