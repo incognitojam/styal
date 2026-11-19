@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Image } from "expo-image";
-import { createContext, useContext, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useState } from "react";
 import { fetch } from "expo/fetch";
 import { parse, SvgAst, type JsxAST } from "react-native-svg";
 import { Pressable, StyleSheet, View, type ViewStyle } from "react-native";
@@ -31,8 +31,14 @@ import {
 /** Use known feed width immediately; later image measurement would move already-positioned rows. */
 export const MarkdownImageAvailableWidthContext = createContext(0);
 
-/** In a thumbnail row: the frame fills its cell's height, fitting the image inside, so a row's frames line up. */
-export const MarkdownImageFillContext = createContext(false);
+/**
+ * In a thumbnail row: the image reports its size, and the frame takes the line's height (once
+ * known) and fills its cell, fitting the image inside, so a line's frames line up.
+ */
+export const MarkdownImageRowContext = createContext<{
+  readonly height: number | null;
+  readonly reportSize: (size: { readonly width: number; readonly height: number }) => void;
+} | null>(null);
 
 type ImageSize = { readonly width: number; readonly height: number };
 
@@ -111,7 +117,8 @@ export function ThreadMarkdownImageView(props: {
   const sourceIdentifier = useId();
   const mediaActions = useMediaActions(props.actionsSource);
   const contextWidth = useContext(MarkdownImageAvailableWidthContext);
-  const fill = useContext(MarkdownImageFillContext);
+  const row = useContext(MarkdownImageRowContext);
+  const fill = row !== null;
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const availableWidth =
     measuredWidth > 0 && contextWidth > 0
@@ -167,13 +174,27 @@ export function ThreadMarkdownImageView(props: {
         aspectRatio: ratio,
       }
     : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
-  const frameStyle: ViewStyle = fill
+  const frameStyle: ViewStyle = row
     ? {
         width: "100%",
         flexGrow: 1,
-        minHeight: displaySize?.height ?? (availableWidth > 0 ? (availableWidth * 9) / 16 : 0),
+        minHeight:
+          row.height ?? displaySize?.height ?? (availableWidth > 0 ? (availableWidth * 9) / 16 : 0),
       }
     : naturalFrameStyle;
+  const rowImageSize =
+    row && displaySize && row.height !== null && displaySize.height > row.height
+      ? { width: (displaySize.width * row.height) / displaySize.height, height: row.height }
+      : displaySize;
+  const reportRowSize = row?.reportSize;
+  const sourceWidth = sourceSize?.width;
+  const sourceHeight = sourceSize?.height;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the thumbnail row this image's size, which sets every tile's height on its line
+  useEffect(() => {
+    if (reportRowSize && sourceWidth && sourceHeight) {
+      reportRowSize({ width: sourceWidth, height: sourceHeight });
+    }
+  }, [reportRowSize, sourceWidth, sourceHeight]);
 
   return (
     <View
@@ -254,7 +275,7 @@ export function ThreadMarkdownImageView(props: {
                     key={props.sourceKey}
                     uri={props.uri}
                     cacheKey={props.cacheKey}
-                    size={fill ? displaySize : null}
+                    size={fill ? rowImageSize : null}
                     onLoad={(size) =>
                       // Only the first decode counts: later loads report the bitmap
                       // downsampled for the current frame (969 vs 970 wide), so keeping
