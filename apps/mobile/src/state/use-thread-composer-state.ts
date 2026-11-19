@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime";
 import {
   coordinatorReports,
+  reportAcceptsAnswer,
   formatReportAnswer,
   reportAnswers,
   type ReportReply,
@@ -272,15 +273,6 @@ export function useThreadComposerState(input: {
     reportSettings?.coordinatorReportsEnabled && reportReply?.threadKey === selectedThreadKey
       ? reportReply
       : null;
-  const reports = reportSettings?.coordinatorReportsEnabled
-    ? coordinatorReports(
-        (selectedThreadMessages ?? []).map((message) => ({
-          ...message,
-          createdAt: DateTime.formatIso(message.createdAt),
-        })),
-        selectedThreadProjection?.projection.thread.reportDismissals ?? [],
-      )
-    : [];
   const reportAnswerMessages = reportSettings?.coordinatorReportsEnabled
     ? reportAnswers(selectedThreadMessages ?? [])
     : undefined;
@@ -293,6 +285,26 @@ export function useThreadComposerState(input: {
       ? EMPTY_THREAD_SEQUENCE_ATOM
       : environmentThreadDetails.sequenceAtom(selectedThreadDetailRef),
   );
+  // Answers still in the outbox, or accepted but not yet in the thread, show their report as sending.
+  const pendingReportAnswers = [
+    ...selectedThreadQueuedMessages,
+    ...selectPendingAcknowledgedMessages(acknowledgedMessages, {
+      threadKey: selectedThreadKey,
+      queuedMessages: selectedThreadQueuedMessages,
+      sequence: selectedThreadSequence,
+      projectedMessages: selectedThreadMessages,
+    }),
+  ].flatMap(({ text, reportAnswer }) => (reportAnswer ? [{ text, reportAnswer }] : []));
+  const reports = reportSettings?.coordinatorReportsEnabled
+    ? coordinatorReports(
+        (selectedThreadMessages ?? []).map((message) => ({
+          ...message,
+          createdAt: DateTime.formatIso(message.createdAt),
+        })),
+        selectedThreadProjection?.projection.thread.reportDismissals ?? [],
+        pendingReportAnswers,
+      )
+    : [];
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prunes the app-wide acknowledged atom when the mounted thread catches up
   useEffect(() => {
     if (selectedThreadKey === null || acknowledgedMessages.length === 0) return;
@@ -641,6 +653,11 @@ export function useThreadComposerState(input: {
       : getComposerDraftSnapshot(threadKey);
     const reply = reportResponse?.reply ?? activeReportReply;
     if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
+    // The draft stays: an answer to this report version was already given or is on its way.
+    if (reply && !reportAcceptsAnswer(reports, reply.ref)) {
+      if (!reportResponse) setThreadComposerError(threadKey, "This report already has an answer.");
+      return null;
+    }
     const thread = selectedThreadShell;
     const text = draft.text.trim();
     const attachments = draft.attachments;

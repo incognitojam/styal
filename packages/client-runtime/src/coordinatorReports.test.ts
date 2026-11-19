@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorReports,
   formatReportAnswer,
+  reportAcceptsAnswer,
   reportAnswerDisplay,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
@@ -47,6 +48,34 @@ describe("coordinator reports", () => {
         [],
       ).map((x) => x.latest.report?.version),
     ).toEqual([3, 3, 3]);
+  });
+
+  it("shows an answer that has not reached the server as sending, until the real one arrives", () => {
+    const open = report("a", "pr:1", 1);
+    const pending = {
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, "Merge"),
+      reportAnswer: { messageId: "a", key: "pr:1", version: 1 },
+    };
+    const [sending] = coordinatorReports([open], [], [pending]);
+    expect(sending?.state).toBe("sending");
+    expect(sending?.pending).toBe(pending);
+    // An answer to another version leaves this one open.
+    expect(
+      coordinatorReports(
+        [open],
+        [],
+        [{ ...pending, reportAnswer: { ...pending.reportAnswer, version: 2 } }],
+      )[0]?.state,
+    ).toBe("open");
+    // A typed reply submitted while that answer is still on its way finds the report taken.
+    expect(
+      reportAcceptsAnswer(coordinatorReports([open], [], [pending]), pending.reportAnswer),
+    ).toBe(false);
+    expect(reportAcceptsAnswer(coordinatorReports([open], []), pending.reportAnswer)).toBe(true);
+    // A report this client hasn't loaded is left to the server.
+    expect(reportAcceptsAnswer([], pending.reportAnswer)).toBe(true);
+    const answered = { id: "reply", role: "user", ...pending };
+    expect(coordinatorReports([open, answered], [], [pending])[0]?.state).toBe("answered");
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {

@@ -1,5 +1,5 @@
 import Animated from "react-native-reanimated";
-import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import type {
   ChatAttachment,
@@ -11,6 +11,7 @@ import type {
 import {
   coordinatorReports,
   reportAnswerDisplay,
+  splitReportAnswer,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -63,18 +64,28 @@ export function CoordinatorReportMessage({
   const [expanded, setExpanded] = useState(false);
   // Opening a reply chip or waiting row for an older version shows it, not its folded line.
   if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
-  const [sending, setSending] = useState(false);
+  // What was tapped, shown at once until the outbox or the server takes over.
+  const [sending, setSending] = useState<
+    { readonly answer: string } | { readonly dismiss: true } | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
+  // A second tap before the re-render that disables the buttons must not send again.
+  const inFlight = useRef(false);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
   const reply = { ref: { messageId: id, key: tag.key, version: tag.version }, title: tag.title };
-  const run = (action: () => Promise<void>) => {
-    setSending(true);
+  const run = (action: () => Promise<void>, choice: NonNullable<typeof sending>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSending(choice);
     setError(null);
     void action()
       .catch(() => setError("Could not save your response. Try again."))
-      .finally(() => setSending(false));
+      .finally(() => {
+        inFlight.current = false;
+        setSending(null);
+      });
   };
   if (report.state === "replaced" && !expanded)
     return (
@@ -102,33 +113,27 @@ export function CoordinatorReportMessage({
       {report.state === "open" ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
-          {tag.answers?.map((answer, index) => (
-            <Pressable
-              key={answer}
-              accessibilityRole="button"
-              accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.send(answer, reply))}
-              className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
-            >
-              <Text className="flex-1 text-foreground">{answer}</Text>
-              {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
-            </Pressable>
-          ))}
+          <ReportAnswerOptions
+            answers={tag.answers ?? []}
+            chosen={sending && "answer" in sending ? sending.answer : null}
+            status="Sending…"
+            disabled={!ctx.canOperate || sending !== null}
+            onPick={(answer) => run(() => ctx.send(answer, reply), { answer })}
+          />
           <View className="flex-row justify-between">
             <Button
               label="Reply…"
               size="compact"
               tone="text"
-              disabled={!ctx.canOperate || sending}
+              disabled={!ctx.canOperate || sending !== null}
               onPress={() => ctx.reply(reply)}
             />
             <Button
-              label="Dismiss"
+              label={sending && "dismiss" in sending ? "Dismissing…" : "Dismiss"}
               size="compact"
               tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.dismiss(reply))}
+              disabled={!ctx.canOperate || sending !== null}
+              onPress={() => run(() => ctx.dismiss(reply), { dismiss: true })}
             />
           </View>
           {error ? (
@@ -137,6 +142,12 @@ export function CoordinatorReportMessage({
             </Text>
           ) : null}
         </View>
+      ) : report.state === "sending" && report.pending ? (
+        <SendingAnswer
+          question={tag.question}
+          answers={tag.answers ?? []}
+          text={splitReportAnswer(report.pending.text, tag) ?? report.pending.text}
+        />
       ) : report.state === "answered" && report.answer ? (
         <AnsweredReport
           answer={report.answer}
@@ -148,6 +159,75 @@ export function CoordinatorReportMessage({
           Dismissed. The agent hears it on its next turn.
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/** A report's answers, the first one recommended; `chosen` marks the one being sent. */
+function ReportAnswerOptions(props: {
+  readonly answers: readonly string[];
+  readonly chosen: string | null;
+  readonly status: string;
+  readonly disabled: boolean;
+  readonly onPick: (answer: string) => void;
+}) {
+  return props.answers.map((answer, index) => {
+    const chosen = props.chosen === answer;
+    return (
+      <Pressable
+        key={answer}
+        accessibilityRole="button"
+        accessibilityLabel={
+          chosen ? `${answer}, ${props.status}` : index === 0 ? `${answer}, recommended` : answer
+        }
+        accessibilityState={{ disabled: props.disabled, selected: chosen }}
+        disabled={props.disabled}
+        onPress={() => props.onPick(answer)}
+        className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 ${
+          chosen
+            ? "border-primary bg-primary/10"
+            : props.chosen !== null
+              ? "border-border opacity-40"
+              : index === 0
+                ? "border-primary bg-primary/10 disabled:opacity-50"
+                : "border-border disabled:opacity-50"
+        }`}
+      >
+        <Text className="flex-1 text-foreground">{answer}</Text>
+        {chosen ? (
+          <Text className="text-xs font-t3-medium text-primary-text">{props.status}</Text>
+        ) : index === 0 && props.chosen === null ? (
+          <Text className="text-xs text-primary-text">Recommended</Text>
+        ) : null}
+      </Pressable>
+    );
+  });
+}
+
+/** An answer this phone sent that the thread hasn't recorded yet; nothing here can send another. */
+function SendingAnswer(props: {
+  readonly question: string | undefined;
+  readonly answers: readonly string[];
+  readonly text: string;
+}) {
+  const picked = props.answers.includes(props.text);
+  return (
+    <View className="gap-2 rounded-xl bg-secondary p-3">
+      <Text className="font-t3-medium text-foreground">{props.question}</Text>
+      {picked ? (
+        <ReportAnswerOptions
+          answers={props.answers}
+          chosen={props.text}
+          status="Sending…"
+          disabled
+          onPick={() => undefined}
+        />
+      ) : (
+        <Text className="text-foreground" numberOfLines={3}>
+          {props.text}
+        </Text>
+      )}
+      <Text className="text-foreground-secondary">Sending your answer…</Text>
     </View>
   );
 }
