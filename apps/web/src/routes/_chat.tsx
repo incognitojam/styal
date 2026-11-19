@@ -1,19 +1,15 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { Outlet, createFileRoute, redirect, useMatches } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useMatches, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ThreadRouteView } from "../components/ThreadRouteView";
+import { ProjectPage } from "../components/project/ProjectPage";
+import { nextBackgroundView, resolveMainView } from "../components/sidebar/appModalBackground";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { SidebarInset } from "../components/ui/sidebar";
-import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoutes";
+import { resolveThreadRouteTarget } from "../threadRoutes";
 import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-
-function threadRouteTargetKey(target: ThreadRouteTarget | null) {
-  if (!target) return null;
-  return target.kind === "server" ? scopedThreadKey(target.threadRef) : target.draftId;
-}
 
 function ChatRouteLayout() {
   // Render both routes here so draft promotion keeps the same ChatView mounted.
@@ -22,19 +18,23 @@ function ChatRouteLayout() {
   const modalOpen = useMatches({
     select: (matches) => matches.some((match) => isAppModalPage(match.pathname)),
   });
-  // Settings and Usage render over the thread that opened them, so ChatView never remounts.
-  const [backgroundTarget, setBackgroundTarget] = useState(threadTarget);
-  if (!modalOpen && threadRouteTargetKey(backgroundTarget) !== threadRouteTargetKey(threadTarget)) {
-    setBackgroundTarget(threadTarget);
-  }
-  const shownTarget = modalOpen ? backgroundTarget : threadTarget;
+  const projectKey = useParams({ strict: false, select: (params) => params.projectKey ?? null });
+  const current = resolveMainView(threadTarget, projectKey);
+  // Settings and Usage render over the thread or project page that opened them, so its
+  // ChatView never remounts.
+  const [background, setBackground] = useState(current);
+  const nextBackground = nextBackgroundView(background, current, modalOpen);
+  if (nextBackground !== background) setBackground(nextBackground);
+  const shown = modalOpen ? nextBackground : current;
   return (
     <>
-      {shownTarget?.kind === "server" && !modalOpen ? (
-        <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
+      {shown?.kind === "thread" && shown.target.kind === "server" && !modalOpen ? (
+        <ThreadLinkPrompt threadRef={shown.target.threadRef} />
       ) : null}
-      {shownTarget ? (
-        <ThreadRouteView target={shownTarget} background={modalOpen} />
+      {shown?.kind === "thread" ? (
+        <ThreadRouteView target={shown.target} background={modalOpen} />
+      ) : shown?.kind === "project" ? (
+        <ProjectPage projectKey={shown.projectKey} background={modalOpen} />
       ) : modalOpen ? (
         <SidebarInset className="h-dvh" />
       ) : (
