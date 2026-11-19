@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/pull-request-markdown";
 import { markdownTaskMarkerOffset } from "@t3tools/shared/markdownTaskList";
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { PixelRatio, View } from "react-native";
 import { useProject } from "../../state/entities";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import {
@@ -31,7 +31,9 @@ import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { markdownImageDimensions } from "../../lib/markdownDocument";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { FilePreviewGallery, useFilePreviewGallery } from "../../components/ui/FilePreviewGallery";
-import { pullRequestImageSource } from "./pullRequestMediaSource";
+import { pullRequestImageSource, pullRequestMediaSource } from "./pullRequestMediaSource";
+import { refreshAssetUrl } from "../../state/assets";
+import { pullRequestImageWidth } from "@t3tools/client-runtime/pull-request-image-preview";
 import {
   FilePreviewModal,
   type FilePreviewSource,
@@ -272,8 +274,34 @@ function PullRequestMarkdownContent(props: {
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
         renderImage={renderImage}
-        // React image slots own loading; suppress the native markdown image requests.
-        resolveImageSource={() => ({ uri: "" })}
+        resolveImageSource={async (image) => {
+          // React image slots load standalone images once they scroll into view.
+          if (image.standalone) return { uri: "" };
+          const url = resolveMediaUrl(image.href);
+          const source = pullRequestMediaSource(url, mediaContext);
+          if (!source.resource) {
+            // Forge media is fetched with the server's credentials once the project is known, and
+            // a root-relative attachment resolves once the pull request's URL is.
+            if (sourceControlClients.mediaUrl(url)?.fetchUrl || /^\/(?!\/)/.test(url)) {
+              throw new Error("Pull request media location is not known yet");
+            }
+            return /^https?:\/\//i.test(url) ? { uri: url } : null;
+          }
+          const uri = await refreshAssetUrl(
+            source.environmentId,
+            /\.(?:gif|svg)(?:[?#]|$)/i.test(url)
+              ? source.resource
+              : // A table image column is at most 300 dp wide.
+                {
+                  ...source.resource,
+                  imagePreview: { width: pullRequestImageWidth(300, PixelRatio.get()) },
+                },
+            undefined,
+            false,
+          );
+          if (uri === null) throw new Error("Pull request image is unavailable");
+          return { uri };
+        }}
         onImagePress={(href) =>
           setPreview(pullRequestImageSource(resolveMediaUrl(href), mediaContext))
         }
