@@ -1,3 +1,4 @@
+// @effect-diagnostics globalConsoleInEffect:off -- Experiment observations must reach Actions logs; the test logger captures Effect logs.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Windows probe synchronizes with a FileShare.None lock holder.
 import * as NodeChildProcess from "node:child_process";
 import { expect, it } from "@effect/vitest";
@@ -75,10 +76,10 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
         Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
       );
       const inspected = yield* deletion.inspect(target, ["node_modules"]).pipe(Effect.result);
-      yield* Effect.logWarning("EXPERIMENT", mode, "inspect", inspected);
+      console.log("EXPERIMENT", mode, "inspect", inspected);
       if (inspected._tag === "Success") {
         for (const entry of inspected.success) {
-          yield* Effect.logWarning(
+          console.log(
             "EXPERIMENT",
             mode,
             "remove",
@@ -86,13 +87,13 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
           );
         }
       }
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "explicit-remove",
         yield* deletion.remove(target, `${target}/node_modules`).pipe(Effect.result),
       );
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "allocation",
@@ -103,35 +104,47 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
       );
       expect(yield* f.fs.readFileString(`${outside}/sentinel`)).toBe("untouched");
       const native = yield* Effect.promise(() => physical.realpath(f.worktree));
-      yield* Effect.logWarning("EXPERIMENT", mode, "paths", {
+      console.log("EXPERIMENT", mode, "paths", {
         mixed: f.worktree,
         native,
         git: (yield* f.command(f.worktree, ["rev-parse", "--show-toplevel"])).stdout,
       });
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "native-inspect",
         yield* deletion.inspect(native, ["node_modules"]).pipe(Effect.result),
       );
+      if (mode === "longpath" || mode === "junction" || mode === "readonly" || mode === "locked") {
+        console.log(
+          "EXPERIMENT",
+          mode,
+          "raw-node-rm",
+          yield* Effect.tryPromise({
+            try: () => physical.rm(`${f.worktree}/node_modules`, { recursive: true, force: true }),
+            catch: (error) => String(error),
+          }).pipe(Effect.result),
+        );
+        expect(yield* f.fs.readFileString(`${outside}/sentinel`)).toBe("untouched");
+      }
       const checkout = yield* makeCheckout.pipe(
         Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
       );
       const released = yield* checkout.release(target, f.root).pipe(Effect.result);
-      yield* Effect.logWarning("EXPERIMENT", mode, "release", released);
-      yield* Effect.logWarning(
+      console.log("EXPERIMENT", mode, "release", released);
+      console.log(
         "EXPERIMENT",
         mode,
         "native-release",
         yield* checkout.release(native, f.root).pipe(Effect.result),
       );
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "source-present-after-release",
         yield* f.fs.exists(`${f.worktree}/src/source.txt`),
       );
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "worktreeConfig",
@@ -142,7 +155,7 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
           allowNonZeroExit: true,
         })).stdout,
       );
-      yield* Effect.logWarning(
+      console.log(
         "EXPERIMENT",
         mode,
         "restore",
@@ -157,14 +170,14 @@ it.effect.each(["default", "autocrlf", "readonly", "longpath", "case", "junction
           args: ["sparse-checkout", "set", "--no-cone", "--stdin"],
           stdin: "/*\n!/*/\n",
         });
-        yield* Effect.logWarning(
+        console.log(
           "EXPERIMENT",
           mode,
           "direct-git-source-present",
           yield* f.fs.exists(`${f.worktree}/src/source.txt`),
         );
         yield* f.command(f.worktree, ["sparse-checkout", "disable"]);
-        yield* Effect.logWarning(
+        console.log(
           "EXPERIMENT",
           mode,
           "direct-git-status-after-restore",

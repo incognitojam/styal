@@ -43,11 +43,7 @@ jobs:
         id: lift
         if: always() && steps.deps.outcome == 'success'
         run: node apps/server/scripts/windows-cleanup-experiment.mjs
-      - name: B - existing real repository suites with guards lifted
+      - name: B - hazard diagnostics (broad suites recorded in runs 2 and 3)
         if: always() && steps.lift.outcome == 'success'
         working-directory: apps/server
-        run: vp test run src/worktreeCleanup src/vcs/VcsStatusBroadcaster.test.ts --exclude "**/WindowsExperiment.test.ts" -t "^(?!.*windows)" --reporter=verbose
-      - name: B - git action restore suites
-        if: always() && steps.lift.outcome == 'success'
-        working-directory: apps/server
-        run: vp test run src/git/GitWorkflowService.test.ts -t "restores source before committing" --reporter=verbose
+        run: vp test run src/worktreeCleanup/WindowsHazards.test.ts --reporter=verbose
