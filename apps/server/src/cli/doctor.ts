@@ -39,6 +39,8 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
 ) {
   const maintenance = yield* DatabaseMaintenance.DatabaseMaintenance;
   const status = yield* maintenance.inspect(databasePath);
+  if (status.pruningRecoveryWarning !== undefined)
+    yield* Console.log(`Warning: ${status.pruningRecoveryWarning}`);
   yield* Console.log(
     `Database: ${formatBytes(status.databaseBytes)}, ${formatBytes(status.reclaimableBytes)} reclaimable.`,
   );

@@ -17,7 +17,9 @@ import * as Safety from "./preEventPruneSafety.ts";
 import { vi } from "vite-plus/test";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import * as Copies from "./databaseFileCopy.ts";
+import * as Inspection from "./startupDatabaseInspection.ts";
 import * as Statement from "effect/sql/Statement";
 import * as Maintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -27,6 +29,9 @@ import {
   SERVICE_LAUNCHER_PROTOCOL,
 } from "../cloud/serviceProtocol.ts";
 import packageJson from "../../package.json" with { type: "json" };
+import type { ServerStartupCopyProgress } from "@t3tools/contracts";
+
+vi.mock("node:fs/promises", { spy: true });
 
 const pruningEnabled = ConfigProvider.layer(
   ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
@@ -35,7 +40,9 @@ const pruningEnabled = ConfigProvider.layer(
 it.effect("requires a safety copy and retains it until seven days after deletion completes", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(`${import.meta.dirname}/../../../../.scratch`, { recursive: true });
     const root = yield* fs.makeTempDirectoryScoped({
+      directory: `${import.meta.dirname}/../../../../.scratch`,
       prefix: "pruning-safety-",
     });
     const database = `${root}/statev2.sqlite`;
@@ -121,7 +128,9 @@ it.effect("requires a safety copy and retains it until seven days after deletion
 
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  yield* fs.makeDirectory(`${import.meta.dirname}/../../../../.scratch`, { recursive: true });
   const root = yield* fs.makeTempDirectoryScoped({
+    directory: `${import.meta.dirname}/../../../../.scratch`,
     prefix: "pruning-review-",
   });
   const database = `${root}/statev2.sqlite`;
@@ -148,10 +157,53 @@ it.effect.each([
   "started",
   "completed",
   "restored",
-] as const)("upgrades a legacy manifest with %s history without disabling valid pruning", (state) =>
+  "already-pruned-restore",
+] as const)("adopts only identifiable legacy copies with %s history", (state) =>
   Effect.gen(function* () {
     const { fs, database, backup } = yield* fixture;
     using clone = stoppedFileClone();
+    if (state === "already-pruned-restore") {
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO orchestration_events (event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES
+          ('legacy-restored:old','project','legacy-restored:project',1,'project.updated','1969-01-01','server','{}','{}',2),
+          ('legacy-restored:head','project','legacy-restored:project',2,'project.updated','1969-01-01','server','{}','{}',2)`;
+        yield* sql`INSERT OR REPLACE INTO orchestration_v2_projection_metadata (projection_name,schema_version,last_sequence,updated_at) VALUES
+          ('event-log-pruned-through',1,1,'1969-01-01'),('thread-projections',1,2,'1969-01-01'),('event-log-prune-mark',1,2,'1969-01-01')`;
+        yield* Safety.prepare();
+        yield* Safety.deletePassStarted();
+        yield* sql`DELETE FROM orchestration_events WHERE event_id='legacy-restored:old'`;
+        yield* sql`UPDATE orchestration_v2_projection_metadata SET last_sequence=2 WHERE projection_name='event-log-pruned-through'`;
+        yield* Safety.deletePassFinished();
+        const manifest = JSON.parse(yield* fs.readFileString(`${backup}/manifest.json`));
+        delete manifest.copyId;
+        yield* fs.writeFileString(`${backup}/manifest.json`, JSON.stringify(manifest));
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+      yield* Effect.promise(() => NodeFSP.copyFile(`${backup}/statev2.sqlite`, database));
+      for (const suffix of ["-wal", "-shm"])
+        yield* Effect.promise(() => NodeFSP.rm(`${database}${suffix}`, { force: true }));
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* Safety.prepare();
+        assert.isFalse(yield* Safety.canPrune());
+        const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
+        assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+        assert.deepEqual(yield* sql`SELECT event_id FROM orchestration_events ORDER BY sequence`, [
+          { event_id: "legacy-restored:old" },
+          { event_id: "legacy-restored:head" },
+        ]);
+        yield* TestClock.adjust("8 days");
+        assert.isFalse(yield* Safety.canPrune());
+        assert.isTrue(yield* fs.exists(`${backup}/statev2.sqlite`));
+      }).pipe(
+        Effect.provide(
+          Maintenance.layer.pipe(
+            Layer.provideMerge(NodeSqliteClient.layer({ filename: database })),
+          ),
+        ),
+      );
+      return;
+    }
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* Safety.prepare();
@@ -176,7 +228,7 @@ it.effect.each([
         yield* fs.remove(`${backup}/manifest.json.staging`, { recursive: true });
       }
       yield* Safety.prepare();
-      assert.equal(yield* Safety.canPrune(), state !== "restored");
+      assert.equal(yield* Safety.canPrune(), unpruned);
       const manifest = JSON.parse(yield* fs.readFileString(`${backup}/manifest.json`));
       if (unpruned) {
         assert.isString(manifest.copyId);
@@ -187,11 +239,11 @@ it.effect.each([
       } else assert.isUndefined(manifest.copyId);
       assert.deepEqual(yield* fs.readFile(`${backup}/statev2.sqlite`), originalCopy);
       yield* Safety.prepare();
-      assert.equal(yield* Safety.canPrune(), state !== "restored");
+      assert.equal(yield* Safety.canPrune(), unpruned);
       assert.equal(clone.mock.calls.length, 1);
       yield* TestClock.adjust("8 days");
-      assert.equal(yield* Safety.canPrune(), state !== "restored");
-      assert.equal(yield* fs.exists(`${backup}/statev2.sqlite`), state !== "completed");
+      assert.equal(yield* Safety.canPrune(), unpruned);
+      assert.isTrue(yield* fs.exists(`${backup}/statev2.sqlite`));
       if (state === "unpruned") {
         yield* sql`INSERT INTO orchestration_events (event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES
             ('legacy-upgrade:old','project','legacy-upgrade:project',1,'project.updated','2020-01-01','server','{}','{}',2),
@@ -284,7 +336,20 @@ it.effect.each(["manifest", "copy"] as const)(
         const before =
           yield* sql`SELECT updated_at FROM orchestration_v2_projection_metadata WHERE projection_name='pre-event-prune-copy'`;
         assert.lengthOf(before, 1);
-        assert.isFalse(yield* Safety.canPrune());
+        const warnings: unknown[] = [];
+        assert.isFalse(
+          yield* Safety.canPrune().pipe(
+            Effect.provide(
+              Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
+                mergeWithExisting: false,
+              }),
+            ),
+          ),
+        );
+        if (publication === "copy") {
+          assert.include(JSON.stringify(warnings), "next startup");
+          assert.notInclude(JSON.stringify(warnings), "remove backups/pre-event-prune/");
+        }
         yield* Safety.prepare();
         assert.isTrue(yield* Safety.canPrune());
         assert.isTrue(yield* fs.exists(`${backup}/statev2.sqlite`));
@@ -341,6 +406,38 @@ it.effect("disabled pruning makes no copy, disk check, progress report or metada
       Layer.mergeAll(NodeServices.layer, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
     ),
   ),
+);
+
+it.effect("disabled startup removes interrupted staging but preserves recovery files", () =>
+  Effect.gen(function* () {
+    const { fs, database, backup } = yield* fixture;
+    yield* Effect.gen(function* () {
+      using clone = stoppedFileClone();
+      yield* Safety.prepare();
+      const copy = yield* fs.readFile(`${backup}/statev2.sqlite`);
+      const manifest = yield* fs.readFileString(`${backup}/manifest.json`);
+      yield* fs.writeFile(`${backup}/statev2.sqlite.staging`, copy);
+      yield* fs.writeFileString(`${backup}/manifest.json.staging`, "synthetic unfinished manifest");
+      yield* fs.writeFileString(`${backup}/statev2.sqlite.previous`, "synthetic previous copy");
+      const sql = yield* SqlClient.SqlClient;
+      const metadata = yield* sql`SELECT * FROM orchestration_v2_projection_metadata`;
+      yield* Safety.prepare().pipe(
+        Effect.provide(
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "0" } })),
+        ),
+      );
+      assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.staging`));
+      assert.isFalse(yield* fs.exists(`${backup}/manifest.json.staging`));
+      assert.deepEqual(yield* fs.readFile(`${backup}/statev2.sqlite`), copy);
+      assert.equal(yield* fs.readFileString(`${backup}/manifest.json`), manifest);
+      assert.equal(
+        yield* fs.readFileString(`${backup}/statev2.sqlite.previous`),
+        "synthetic previous copy",
+      );
+      assert.deepEqual(yield* sql`SELECT * FROM orchestration_v2_projection_metadata`, metadata);
+      assert.equal(clone.mock.calls.length, 1);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
 it.effect("ordinary SQLite callers do not prepare a pruning copy", () =>
@@ -482,7 +579,18 @@ it.effect("removes a killed attempt's staging file before the next clone", () =>
     yield* fs.writeFileString(`${backup}/statev2.sqlite.staging-journal`, "stale journal");
     yield* Effect.gen(function* () {
       using _clone = stoppedFileClone();
-      yield* Safety.prepare();
+      const progress: Array<ServerStartupCopyProgress | null> = [];
+      yield* Safety.prepare().pipe(
+        Effect.provideService(Safety.Progress, (value) =>
+          Effect.sync(() => {
+            progress.push(value);
+          }),
+        ),
+      );
+      assert.deepEqual(
+        progress.map((value) => value?.copiedBytes ?? null),
+        [0, 0, Number((yield* fs.stat(database)).size), null],
+      );
       assert.isTrue(yield* fs.exists(`${backup}/manifest.json`));
       assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.staging`));
       assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.staging-journal`));
@@ -588,36 +696,54 @@ it.effect("a stalled copy records a seven-day retry delay without authorizing pr
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
-it.effect("quitting removes staging and permits an immediate retry", () =>
-  Effect.gen(function* () {
-    const { fs, database, backup } = yield* fixture;
-    yield* Effect.gen(function* () {
-      const started = yield* Deferred.make<void>();
-      const options: Safety.PreparationOptions = {
-        clone: async () => false,
-        stream: (_source, destination) =>
-          Effect.gen(function* () {
-            yield* fs.writeFileString(destination, "incomplete synthetic copy").pipe(Effect.orDie);
-            yield* Deferred.succeed(started, undefined);
-            return yield* Effect.never;
-          }),
-      };
-      const first = yield* Safety.prepare().pipe(
-        Effect.provideService(Safety.Preparation, options),
-        Effect.forkChild,
-      );
-      yield* Deferred.await(started);
-      yield* Fiber.interrupt(first);
-      assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.staging`));
-      assert.isFalse(yield* fs.exists(`${backup}/manifest.json`));
-      assert.isFalse(yield* fs.exists(`${backup}/last-attempt.json`));
-      assert.isFalse(yield* Safety.canPrune());
-      yield* Safety.prepare().pipe(
-        Effect.provideService(Safety.Preparation, { clone: async () => false }),
-      );
-      assert.isTrue(yield* Safety.canPrune());
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
-  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+it.effect.each(["clone", "stream"] as const)(
+  "quitting during %s clears progress and permits an immediate retry",
+  (phase) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const started = Promise.withResolvers<void>();
+        const progress: Array<ServerStartupCopyProgress | null> = [];
+        const options: Safety.PreparationOptions = {
+          clone:
+            phase === "clone"
+              ? async (_source, destination) => {
+                  await NodeFSP.writeFile(destination, "incomplete synthetic clone");
+                  started.resolve();
+                  return new Promise<never>(() => {});
+                }
+              : async () => false,
+          stream: (_source, destination) =>
+            Effect.gen(function* () {
+              yield* fs
+                .writeFileString(destination, "incomplete synthetic copy")
+                .pipe(Effect.orDie);
+              yield* Effect.sync(() => started.resolve());
+              return yield* Effect.never;
+            }),
+        };
+        const first = yield* Safety.prepare().pipe(
+          Effect.provideService(Safety.Preparation, options),
+          Effect.provideService(Safety.Progress, (value) =>
+            Effect.sync(() => {
+              progress.push(value);
+            }),
+          ),
+          Effect.forkChild,
+        );
+        yield* Effect.promise(() => started.promise);
+        yield* Fiber.interrupt(first);
+        assert.equal(progress.at(-1), null);
+        assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.staging`));
+        assert.isFalse(yield* fs.exists(`${backup}/manifest.json`));
+        assert.isFalse(yield* fs.exists(`${backup}/last-attempt.json`));
+        assert.isFalse(yield* Safety.canPrune());
+        yield* Safety.prepare().pipe(
+          Effect.provideService(Safety.Preparation, { clone: async () => false }),
+        );
+        assert.isTrue(yield* Safety.canPrune());
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
 it.effect("low space and ENOSPC leave pruning disabled and retry on the next start", () =>
@@ -758,45 +884,68 @@ it.effect("commits the delete marker durably before publishing delete-start", ()
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
-it.effect("warns when a retained manifest has lost its copy", () =>
-  Effect.gen(function* () {
-    const { fs, database, backup } = yield* fixture;
-    const warnings: unknown[] = [];
-    yield* Effect.gen(function* () {
-      using _clone = stoppedFileClone();
-      yield* Safety.prepare();
-      yield* Safety.deletePassStarted();
-      yield* fs.remove(`${backup}/statev2.sqlite`);
-      assert.isFalse(yield* Safety.canPrune());
-      assert.include(JSON.stringify(warnings), "Recovery copy is missing");
-      warnings.length = 0;
-      yield* Safety.prepare();
-      assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite`));
-    }).pipe(
-      Effect.provide(
-        Layer.merge(
-          NodeSqliteClient.layer({ filename: database }),
-          Logger.layer(
-            [
-              Logger.make(({ message, logLevel }) => {
-                if (logLevel === "Warn") warnings.push(message);
-              }),
-            ],
-            { mergeWithExisting: false },
+it.effect.each(["current", "legacy"] as const)(
+  "warns when a retained %s manifest has lost its copy",
+  (format) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      const warnings: unknown[] = [];
+      yield* Effect.gen(function* () {
+        using _clone = stoppedFileClone();
+        yield* Safety.prepare();
+        yield* Safety.deletePassStarted();
+        if (format === "legacy") {
+          const manifest = JSON.parse(yield* fs.readFileString(`${backup}/manifest.json`));
+          delete manifest.copyId;
+          delete manifest.firstDeleteStartedAt;
+          yield* fs.writeFileString(`${backup}/manifest.json`, JSON.stringify(manifest));
+        }
+        yield* fs.remove(`${backup}/statev2.sqlite`);
+        assert.isFalse(yield* Safety.canPrune());
+        assert.include(
+          JSON.stringify(warnings),
+          format === "legacy"
+            ? "Legacy recovery copy identity cannot be verified"
+            : "Recovery copy is missing",
+        );
+        warnings.length = 0;
+        yield* Safety.prepare();
+        assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite`));
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            NodeSqliteClient.layer({ filename: database }),
+            Logger.layer(
+              [
+                Logger.make(({ message, logLevel }) => {
+                  if (logLevel === "Warn") warnings.push(message);
+                }),
+              ],
+              { mergeWithExisting: false },
+            ),
           ),
         ),
-      ),
-    );
-    assert.include(JSON.stringify(warnings), "Recovery copy is missing");
-  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+      );
+      assert.include(
+        JSON.stringify(warnings),
+        format === "legacy"
+          ? "Legacy recovery copy identity cannot be verified"
+          : "Recovery copy is missing",
+      );
+      assert.include(
+        JSON.stringify(warnings),
+        format === "legacy" ? "move backups/pre-event-prune/" : "remove backups/pre-event-prune/",
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );
 
 it.effect.each(["inspection", "clone", "verification"] as const)(
-  "names %s timeouts and retries at the next startup without a give-up record",
+  "applies the retry policy after a %s timeout",
   (phase) =>
     Effect.gen(function* () {
       const { fs, database, backup } = yield* fixture;
       const warnings: unknown[] = [];
+      const progress: Array<ServerStartupCopyProgress | null> = [];
       const started = Promise.withResolvers<void>();
       const pending = () => {
         started.resolve();
@@ -808,37 +957,53 @@ it.effect.each(["inspection", "clone", "verification"] as const)(
           yield* sql`INSERT INTO orchestration_v2_projection_metadata (projection_name,schema_version,last_sequence,updated_at) VALUES ('pre-event-prune-generation',1,0,'synthetic-verification')`;
           yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
         }
+        using _inspection = vi.spyOn(Inspection, "inspect");
+        if (phase === "verification")
+          _inspection.mockImplementation((_database, checkpoint) =>
+            checkpoint
+              ? Promise.resolve({ eventCount: 0, eventHead: 0, threadCount: 0 })
+              : pending(),
+          );
+        else if (phase === "inspection") _inspection.mockImplementation(pending);
         const first = yield* Safety.prepare().pipe(
           Effect.provideService(
             Safety.Preparation,
-            phase === "verification"
-              ? {
-                  clone: async () => false,
-                  inspect: (_database, checkpoint) =>
-                    checkpoint
-                      ? Promise.resolve({ eventCount: 0, eventHead: 0, threadCount: 0 })
-                      : pending(),
-                }
-              : phase === "inspection"
-                ? { inspect: pending }
-                : { clone: pending },
+            phase === "clone" ? { clone: pending } : { clone: async () => false },
+          ),
+          Effect.provideService(Safety.Progress, (value) =>
+            Effect.sync(() => {
+              progress.push(value);
+            }),
           ),
           Effect.forkChild,
         );
         yield* Effect.promise(() => started.promise);
+        assert.deepInclude(progress.at(-1), {
+          phase: "copying",
+          copiedBytes: phase === "verification" ? Number((yield* fs.stat(database)).size) : 0,
+          leaseMs: 60000,
+        });
+        const reports = progress.length;
         yield* TestClock.adjust(phase === "clone" ? "119 seconds" : "59 seconds");
         assert.isUndefined(first.pollUnsafe());
+        assert.equal(progress.length, reports);
         yield* TestClock.adjust("1 second");
         yield* Fiber.join(first);
+        assert.equal(progress.at(-1), null);
         assert.include(
           JSON.stringify(warnings),
           phase === "clone"
             ? "clone and verification exceeded 120 seconds"
             : "inspection exceeded the 60-second startup budget",
         );
-        assert.isFalse(yield* fs.exists(`${backup}/last-attempt.json`));
+        assert.isTrue(yield* fs.exists(`${backup}/last-attempt.json`));
         assert.isFalse(yield* Safety.canPrune());
+        _inspection.mockRestore();
         using clone = stoppedFileClone();
+        yield* Safety.prepare();
+        assert.equal(clone.mock.calls.length, 0);
+        assert.include(JSON.stringify(warnings), "at least seven days");
+        yield* TestClock.adjust("7 days");
         yield* Safety.prepare();
         assert.equal(clone.mock.calls.length, 1);
         assert.isTrue(yield* Safety.canPrune());
@@ -858,4 +1023,233 @@ it.effect.each(["inspection", "clone", "verification"] as const)(
         ),
       );
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect.each(["size", "unreadable"] as const)(
+  "verification failure (%s) after streaming delays another full copy for seven days",
+  (failure) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      yield* Effect.gen(function* () {
+        let copies = 0;
+        const options: Safety.PreparationOptions = {
+          clone: async () => false,
+          stream: (source, target) =>
+            Effect.promise(async () => {
+              copies++;
+              await NodeFSP.copyFile(source, target);
+              if (failure === "size") await NodeFSP.appendFile(target, new Uint8Array(4096));
+              else {
+                const file = await NodeFSP.open(target, "r+");
+                try {
+                  await file.write(new Uint8Array(100), 0, 100, 0);
+                } finally {
+                  await file.close();
+                }
+              }
+              return undefined;
+            }),
+        };
+        yield* Safety.prepare().pipe(Effect.provideService(Safety.Preparation, options));
+        assert.isFalse(yield* Safety.canPrune());
+        assert.isTrue(yield* fs.exists(`${backup}/last-attempt.json`));
+        yield* Safety.prepare().pipe(Effect.provideService(Safety.Preparation, options));
+        assert.equal(copies, 1);
+        yield* TestClock.adjust("7 days");
+        yield* Safety.prepare().pipe(
+          Effect.provideService(Safety.Preparation, { clone: async () => false }),
+        );
+        assert.isTrue(yield* Safety.canPrune());
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect.each(["current", "legacy"] as const)(
+  "retries an unpublished %s copy without telling the user to remove its directory",
+  (format) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      const warnings: unknown[] = [];
+      yield* Effect.gen(function* () {
+        using _clone = stoppedFileClone();
+        yield* Safety.prepare();
+        if (format === "legacy") {
+          const manifest = JSON.parse(yield* fs.readFileString(`${backup}/manifest.json`));
+          delete manifest.copyId;
+          yield* fs.writeFileString(`${backup}/manifest.json`, JSON.stringify(manifest));
+        }
+        yield* fs.remove(`${backup}/statev2.sqlite`);
+        yield* Safety.prepare().pipe(
+          Effect.provide(
+            Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+        );
+        assert.isTrue(yield* Safety.canPrune());
+        assert.notInclude(JSON.stringify(warnings), "remove backups/pre-event-prune/");
+        assert.notInclude(JSON.stringify(warnings), "history pruning is disabled");
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect.each(["present", "expired"] as const)(
+  "retries removal of an unused previous copy with its %s recovery copy",
+  (state) =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      const warnings: unknown[] = [];
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        using clone = stoppedFileClone();
+        yield* Safety.prepare();
+        yield* sql`DELETE FROM orchestration_v2_projection_metadata WHERE projection_name='pre-event-prune-generation'`;
+        const { rm } = yield* Effect.promise(() =>
+          vi.importActual<typeof NodeFSP>("node:fs/promises"),
+        );
+        {
+          using _remove = vi.spyOn(NodeFSP, "rm").mockImplementation(async (path, options) => {
+            if (
+              NodePath.normalize(String(path)) ===
+              NodePath.normalize(`${backup}/statev2.sqlite.previous`)
+            )
+              throw new Error("synthetic cleanup failure");
+            return rm(path, options);
+          });
+          yield* Safety.prepare();
+        }
+        assert.isTrue(yield* Safety.canPrune());
+        assert.isTrue(yield* fs.exists(`${backup}/statev2.sqlite.previous`));
+        assert.notInclude(JSON.stringify(warnings), "history pruning is disabled");
+        if (state === "expired") {
+          yield* Safety.deletePassStarted();
+          yield* Safety.deletePassFinished();
+          yield* TestClock.adjust("8 days");
+          assert.isTrue(yield* Safety.canPrune());
+          assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite`));
+        }
+        yield* Safety.prepare();
+        assert.isFalse(yield* fs.exists(`${backup}/statev2.sqlite.previous`));
+        assert.isFalse(yield* fs.exists(`${backup}/manifest.json.previous`));
+        assert.equal(clone.mock.calls.length, 2);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            NodeSqliteClient.layer({ filename: database }),
+            Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+        ),
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect(
+  "a publication and manifest rollback failure cannot pair a new manifest with the old copy",
+  () =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        using _clone = stoppedFileClone();
+        yield* Safety.prepare();
+        const oldBytes = yield* fs.readFile(`${backup}/statev2.sqlite`);
+        yield* sql`DELETE FROM orchestration_v2_projection_metadata WHERE projection_name='pre-event-prune-generation'`;
+        const { rename } = yield* Effect.promise(() =>
+          vi.importActual<typeof NodeFSP>("node:fs/promises"),
+        );
+        using _rename = vi.spyOn(NodeFSP, "rename").mockImplementation(async (source, target) => {
+          if (
+            NodePath.normalize(String(source)) ===
+              NodePath.normalize(`${backup}/statev2.sqlite.staging`) ||
+            NodePath.normalize(String(source)) ===
+              NodePath.normalize(`${backup}/manifest.json.previous`)
+          )
+            throw new Error("synthetic rename failure");
+          return rename(source, target);
+        });
+        yield* Safety.prepare();
+        assert.isFalse(yield* Safety.canPrune());
+        assert.deepEqual(yield* fs.readFile(`${backup}/statev2.sqlite.previous`), oldBytes);
+        assert.isFalse(yield* fs.exists(`${backup}/manifest.json`));
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect(
+  "publishing a verified clone outlives the inspection budget without a false timeout",
+  () =>
+    Effect.gen(function* () {
+      const { fs, database, backup } = yield* fixture;
+      const warnings: unknown[] = [];
+      yield* Effect.gen(function* () {
+        using _clone = stoppedFileClone();
+        const publishing = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const { rename } = yield* Effect.promise(() =>
+          vi.importActual<typeof NodeFSP>("node:fs/promises"),
+        );
+        using _rename = vi.spyOn(NodeFSP, "rename").mockImplementation(async (source, target) => {
+          if (
+            NodePath.normalize(String(source)) ===
+            NodePath.normalize(`${backup}/statev2.sqlite.staging`)
+          ) {
+            publishing.resolve();
+            await release.promise;
+          }
+          return rename(source, target);
+        });
+        const first = yield* Safety.prepare().pipe(Effect.forkChild);
+        yield* Effect.promise(() => publishing.promise);
+        yield* TestClock.adjust("120 seconds");
+        release.resolve();
+        yield* Fiber.join(first);
+        assert.isTrue(yield* fs.exists(`${backup}/statev2.sqlite`));
+        assert.isTrue(yield* Safety.canPrune());
+        assert.notInclude(JSON.stringify(warnings), "startup continues without pruning");
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            NodeSqliteClient.layer({ filename: database }),
+            Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+        ),
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
+);
+
+it.effect("failed verification cancels the sibling source inspection", () =>
+  Effect.gen(function* () {
+    const { database } = yield* fixture;
+    yield* Effect.gen(function* () {
+      const sourceStarted = Promise.withResolvers<void>();
+      let cancelled = false;
+      const inspect = Inspection.inspect;
+      using _inspection = vi
+        .spyOn(Inspection, "inspect")
+        .mockImplementation(async (file, checkpoint, signal) => {
+          if (checkpoint) return inspect(file, checkpoint, signal);
+          if (file === database) {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                cancelled = true;
+              },
+              { once: true },
+            );
+            sourceStarted.resolve();
+            return new Promise<never>(() => {});
+          }
+          await sourceStarted.promise;
+          throw new Error("synthetic unreadable staging database");
+        });
+      using _clone = stoppedFileClone();
+      yield* Safety.prepare();
+      assert.isTrue(cancelled);
+      assert.isFalse(yield* Safety.canPrune());
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database })));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, pruningEnabled))),
 );

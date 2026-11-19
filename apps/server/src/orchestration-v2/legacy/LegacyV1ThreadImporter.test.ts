@@ -25,6 +25,8 @@ import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "./LegacyV1ThreadImporter.ts";
 import * as ProjectionReplay from "../testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
+import { importLegacyPlansAndReasoning } from "./importLegacyPlansAndReasoning.ts";
+import { rederiveLegacyToolItems } from "./rederiveLegacyToolItems.ts";
 
 const pruningEnabled = ConfigProvider.layer(
   ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
@@ -526,9 +528,26 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
           assistant_message_id = 'message:usage', completed_at = ${at}
         WHERE thread_id = ${threadId} AND turn_id = 'turn:1'
       `;
+        yield* sql`
+          INSERT INTO projection_thread_messages (message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at)
+          VALUES ('message:reasoning', ${threadId}, 'turn:1', 'reasoning', 'Recorded reasoning', 0, ${at}, ${at})
+        `;
+        yield* sql`
+          INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version)
+          VALUES ('plan:legacy', 'thread', ${threadId}, 100, 'thread.proposed-plan-upserted', ${at}, 'server',
+            ${JSON.stringify({ threadId, proposedPlan: { id: "plan:recorded", turnId: "turn:1", planMarkdown: "Recorded plan", createdAt: at, updatedAt: at } })}, '{}', 1)
+        `;
         yield* importer.reconcileShells;
         yield* importer.ensureTranscript(threadId);
         const before = yield* projections.getThreadProjection(threadId);
+        assert.equal(
+          before.turnItems.find((item) => item.type === "reasoning")?.text,
+          "Recorded reasoning",
+        );
+        assert.equal(
+          before.turnItems.find((item) => item.type === "proposed_plan")?.markdown,
+          "Recorded plan",
+        );
         assert.equal(
           before.providerThreads[0]?.nativeThreadRef?.nativeId,
           "synthetic-native-conversation",
@@ -599,6 +618,33 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         WHERE stream_id = ${threadId} AND event_type = 'legacy-usage.imported'
       `;
         assert.equal(events[0]?.count, 1);
+        // Recreate an import from before tool-output, plan and reasoning backfills.
+        for (const item of before.turnItems) {
+          if (item.type === "reasoning" || item.type === "proposed_plan") {
+            yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE turn_item_id = ${item.id}`;
+            yield* sql`DELETE FROM orchestration_v2_turn_item_positions WHERE turn_item_id = ${item.id}`;
+            yield* sql`DELETE FROM orchestration_events WHERE event_type = 'turn-item.updated' AND json_extract(payload_json, '$.id') = ${item.id}`;
+          }
+        }
+        yield* sql`UPDATE orchestration_v2_projection_turn_items SET payload_json = json_remove(payload_json, '$.output', '$.exitCode') WHERE turn_item_id = ${command!.id}`;
+        yield* sql`UPDATE orchestration_events SET payload_json = json_remove(payload_json, '$.output', '$.exitCode') WHERE event_type = 'turn-item.updated' AND json_extract(payload_json, '$.id') = ${command!.id}`;
+        yield* sql`DELETE FROM orchestration_v2_projection_metadata WHERE projection_name IN ('legacy-tool-items-rederived', 'legacy-plans-reasoning-imported')`;
+        yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+        yield* TestClock.adjust("1 day");
+        yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
+        assert.lengthOf(
+          yield* sql`SELECT 1 FROM orchestration_events WHERE event_id = 'plan:legacy'`,
+          1,
+        );
+        assert.equal((yield* rederiveLegacyToolItems(sql)).items, 1);
+        assert.deepEqual(yield* importLegacyPlansAndReasoning(), {
+          threads: 1,
+          reasoning: 1,
+          plans: 1,
+          failed: 0,
+        });
+        assert.deepEqual(yield* projections.getThreadProjection(threadId), before);
+        const snapshotBefore = yield* projections.getThreadSnapshot(threadId);
         yield* maintenance.pruneEventStore().pipe(Effect.provide(pruningEnabled));
         yield* TestClock.adjust("1 day");
         assert.isAbove(
@@ -606,6 +652,11 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
             .deletedEventCount,
           0,
         );
+        assert.deepEqual(
+          yield* sql`SELECT 1 FROM orchestration_events WHERE event_id = 'plan:legacy'`,
+          [],
+        );
+        assert.deepEqual(yield* projections.getThreadSnapshot(threadId), snapshotBefore);
         const after = yield* projections.getThreadProjection(threadId);
         assert.deepEqual(after, before);
         assert.deepEqual(after.providerThreads, before.providerThreads);
