@@ -33,7 +33,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import { CircleAlertIcon, CircleCheckIcon, FileTextIcon, HourglassIcon } from "lucide-react";
 import { Atom } from "effect/reactivity";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, type ReactNode, useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
@@ -188,16 +188,22 @@ const GROUP_LABEL: Record<SinceLastVisitGroup, string> = {
 /**
  * What happened in the project since the user last marked it seen or wrote in its chat, on any
  * device. It shows when the page opens with something to list, stays while the page is open, and
- * goes away when the mark moves, here or elsewhere; it does not appear mid-view.
+ * goes away when the mark moves, here or elsewhere; it does not appear mid-view. Needs you sits
+ * below it, and at most one of the two is open: this one, until Needs you is opened.
  */
 export function ProjectSinceLastVisit({
   chatRef,
   source,
   onOpenReport,
+  renderNeedsYou,
 }: {
   chatRef: ScopedThreadRef;
   source: ProjectSinceLastVisitSource;
   onOpenReport: (messageId: MessageId) => void;
+  /** `fold` is set while this card shows. */
+  renderNeedsYou: (
+    fold: { readonly folded: boolean; readonly onFoldedChange: (folded: boolean) => void } | null,
+  ) => ReactNode;
 }) {
   const settings = useEnvironmentSettings(chatRef.environmentId);
   const { timestampFormat } = settings;
@@ -233,6 +239,7 @@ export function ProjectSinceLastVisit({
   const navigate = useNavigate();
   const openPrLink = useOpenPrLink();
   const [expanded, setExpanded] = useState<ReadonlySet<SinceLastVisitGroup>>(new Set());
+  const [open, setOpen] = useState<"summary" | "needs" | null>("summary");
   const shellStatuses = useEnvironmentShellStatuses();
   const canMarkSeen = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(chatRef.environmentId),
@@ -272,7 +279,8 @@ export function ProjectSinceLastVisit({
   if (phase.kind === "showing" && (window.since > phase.since || layout.total === 0)) {
     setPhase({ kind: "seen" });
   }
-  if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0) return null;
+  if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0)
+    return renderNeedsYou(null);
 
   const sinceIso = new Date(window.since).toISOString();
   const sinceLabel = window.capped
@@ -337,32 +345,40 @@ export function ProjectSinceLastVisit({
   const expand = (group: SinceLastVisitGroup) => setExpanded(new Set(expanded).add(group));
 
   return (
-    <ComposerStackCard
-      testId="project-since-last-visit"
-      label="Since you last checked"
-      count={layout.total}
-      detail={sinceLabel}
-      action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
-    >
-      {layout.sections.map((section) => (
-        <SinceLastVisitSectionRows
-          key={section.group}
-          section={section}
-          grouped={layout.grouped}
-          time={time}
-          timestampFormat={timestampFormat}
-          onOpen={openLine}
-          onExpand={() => expand(section.group)}
-          footer={section.group === "reports" ? loadEarlierControl : null}
-        />
-      ))}
-      {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
-        <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
-      ) : null}
-      {unloadedNote ? (
-        <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
-      ) : null}
-    </ComposerStackCard>
+    <>
+      <ComposerStackCard
+        testId="project-since-last-visit"
+        label="Since you last checked"
+        count={layout.total}
+        detail={sinceLabel}
+        action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
+        folded={open !== "summary"}
+        onFoldedChange={(folded) => setOpen(folded ? null : "summary")}
+      >
+        {layout.sections.map((section) => (
+          <SinceLastVisitSectionRows
+            key={section.group}
+            section={section}
+            grouped={layout.grouped}
+            time={time}
+            timestampFormat={timestampFormat}
+            onOpen={openLine}
+            onExpand={() => expand(section.group)}
+            footer={section.group === "reports" ? loadEarlierControl : null}
+          />
+        ))}
+        {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
+          <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
+        ) : null}
+        {unloadedNote ? (
+          <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
+        ) : null}
+      </ComposerStackCard>
+      {renderNeedsYou({
+        folded: open !== "needs",
+        onFoldedChange: (folded) => setOpen(folded ? null : "needs"),
+      })}
+    </>
   );
 }
 

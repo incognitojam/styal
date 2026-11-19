@@ -225,11 +225,16 @@ export function ReportReplyStrip({
   );
 }
 
+/**
+ * Opening a report folds the card, since the report is answered in the timeline. Opening a thread's
+ * question narrows the card to it until it is answered or closed.
+ */
 export function NeedsYou({
   reports,
   scroll,
   runs,
   project = NO_PROJECT_THREADS,
+  fold,
   ...reviewProps
 }: {
   reports: readonly ReportState[];
@@ -237,30 +242,50 @@ export function NeedsYou({
   runs: ReadonlyArray<ThreadWorkflowRunWatch>;
   /** On a project page: the project's threads that need you, answered here. */
   project?: ReadonlyArray<EnvironmentThreadShell>;
+  /** Set when the stack decides it: otherwise the card keeps its own. */
+  fold?: { readonly folded: boolean; readonly onFoldedChange: (folded: boolean) => void };
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
+  const [ownFolded, setOwnFolded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
   const needs = useProjectNeeds(project);
+  const folded = fold?.folded ?? ownFolded;
+  const setFolded = fold?.onFoldedChange ?? setOwnFolded;
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
   if (!rows.length && !answered) return null;
-  const visible = expanded ? rows : rows.slice(0, 3);
+  const opened = rows.filter((row) => row.kind === "need" && row.need.key === openNeed);
+  const visible = opened.length ? opened : expanded ? rows : rows.slice(0, 3);
+  const collapse = () => {
+    setOpenNeed(null);
+    setExpanded(false);
+  };
   return (
     <ComposerStackCard
       label={rows.length ? "Needs you" : "Answered"}
       count={rows.length || undefined}
+      folded={folded}
+      onFoldedChange={(next) => {
+        collapse();
+        setFolded(next);
+      }}
       action={
-        rows.length > 3
-          ? {
-              label: expanded ? "Show less" : `Show all ${rows.length}`,
-              onClick: () => setExpanded(!expanded),
-            }
-          : null
+        folded || rows.length <= (opened.length ? 1 : 3)
+          ? null
+          : expanded
+            ? { label: "Show less", onClick: collapse }
+            : {
+                label: `Show all ${rows.length}`,
+                onClick: () => {
+                  setOpenNeed(null);
+                  setExpanded(true);
+                },
+              }
       }
       footer={
         answered ? (
@@ -284,15 +309,25 @@ export function NeedsYou({
             key={row.need.key}
             need={row.need}
             open={openNeed === row.need.key}
-            onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-            onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
+            onToggle={() => {
+              setExpanded(false);
+              setOpenNeed(openNeed === row.need.key ? null : row.need.key);
+            }}
+            onAnswered={(answer) => {
+              collapse();
+              setAnswered({ threadTitle: row.need.thread.title, answer });
+            }}
           />
         ) : (
           <button
             key={row.report.message.id}
             type="button"
             className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-            onClick={() => scroll(row.report.message.id)}
+            onClick={() => {
+              collapse();
+              setFolded(true);
+              scroll(row.report.message.id);
+            }}
           >
             <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
             <span className="min-w-0 flex-1">

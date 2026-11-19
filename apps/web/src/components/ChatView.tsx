@@ -146,7 +146,15 @@ import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2T
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
-import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type SetStateAction,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -2708,6 +2716,20 @@ export default function ChatView(props: ChatViewProps) {
       !isWorking && activeThread ? pendingBackgroundTasks : [],
       activeThreadShell?.workflowRuns ?? [],
     );
+  const renderNeedsYou = (fold: ComponentProps<typeof NeedsYou>["fold"] | null) =>
+    activeThreadId ? (
+      <NeedsYou
+        key={activeThreadId}
+        reports={settings.coordinatorReportsEnabled ? reportStates : []}
+        scroll={scrollToReport}
+        environmentId={environmentId}
+        threadId={activeThreadId}
+        runs={activeThreadShell?.workflowRuns ?? []}
+        {...(projectChat ? { project: projectChat.needYou } : {})}
+        {...(fold ? { fold } : {})}
+        watchActions={workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined}
+      />
+    ) : null;
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>
       item.type === "user_message" &&
@@ -3888,27 +3910,16 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    {sinceLastVisit === null ? null : (
+                    {sinceLastVisit === null ? (
+                      renderNeedsYou(null)
+                    ) : (
                       <ProjectSinceLastVisit
                         chatRef={routeThreadRef}
                         source={sinceLastVisit}
                         onOpenReport={scrollToReport}
+                        renderNeedsYou={renderNeedsYou}
                       />
                     )}
-                    {activeThreadId ? (
-                      <NeedsYou
-                        key={activeThreadId}
-                        reports={settings.coordinatorReportsEnabled ? reportStates : []}
-                        scroll={scrollToReport}
-                        environmentId={environmentId}
-                        threadId={activeThreadId}
-                        runs={activeThreadShell?.workflowRuns ?? []}
-                        {...(projectChat ? { project: projectChat.needYou } : {})}
-                        watchActions={
-                          workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined
-                        }
-                      />
-                    ) : null}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <div className="relative">
                       <ComposerSurface.Shell contextRow={showComposerContextStrip}>
