@@ -358,7 +358,14 @@ it.effect.each([
       yield* sweep(f.terminal, [], f.canonicalTerminal);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
-      if (mode.endsWith("after-inspection")) expect(inspected).toBe(true);
+      if (mode.endsWith("after-inspection")) {
+        expect(inspected).toBe(true);
+        f.setLive(false);
+        f.setTerminalPaths([]);
+        yield* sweep(f.terminal, [], f.canonicalTerminal);
+        expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+        expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
+      }
     }).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, {
         ...f.git,

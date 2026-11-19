@@ -88,8 +88,7 @@ export const makeSweep = Effect.gen(function* () {
       if ((yield* Clock.currentTimeMillis) >= deadline) break;
       const run = Effect.gen(function* () {
         const eligible = Effect.fn("WorktreeCleanup.eligible")(function* () {
-          if (!(yield* managed(root)) || hasTerminal(root) || (yield* hasCanonicalTerminal(root)))
-            return null;
+          if (!(yield* managed(root)) || hasTerminal(root)) return null;
           if (aliasedRoots.has(root)) return null;
           const allProjects = yield* projects.listShells();
           const unavailableProjects = new Set<string>();
@@ -147,16 +146,17 @@ export const makeSweep = Effect.gen(function* () {
           if ((yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`).length)
             return null;
           yield* checkout.verifyOwnership(root, project.workspaceRoot);
+          if (yield* hasCanonicalTerminal(root)) return null;
+          const location = key(root);
           const sessionRows = yield* sql<{
             payload_json: string;
           }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
           for (const row of sessionRows) {
             const session = yield* decodeSession(row.payload_json);
             if (!(yield* sessions.isLive(session.id))) continue;
-            const location = key(root);
             const declared = key(path.resolve(session.cwd));
             if (declared === location || declared.startsWith(`${location}${path.sep}`)) return null;
-            const cwd = key(yield* fs.realPath(session.cwd));
+            const cwd = key(yield* fs.realPath(path.resolve(session.cwd)));
             if (cwd === location || cwd.startsWith(`${location}${path.sep}`)) return null;
           }
           let patterns = patternCache.get(project.id);
@@ -181,8 +181,10 @@ export const makeSweep = Effect.gen(function* () {
               current.patterns,
               deadline - (yield* Clock.currentTimeMillis),
             );
-            checked.set(root, current.stamp);
-            if (!selected.length) return;
+            if (!selected.length) {
+              checked.set(root, current.stamp);
+              return;
+            }
             const final = yield* eligible();
             if (!final || final.stamp !== current.stamp) return;
             yield* sql`INSERT INTO worktree_stripped (worktree_path, project_id, stripped_at) VALUES (${root}, ${current.project.id}, ${DateTime.formatIso(yield* DateTime.now)})`;
