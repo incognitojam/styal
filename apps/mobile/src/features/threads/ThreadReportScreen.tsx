@@ -68,7 +68,8 @@ const startNoSideChat = async () => false;
 export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportParams>) {
   const route = useRoute<RouteProp<{ ThreadReport: ThreadReportParams }>>();
   const navigation = useNavigation();
-  const { width } = useWindowDimensions();
+  // The body's own width: in a split view the report pane is narrower than the window.
+  const [bodyWidth, setBodyWidth] = useState(0);
   const params = route.params;
   const environmentId = EnvironmentId.make(params.environmentId);
   const threadId = ThreadId.make(params.threadId);
@@ -183,6 +184,7 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
           <>
             <ScrollView
               className="flex-1"
+              onLayout={(event) => setBodyWidth(event.nativeEvent.layout.width)}
               contentInsetAdjustmentBehavior="automatic"
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ padding: BODY_PADDING, paddingBottom: 32 }}
@@ -207,7 +209,7 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
                   onPressPreview={markdown.onPressPreview}
                   onPlaybackStart={markdown.onInlinePlaybackStart}
                   skills={skills}
-                  contentWidth={Math.max(0, width - BODY_PADDING * 2)}
+                  contentWidth={Math.max(0, bodyWidth - BODY_PADDING * 2)}
                 />
               </FilePreviewGallery>
             </ScrollView>
@@ -274,14 +276,21 @@ function ReportAnswerBar(props: {
     },
     onChangeSelection: setSelection,
   });
+  // A sent response keeps the bar disabled until the thread records it and the screen closes.
   const run = (action: () => Promise<boolean>) => {
     setBusy(true);
     setError(null);
-    void action()
-      .then((ok) => {
-        if (!ok) setError("Could not save your response. Try again.");
-      })
-      .finally(() => setBusy(false));
+    void action().then(
+      (ok) => {
+        if (ok) return;
+        setError("Could not save your response. Try again.");
+        setBusy(false);
+      },
+      () => {
+        setError("Could not save your response. Try again.");
+        setBusy(false);
+      },
+    );
   };
   const disabled = !canRespond || busy;
   const replyText = draft.text.trim();
@@ -322,6 +331,19 @@ function ReportAnswerBar(props: {
             accessibilityLabel="Your reply"
             className="max-h-36 min-h-12 rounded-lg border border-border px-3 py-3 text-base text-foreground"
           />
+          {voice.isBusy ? (
+            <View className="flex-row items-center justify-between">
+              <Text className="text-foreground-secondary">
+                {voice.state.phase === "recording" ? "Listening…" : "Transcribing…"}
+              </Text>
+              <Button label="Stop" size="compact" tone="text" onPress={voice.stop} />
+            </View>
+          ) : null}
+          {voice.state.error ? (
+            <Text accessibilityRole="alert" className="text-danger">
+              {voice.state.error}
+            </Text>
+          ) : null}
           <View className="flex-row items-center justify-between">
             <Button
               label="Cancel"
