@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Removal runs in an isolated CLI worker.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -12,6 +15,8 @@ import { makeInspectGit } from "./gitInspection.ts";
 
 export class DeletionLimits extends Context.Reference<{
   readonly entries: number;
+  // Test-only preload for deterministic races inside the isolated worker.
+  readonly helperPreload?: string;
   readonly mounts?: readonly string[];
   readonly now?: () => number;
   readonly device?: (target: string, actual: number) => number;
@@ -29,6 +34,12 @@ export const makeDeletion = Effect.gen(function* () {
   const clock = yield* Clock.Clock;
   const now = () => limits.now?.() ?? clock.currentTimeMillisUnsafe();
   const platform = yield* HostProcess.Platform;
+  const executable = yield* HostProcess.ExecutablePath;
+  const isExecutable = yield* HostProcess.IsExecutable;
+  const environment = yield* HostProcess.Environment;
+  const entry = NodeURL.fileURLToPath(
+    new URL(import.meta.url.endsWith(".ts") ? "../bin.ts" : "./bin.mjs", import.meta.url),
+  );
   const canonical = (value: string) =>
     platform === "darwin" ? value.normalize("NFD").toLowerCase() : value;
   const path = yield* Path.Path;
@@ -242,8 +253,8 @@ export const makeDeletion = Effect.gen(function* () {
   ) {
     const deadline = now() + budgetMs;
     return yield* Effect.tryPromise({
-      try: async () => {
-        const rootStat = await NodeFSP.lstat(root);
+      try: async (signal) => {
+        const rootStat = await NodeFSP.lstat(root, { bigint: true });
         if (
           !(await NodeFSP.lstat(path.join(root, ".git"))).isFile() ||
           !rootStat.isDirectory() ||
@@ -265,51 +276,41 @@ export const makeDeletion = Effect.gen(function* () {
                       ) ?? [],
                 )
             : []);
-        let bytes = 0;
-        let entries = 0;
-        // Idle worktrees and immediate directory checks limit risk; concurrent symlink swaps remain possible.
-        const walk = async (current: string): Promise<void> => {
-          if (now() >= deadline || !inside(root, current) || ++entries > limits.entries)
-            throw new Error("Unsafe deletion path");
-          const stat = await NodeFSP.lstat(current);
-          if (
-            mounts.includes(current) ||
-            (limits.device?.(current, stat.dev) ?? stat.dev) !== rootStat.dev
-          )
-            throw new Error("Device changed");
-          if (stat.isSymbolicLink()) await NodeFSP.unlink(current);
-          else if (stat.isDirectory()) {
-            if ((await NodeFSP.realpath(current)) !== current) throw new Error("Directory changed");
-            const names = await NodeFSP.readdir(current);
-            if (
-              names.includes(".git") ||
-              ["HEAD", "objects", "refs"].every((name) => names.includes(name))
-            )
-              throw new Error("Nested repository");
-            for (const name of names) await walk(path.join(current, name));
-            await NodeFSP.rmdir(current);
-          } else if (stat.isFile()) {
-            await NodeFSP.unlink(current);
-            if (stat.nlink === 1) bytes += stat.blocks * 512;
-          } else throw new Error("Special file");
-        };
-        // Resolve every parent again before entering a previously selected subtree.
-        for (
-          let parent = path.dirname(target);
-          inside(root, parent);
-          parent = path.dirname(parent)
-        ) {
-          const stat = await NodeFSP.lstat(parent);
-          if (
-            !stat.isDirectory() ||
-            stat.isSymbolicLink() ||
-            (await NodeFSP.realpath(parent)) !== parent
-          )
-            throw new Error("Parent changed");
-        }
-        if ((await NodeFSP.lstat(target)).isSymbolicLink())
-          throw new Error("Selected path changed");
-        await walk(target);
+        if (platform === "win32" || !inside(root, target)) throw new Error("Unsafe deletion path");
+        const remaining = deadline - now();
+        if (remaining <= 0) throw new Error("Deletion budget exceeded");
+        const stdout = await new Promise<string>((resolve, reject) => {
+          NodeChildProcess.execFile(
+            executable,
+            [
+              ...(isExecutable ? [] : [entry]),
+              "__worktree-cleanup",
+              root,
+              path.relative(root, target).split(path.sep).join("/"),
+              String(rootStat.dev),
+              String(rootStat.ino),
+              String(limits.entries),
+              String(remaining),
+              ...mounts.filter((mount) => inside(root, mount)),
+            ],
+            {
+              signal,
+              timeout: remaining,
+              maxBuffer: 64 * 1024,
+              encoding: "utf8",
+              windowsHide: true,
+              env: {
+                ...environment,
+                ELECTRON_RUN_AS_NODE: "1",
+                NODE_OPTIONS: `${environment.NODE_OPTIONS ?? ""}${limits.helperPreload ? ` --import=${NodeURL.pathToFileURL(limits.helperPreload).href}` : ""}`,
+              },
+            },
+            (error, stdout) => (error ? reject(error) : resolve(stdout)),
+          );
+        });
+        const bytes = Number(stdout);
+        if (!stdout || !Number.isSafeInteger(bytes) || bytes < 0)
+          throw new Error("Invalid removal result");
         return bytes;
       },
       catch: (cause) => new WorktreeCleanupIoError({ cause }),

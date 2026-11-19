@@ -35,8 +35,7 @@ import { makeConsume } from "./Stripped.ts";
 import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TestClock } from "effect/testing";
-import { vi } from "vite-plus/test";
-import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+import * as NodeNet from "node:net";
 import { ThreadId } from "@t3tools/contracts";
 
 const encodeSession = Schema.encodeEffect(
@@ -517,30 +516,44 @@ it.effect("persists the stripped record before the first unlink", () =>
   Effect.gen(function* () {
     const f = yield* setup;
     yield* f.write("dist/output");
-    const entered = yield* Deferred.make<void>();
-    const release = Promise.withResolvers<void>();
-    const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
-    const original = physical.unlink;
-    using unlink = vi.spyOn(physical, "unlink");
-    unlink.mockImplementation((target) => {
-      if (target === `${f.worktree}/dist/output`) {
-        Deferred.doneUnsafe(entered, Effect.void);
-        return release.promise.then(() => original(target));
-      }
-      return original(target);
-    });
+    const connected = Promise.withResolvers<NodeNet.Socket>();
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() => NodeNet.createServer(connected.resolve)),
+      (server) =>
+        Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve()))),
+    );
+    yield* Effect.promise(
+      () => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+    );
+    const address = server.address() as NodeNet.AddressInfo;
+    const preload = `${f.base}/pause-before-removal.mjs`;
+    yield* f.fs.writeFileString(
+      preload,
+      `
+      import net from "node:net";
+      const socket = net.connect(${address.port}, "127.0.0.1");
+      socket.resume();
+      await new Promise((resolve, reject) => {
+        socket.once("end", resolve);
+        socket.once("error", reject);
+      });
+    `,
+    );
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
       const pending = yield* sweep(f.terminal, []).pipe(Effect.forkChild);
-      yield* Deferred.await(entered);
+      const socket = yield* Effect.promise(() => connected.promise);
       const [beforeDelete, stillPresent] = yield* Effect.all([
         f.sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${f.worktree}`,
         f.fs.exists(`${f.worktree}/dist/output`),
-      ]).pipe(Effect.ensuring(Effect.sync(() => release.resolve())));
+      ]).pipe(Effect.ensuring(Effect.sync(() => socket.end())));
       yield* Fiber.join(pending);
       expect(beforeDelete.length).toBe(1);
       expect(stillPresent).toBe(true);
-    }).pipe(Effect.provide(f.layers));
+    }).pipe(
+      Effect.provide(f.layers),
+      Effect.provideService(DeletionLimits, { entries: 1_000_000, helperPreload: preload }),
+    );
     expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );

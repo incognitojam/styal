@@ -1,3 +1,6 @@
+import * as NodeNet from "node:net";
+import * as Fiber from "effect/Fiber";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -262,4 +265,168 @@ it.effect.each([
     expect(yield* f.fs.exists(`${f.worktree}/${ignored}/output`)).toBe(true);
     expect(yield* f.fs.exists(`${f.worktree}/${tracked}/keep`)).toBe(true);
   }).pipe(Effect.provide(nodeLayer), Effect.scoped),
+);
+
+it.effect.each(["after-listing", "before-listing", "before-entry", "ancestor", "atomic"])(
+  "anchors removal during a %s swap",
+  (schedule) =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* setup;
+        yield* f.write("node_modules/dist/sentinel");
+        yield* f.fs.makeDirectory(`${f.base}/outside/dist`, { recursive: true });
+        yield* f.fs.writeFileString(`${f.base}/outside/sentinel`, "outside");
+        yield* f.fs.writeFileString(`${f.base}/outside/dist/sentinel`, "outside");
+        const preload = `${f.base}/swap.mjs`;
+        const at = `${f.worktree}/node_modules/dist`;
+        const swap = schedule === "ancestor" ? `${f.worktree}/node_modules` : at;
+        yield* f.fs.writeFileString(
+          preload,
+          `
+        import fs from "node:fs";
+        import { spawnSync } from "node:child_process";
+        import { syncBuiltinESMExports } from "node:module";
+        const at = ${JSON.stringify(at)};
+        const swap = ${JSON.stringify(swap)};
+        const outside = ${JSON.stringify(`${f.base}/outside`)};
+        const schedule = ${JSON.stringify(schedule)};
+        const marker = ${JSON.stringify(`${f.base}/fired`)};
+        const readdir = fs.readdirSync;
+        const chdir = process.chdir;
+        let fired = false;
+        const replace = () => {
+          if (fired) return;
+          fired = true;
+          fs.writeFileSync(marker, "fired");
+          if (schedule === "atomic") {
+            fs.symlinkSync(outside, swap + "-saved");
+            const result = spawnSync("python3", ["-c", 'import ctypes, os, sys; libc = ctypes.CDLL(None, use_errno=True); a, b = map(os.fsencode, sys.argv[1:]); result = libc.renamex_np(a, b, 2) if sys.platform == "darwin" else libc.renameat2(-100, a, -100, b, 2); assert result == 0, ctypes.get_errno()', swap, swap + "-saved"]);
+            if (result.status !== 0) throw new Error("Atomic fixture swap failed");
+          } else {
+            fs.renameSync(swap, swap + "-saved");
+            fs.symlinkSync(outside, swap);
+          }
+        };
+        fs.readdirSync = function(name, ...args) {
+          if (process.cwd() === at && schedule === "before-listing") replace();
+          const result = readdir.call(this, name, ...args);
+          if (process.cwd() === at && schedule !== "before-entry") replace();
+          return result;
+        };
+        process.chdir = function(name) {
+          if (process.cwd() + "/" + name === at && schedule === "before-entry") replace();
+          return chdir.call(this, name);
+        };
+        syncBuiltinESMExports();
+      `,
+        );
+        expect(yield* f.deletion.inspect(f.worktree, ["node_modules"])).toEqual([
+          `${f.worktree}/node_modules`,
+        ]);
+        const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+        const deletion = yield* makeDeletion.pipe(
+          Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+          Effect.provideService(DeletionLimits, { entries: 100, helperPreload: preload }),
+          Effect.provideService(PhysicalFileSystem.PhysicalFileSystem, {
+            ...physical,
+            readdir: (async (...args: Parameters<typeof physical.readdir>) => {
+              const names = await physical.readdir(...args);
+              if (schedule === "after-listing" && args[0] === at) {
+                await physical.writeFile(`${f.base}/fired`, "fired");
+                await physical.rename(at, `${at}-saved`);
+                await physical.symlink(`${f.base}/outside`, at);
+              }
+              return names;
+            }) as typeof physical.readdir,
+          }),
+        );
+        const result = yield* deletion
+          .remove(f.worktree, `${f.worktree}/node_modules`)
+          .pipe(Effect.result);
+        expect(yield* f.fs.readFileString(`${f.base}/fired`)).toBe("fired");
+        expect(yield* f.fs.readFileString(`${f.base}/outside/sentinel`)).toBe("outside");
+        expect(yield* f.fs.readFileString(`${f.base}/outside/dist/sentinel`)).toBe("outside");
+        const saved = schedule === "ancestor" ? `${swap}-saved/dist` : `${swap}-saved`;
+        expect(yield* f.fs.exists(`${saved}/sentinel`)).toBe(schedule === "before-entry");
+        expect(result._tag).toBe("Failure");
+      }),
+    ),
+);
+
+it.effect("counts allocated bytes only for single-link files in the worker", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* setup;
+      const physical = yield* PhysicalFileSystem.PhysicalFileSystem;
+      yield* f.write("dist/allocated", "x".repeat(8192));
+      yield* f.fs.writeFileString(`${f.base}/shared`, "keep");
+      yield* Effect.promise(() => physical.link(`${f.base}/shared`, `${f.worktree}/dist/shared`));
+      const stat = yield* Effect.promise(() => physical.lstat(`${f.worktree}/dist/allocated`));
+      expect(yield* f.deletion.remove(f.worktree, `${f.worktree}/dist`)).toBe(stat.blocks * 512);
+      expect(yield* f.fs.readFileString(`${f.base}/shared`)).toBe("keep");
+      expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+    }),
+  ),
+);
+
+it.effect.each(["mount", "cap", "budget", "repository"])("worker refuses %s", (mode) =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.write("dist/sentinel");
+      if (mode === "repository") yield* f.command(`${f.worktree}/dist`, ["init"]);
+      const deletion = yield* makeDeletion.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+        Effect.provideService(DeletionLimits, {
+          entries: mode === "cap" ? 1 : 100,
+          mounts: mode === "mount" ? [`${f.worktree}/dist`] : [],
+        }),
+      );
+      const result = yield* deletion
+        .remove(f.worktree, `${f.worktree}/dist`, mode === "budget" ? 0 : 600_000)
+        .pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(yield* f.fs.readFileString(`${f.worktree}/dist/sentinel`)).toBe("synthetic");
+    }),
+  ),
+);
+
+it.live("stops the isolated worker when removal is interrupted", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* setup;
+      yield* f.write("dist/sentinel");
+      const connected = Promise.withResolvers<NodeNet.Socket>();
+      const server = yield* Effect.acquireRelease(
+        Effect.sync(() => NodeNet.createServer(connected.resolve)),
+        (server) =>
+          Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve()))),
+      );
+      yield* Effect.promise(
+        () => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+      );
+      const address = server.address() as NodeNet.AddressInfo;
+      const preload = `${f.base}/hold.mjs`;
+      yield* f.fs.writeFileString(
+        preload,
+        `
+        import net from "node:net";
+        const socket = net.connect(${address.port}, "127.0.0.1");
+        await new Promise(() => {});
+      `,
+      );
+      const deletion = yield* makeDeletion.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+        Effect.provideService(DeletionLimits, { entries: 100, helperPreload: preload }),
+      );
+      const removal = yield* deletion
+        .remove(f.worktree, `${f.worktree}/dist`)
+        .pipe(Effect.forkChild);
+      const socket = yield* Effect.promise(() => connected.promise);
+      const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      yield* Fiber.interrupt(removal);
+      yield* Effect.promise(() => closed);
+      expect(yield* f.fs.readFileString(`${f.worktree}/dist/sentinel`)).toBe("synthetic");
+    }),
+  ),
 );
