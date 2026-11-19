@@ -169,9 +169,8 @@ function SwitchPlan({
         ...(local === null
           ? {}
           : {
-              // This app starts its own download when a check finds a build.
               downloadLocal: (reportError) => finishLocalDownload(bridge, reportError),
-              // Install only a build the database check covers, pinned so nothing replaces it.
+              // The updater may refresh to a newer build on this track, never below its checked floor.
               installLocal: async (reportError) => {
                 const { downloadedVersion } = await bridge.getUpdateState();
                 if (

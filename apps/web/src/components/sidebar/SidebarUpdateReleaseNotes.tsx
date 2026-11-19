@@ -4,6 +4,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import {
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
+  isDesktopUpdateFailed,
 } from "../desktopUpdate.logic";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
@@ -67,6 +68,9 @@ export function SidebarUpdateReleaseNotes({
   if (state.releaseNotes.length === 0) {
     return <>{tooltip}</>;
   }
+  // A failure tooltip puts the updater's message on its second line.
+  const [summary, ...detailLines] = tooltip.split("\n");
+  const detail = detailLines.join("\n");
   const releasedAt = state.releaseNotes.find(
     (releaseNote) => releaseNote.version === state.availableVersion,
   )?.releasedAt;
@@ -74,7 +78,7 @@ export function SidebarUpdateReleaseNotes({
   return (
     <div className="flex max-h-[calc(var(--available-height)-0.5rem)] min-h-0 w-fit max-w-[min(24rem,calc(100vw-2rem))] flex-col text-left text-pretty">
       <div className="shrink-0 px-1">
-        {state.status === "available" ? (
+        {state.status === "available" && !isDesktopUpdateFailed(state) ? (
           <div>
             <div className="whitespace-nowrap text-sm leading-5 font-medium">
               Update ready to download
@@ -88,7 +92,14 @@ export function SidebarUpdateReleaseNotes({
             ) : null}
           </div>
         ) : (
-          <div className="text-sm leading-5 font-medium">{tooltip}</div>
+          <div>
+            <div className="text-sm leading-5 font-medium">{summary}</div>
+            {detail ? (
+              <div className="mt-0.5 text-xs leading-4 whitespace-pre-line text-muted-foreground [overflow-wrap:anywhere]">
+                {detail}
+              </div>
+            ) : null}
+          </div>
         )}
       </div>
       <div className="min-h-0 max-h-[min(28rem,calc(100vh-6rem))] overflow-y-auto px-1 pt-3 pb-1">

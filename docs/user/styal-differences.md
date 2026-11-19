@@ -422,15 +422,16 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 42da166](https://github.com/pingdotgg/t3code/tree/42da166d131017335a1158d0b379dd68b8985796).
   [Web app updates](./updating.md#web-app-updates).
 
-- **Updates ready for your next launch.** styal downloads updates in the background and installs
-  them when you quit. The sidebar shows an icon only when you can restart to update immediately;
-  checks, download progress, and retries are available in Settings. After a newer release on the
-  same track, the desktop app names the version and links to its release notes.
+- **Desktop update checks run hourly.** Downloads wait for your click. styal checks
+  hourly rather than T3 Code's four hours, keeping Nightly offers fresh without
+  downloading them. Download checks the latest release again. A finished download
+  stays ready; Restart to Install lets you keep that version if a newer one exists.
+  Downloaded updates still install on quit. After a newer release on the same track, the app names
+  the version and links to its release notes.
   [Updating styal](./updating.md#desktop-app-updates). Compared with
-  [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c),
-  which disables automatic downloads and installation on quit, and
-  [revision e7b6149](https://github.com/pingdotgg/t3code/tree/e7b61491a3a93c2562c95d60c281c81c71c00688),
-  checked November 19, 2026, which shows no notice after an update.
+  [T3 Code revision 1852121](https://github.com/pingdotgg/t3code/tree/1852121afac633f7b4dd85e4965f679e66de21dd),
+  checked November 19, 2026, which checks every four hours and requires an explicit
+  install. Its Install action can download a newer release before restarting.
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices

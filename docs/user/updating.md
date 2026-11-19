@@ -69,8 +69,8 @@ Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain. Before
 updating, styal checks the server for active agents, threads waiting for input,
 running terminal commands, and provider updates being installed, including work
-started from other devices. If
-work would be interrupted or the check fails, styal lists it and asks you to confirm.
+started from other devices. If work would be interrupted or the check fails,
+styal lists it and asks you to confirm.
 If the check takes longer than two seconds, the confirmation opens while it continues:
 choose **Update anyway** to update without waiting, or wait for the result to appear.
 Resumable agent turns do not need confirmation. Running terminal commands, waiting
@@ -174,12 +174,16 @@ refreshing does not update or restart your connected servers. This also works in
 
 ## Desktop app updates
 
-The desktop app downloads updates in the background and installs them when you
-quit, ready for your next launch. On macOS, closing the last window leaves the
-app running; choose **Quit** to install. To apply a downloaded update right away,
-select **Restart to update** in the sidebar. Update checks, download progress,
-retries, and the update track are in **Settings**. Changing the track cancels a
-pending update from the previous track.
+The desktop app checks for updates automatically. Choose **Download** in the
+sidebar or **Settings → About** when you are ready; it checks the latest release
+again before downloading. Progress and retries appear in the same places.
+A finished download stays ready while later checks run. **Restart to Install**
+checks for a newer release and lets you install the downloaded version or return
+to Download. It never starts another download.
+
+Downloaded updates also install when you quit, ready for your next launch.
+On macOS, closing the last window leaves the app running; choose **Quit** to
+install. Changing the track cancels a pending update from the previous track.
 After an update to a newer release on the same track, the desktop app names the
 version the next time you look at its window, with a link to its release notes.
 First launches, track changes, downgrades, PR previews, and development builds

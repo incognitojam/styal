@@ -4,7 +4,8 @@ import type { DesktopUpdateState } from "@t3tools/contracts";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateProgressLabel,
+  getDesktopUpdateSettingsButtonLabel,
+  getDesktopUpdateSettingsDescription,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
   resolveDesktopUpdateButtonAction,
@@ -12,6 +13,7 @@ import {
   shouldShowDesktopUpdateButton,
   getArm64IntelBuildWarningDescription,
   isDesktopUpdateButtonDisabled,
+  isDesktopUpdateFailed,
 } from "./desktopUpdate.logic";
 
 const baseState: DesktopUpdateState = {
@@ -41,18 +43,20 @@ describe("desktop update button state", () => {
     },
   );
 
-  it("presents a newly available update as automatic work", () => {
+  it("waits for Download when an update is available", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "available",
       availableVersion: "1.1.0",
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
-    expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
-    expect(getDesktopUpdateProgressLabel(state)).toBe("Preparing download…");
+    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
+    expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Download");
+    expect(getDesktopUpdateSettingsDescription(state)).toBe("Version 1.1.0 is available.");
+    expect(isDesktopUpdateFailed(state)).toBe(false);
   });
 
-  it("keeps download retry in Settings without showing a sidebar icon", () => {
+  it("offers a failed download for retry in the sidebar and Settings", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "available",
@@ -61,25 +65,63 @@ describe("desktop update button state", () => {
       errorContext: "download",
       canRetry: true,
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
+    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
-    expect(getDesktopUpdateProgressLabel(state)).toBeNull();
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+    expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Retry Download");
+    expect(getDesktopUpdateButtonTooltip(state)).toBe(
+      "Download failed for 1.1.0. Click to retry.\nnetwork timeout",
+    );
+    expect(getDesktopUpdateSettingsDescription(state)).toBe(
+      "Could not download version 1.1.0: network timeout",
+    );
+    expect(isDesktopUpdateFailed(state)).toBe(true);
   });
 
-  it("keeps install action available after an install error", () => {
-    const state: DesktopUpdateState = {
+  it.each(["error", "downloaded"] as const)(
+    "keeps install action available after an install error (%s)",
+    (status) => {
+      const state: DesktopUpdateState = {
+        ...baseState,
+        status,
+        downloadedVersion: "1.1.0",
+        availableVersion: "1.1.0",
+        message: "shutdown timeout",
+        errorContext: "install",
+        canRetry: true,
+      };
+      expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+      expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
+      expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Retry Install");
+      expect(getDesktopUpdateButtonTooltip(state)).toBe(
+        "Install failed for 1.1.0. Click to retry.\nshutdown timeout",
+      );
+      expect(getDesktopUpdateSettingsDescription(state)).toBe(
+        "Could not install version 1.1.0: shutdown timeout",
+      );
+      expect(isDesktopUpdateFailed(state)).toBe(true);
+    },
+  );
+
+  it("names both versions when a newer release is offered beside a downloaded one", () => {
+    const base: DesktopUpdateState = {
       ...baseState,
-      status: "error",
+      availableVersion: "1.2.0",
       downloadedVersion: "1.1.0",
-      availableVersion: "1.1.0",
-      message: "shutdown timeout",
-      errorContext: "install",
-      canRetry: true,
+      downloadPercent: 100,
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
-    expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+    expect(getDesktopUpdateSettingsDescription({ ...base, status: "downloaded" })).toBe(
+      "Version 1.1.0 is ready to install. Version 1.2.0 is also available.",
+    );
+    expect(getDesktopUpdateSettingsDescription({ ...base, status: "available" })).toBe(
+      "Version 1.2.0 is available. Version 1.1.0 is ready to install.",
+    );
+    expect(
+      getDesktopUpdateSettingsDescription({
+        ...base,
+        availableVersion: "1.1.0",
+        status: "downloaded",
+      }),
+    ).toBe("Version 1.1.0 is ready to install.");
   });
 
   it("keeps install action available after a background updater error", () => {
@@ -94,6 +136,7 @@ describe("desktop update button state", () => {
     };
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
+    expect(getDesktopUpdateSettingsButtonLabel(state)).toBe("Restart to Install");
     expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to restart and install");
   });
 
@@ -104,7 +147,7 @@ describe("desktop update button state", () => {
       availableVersion: "1.2.0",
       downloadedVersion: "1.1.0",
     };
-    expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
+    expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
   });
 
   it("keeps the downloaded update visible while checking without offering install", () => {
@@ -120,6 +163,9 @@ describe("desktop update button state", () => {
     expect(getDesktopUpdateButtonTooltip(state)).toBe(
       "Update 1.1.0 downloaded. Checking for newer updates…",
     );
+    expect(getDesktopUpdateSettingsDescription(state)).toBe(
+      "Version 1.1.0 is ready to install. Checking for a newer one…",
+    );
     expect(canCheckForUpdate(state)).toBe(false);
     expect(shouldShowDesktopUpdateButton({ ...state, enabled: false })).toBe(false);
   });
@@ -134,18 +180,20 @@ describe("desktop update button state", () => {
     };
     expect(shouldShowDesktopUpdateButton(state)).toBe(false);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
+    expect(getDesktopUpdateSettingsDescription(state)).toBeNull();
   });
 
-  it("hides the sidebar button while retaining disabled download progress in Settings", () => {
+  it("describes a running download by version in the sidebar and Settings", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       status: "downloading",
       availableVersion: "1.1.0",
       downloadPercent: 42.5,
     };
-    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
+    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(isDesktopUpdateButtonDisabled(state)).toBe(true);
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("42%");
+    expect(getDesktopUpdateSettingsDescription(state)).toBe("Downloading version 1.1.0.");
+    expect(getDesktopUpdateButtonTooltip(state)).toBe("Downloading update 1.1.0 (42%)");
   });
 });
 
@@ -172,6 +220,16 @@ describe("resolveDesktopUpdateButtonTone", () => {
     ).toBe("cta");
   });
 
+  it("calls for action when an update is available to download", () => {
+    expect(
+      resolveDesktopUpdateButtonTone({
+        ...baseState,
+        status: "available",
+        availableVersion: "1.1.0",
+      }),
+    ).toBe("cta");
+  });
+
   it("calls for action when a failed download can be retried", () => {
     expect(
       resolveDesktopUpdateButtonTone({
@@ -192,35 +250,33 @@ describe("resolveDesktopUpdateButtonTone", () => {
   });
 });
 
-describe("getDesktopUpdateProgressLabel", () => {
-  it("presents automatic updater work as status text", () => {
-    expect(getDesktopUpdateProgressLabel({ ...baseState, status: "checking" })).toBe("Checking…");
+describe("getDesktopUpdateSettingsButtonLabel", () => {
+  it("names updater status and the check action", () => {
+    expect(getDesktopUpdateSettingsButtonLabel({ ...baseState, status: "checking" })).toBe(
+      "Checking…",
+    );
+    expect(getDesktopUpdateSettingsButtonLabel({ ...baseState, status: "up-to-date" })).toBe(
+      "Up to Date",
+    );
     expect(
-      getDesktopUpdateProgressLabel({
-        ...baseState,
-        status: "downloading",
-        downloadPercent: 42.5,
-      }),
-    ).toBe("Downloading… 42%");
+      getDesktopUpdateSettingsButtonLabel(
+        { ...baseState, status: "up-to-date" },
+        { offTrack: true },
+      ),
+    ).toBe("Check for Updates");
+    expect(getDesktopUpdateSettingsButtonLabel(baseState)).toBe("Check for Updates");
+    expect(getDesktopUpdateSettingsButtonLabel(null)).toBe("Check for Updates");
   });
 
-  it("leaves user actions to the button control", () => {
+  it("offers Restart to Install once the update is downloaded", () => {
     expect(
-      getDesktopUpdateProgressLabel({
-        ...baseState,
-        status: "available",
-        availableVersion: "1.1.0",
-        errorContext: "download",
-        canRetry: true,
-      }),
-    ).toBeNull();
-    expect(
-      getDesktopUpdateProgressLabel({
+      getDesktopUpdateSettingsButtonLabel({
         ...baseState,
         status: "downloaded",
+        availableVersion: "1.1.0",
         downloadedVersion: "1.1.0",
       }),
-    ).toBeNull();
+    ).toBe("Restart to Install");
   });
 });
 
@@ -237,7 +293,7 @@ describe("desktop update UI helpers", () => {
     },
   );
 
-  it("explains that an available native build downloads automatically", () => {
+  it("asks to download an available native build", () => {
     const state: DesktopUpdateState = {
       ...baseState,
       hostArch: "arm64",
@@ -248,7 +304,7 @@ describe("desktop update UI helpers", () => {
     };
 
     expect(getArm64IntelBuildWarningDescription(state)).toContain(
-      "replace it with the native Apple Silicon build automatically",
+      "Download the available update to switch to the native Apple Silicon build",
     );
   });
 });

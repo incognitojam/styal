@@ -32,6 +32,7 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -62,7 +63,7 @@ import {
 const CHANNEL_CHANGE_RETRY_DELAY = Duration.seconds(1);
 const CHANNEL_CHANGE_RETRIES = 30;
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
-const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
+const AUTO_UPDATE_POLL_INTERVAL = "1 hour";
 const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
@@ -387,6 +388,7 @@ export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const desktopState = yield* DesktopState.DesktopState;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
+  const electronDialog = yield* ElectronDialog.ElectronDialog;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -404,6 +406,7 @@ export const make = Effect.gen(function* () {
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
+  const refreshedOfferRef = yield* Ref.make(Option.none<DesktopUpdateState>());
   // The release a track switch's database check cleared. A build crosses to another track only
   // through such a switch, and never below that release: version order alone cannot tell whether
   // a Stable knows a Nightly's migrations.
@@ -514,21 +517,6 @@ export const make = Effect.gen(function* () {
       Option.isSome(activeAction) ? [false, activeAction] : [true, Option.some(action)],
     );
 
-  // electron-updater emits `update-available` before its check promise
-  // settles. Transfer that check's reservation to the automatic download so
-  // the event can continue the same updater operation without opening a gap
-  // for an install, channel change, or second download.
-  const tryStartAutomaticDownload = Ref.modify(activeUpdateActionRef, (activeAction) => {
-    if (
-      Option.isNone(activeAction) ||
-      activeAction.value === "check" ||
-      activeAction.value === "channel"
-    ) {
-      return [true, Option.some<UpdateAction>("download")];
-    }
-    return [false, activeAction];
-  });
-
   const tryStartChannelChange = Ref.modify(activeUpdateActionRef, (activeAction) =>
     Option.isSome(activeAction)
       ? [activeAction, activeAction]
@@ -544,6 +532,23 @@ export const make = Effect.gen(function* () {
         finished ? PubSub.publish(finishedUpdateActions, action).pipe(Effect.asVoid) : Effect.void,
       ),
     );
+
+  // Re-runs admit after each finished action, so a caller waiting on a check decides on its result.
+  const admitAfterCheck = Effect.fn("desktop.updates.admitAfterCheck")(function* (
+    admit: Effect.Effect<"admitted" | "refused" | "wait-for-check">,
+  ) {
+    const actionCompletions = yield* PubSub.subscribe(finishedUpdateActions);
+    let admission = yield* stateMutex.withPermits(1)(admit);
+    while (admission === "wait-for-check") {
+      const finishedAction = yield* PubSub.take(actionCompletions).pipe(
+        Effect.timeoutOption(PREPARED_INSTALL_CHECK_WAIT),
+      );
+      admission = Option.isNone(finishedAction)
+        ? "refused"
+        : yield* stateMutex.withPermits(1)(admit);
+    }
+    return admission;
+  });
 
   const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
     channel: DesktopUpdateChannel,
@@ -561,6 +566,18 @@ export const make = Effect.gen(function* () {
       allowPrerelease: allowsPrerelease,
       fullChangelog: allowsPrerelease,
     });
+  });
+
+  // The flag is shared updater state, so callers flip it only while holding a reservation.
+  const runUpdaterCheck = Effect.fn("desktop.updates.runUpdaterCheck")(function* (
+    allowDowngrade: boolean,
+  ) {
+    yield* Ref.set(refreshedOfferRef, Option.none());
+    const restoreDowngrade = yield* electronUpdater.allowDowngrade;
+    if (allowDowngrade) yield* electronUpdater.setAllowDowngrade(true);
+    return yield* electronUpdater.checkForUpdates.pipe(
+      Effect.ensuring(electronUpdater.setAllowDowngrade(restoreDowngrade).pipe(Effect.ignore)),
+    );
   });
 
   const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
@@ -591,11 +608,7 @@ export const make = Effect.gen(function* () {
       yield* setState(reduceDesktopUpdateStateOnCheckStart(state, checkedAt));
       yield* logUpdaterInfo("checking for updates", { reason });
 
-      // The flag is shared updater state, so it flips only while this check holds the reservation.
-      const restoreDowngrade = yield* electronUpdater.allowDowngrade;
-      if (allowDowngrade) yield* electronUpdater.setAllowDowngrade(true);
-      return yield* electronUpdater.checkForUpdates.pipe(
-        Effect.ensuring(electronUpdater.setAllowDowngrade(restoreDowngrade).pipe(Effect.ignore)),
+      return yield* runUpdaterCheck(allowDowngrade).pipe(
         Effect.as(true),
         Effect.catchTags({
           ElectronUpdaterCheckForUpdatesError: Effect.fn(
@@ -625,21 +638,60 @@ export const make = Effect.gen(function* () {
   });
 
   const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(function* (
-    reservation: "acquire" | "handoff" = "acquire",
+    refresh = true,
   ) {
-    const state = yield* Ref.get(updateStateRef);
-    if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
+    const admission = yield* Effect.scoped(
+      admitAfterCheck(
+        Effect.gen(function* () {
+          const state = yield* Ref.get(updateStateRef);
+          if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
+            return "refused" as const;
+          }
+          const activeAction = yield* Ref.get(activeUpdateActionRef);
+          if (Option.isSome(activeAction)) {
+            return activeAction.value === "check"
+              ? ("wait-for-check" as const)
+              : ("refused" as const);
+          }
+          return (yield* tryStartUpdateAction("download"))
+            ? ("admitted" as const)
+            : ("refused" as const);
+        }),
+      ),
+    );
+    if (admission === "refused") {
       return { accepted: false, completed: false };
     }
 
-    const acquired = yield* reservation === "handoff"
-      ? tryStartAutomaticDownload
-      : tryStartUpdateAction("download");
-    if (!acquired) {
-      return { accepted: false, completed: false };
-    }
-
+    const offered = yield* Ref.get(updateStateRef);
+    let state = offered;
     return yield* Effect.gen(function* () {
+      if (refresh) {
+        // electron-updater downloads what its last check found, which can be hours old.
+        yield* logUpdaterInfo("checking for updates", { reason: "download" });
+        yield* runUpdaterCheck(
+          offered.channel !== desktopUpdateChannelOf(environment.appVersion),
+        ).pipe(
+          // A failed check keeps electron-updater's earlier result, so the known offer still downloads.
+          Effect.catchTags({
+            ElectronUpdaterCheckForUpdatesError: (error) =>
+              logUpdaterWarning(error.message, {
+                errorTag: error._tag,
+                cause: describeUpdateErrorCause(error.cause),
+              }),
+          }),
+        );
+      }
+      state = yield* Ref.get(updateStateRef);
+      if (state.status !== "available") {
+        return { accepted: true, completed: false };
+      }
+      if (
+        state.availableVersion !== null &&
+        !(yield* nativeStaging.releaseSuperseded(state.availableVersion))
+      ) {
+        return { accepted: false, completed: false };
+      }
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
@@ -970,7 +1022,80 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    const result = yield* installDownloadedUpdate(expectedVersion, consent);
+    const retained = yield* Ref.get(updateStateRef);
+    let installVersion = expectedVersion;
+    if (
+      retained.downloadedVersion !== null &&
+      (expectedVersion === undefined || retained.downloadedVersion === expectedVersion) &&
+      (yield* tryStartUpdateAction("check"))
+    ) {
+      installVersion = retained.downloadedVersion;
+      const proceed = yield* Effect.gen(function* () {
+        yield* checkForUpdates(
+          "install",
+          "held",
+          retained.channel !== desktopUpdateChannelOf(environment.appVersion),
+        );
+        const refreshed = yield* Ref.get(refreshedOfferRef);
+        yield* setState({ ...retained, message: null, errorContext: null });
+        if (
+          consent === "ask" &&
+          expectedVersion === undefined &&
+          Option.isSome(refreshed) &&
+          refreshed.value.availableVersion !== null &&
+          compareSemverVersions(refreshed.value.availableVersion, installVersion ?? "") > 0
+        ) {
+          const owner = yield* electronWindow.currentMainOrFirst;
+          const choice = yield* electronDialog
+            .showMessageBox(
+              {
+                type: "question",
+                title: "Update styal",
+                message: `Install ${retained.downloadedVersion}?`,
+                detail: `${refreshed.value.availableVersion} came out after ${retained.downloadedVersion} was downloaded.\n\nShow ${refreshed.value.availableVersion} to see it in Updates, where you can download it. Nothing downloads until you choose Download.`,
+                buttons: [
+                  `Install ${retained.downloadedVersion}`,
+                  `Show ${refreshed.value.availableVersion}`,
+                  "Cancel",
+                ],
+                defaultId: 0,
+                cancelId: 2,
+                noLink: true,
+              },
+              Option.getOrUndefined(owner),
+            )
+            .pipe(
+              Effect.map((result) => result.response),
+              Effect.catch((error) => logUpdaterWarning(error.message).pipe(Effect.as(2))),
+            );
+          if (choice === 1) {
+            yield* setState({
+              ...refreshed.value,
+              status: "available",
+              downloadedVersion: null,
+              downloadPercent: null,
+              errorContext: null,
+              canRetry: false,
+              message: null,
+            });
+          }
+          return choice === 0;
+        }
+        return true;
+      }).pipe(
+        Effect.onInterrupt(() => setState(retained)),
+        Effect.ensuring(finishUpdateAction("check")),
+      );
+      if (!proceed) {
+        return {
+          accepted: false,
+          completed: false,
+          failed: false,
+          state: yield* Ref.get(updateStateRef),
+        };
+      }
+    }
+    const result = yield* installDownloadedUpdate(installVersion, consent);
     return {
       accepted: result.accepted,
       completed: result.completed,
@@ -1034,25 +1159,24 @@ export const make = Effect.gen(function* () {
           }
 
           const checkedAt = yield* currentIsoTimestamp;
-          if (!(yield* nativeStaging.releaseSuperseded(info.version))) {
-            yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, checkedAt));
-            return;
-          }
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
             releaseNotesOfOfferedVersion(info),
             info.version,
             state.channel,
             info.releaseDate,
           );
-          yield* Ref.set(
-            updateStateRef,
-            reduceDesktopUpdateStateOnUpdateAvailable(
-              state,
-              info.version,
-              checkedAt,
-              releaseNotes,
-              omittedReleaseCount,
-            ),
+          const offered = reduceDesktopUpdateStateOnUpdateAvailable(
+            state,
+            info.version,
+            checkedAt,
+            releaseNotes,
+            omittedReleaseCount,
+          );
+          yield* Ref.set(refreshedOfferRef, Option.some(offered));
+          yield* setState(
+            state.downloadedVersion !== null
+              ? reduceDesktopUpdateStateOnNoUpdate(state, checkedAt)
+              : offered,
           );
           yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
           yield* logUpdaterInfo("update available", {
@@ -1060,14 +1184,6 @@ export const make = Effect.gen(function* () {
             releaseNoteGroups: releaseNotes.length,
             omittedReleaseCount,
           });
-          const download = yield* downloadAvailableUpdate("handoff");
-          if (!download.accepted) {
-            // The available state is stored silently to avoid flashing it
-            // immediately before `downloading`. If no download begins (for
-            // example, this version is already downloaded), clients still
-            // need the terminal state instead of remaining on `checking`.
-            yield* emitState;
-          }
         }),
       ),
       Effect.catchCause((cause) => {

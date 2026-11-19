@@ -60,9 +60,10 @@ describe("macOS background staging", () => {
     );
   });
 
-  it.effect("replaces a staged update when a newer release appears", () => {
+  it.effect("replaces a staged update only after an explicit newer Download", () => {
     const harness = makeHarness({
       stagesInBackground: true,
+      chooseInstallUpdate: 1,
       checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.5" })),
       downloadUpdate: Effect.sync(() => harness.emit("update-downloaded", { version: "1.2.5" })),
     });
@@ -73,6 +74,12 @@ describe("macOS background staging", () => {
         assert.equal(harness.squirrel.stageCount, 1);
 
         assert.isTrue((yield* updates.check("poll")).checked);
+        yield* flushCallbacks;
+        assert.equal(harness.squirrel.discardCount, 0);
+        assert.equal(harness.downloadCount(), 0);
+        assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+        assert.isFalse((yield* updates.install).accepted);
+        assert.isTrue((yield* updates.download).completed);
         yield* flushCallbacks;
         assert.equal(harness.squirrel.discardCount, 1);
         assert.equal(harness.downloadCount(), 1);

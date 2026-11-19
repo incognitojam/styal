@@ -146,7 +146,7 @@ describe("DesktopRemoteUpdates", () => {
             yield* settle;
             assert.equal(harness.quitAndInstalls(), 1);
             assert.equal(harness.downloadCount(), 1);
-            assert.equal(harness.checkCount(), 1);
+            assert.equal(harness.checkCount(), 4);
             assert.equal(harness.idleRestart.inspections, 2);
           }),
       );
@@ -404,8 +404,7 @@ describe("DesktopRemoteUpdates", () => {
           targetVersion: "1.2.3",
         });
         yield* settle;
-        // Even with a newer build on the feed, this request installs nothing. The newer build only
-        // downloads in the background, as on any host following its own track.
+        // A track-only request leaves newer offers waiting for a download request.
         harness.emit("update-available", { version: "1.2.4" });
         yield* settle;
 
@@ -420,7 +419,10 @@ describe("DesktopRemoteUpdates", () => {
   });
 
   it.effect("drops a retained download below the switch's checked release", () => {
-    const harness = makeHarness({ beforeSetUpdateChannel: Effect.void });
+    const harness = makeHarness({
+      beforeSetUpdateChannel: Effect.void,
+      checkForUpdates: Effect.void,
+    });
 
     return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
       Effect.gen(function* () {
@@ -671,6 +673,7 @@ describe("DesktopRemoteUpdates", () => {
   it.effect("does not misread a lingering install error as a failed retry", () => {
     let installAttempts = 0;
     const harness = makeHarness({
+      platform: "win32",
       quitAndInstall: Effect.suspend(() => {
         installAttempts += 1;
         return installAttempts === 1
@@ -760,7 +763,7 @@ describe("DesktopRemoteUpdates", () => {
     );
   });
 
-  it.effect("hands the check reservation to automatic download without starting it twice", () => {
+  it.effect("waits for its check before explicitly downloading once", () => {
     const releaseCheck = Deferred.makeUnsafe<void>();
     const harness = makeHarness({ checkForUpdates: Deferred.await(releaseCheck) });
 
@@ -772,7 +775,7 @@ describe("DesktopRemoteUpdates", () => {
 
         harness.emit("update-available", { version: "1.2.4" });
         yield* settle;
-        assert.equal(harness.downloadCount(), 1);
+        assert.equal(harness.downloadCount(), 0);
 
         yield* Deferred.succeed(releaseCheck, undefined);
         yield* settle;
@@ -871,11 +874,10 @@ describe("DesktopRemoteUpdates", () => {
   it.effect("waits for a background check before installing a prepared update", () => {
     const backgroundCheckStarted = Deferred.makeUnsafe<void>();
     const releaseBackgroundCheck = Deferred.makeUnsafe<void>();
-    let checks = 0;
+    let blockCheck = false;
     const harness = makeHarness({
       checkForUpdates: Effect.suspend(() => {
-        checks += 1;
-        return checks === 2
+        return blockCheck
           ? Deferred.succeed(backgroundCheckStarted, undefined).pipe(
               Effect.andThen(Deferred.await(releaseBackgroundCheck)),
             )
@@ -893,6 +895,7 @@ describe("DesktopRemoteUpdates", () => {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* settle;
 
+        blockCheck = true;
         const backgroundCheck = yield* updates.check("poll").pipe(Effect.forkChild);
         yield* Deferred.await(backgroundCheckStarted);
         assert.equal((yield* updates.getState).status, "checking");

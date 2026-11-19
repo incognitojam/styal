@@ -131,7 +131,7 @@ as it finishes. Staging writes `~/Library/Caches/<bundle id>.ShipIt/ShipItState.
 and submits the `<bundle id>.ShipIt` launchd job, which installs that request on any exit, whether or
 not the exit went through the update handoff. Staging cannot be cancelled, and Squirrel submits the
 job only once per native updater, which electron-updater replaces at each download. Desktop therefore
-keeps this simple: checks hold only while staging runs, a newer release or a track switch removes the
+keeps this simple: checks hold only while staging runs, an explicit newer download or a track switch removes the
 user launchd job (verified with `launchctl print`) before anything else downloads, and staging is skipped when Squirrel would
 need administrator rights, which would put the job in the system domain. Every track switch runs
 the discard, since a job can outlive the process that submitted it. When background staging failed
