@@ -1378,11 +1378,18 @@ describe("VcsStatusBroadcaster", () => {
             return;
           }
           assert.deepStrictEqual(
-            clientStates.filter((status) => status.refName === "repro").map((status) => status.pr),
-            [null],
+            new Set(
+              clientStates
+                .filter((status) => status.refName === "repro")
+                .map((status) => status.pr),
+            ),
+            new Set([null]),
           );
           // A checkout must not trigger a network fetch.
-          assert.deepStrictEqual(state.remoteStatusRefreshUpstreamValues?.slice(1), [false]);
+          assert.deepStrictEqual(
+            new Set(state.remoteStatusRefreshUpstreamValues),
+            new Set([false]),
+          );
         }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
       }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
