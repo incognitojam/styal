@@ -21,9 +21,26 @@ vi.mock(import("./relaySession"), async (original) => ({
 }));
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { legacyClerkSettledAtom } from "./relaySessionStore";
 import { ManagedRelayAuthProvider } from "./managedAuth";
 
 describe("ManagedRelayAuthProvider", () => {
+  it("cleans saved relay routes on a signed-out startup only once legacy adoption settles", async () => {
+    state.removeEnvironments.mockClear();
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
+    appAtomRegistry.set(managedRelaySessionAtom, null);
+    appAtomRegistry.set(legacyClerkSettledAtom, false);
+    await using _screen = await render(
+      <ManagedRelayAuthProvider>
+        <p>App</p>
+      </ManagedRelayAuthProvider>,
+      { router: false },
+    );
+    expect(state.removeEnvironments).not.toHaveBeenCalled();
+    act(() => appAtomRegistry.set(legacyClerkSettledAtom, true));
+    await vi.waitFor(() => expect(state.removeEnvironments).toHaveBeenCalledOnce());
+  });
+
   it("removes relay environments when the account signs out, mounted outside AppRoot", async () => {
     state.removeEnvironments.mockClear();
     appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");

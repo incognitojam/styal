@@ -867,10 +867,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     setAgentAwarenessRelayCredential(session("a"));
 
     return Effect.gen(function* () {
-      yield* refreshAgentAwarenessRegistration();
+      yield* runBackgroundOperations();
       expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
       setAgentAwarenessRelayCredential(session("b"));
-      yield* refreshAgentAwarenessRegistration();
+      yield* runBackgroundOperations();
       expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(layerRelayTest));
   });

@@ -1,3 +1,4 @@
+import { computeDpopAccessTokenHash } from "@t3tools/shared/dpop";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   RelayAccountScope,
@@ -46,6 +47,7 @@ function seededAccountTokenStore(accessToken = "seeded-account-token") {
   let entries: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [
     {
       accountId: "user-1",
+      sessionTokenHash: computeDpopAccessTokenHash(credential("user-1").refreshToken),
       clientId: "t3-mobile",
       relayUrl: "https://relay.example.test",
       thumbprint: "client-thumbprint",
@@ -79,6 +81,55 @@ const accessTokenResponse = (accessToken: string, scope: string, expiresIn = 1_8
   });
 
 describe("ManagedRelayClient", () => {
+  it.effect("keeps replacement sessions isolated when an older session is revoked", () => {
+    const first = { accountId: "user-1", refreshToken: "styal_rt_first" };
+    const replacement = { accountId: "user-1", refreshToken: "styal_rt_replacement" };
+    const ended: Array<ManagedRelay.ManagedRelayCredential> = [];
+    let revoked = false;
+    const refreshes: Array<string> = [];
+    const fetchFn = ((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/v1/auth/token")) {
+        const token = JSON.parse(String(init?.body)).refresh_token as string;
+        refreshes.push(token);
+        return Promise.resolve(accessTokenResponse(token, RelayAccountScope));
+      }
+      const authorization = new Headers(init?.headers).get("authorization");
+      return Promise.resolve(
+        revoked && authorization === `DPoP ${first.refreshToken}`
+          ? Response.json(
+              {
+                _tag: "RelayAuthInvalidError",
+                code: "auth_invalid",
+                reason: "invalid_session",
+                traceId: "trace-old-session",
+              },
+              { status: 401 },
+            )
+          : Response.json({ devices: [] }),
+      );
+    }) satisfies typeof globalThis.fetch;
+    return Effect.gen(function* () {
+      const client = yield* ManagedRelay.ManagedRelayClient;
+      yield* client.listDevices({ credential: first });
+      yield* client.listDevices({ credential: replacement });
+      expect(refreshes).toEqual([first.refreshToken, replacement.refreshToken]);
+      revoked = true;
+      yield* client.listDevices({ credential: first }).pipe(Effect.flip);
+      expect(ended).toEqual([first]);
+      yield* client.listDevices({ credential: replacement });
+      expect(refreshes).toEqual([first.refreshToken, replacement.refreshToken]);
+    }).pipe(
+      Effect.provide(
+        layerManagedRelayTest(fetchFn, undefined, undefined, (credential) =>
+          Effect.sync(() => {
+            ended.push(credential);
+          }),
+        ),
+      ),
+    );
+  });
+
   it.effect("rejects unsafe relay URLs before sending credentials", () => {
     let requestCount = 0;
     const fetchFn = (() => {
@@ -109,6 +160,7 @@ describe("ManagedRelayClient", () => {
     let persistedTokens: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [
       {
         accountId: "user-1",
+        sessionTokenHash: computeDpopAccessTokenHash(credential("user-1").refreshToken),
         clientId: "t3-mobile",
         relayUrl: "https://relay.example.test",
         thumbprint: "client-thumbprint",
@@ -265,6 +317,7 @@ describe("ManagedRelayClient", () => {
     let persistedTokens: ReadonlyArray<ManagedRelay.ManagedRelayAccessTokenCacheEntry> = [
       {
         accountId: "user-1",
+        sessionTokenHash: computeDpopAccessTokenHash(credential("user-1").refreshToken),
         clientId: "t3-mobile",
         relayUrl: "https://relay.example.test",
         thumbprint: "client-thumbprint",

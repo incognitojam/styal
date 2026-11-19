@@ -175,7 +175,10 @@ export function setAgentAwarenessRelayCredential(
 ): void {
   if (credential !== null && registrationStopped) return;
   const previousAccountId = relayCredential?.accountId ?? null;
-  const isExistingIdentity = credential !== null && credential.accountId === previousAccountId;
+  const isExistingIdentity =
+    credential !== null &&
+    credential.accountId === previousAccountId &&
+    credential.refreshToken === relayCredential?.refreshToken;
   if (!isExistingIdentity) {
     // No previous JS account is a remount; native configure checks the persisted account on cold start.
     if (previousAccountId !== null) {

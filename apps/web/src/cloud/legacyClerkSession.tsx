@@ -4,11 +4,11 @@ import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/clie
 import { useEffect, useRef } from "react";
 
 import { runtime } from "../lib/runtime";
-import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
+import { AppAtomRegistryProvider, appAtomRegistry } from "../rpc/atomRegistry";
 import { isLegacyCliConnectRoute } from "./connectCliAuth";
 import { resolveRelayClerkTokenOptions } from "./publicConfig";
 import { adoptClerkSession, setLegacyClerkSignOut } from "./relaySession";
-import { legacyClerkAdoptionAllowed } from "./relaySessionStore";
+import { legacyClerkAdoptionAllowed, legacyClerkSettledAtom } from "./relaySessionStore";
 
 /**
  * Moves a browser that is still signed in with Clerk to a relay session for
@@ -30,6 +30,11 @@ function ClerkSessionAdoption() {
   const session = useAtomValue(managedRelaySessionAtom);
   const loadState = useAtomValue(managedRelayAuthLoadAtom);
   const attemptedRef = useRef(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks legacy auth settled only after Clerk authoritatively reports signed out
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) appAtomRegistry.set(legacyClerkSettledAtom, true);
+  }, [isLoaded, isSignedIn]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers Clerk's sign-out with the relay session for as long as Clerk is mounted
   useEffect(() => {

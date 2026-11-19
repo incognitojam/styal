@@ -160,13 +160,15 @@ function RootRouteBranch() {
   );
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
+  if (pathname === "/approve-agent")
+    return (
+      <>
+        <RelayAuthDialogs />
+        <Outlet />
+      </>
+    );
 
-  if (
-    pathname === "/pair" ||
-    pathname === "/connect" ||
-    pathname === "/connect-agent" ||
-    pathname === "/approve-agent"
-  ) {
+  if (pathname === "/pair" || pathname === "/connect" || pathname === "/connect-agent") {
     return <Outlet />;
   }
 

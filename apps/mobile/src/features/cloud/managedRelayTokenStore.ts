@@ -11,6 +11,7 @@ const MANAGED_RELAY_TOKEN_CACHE_VERSION = 1;
 
 const ManagedRelayAccessTokenCacheEntrySchema = Schema.Struct({
   accountId: Schema.String,
+  sessionTokenHash: Schema.optional(Schema.String),
   clientId: RelayPublicClientId,
   relayUrl: Schema.String,
   thumbprint: Schema.String,

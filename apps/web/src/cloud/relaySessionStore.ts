@@ -6,9 +6,13 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { BrowserDpopError, cloudAuthTransaction } from "./dpop";
+import { hasLegacyClerkConfig } from "./publicConfig";
+
+export const legacyClerkSettledAtom = Atom.make(!hasLegacyClerkConfig()).pipe(Atom.keepAlive);
 
 const RECORD_KEY = "relay-session";
 const CLERK_RETIRED_KEY = "relay-session-clerk-retired";
@@ -155,6 +159,7 @@ export const publishRelaySessionIfCurrent = (revision: number, onPublish?: () =>
     readState(store, (state) => {
       const current = state.revision === revision;
       if (current) {
+        if (state.clerkRetired) appAtomRegistry.set(legacyClerkSettledAtom, true);
         publishRelaySession(state.session);
         appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
         onPublish?.();

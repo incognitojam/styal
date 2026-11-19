@@ -37,6 +37,7 @@ import {
   RelayUnregisterDeviceEndpoint,
   RelayVerifyEmailSignInEndpoint,
 } from "@t3tools/contracts/relay";
+import { computeDpopAccessTokenHash } from "@t3tools/shared/dpop";
 import { parseAllowedOAuthScope } from "@t3tools/shared/oauthScope";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
@@ -279,6 +280,7 @@ export interface ManagedRelaySignIn {
 }
 
 export interface ManagedRelayAccessTokenCacheEntry {
+  readonly sessionTokenHash?: string;
   readonly accountId: string;
   readonly clientId: RelayPublicClientId;
   readonly relayUrl: string;
@@ -483,11 +485,13 @@ function tokenMatches(
     readonly relayUrl: string;
     readonly thumbprint: string;
     readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
+    readonly sessionTokenHash: string;
     readonly nowMillis: number;
   },
 ): boolean {
   return (
     token.accountId === input.accountId &&
+    token.sessionTokenHash === input.sessionTokenHash &&
     token.clientId === input.clientId &&
     token.relayUrl === input.relayUrl &&
     token.thumbprint === input.thumbprint &&
@@ -569,7 +573,11 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   const initialTokens = options.accessTokenStore ? yield* options.accessTokenStore.load : [];
   const cachedTokens = yield* SynchronizedRef.make<
     ReadonlyArray<ManagedRelayAccessTokenCacheEntry>
-  >(initialTokens.filter((token) => token.clientId === options.clientId));
+  >(
+    initialTokens.filter(
+      (token) => token.clientId === options.clientId && token.sessionTokenHash !== undefined,
+    ),
+  );
   const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;
@@ -644,10 +652,12 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     readonly accessToken: string;
     readonly scope: string;
     readonly expiresIn: number;
+    readonly sessionTokenHash: string;
   }) {
     const nowMillis = yield* Clock.currentTimeMillis;
     return {
       accountId: input.accountId,
+      sessionTokenHash: input.sessionTokenHash,
       clientId: options.clientId,
       relayUrl,
       thumbprint: input.thumbprint,
@@ -660,9 +670,11 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   const storeTokens = (tokens: ReadonlyArray<ManagedRelayAccessTokenCacheEntry>) =>
     options.accessTokenStore ? options.accessTokenStore.save(tokens) : Effect.void;
 
-  const forgetAccount = (accountId: string) =>
+  const forgetCredential = (credential: ManagedRelayCredential) =>
     SynchronizedRef.updateEffect(cachedTokens, (tokens) => {
-      const nextTokens = tokens.filter((token) => token.accountId !== accountId);
+      const nextTokens = tokens.filter(
+        (token) => token.sessionTokenHash !== computeDpopAccessTokenHash(credential.refreshToken),
+      );
       return storeTokens(nextTokens).pipe(Effect.as(nextTokens));
     });
 
@@ -670,7 +682,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   // ended session cannot clear a newer sign-in.
   const endSessionOn = (credential: ManagedRelayCredential) => (error: ManagedRelayClientError) =>
     isManagedRelaySessionEnded(error)
-      ? forgetAccount(credential.accountId).pipe(
+      ? forgetCredential(credential).pipe(
           Effect.andThen(options.onSessionEnded?.(credential) ?? Effect.void),
         )
       : Effect.void;
@@ -704,6 +716,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       const nowMillis = yield* Clock.currentTimeMillis;
       const match = {
         accountId: input.credential.accountId,
+        sessionTokenHash: computeDpopAccessTokenHash(input.credential.refreshToken),
         clientId: options.clientId,
         relayUrl,
         thumbprint: input.thumbprint,
@@ -735,6 +748,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           const response = yield* refreshAccessToken(input.credential);
           const next = yield* cacheEntry({
             accountId: input.credential.accountId,
+            sessionTokenHash: match.sessionTokenHash,
             thumbprint: input.thumbprint,
             accessToken: response.access_token,
             scope: response.scope,
@@ -747,7 +761,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             });
           }
           const nextTokens = [
-            ...activeTokens.filter((token) => token.accountId !== next.accountId),
+            ...activeTokens.filter((token) => token.sessionTokenHash !== next.sessionTokenHash),
             next,
           ];
           yield* storeTokens(nextTokens);
@@ -864,6 +878,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     const thumbprint = yield* signer.thumbprint;
     const entry = yield* cacheEntry({
       accountId: response.user.id,
+      sessionTokenHash: computeDpopAccessTokenHash(response.refresh_token),
       thumbprint,
       accessToken: response.access_token,
       scope: response.scope,
@@ -942,7 +957,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     ),
     signOut: Effect.fnUntraced(
       function* (input) {
-        yield* forgetAccount(input.credential.accountId);
+        yield* forgetCredential(input.credential);
         const proof = yield* authProof(dpopProofTargets.signOut());
         yield* client.auth
           .signOut({
@@ -1018,7 +1033,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
                 timeoutRelayRequest("styal Link account deletion"),
               ),
         );
-        yield* forgetAccount(input.credential.accountId);
+        yield* forgetCredential(input.credential);
       },
       Effect.withSpan("clientRuntime.managedRelay.deleteAccount"),
       withRelayClientTracing,

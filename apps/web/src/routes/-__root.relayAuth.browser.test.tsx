@@ -77,25 +77,35 @@ function resetSignIn(): Disposable {
 }
 
 describe("welcome route relay authentication", () => {
-  it("opens email sign-in while keeping post-sign-in onboarding suspended", async () => {
-    using _signIn = resetSignIn();
-    const router = createRouter({
-      routeTree: Route.addChildren([welcomeRoute]),
-      history: createMemoryHistory({ initialEntries: ["/welcome"] }),
-      disableGlobalCatchBoundary: true,
-    });
-    await using screen = await render(
-      <AppAtomRegistryProvider>
-        <RouterProvider router={router} />
-      </AppAtomRegistryProvider>,
-      { router: false },
-    );
+  it.each(["/welcome", "/approve-agent"])(
+    "opens email sign-in on %s while keeping post-sign-in onboarding suspended",
+    async (path) => {
+      using _signIn = resetSignIn();
+      const router = createRouter({
+        routeTree: Route.addChildren([
+          welcomeRoute,
+          createRoute({
+            getParentRoute: () => Route,
+            path: "/approve-agent",
+            component: welcomeRoute.options.component,
+          }),
+        ]),
+        history: createMemoryHistory({ initialEntries: [path] }),
+        disableGlobalCatchBoundary: true,
+      });
+      await using screen = await render(
+        <AppAtomRegistryProvider>
+          <RouterProvider router={router} />
+        </AppAtomRegistryProvider>,
+        { router: false },
+      );
 
-    await screen.getByRole("button", { name: "Sign in" }).click();
+      await screen.getByRole("button", { name: "Sign in" }).click();
 
-    const dialog = page.getByRole("dialog");
-    await expect.element(dialog).toBeVisible();
-    await expect.element(dialog.getByText("Email code sign-in")).toBeVisible();
-    expect(state.onboarding).not.toHaveBeenCalled();
-  });
+      const dialog = page.getByRole("dialog");
+      await expect.element(dialog).toBeVisible();
+      await expect.element(dialog.getByText("Email code sign-in")).toBeVisible();
+      expect(state.onboarding).not.toHaveBeenCalled();
+    },
+  );
 });
