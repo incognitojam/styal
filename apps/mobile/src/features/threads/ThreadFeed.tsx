@@ -1446,6 +1446,76 @@ const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
   );
 });
 
+/** An assistant message's markdown, then its images and other files: the feed's rows and the report screen. */
+export function AssistantMessageBody(props: {
+  readonly environmentId: EnvironmentId;
+  readonly text: string;
+  readonly attachments: readonly ChatAttachment[];
+  readonly markdownStyles: MarkdownStyleSets["assistant"];
+  readonly linkHandlers: MarkdownLinkHandlers;
+  readonly renderImage: MarkdownImageRenderer;
+  readonly onPressPreview: (source: FilePreviewSource) => void;
+  readonly onPlaybackStart: () => void;
+  readonly skills: ThreadFeedProps["skills"];
+  readonly contentWidth: number;
+  readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
+}) {
+  const attachments = props.attachments;
+  const assistantImages = attachments.filter(isImageAttachment);
+  return (
+    <>
+      {props.text.trim().length > 0 ? (
+        <MarkdownImageAvailableWidthContext value={props.contentWidth}>
+          <AssistantMarkdownContent
+            markdown={props.text}
+            environmentId={props.environmentId}
+            markdownStyles={props.markdownStyles}
+            linkHandlers={props.linkHandlers}
+            onUseArtifactTemplate={props.onUseArtifactTemplate}
+            renderImage={props.renderImage}
+            skills={props.skills}
+          />
+        </MarkdownImageAvailableWidthContext>
+      ) : null}
+      <MessageImages
+        images={assistantImages}
+        tileSize={imageGridTileSize(props.contentWidth)}
+        radius={18}
+        className="mt-1.5"
+        renderImage={(attachment, size) => (
+          <MessageAttachmentImage
+            key={attachment.id}
+            environmentId={props.environmentId}
+            attachmentId={attachment.id}
+            name={attachment.name}
+            mimeType={attachment.mimeType}
+            className={
+              size === undefined
+                ? "mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-subtle-strong"
+                : "rounded-[18px] bg-subtle-strong"
+            }
+            {...(size === undefined ? {} : { size })}
+            onPressPreview={props.onPressPreview}
+          />
+        )}
+      />
+      {attachments.map((attachment) => {
+        return isImageAttachment(attachment) ? null : isFileAttachment(attachment) ? (
+          <MessageAttachmentFile
+            key={attachment.id}
+            environmentId={props.environmentId}
+            attachment={attachment}
+            onPressPreview={props.onPressPreview}
+            onPlaybackStart={props.onPlaybackStart}
+          />
+        ) : (
+          <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+        );
+      })}
+    </>
+  );
+}
+
 function useMarkdownStyles(): MarkdownStyleSets {
   const { appearance } = useAppearancePreferences();
   const nativeMarkdownTypography = resolveNativeMarkdownTypography(appearance.baseFontSize);
@@ -2518,7 +2588,6 @@ function renderFeedEntry(
     }
 
     const enterAnimated = isFreshTimestamp(message.createdAt);
-    const assistantImages = attachments.filter(isImageAttachment);
     return (
       <CoordinatorReportMessage
         id={message.id}
@@ -2590,54 +2659,19 @@ function renderFeedEntry(
           );
         }}
       >
-        {renderedText.trim().length > 0 ? (
-          <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
-            <AssistantMarkdownContent
-              markdown={renderedText}
-              environmentId={props.environmentId}
-              markdownStyles={styles}
-              linkHandlers={props.markdownLinkHandlers}
-              onUseArtifactTemplate={props.onUseArtifactTemplate}
-              renderImage={props.renderMarkdownImage}
-              skills={props.skills}
-            />
-          </MarkdownImageAvailableWidthContext>
-        ) : null}
-        <MessageImages
-          images={assistantImages}
-          tileSize={imageGridTileSize(props.markdownContentWidth)}
-          radius={18}
-          className="mt-1.5"
-          renderImage={(attachment, size) => (
-            <MessageAttachmentImage
-              key={attachment.id}
-              environmentId={props.environmentId}
-              attachmentId={attachment.id}
-              name={attachment.name}
-              mimeType={attachment.mimeType}
-              className={
-                size === undefined
-                  ? "mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-subtle-strong"
-                  : "rounded-[18px] bg-subtle-strong"
-              }
-              {...(size === undefined ? {} : { size })}
-              onPressPreview={props.onPressPreview}
-            />
-          )}
+        <AssistantMessageBody
+          environmentId={props.environmentId}
+          text={renderedText}
+          attachments={attachments}
+          markdownStyles={styles}
+          linkHandlers={props.markdownLinkHandlers}
+          renderImage={props.renderMarkdownImage}
+          onPressPreview={props.onPressPreview}
+          onPlaybackStart={props.onPlaybackStart}
+          skills={props.skills}
+          contentWidth={props.markdownContentWidth}
+          onUseArtifactTemplate={props.onUseArtifactTemplate}
         />
-        {attachments.map((attachment) => {
-          return isImageAttachment(attachment) ? null : isFileAttachment(attachment) ? (
-            <MessageAttachmentFile
-              key={attachment.id}
-              environmentId={props.environmentId}
-              attachment={attachment}
-              onPressPreview={props.onPressPreview}
-              onPlaybackStart={props.onPlaybackStart}
-            />
-          ) : (
-            <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-          );
-        })}
         {showAssistantMeta && message.checkpointSummary ? (
           <TurnDiffStat
             checkpoint={message.checkpointSummary}
@@ -3123,68 +3157,21 @@ const THREAD_FEED_MAINTAIN_SCROLL_AT_END = {
   on: { dataChange: true, itemLayout: true, layout: true },
 } as const;
 
-export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
-  const reportContext = useContext(CoordinatorReportsContext);
-  const restartRunsAtom = createRestartRunsAtom(props.detailRef);
-  const restartRuns = useAtomValue(restartRunsAtom);
-  const continuedRunRoots = (() => deriveFeedContinuedRunRoots(restartRuns))();
-  const { listRef, onIsAtEndChange, onHeaderMaterialVisibilityChange } = props;
-  const workflowOpening = useWorkflowOpening(props.detailRef);
-  const guestShare = useThreadGuestShare(props.detailRef);
-  const deviceType = useDeviceType();
-  const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
+/**
+ * How a thread's markdown opens links, renders images and previews files. The feed and the report
+ * screen render through it, so a message reads the same in both.
+ */
+export function useThreadMarkdown(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly workspaceRoot: string | null | undefined;
+  readonly skills: ThreadFeedProps["skills"];
+  /** A change closes an open preview and aborts a pending link lookup. */
+  readonly presentationKind: string;
+}) {
   const openPullRequest = useOpenPullRequest();
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
-  const onOpenTurnDiff = useCallback(
-    (checkpoint: ThreadCheckpointSummary) => {
-      setReviewSelectedSectionId(
-        scopedThreadKey(props.environmentId, props.threadId),
-        getReviewSectionIdForCheckpoint(checkpoint),
-      );
-      navigation.navigate("ThreadReview", {
-        environmentId: props.environmentId,
-        threadId: props.threadId,
-      });
-    },
-    [navigation, props.environmentId, props.threadId],
-  );
-  const { themeAppearance } = useAppearancePreferences();
-  const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const headerMaterialVisibleRef = useRef(false);
-  const { width: windowWidth, fontScale } = useWindowDimensions();
-  const { appearance } = useAppearancePreferences();
-  const workRowSizing = deriveThreadWorkLogSizing({
-    baseFontSize: appearance.baseFontSize,
-    fontScale,
-  });
-  const settledPaneWidth = useWorkspaceSettledContentWidth();
-  const splitLayout = (props.layoutVariant ?? "compact") !== "compact";
-  const [measuredViewportWidth, setViewportWidth] = useState(() => (splitLayout ? 0 : windowWidth));
-  const viewportWidth =
-    settledPaneWidth !== null ? Math.round(settledPaneWidth) : measuredViewportWidth;
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [disclosureLayout, setDisclosureLayout] = useState<DisclosureLayout | null>(null);
-  const disclosureMotionRef = useRef<DisclosureLayout | null>(null);
-  const disclosureMotionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disclosureSettleFrameRef = useRef<number | null>(null);
-  const disclosureSettleSecondFrameRef = useRef<number | null>(null);
-  const reduceMotion = useReduceMotionEnabled();
-  const [interactionState, setInteractionState] = useState<{
-    readonly copiedRowId: string | null;
-    readonly expandedWorkGroups: Record<string, boolean>;
-    readonly expandedWorkRows: Record<string, boolean>;
-    readonly expandedTurnIds: ReadonlySet<RunId>;
-    readonly revealedMessageId: MessageId | null;
-  }>({
-    copiedRowId: null,
-    expandedWorkGroups: {},
-    expandedWorkRows: {},
-    expandedTurnIds: new Set(),
-    revealedMessageId: null,
-  });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds, revealedMessageId } =
-    interactionState;
   const markdownLinkRequest = useRef<AbortController | null>(null);
   const onInlinePlaybackStart = () => {
     markdownLinkRequest.current?.abort();
@@ -3195,7 +3182,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const markdownLinkScope = JSON.stringify([
     props.environmentId,
     props.threadId,
-    props.contentPresentation.kind,
+    props.presentationKind,
   ]);
   // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- A scope change (thread or presentation) aborts the pending link lookup opened from the old scope.
   useLayoutEffect(() => () => markdownLinkRequest.current?.abort(), [markdownLinkScope]);
@@ -3229,38 +3216,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     props.threadId,
     fileShareSourceIdentifier,
   );
-  const horizontalPadding = splitLayout ? 20 : 16;
-  const contentLeftInset = props.contentSideInsets?.left ?? 0;
-  const contentRightInset = props.contentSideInsets?.right ?? 0;
-  const usableViewportWidth = Math.max(0, viewportWidth - contentLeftInset - contentRightInset);
-  const contentHorizontalPadding = deriveCenteredContentHorizontalPadding({
-    viewportWidth: usableViewportWidth,
-    maxContentWidth: props.contentMaxWidth ?? null,
-    minimumPadding: horizontalPadding,
-  });
-  const contentWidth = Math.max(0, usableViewportWidth - contentHorizontalPadding * 2);
-  const userBubbleMaxWidth = contentWidth * 0.85;
-  const markdownContentWidth = Math.max(0, contentWidth - ASSISTANT_ROW_HORIZONTAL_PADDING * 2);
-  const reviewCommentBubbleWidth = Math.min(Math.max(280, contentWidth * 0.85), contentWidth);
-  const barInset = useBarInset();
-  const columnTopInset = useContentTopInset();
-  const bottomContentInset = props.contentBottomInset ?? 18;
-  const usesNativeAutomaticInsets =
-    props.usesAutomaticContentInsets === true && Platform.OS === "ios";
-  // Without the native contentInset, a list-header spacer clears the bar the column lays content under.
-  const topContentInset = usesNativeAutomaticInsets ? 0 : columnTopInset;
-  const anchorTopInset = usesNativeAutomaticInsets ? barInset : topContentInset;
-
-  const theme = useUniwindTheme();
-  const iconSubtleColor = theme["--color-icon-subtle"];
-  const { buttonSize: androidButtonSize, smallIconSize: androidIconSize } =
-    useAndroidControlSizing();
-  const replyActionSize = useMemo(
-    () => resolveReplyActionSize(androidButtonSize, androidIconSize),
-    [androidButtonSize, androidIconSize],
-  );
-  const screenColor = theme["--color-screen"];
-  const userBubbleColor = theme["--color-user-bubble"];
   const openSkillInstructions = (path: string) => {
     void Haptics.selectionAsync();
     navigation.navigate("ThreadFile", {
@@ -3592,6 +3547,134 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       />
     );
   };
+  const onPressPreview = (source: FilePreviewSource) => {
+    markdownLinkRequest.current?.abort();
+    openPreview(markdownLinkScope, { file: source });
+  };
+  const markdownStyles = useMarkdownStyles();
+  return {
+    markdownLinkHandlers,
+    renderMarkdownImage,
+    onPressPreview,
+    onInlinePlaybackStart,
+    markdownStyles,
+    fileShareSourceIdentifier,
+    previews: (
+      <>
+        <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
+        <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
+      </>
+    ),
+  };
+}
+
+export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
+  const reportContext = useContext(CoordinatorReportsContext);
+  const restartRunsAtom = createRestartRunsAtom(props.detailRef);
+  const restartRuns = useAtomValue(restartRunsAtom);
+  const continuedRunRoots = (() => deriveFeedContinuedRunRoots(restartRuns))();
+  const { listRef, onIsAtEndChange, onHeaderMaterialVisibilityChange } = props;
+  const workflowOpening = useWorkflowOpening(props.detailRef);
+  const guestShare = useThreadGuestShare(props.detailRef);
+  const deviceType = useDeviceType();
+  const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
+  const navigation = useNavigation();
+  const onOpenTurnDiff = useCallback(
+    (checkpoint: ThreadCheckpointSummary) => {
+      setReviewSelectedSectionId(
+        scopedThreadKey(props.environmentId, props.threadId),
+        getReviewSectionIdForCheckpoint(checkpoint),
+      );
+      navigation.navigate("ThreadReview", {
+        environmentId: props.environmentId,
+        threadId: props.threadId,
+      });
+    },
+    [navigation, props.environmentId, props.threadId],
+  );
+  const { themeAppearance } = useAppearancePreferences();
+  const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerMaterialVisibleRef = useRef(false);
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+  const { appearance } = useAppearancePreferences();
+  const workRowSizing = deriveThreadWorkLogSizing({
+    baseFontSize: appearance.baseFontSize,
+    fontScale,
+  });
+  const settledPaneWidth = useWorkspaceSettledContentWidth();
+  const splitLayout = (props.layoutVariant ?? "compact") !== "compact";
+  const [measuredViewportWidth, setViewportWidth] = useState(() => (splitLayout ? 0 : windowWidth));
+  const viewportWidth =
+    settledPaneWidth !== null ? Math.round(settledPaneWidth) : measuredViewportWidth;
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [disclosureLayout, setDisclosureLayout] = useState<DisclosureLayout | null>(null);
+  const disclosureMotionRef = useRef<DisclosureLayout | null>(null);
+  const disclosureMotionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disclosureSettleFrameRef = useRef<number | null>(null);
+  const disclosureSettleSecondFrameRef = useRef<number | null>(null);
+  const reduceMotion = useReduceMotionEnabled();
+  const [interactionState, setInteractionState] = useState<{
+    readonly copiedRowId: string | null;
+    readonly expandedWorkGroups: Record<string, boolean>;
+    readonly expandedWorkRows: Record<string, boolean>;
+    readonly expandedTurnIds: ReadonlySet<RunId>;
+    readonly revealedMessageId: MessageId | null;
+  }>({
+    copiedRowId: null,
+    expandedWorkGroups: {},
+    expandedWorkRows: {},
+    expandedTurnIds: new Set(),
+    revealedMessageId: null,
+  });
+  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds, revealedMessageId } =
+    interactionState;
+  const {
+    markdownLinkHandlers,
+    renderMarkdownImage,
+    onPressPreview,
+    onInlinePlaybackStart,
+    markdownStyles,
+    fileShareSourceIdentifier,
+    previews,
+  } = useThreadMarkdown({
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    workspaceRoot: props.workspaceRoot,
+    skills: props.skills,
+    presentationKind: props.contentPresentation.kind,
+  });
+  const horizontalPadding = splitLayout ? 20 : 16;
+  const contentLeftInset = props.contentSideInsets?.left ?? 0;
+  const contentRightInset = props.contentSideInsets?.right ?? 0;
+  const usableViewportWidth = Math.max(0, viewportWidth - contentLeftInset - contentRightInset);
+  const contentHorizontalPadding = deriveCenteredContentHorizontalPadding({
+    viewportWidth: usableViewportWidth,
+    maxContentWidth: props.contentMaxWidth ?? null,
+    minimumPadding: horizontalPadding,
+  });
+  const contentWidth = Math.max(0, usableViewportWidth - contentHorizontalPadding * 2);
+  const userBubbleMaxWidth = contentWidth * 0.85;
+  const markdownContentWidth = Math.max(0, contentWidth - ASSISTANT_ROW_HORIZONTAL_PADDING * 2);
+  const reviewCommentBubbleWidth = Math.min(Math.max(280, contentWidth * 0.85), contentWidth);
+  const barInset = useBarInset();
+  const columnTopInset = useContentTopInset();
+  const bottomContentInset = props.contentBottomInset ?? 18;
+  const usesNativeAutomaticInsets =
+    props.usesAutomaticContentInsets === true && Platform.OS === "ios";
+  // Without the native contentInset, a list-header spacer clears the bar the column lays content under.
+  const topContentInset = usesNativeAutomaticInsets ? 0 : columnTopInset;
+  const anchorTopInset = usesNativeAutomaticInsets ? barInset : topContentInset;
+
+  const theme = useUniwindTheme();
+  const iconSubtleColor = theme["--color-icon-subtle"];
+  const { buttonSize: androidButtonSize, smallIconSize: androidIconSize } =
+    useAndroidControlSizing();
+  const replyActionSize = useMemo(
+    () => resolveReplyActionSize(androidButtonSize, androidIconSize),
+    [androidButtonSize, androidIconSize],
+  );
+  const screenColor = theme["--color-screen"];
+  const userBubbleColor = theme["--color-user-bubble"];
   const renderViewedImage: MarkdownImageRenderer = (image) => {
     const viewedImage = resolveViewedImageAsset(image.href, {
       threadId: props.threadId,
@@ -3621,7 +3704,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       />
     ) : null;
   };
-  const markdownStyles = useMarkdownStyles();
   const renderReasoning = (text: string) => (
     <AssistantMarkdownContent
       markdown={text}
@@ -3967,11 +4049,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     });
   };
 
-  const onPressPreview = (source: FilePreviewSource) => {
-    markdownLinkRequest.current?.abort();
-    openPreview(markdownLinkScope, { file: source });
-  };
-
   // Without this, every row above the viewport is assumed to be
   // estimatedItemSize tall, and scrolling up through unmeasured content
   // corrects each row's height as it mounts — the feed visibly jumps.
@@ -4248,8 +4325,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             />
           </View>
         ) : null}
-        <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
-        <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
+        {previews}
       </View>
     </PresentationSource>
   );
