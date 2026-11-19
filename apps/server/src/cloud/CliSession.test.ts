@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
@@ -205,7 +206,7 @@ const signIn = (session: CliSession.CloudCliSession["Service"]) =>
 const legacyCredential = (expiresAtEpochMs = 0, refreshToken = "clerk-rt-1") =>
   JSON.stringify({ accessToken: "clerk-at-1", refreshToken, expiresAtEpochMs });
 
-it.layer(NodeServices.layer)("CliSession", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CliSession", (it) => {
   it.effect("concurrent first sign-ins use the same persisted proof key", () => {
     const relay = makeFakeRelay();
     const secrets = makeMemorySecretStore();

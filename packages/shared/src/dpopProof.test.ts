@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
@@ -26,7 +28,7 @@ const decodeProofPayload = (proof: string) =>
   decodeProofPayloadJson(Buffer.from(proof.split(".")[1]!, "base64url").toString("utf8"));
 const decodeDpopPrivateJwkJson = Schema.decodeEffect(Schema.fromJsonString(DpopPrivateJwk));
 
-it.layer(NodeServices.layer)("dpopProof", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("dpopProof", (it) => {
   it.effect("signs proofs the shared verifier accepts for the same key", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(1_700_000_000_000);

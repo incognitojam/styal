@@ -1,8 +1,8 @@
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { importJWK, SignJWT, type CryptoKey, type JWK } from "jose";
+import * as Base64Url from "effect/encoding/Base64Url";
 
 import {
   computeDpopAccessTokenHash,
@@ -13,7 +13,7 @@ import {
 
 /** An ES256 key that signs DPoP proofs (RFC 9449). */
 export interface DpopProofKey {
-  readonly privateKey: CryptoKey;
+  readonly privateKey: Awaited<ReturnType<typeof globalThis.crypto.subtle.importKey>>;
   readonly publicJwk: DpopPublicJwk;
   readonly thumbprint: string;
 }
@@ -79,9 +79,7 @@ export const importDpopProofKey = Effect.fn("dpopProof.importDpopProofKey")(func
   };
   const privateKey = yield* Effect.tryPromise({
     try: () =>
-      importJWK({ ...privateJwk } satisfies JWK, "ES256", {
-        extractable: false,
-      }) as Promise<CryptoKey>,
+      globalThis.crypto.subtle.importKey("jwk", privateJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]),
     catch: (cause) => new DpopProofError({ operation: "import", cause }),
   });
   return { privateKey, publicJwk, thumbprint: computeDpopJwkThumbprint(publicJwk) };
@@ -96,7 +94,7 @@ export const signDpopProof = Effect.fn("dpopProof.signDpopProof")(function* (inp
   readonly method: string;
   readonly url: string;
   readonly accessToken?: string;
-}): Effect.fn.Return<string, DpopProofError, Crypto.Crypto> {
+}): Effect.fn.Return<string, DpopProofError, SecureRandom.SecureRandom> {
   const htu = normalizeDpopHtu(input.url);
   if (htu === null) {
     return yield* new DpopProofError({
@@ -104,22 +102,21 @@ export const signDpopProof = Effect.fn("dpopProof.signDpopProof")(function* (inp
       cause: new Error("DPoP proof URL is not absolute."),
     });
   }
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const jti = yield* crypto
-    .randomUUIDv4()
+    .uuidV4()
     .pipe(Effect.mapError((cause) => new DpopProofError({ operation: "sign", cause })));
   const issuedAt = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
-  return yield* Effect.tryPromise({
-    try: () =>
-      new SignJWT({
-        htm: input.method.toUpperCase(),
-        htu,
-        jti,
-        ...(input.accessToken ? { ath: computeDpopAccessTokenHash(input.accessToken) } : {}),
-      })
-        .setProtectedHeader({ typ: "dpop+jwt", alg: "ES256", jwk: input.key.publicJwk })
-        .setIssuedAt(issuedAt)
-        .sign(input.key.privateKey),
+  const encode = (value: unknown) => Base64Url.encode(new TextEncoder().encode(JSON.stringify(value)));
+  const header = encode({ typ: "dpop+jwt", alg: "ES256", jwk: input.key.publicJwk });
+  const payload = encode({
+    htm: input.method.toUpperCase(), htu, jti, iat: issuedAt,
+    ...(input.accessToken ? { ath: computeDpopAccessTokenHash(input.accessToken) } : {}),
+  });
+  const signingInput = `${header}.${payload}`;
+  const signature = yield* Effect.tryPromise({
+    try: () => globalThis.crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, input.key.privateKey, new TextEncoder().encode(signingInput)),
     catch: (cause) => new DpopProofError({ operation: "sign", cause }),
   });
+  return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
 });

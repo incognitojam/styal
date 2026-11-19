@@ -310,7 +310,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     });
     if (linked === null) return;
     yield* Console.log(
-      `✓ Signed in to styal Link${linked.identity ? ` as ${linked.identity}` : ""}`,
+      `✓ Signed in to styal Link${linked.identity.email ? ` as ${linked.identity.email}` : ""}`,
     );
   }
   // A running server unlinks live; when that fails, only a restart stops its tunnel.

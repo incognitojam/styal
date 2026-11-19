@@ -48,7 +48,6 @@ import { relayUrlConfig } from "../cloud/publicConfig.ts";
 import * as RelayTracing from "../cloud/relayTracing.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as ExternalLauncher from "../process/externalLauncher.ts";
 import {
   isProcessAlive,
   readLiveServerRuntimeState,
@@ -70,7 +69,7 @@ const emailFlag = Flag.String("email").pipe(
 
 // Kept for one release so scripts that pass it keep working; sign-in now
 // happens in the terminal everywhere.
-const headlessFlag = Flag.Boolean("headless").pipe(Flag.withDefault(false), Flag.withHidden);
+export const headlessFlag = Flag.Boolean("headless").pipe(Flag.withDefault(false), Flag.withHidden);
 
 export class CloudCliInteractiveTerminalRequiredError extends Schema.TaggedError<CloudCliInteractiveTerminalRequiredError>()(
   "CloudCliInteractiveTerminalRequiredError",
@@ -668,7 +667,8 @@ function formatRelayClientReady(version: string): string {
 }
 
 const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(function* (options: {
-  readonly email: Option.Option<string>;
+  readonly email?: Option.Option<string>;
+  readonly headless?: boolean;
   readonly publishOnly?: boolean;
   /** For `styal up`, where the user already chose styal Link: install it quietly, without asking. */
   readonly installRelayClient?: boolean;
@@ -695,7 +695,7 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
     }
   }
 
-  const identity = yield* authorizeCli(options);
+  const identity = yield* authorizeCli({ email: options.email ?? Option.none() });
   yield* CliState.setCliDesiredCloudLink(true, publishOnly ? "publish_only" : "managed");
   if (yield* CliState.dropRevokedCloudLink) {
     yield* Console.log("Replacing the link styal Link revoked.");

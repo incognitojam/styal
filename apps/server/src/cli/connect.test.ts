@@ -324,6 +324,7 @@ const withInteractiveInput = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 const scriptedTerminal = (answers: ReadonlyArray<string>, output: Array<string>) => {
   const remaining = [...answers];
   return Terminal.make({
+    size: Effect.succeed({ columns: 80, rows: 24 }),
     columns: Effect.succeed(80),
     rows: Effect.succeed(24),
     readLine: Effect.die("unexpected readLine"),

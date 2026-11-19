@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProviderInstanceId, ProviderSetupError } from "@t3tools/contracts";
@@ -133,7 +134,7 @@ it.effect.each(["ELOCKED", "EACCES"])(
         }
       }),
     ).pipe(
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Effect.provideService(
         HttpClient.HttpClient,
         HttpClient.make(() =>

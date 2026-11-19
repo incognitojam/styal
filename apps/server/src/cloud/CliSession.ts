@@ -18,7 +18,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import type * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -323,7 +323,7 @@ function sessionLabel(hostname: string): string {
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = yield* HttpClient.HttpClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const semaphore = yield* Semaphore.make(1);
 
   let cachedKey: { readonly encoded: string; readonly key: DpopProofKey } | undefined;
@@ -414,7 +414,7 @@ export const make = Effect.gen(function* () {
     readonly accessToken?: string;
   }) =>
     signDpopProof(input).pipe(
-      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(SecureRandom.SecureRandom, crypto),
       Effect.mapError(storageError),
     );
 
