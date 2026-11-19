@@ -281,12 +281,18 @@ it.effect.each(
             ],
           });
         }
+        const reportAnswer = {
+          messageId: MessageId.make("report:probe"),
+          key: "probe",
+          version: 1,
+        };
         const dispatchSteer = orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("steer"),
           threadId,
           messageId,
           text: "fix the popover",
+          ...(mailbox || question ? {} : { reportAnswer }),
           attachments: [
             {
               type: "image",
@@ -442,6 +448,10 @@ it.effect.each(
           assert.deepEqual(started[1]?.modelSelection, composerSelection);
         }
         if (!mailbox && !question) {
+          assert.deepEqual(
+            final.messages.find((message) => message.id === messageId)?.reportAnswer,
+            reportAnswer,
+          );
           assert.equal(
             final.turnItems.find(
               (item) => item.type === "user_message" && item.messageId === messageId,
@@ -2046,12 +2056,18 @@ it.effect("steers a promoted queued message with the selection it was queued wit
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
         const threadId = yield* startFirstTurn;
+        const reportAnswer = {
+          messageId: MessageId.make("report:probe"),
+          key: "probe",
+          version: 1,
+        };
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("queued"),
           threadId,
           messageId: MessageId.make("message:queued"),
           text: "queued",
+          reportAnswer,
           attachments: [],
           modelSelection: composerSelection,
           dispatchMode: { type: "queue_after_active" },
@@ -2073,6 +2089,10 @@ it.effect("steers a promoted queued message with the selection it was queued wit
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.deepEqual(steered, ["queued"]);
         assert.deepEqual(projection.thread.modelSelection, composerSelection);
+        assert.deepEqual(
+          projection.messages.find((message) => message.id === "message:queued")?.reportAnswer,
+          reportAnswer,
+        );
       }).pipe(Effect.provide(layer));
     }),
   ),
@@ -2091,12 +2111,18 @@ it.effect("marks the model switch on a promoted message that restarts the turn",
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
         const threadId = yield* startFirstTurn;
+        const reportAnswer = {
+          messageId: MessageId.make("report:probe"),
+          key: "probe",
+          version: 1,
+        };
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("queued"),
           threadId,
           messageId: MessageId.make("message:queued"),
           text: "queued",
+          reportAnswer,
           attachments: [],
           modelSelection: otherSelection,
           dispatchMode: { type: "queue_after_active" },
@@ -2122,6 +2148,12 @@ it.effect("marks the model switch on a promoted message that restarts the turn",
           from: runSelection,
           to: otherSelection,
         });
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(threadId)).messages.find(
+            (message) => message.id === "message:queued",
+          )?.reportAnswer,
+          reportAnswer,
+        );
       }).pipe(Effect.provide(layer));
     }),
   ),
