@@ -29,12 +29,14 @@ vi.mock("../state/sourceControl", () => ({ sourceControlEnvironment: {} }));
 const projectId = ProjectId.make("project-1");
 const remoteUrl = "git@example.com:o/r.git";
 
-function startAdd() {
-  appAtomRegistry.set(clonesAtom, []);
-  mocks.runAtomCommand.mockResolvedValue({
+function startAdd(
+  startReply: Promise<unknown> = Promise.resolve({
     _tag: "Success",
     value: { projectId, cwd: "~/Hello-World", remoteUrl },
-  });
+  }),
+) {
+  appAtomRegistry.set(clonesAtom, []);
+  mocks.runAtomCommand.mockReturnValue(startReply);
   let settled = false;
   const added = addProjectToMachine({
     source: { environmentId: EnvironmentId.make("studio-mac"), cwd: "/Users/dev/hello-world" },
@@ -89,6 +91,22 @@ describe("addProjectToMachine", () => {
       expect(settled()).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
       await expect(added).resolves.toBe(projectId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on a start request the target does not answer within 30 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const { added, settled } = startAdd(new Promise(() => undefined));
+      const rejected = expect(added).rejects.toThrow(
+        "build-server did not answer. The clone may still start there.",
+      );
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
     } finally {
       vi.useRealTimers();
     }
@@ -157,5 +175,20 @@ describe("settleCancelledAdd", () => {
 
     await expect(settleCancelledAdd(target, false)).resolves.toBe("existing");
     expect(labels()).toEqual([]);
+  });
+
+  it("counts a cancel the machine does not answer within 30 seconds as failed", async () => {
+    vi.useFakeTimers();
+    try {
+      appAtomRegistry.set(clonesAtom, [clone("running")]);
+      mocks.runAtomCommand.mockReset();
+      mocks.runAtomCommand.mockReturnValue(new Promise(() => undefined));
+
+      const settled = settleCancelledAdd(target, true);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(settled).resolves.toBe("failed");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -37,13 +37,12 @@ import {
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
 import {
-  type AddInProgress,
   AddTargetLabel,
   AddWithOptionsLabel,
   BranchToolbarEnvironmentSelector,
 } from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
-import { preparingAddKey, usePreparingAdds } from "../lib/addProjectToMachine";
+import { useOneClickAddInProgress } from "../lib/addProjectToMachine";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
@@ -172,8 +171,8 @@ interface RunContextSelectorProps {
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId | null) => void;
-  /** The add to a machine already under way, and whether this composer shows it. */
-  addInProgress: (environmentId: EnvironmentId) => AddInProgress | null;
+  /** Why the Add rows are unavailable, while a one-click add is decided or sent. */
+  addBusyReason: string | null;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -198,7 +197,7 @@ const RunContextSelector = memo(function RunContextSelector({
   worktreeUnavailableReason,
   addTargets,
   onAddToMachine,
-  addInProgress,
+  addBusyReason,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -388,16 +387,13 @@ const RunContextSelector = memo(function RunContextSelector({
                   {addTargets.map((target) => (
                     <MenuItem
                       key={target.environmentId}
-                      disabled={addInProgress(target.environmentId)?.shownHere === true}
+                      disabled={addBusyReason !== null}
                       onClick={() => onAddToMachine(target.environmentId)}
                     >
-                      <AddTargetLabel
-                        target={target}
-                        inProgress={addInProgress(target.environmentId)}
-                      />
+                      <AddTargetLabel target={target} busyReason={addBusyReason} />
                     </MenuItem>
                   ))}
-                  <MenuItem onClick={() => onAddToMachine(null)}>
+                  <MenuItem disabled={addBusyReason !== null} onClick={() => onAddToMachine(null)}>
                     <AddWithOptionsLabel />
                   </MenuItem>
                 </MenuGroup>
@@ -700,14 +696,7 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
-  // An add under way names itself on its row; picking it from another composer shows it there.
-  const preparingAdds = usePreparingAdds();
-  const addInProgress = (targetEnvironmentId: EnvironmentId) => {
-    const add = preparingAdds[preparingAddKey(activeProjectRef, targetEnvironmentId)];
-    return add
-      ? { title: add.title, shownHere: draftId !== undefined && add.draftId === draftId }
-      : null;
-  };
+  const addBusyReason = useOneClickAddInProgress() ? "Preparing…" : null;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
       projectRef: activeProjectRef,
@@ -757,7 +746,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addInProgress={addInProgress}
+            addBusyReason={addBusyReason}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -809,7 +798,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addInProgress={addInProgress}
+            addBusyReason={addBusyReason}
           />
         </div>
       ) : null}
@@ -830,7 +819,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addInProgress } : {})}
+                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addBusyReason } : {})}
               />
               {showGitControls ? (
                 <Separator

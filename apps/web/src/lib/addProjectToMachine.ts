@@ -115,21 +115,30 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
 
 export interface PreparingAdd {
   readonly title: string;
-  /** The draft that shows this add and moves with its clone; null once another add took it. */
-  readonly draftId: string | null;
+  /** The draft whose composer shows the add and moves with the clone. */
+  readonly draftId: string;
+  /** The project being added; the row shows only while the draft is still on it. */
+  readonly projectRef: ScopedProjectRef;
   /** Calls the add off; while the clone request is out, lets go of it. */
-  readonly onCancel?: () => void;
+  readonly onCancel: () => void;
   /** The clone request is out: the row and its holds stay until it settles, dialog or not. */
   readonly sending?: boolean;
+  /** Cancelled while its request was out: the row is gone, and the Add rows wait until it settles. */
+  readonly cancelled?: boolean;
 }
 
-/** One-click adds from the click until their clone is listed, one per project and machine. */
-const usePreparingAddStore = create<{ adds: Readonly<Record<string, PreparingAdd>> }>(() => ({
-  adds: {},
-}));
+/** The one-click add being decided or sent; one at a time, so every Add row waits for it. */
+const usePreparingAddStore = create<{ add: PreparingAdd | null }>(() => ({ add: null }));
 
-export function preparingAddKey(projectRef: ScopedProjectRef, targetEnvironmentId: EnvironmentId) {
-  return `${scopedProjectKey(projectRef)}>${targetEnvironmentId}`;
+/** How long one request of an add, or of cancelling it, may go unanswered. */
+const ANSWER_WAIT_MS = 30_000;
+
+function within<A>(promise: Promise<A>): Promise<A | "timeout"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), ANSWER_WAIT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 const CANCEL_SETTLE_WAIT_MS = 10_000;
@@ -157,13 +166,14 @@ export async function settleCancelledAdd(
   if (clone?.phase === "done") return "completed";
   if (clone?.phase !== "running") return "failed";
   const target = { environmentId: ref.environmentId, input: { projectId: ref.projectId } };
-  const cancelled = await runAtomCommand(
+  const cancelling = runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.cancelProjectClone,
     target,
     { label: "Cancel clone", reportFailure: false },
   );
-  if (cancelled._tag === "Failure") return "failed";
+  const cancelled = await within(cancelling);
+  if (cancelled === "timeout" || cancelled._tag === "Failure") return "failed";
   // `applied` is also true when the clone finished while being cancelled; its phase says which.
   const settled = await waitForClone(
     ref.environmentId,
@@ -173,40 +183,36 @@ export async function settleCancelledAdd(
   );
   if (settled?.phase === "done") return "completed";
   if (settled?.phase !== "cancelled") return "failed";
-  const removed = await runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
+  const removing = runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
     label: "Remove cancelled clone",
     reportFailure: false,
   });
-  return removed._tag === "Success" ? "removed" : "failed";
+  const removed = await within(removing);
+  return removed !== "timeout" && removed._tag === "Success" ? "removed" : "failed";
 }
 
-export function readPreparingAdd(key: string): PreparingAdd | null {
-  return usePreparingAddStore.getState().adds[key] ?? null;
+export function readPreparingAdd(): PreparingAdd | null {
+  return usePreparingAddStore.getState().add;
 }
 
-/** A draft shows one add at a time: giving it to this add takes it from any other. */
-export function setPreparingAdd(key: string, add: PreparingAdd | null) {
-  usePreparingAddStore.setState(({ adds }) => {
-    const next: Record<string, PreparingAdd> = {};
-    for (const [otherKey, other] of Object.entries(adds)) {
-      if (otherKey === key) continue;
-      next[otherKey] =
-        add?.draftId && other.draftId === add.draftId ? { ...other, draftId: null } : other;
-    }
-    if (add) next[key] = add;
-    return { adds: next };
-  });
+export function setPreparingAdd(add: PreparingAdd | null) {
+  usePreparingAddStore.setState({ add });
 }
 
-/** The add a draft's composer shows, from the click until its clone is listed. */
-export function usePreparingAdd(draftId: string | null): PreparingAdd | null {
-  return usePreparingAddStore((state) =>
-    draftId ? (Object.values(state.adds).find((add) => add.draftId === draftId) ?? null) : null,
+export function usePreparingAdd(
+  draftId: string | null,
+  projectRef: ScopedProjectRef | null,
+): PreparingAdd | null {
+  const projectKey = projectRef ? scopedProjectKey(projectRef) : null;
+  return usePreparingAddStore(({ add }) =>
+    add?.draftId === draftId && !add.cancelled && scopedProjectKey(add.projectRef) === projectKey
+      ? add
+      : null,
   );
 }
 
-export function usePreparingAdds(): Readonly<Record<string, PreparingAdd>> {
-  return usePreparingAddStore((state) => state.adds);
+export function useOneClickAddInProgress(): boolean {
+  return usePreparingAddStore(({ add }) => add !== null);
 }
 
 /**
@@ -216,7 +222,7 @@ export function usePreparingAdds(): Readonly<Record<string, PreparingAdd>> {
  */
 export async function addProjectToMachine(input: AddProjectToMachineInput): Promise<ProjectId> {
   // Read first, so the copy reflects the files as they were when the user asked.
-  const reads = await Promise.all(
+  const reading = Promise.all(
     input.files.map(async (relativePath) => {
       const result = await executeAtomQuery(
         appAtomRegistry,
@@ -231,13 +237,15 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
       return { relativePath, contents: result.value.contents };
     }),
   );
+  const reads = await within(reading);
+  if (reads === "timeout") throw new Error("The files to copy could not be read in time.");
 
   const requestedRef = { environmentId: input.target.environmentId, projectId: input.projectId };
   const requestedKey = scopedProjectKey(requestedRef);
   // Marked before the start request, since the clone list can arrive before its reply.
   silenceProjectCloneToasts(requestedRef);
   if (reads.length > 0) setFileCopy(requestedKey, { phase: "copying" });
-  const started = await runAtomCommand(
+  const starting = runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.startProjectClone,
     {
@@ -252,9 +260,14 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
     },
     { label: "Add project to machine", reportFailure: false },
   );
-  if (started._tag === "Failure") {
+  const started = await within(starting);
+  if (started === "timeout" || started._tag === "Failure") {
     setFileCopy(requestedKey, null);
-    throw new Error(failureMessage(started));
+    throw new Error(
+      started === "timeout"
+        ? `${input.target.label} did not answer. The clone may still start there.`
+        : failureMessage(started),
+    );
   }
   // The server clones for the existing project when one already owns the empty destination.
   const { projectId } = started.value;
