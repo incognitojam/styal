@@ -1,0 +1,48 @@
+name: Windows worktree cleanup experiment
+on:
+  push:
+    branches: ["ci-experiment/**"]
+permissions:
+  contents: read
+concurrency:
+  group: windows-worktree-cleanup-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  experiment:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Runner versions
+        shell: pwsh
+        run: |
+          Write-Output "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+          git version --build-options
+          git config --show-origin --get-regexp 'core\.(autocrlf|longpaths|symlinks)|extensions.worktreeConfig'
+          node --version
+      - uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+            @t3tools/scripts...
+      - name: A - shipped Windows guards and ordinary worktree
+        working-directory: apps/server
+        run: vp test run src/worktreeCleanup/WindowsExperiment.test.ts src/worktreeCleanup/Sweep.test.ts src/worktreeCleanup/Checkout.test.ts src/worktreeCleanup/CheckoutSweep.test.ts src/environment/ServerEnvironment.test.ts -t 'windows|Windows|Windows experiment' --reporter=verbose
+      - name: Lift guards in runner workspace only
+        id: lift
+        if: always()
+        run: node apps/server/scripts/windows-cleanup-experiment.mjs
+      - name: B - existing real repository suites with guards lifted
+        if: always() && steps.lift.outcome == 'success'
+        working-directory: apps/server
+        run: vp test run src/worktreeCleanup src/vcs/VcsStatusBroadcaster.test.ts --exclude "**/WindowsExperiment.test.ts" -t "^(?!.*windows)" --reporter=verbose
+      - name: B - git action restore suites
+        if: always() && steps.lift.outcome == 'success'
+        working-directory: apps/server
+        run: vp test run src/git/GitManager.test.ts src/git/GitWorkflowService.test.ts --reporter=verbose
