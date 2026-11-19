@@ -4,6 +4,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ServerSettings,
   type StorageCleanupReportEntry,
+  WORKTREE_SOURCE_RELEASE_DAYS,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -31,7 +32,7 @@ import { makeCheckout } from "./Checkout.ts";
 export class CheckoutRetention extends Context.Reference<number>(
   "worktreeCleanup/CheckoutRetention",
   {
-    defaultValue: () => 7 * 86_400_000,
+    defaultValue: () => WORKTREE_SOURCE_RELEASE_DAYS * 86_400_000,
   },
 ) {}
 
@@ -84,7 +85,7 @@ export const makeCheckoutSweep = Effect.gen(function* () {
           ) <
           retention
       )
-        return "Thread or its parent is active, has pending work, or has not been settled for 7 days";
+        return `Thread or its parent is active, has pending work, or has not been settled for ${WORKTREE_SOURCE_RELEASE_DAYS} days`;
     }
     return null;
   };

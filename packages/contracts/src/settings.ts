@@ -1294,6 +1294,9 @@ export const ProjectProviderInstanceOverride = Schema.Struct({
 });
 export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
 
+/** Days every thread using a worktree must stay settled before its sources are freed. */
+export const WORKTREE_SOURCE_RELEASE_DAYS = 7;
+
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({

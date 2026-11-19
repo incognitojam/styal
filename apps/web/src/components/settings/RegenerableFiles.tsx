@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ProjectSettingsOverrides } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type ProjectSettingsOverrides,
+  WORKTREE_SOURCE_RELEASE_DAYS,
+} from "@t3tools/contracts";
 import { FolderIcon } from "lucide-react";
 import { useState } from "react";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
@@ -8,11 +12,13 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { regenerableFiles } from "../../state/regenerableFiles";
+import { useFeatureExplainer } from "../explainer/FeatureExplainerDialog";
 import { reportHardwareResult } from "../hardware/reportHardwareResult";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { worktreeSourcesExplainer } from "./worktreeSourcesExplainer";
 
 export function RegenerableFilesSection() {
   const { scope, targets } = useSettingsScope();
@@ -34,6 +40,7 @@ export function RegenerableFilesSection() {
         environmentId={target.environmentId}
         label={targets.length > 1 ? environment.label : null}
         windows={environment.serverConfig.environment.platform.os === "windows"}
+        machine={environment.label}
         overrides={environment.serverConfig.settings.projectSettingsOverrides[member.id] ?? {}}
         migrationComplete={environment.serverConfig.settings.regenerableFileCleanupMigrated}
       />
@@ -46,6 +53,7 @@ function CheckoutCleanup({
   environmentId,
   label,
   windows,
+  machine,
   overrides,
   migrationComplete,
 }: {
@@ -53,6 +61,7 @@ function CheckoutCleanup({
   environmentId: EnvironmentId;
   label: string | null;
   windows: boolean;
+  machine: string;
   overrides: ProjectSettingsOverrides;
   migrationComplete: boolean;
 }) {
@@ -62,6 +71,17 @@ function CheckoutCleanup({
   const save = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const canSave = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const [busy, setBusy] = useState(false);
+  const releasing = !windows && overrides.releaseWorktreeSources === true;
+  const explainer = useFeatureExplainer(
+    worktreeSourcesExplainer,
+    <>
+      <span className="font-medium text-foreground">{releasing ? "On" : "Off"}</span> for{" "}
+      {member.title} on {machine}.{" "}
+      {releasing
+        ? "Turn it off any time in the project's Worktrees settings."
+        : "Turn it on in the project's Worktrees settings."}
+    </>,
+  );
   const update = async (
     key: "cleanRegenerableFiles" | "releaseWorktreeSources",
     checked: boolean,
@@ -78,7 +98,7 @@ function CheckoutCleanup({
       },
     });
     setBusy(false);
-    reportHardwareResult(result, "Could not save cleanup setting");
+    return reportHardwareResult(result, "Could not save cleanup setting");
   };
   // The server skips both cleanups on Windows, so the switches show off and cannot change there.
   const unsupported = windows ? "Not available on Windows." : undefined;
@@ -102,16 +122,21 @@ function CheckoutCleanup({
         {...searchableSetting("worktree-release-sources")}
         forkFeature="worktree-source-checkout"
         unsupported={unsupported}
-        description="Free unchanged sources after 7 settled days on this machine. Keep local and ignored files; restore before use."
+        description={`Free unchanged sources after ${WORKTREE_SOURCE_RELEASE_DAYS} settled days on this machine. Keep local and ignored files; restore before use.`}
+        status={windows ? undefined : explainer.link}
         control={
           <Switch
             aria-label="Free source files in settled worktrees"
-            checked={!windows && overrides.releaseWorktreeSources === true}
+            checked={releasing}
             disabled={busy || !canSave}
-            onCheckedChange={(checked) => void update("releaseWorktreeSources", checked)}
+            onCheckedChange={async (checked) => {
+              const saved = await update("releaseWorktreeSources", checked);
+              if (saved && checked) explainer.onEnabled();
+            }}
           />
         }
       />
+      {explainer.dialog}
       <div className="flex flex-col gap-2 px-3 py-2 sm:px-4">
         {!migrationComplete && (
           <p role="status" className="text-xs text-muted-foreground">

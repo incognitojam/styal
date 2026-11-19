@@ -1967,6 +1967,30 @@ features:
       tracking: []
       retire_when: Upstream excludes failed and declined edits from the changed-file count in tool group summaries.
 
+  - id: feature-explainers
+    title: Settings explain a feature with a short animated walkthrough
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - An explainer opens from its setting's See how it works link at any time, and by itself only the first time the setting is turned on on this device; a viewing from the link also counts as seen.
+      - Each slide's scene plays once, one step at a time, and rests on its last frame with Replay; under reduced motion it shows the last frame and offers no Replay.
+      - Scenes animate opacity only, nothing runs once a slide rests, and timers stop when the slide changes or the dialog closes.
+      - Each explainer names the fork ledger id of its feature, so retiring the feature removes its explainer.
+    implementation_paths:
+      - apps/web/src/components/explainer/FeatureExplainerDialog.tsx
+      - apps/web/src/components/explainer/explainerScene.tsx
+      - apps/web/src/components/explainer/featureExplainer.logic.ts
+    upstream_paths:
+      - apps/web/src/components/ui/dialog.tsx
+      - apps/web/src/components/ui/wizard.tsx
+    tests:
+      - apps/web/src/components/explainer/featureExplainer.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream shows a feature's behaviour in the app with a walkthrough opened from its setting.
+
   - id: feedback-reports
     title: Report styal bugs and feedback as GitHub issues from an agent or the app
     status: maintained
@@ -7915,6 +7939,7 @@ features:
       - apps/server/src/worktreeCleanup/Checkout.ts
       - apps/server/src/worktreeCleanup/CheckoutSweep.ts
       - apps/web/src/components/settings/RegenerableFiles.tsx
+      - apps/web/src/components/settings/worktreeSourcesExplainer.tsx
     upstream_paths:
       - apps/server/src/git/GitWorkflowService.ts
       - apps/server/src/orchestration-v2/CheckpointRollbackService.ts
