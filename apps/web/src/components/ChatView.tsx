@@ -332,8 +332,10 @@ import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
 import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
-import type { CapturedSinceLastVisit } from "@t3tools/client-runtime/project-since-last-visit";
-import { ProjectSinceLastVisit } from "./project/ProjectSinceLastVisit";
+import {
+  ProjectSinceLastVisit,
+  type ProjectSinceLastVisitSource,
+} from "./project/ProjectSinceLastVisit";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -451,10 +453,8 @@ type ChatViewProps =
       /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
       embedded?: SideChatParentPanel;
       projectChat?: ProjectChat;
-      /** What happened since the user last looked, taken when the project page opened. */
-      sinceLastVisit?: CapturedSinceLastVisit | null;
-      /** Leave the visit unrecorded until the project page has read the last one. */
-      holdVisit?: boolean;
+      /** The project page's "Since you last checked" card, fixed when the page opened. */
+      sinceLastVisit?: ProjectSinceLastVisitSource | null;
       routeKind: "server";
       draftId?: never;
     }
@@ -490,7 +490,6 @@ export default function ChatView(props: ChatViewProps) {
     projectChat,
   } = props;
   const sinceLastVisit = routeKind === "server" ? (props.sinceLastVisit ?? null) : null;
-  const holdVisit = routeKind === "server" && props.holdVisit === true;
   const embedded = parentPanel !== undefined;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1108,7 +1107,7 @@ export default function ChatView(props: ChatViewProps) {
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
   // Built once per capture, so the timeline row keeps its identity while the chat streams.
   const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
-    readonly source: CapturedSinceLastVisit | null;
+    readonly source: ProjectSinceLastVisitSource | null;
     readonly row: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
   }>({ source: null, row: undefined });
   if (sinceLastVisitRow.source !== sinceLastVisit) {
@@ -1121,11 +1120,11 @@ export default function ChatView(props: ChatViewProps) {
               kind: "inserted",
               id: "project-since-last-visit",
               // The chat's last change before the page opened, on the clock its rows carry.
-              createdAt: new Date(sinceLastVisit.window.reportsUntil).toISOString(),
+              createdAt: sinceLastVisit.anchorAt,
               content: (
                 <ProjectSinceLastVisit
                   chatRef={routeThreadRef}
-                  captured={sinceLastVisit}
+                  source={sinceLastVisit}
                   onOpenReport={scrollToReport}
                 />
               ),
@@ -4460,7 +4459,7 @@ export default function ChatView(props: ChatViewProps) {
         onConfirm={onConfirmRevertStable}
       />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      {holdVisit ? null : <ThreadVisitWatermark threadRef={routeThreadRef} />}
+      <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

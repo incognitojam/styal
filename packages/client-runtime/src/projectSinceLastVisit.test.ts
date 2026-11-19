@@ -2,13 +2,18 @@
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+
+import { projectCoordinatorPatch, projectSeenPatch } from "./state/projectCoordinators.ts";
 import {
-  addSinceLastVisitEnvironment,
-  captureSinceLastVisit,
+  SINCE_LAST_SEEN_DAYS,
   sinceLastVisitHistoryGap,
   sinceLastVisitLayout,
   sinceLastVisitReportLines,
+  sinceLastVisitSeenAt,
   sinceLastVisitThreadLines,
+  sinceLastVisitUnloadedBefore,
   sinceLastVisitWindow,
   type SinceLastVisitThreadShell,
 } from "./projectSinceLastVisit.ts";
@@ -20,8 +25,8 @@ const chat = { environmentId: env, threadId: ThreadId.make("thread-chat") };
 // The page opened at `open`; the user last looked five hours before.
 const open = Date.parse("2026-11-18T18:00:00.000Z");
 const at = (hoursBeforeOpen: number) => new Date(open - hoursBeforeOpen * HOUR).toISOString();
-// The chat last changed an hour before the page opened.
-const window = { since: open - 5 * HOUR, until: open, reportsUntil: open - HOUR };
+// The user last marked the project seen five hours before.
+const window = { since: open - 5 * HOUR, capped: false };
 
 function thread(
   id: string,
@@ -63,132 +68,85 @@ const report = (id: string, key: string, version: number, createdAt: string, sta
 });
 
 describe("sinceLastVisitWindow", () => {
-  it("starts at the later of the chat's read mark and its last open, shared by every client", () => {
+  const chatShell = { createdAt: at(30), latestUserAuthoredMessageAt: at(6) };
+
+  it("starts at the later of Mark as seen and the user's last message in the chat", () => {
+    expect(sinceLastVisitWindow({ seenAt: at(5), chat: chatShell }, open)).toEqual(window);
+    // Writing in the chat moves it too.
     expect(
-      sinceLastVisitWindow({ lastVisitedAt: at(5), opens: null, updatedAt: at(1) }, open),
-    ).toEqual(window);
-    // The chat did not change while the user looked an hour ago: the open is later than the read mark.
+      sinceLastVisitWindow(
+        { seenAt: at(5), chat: { ...chatShell, latestUserAuthoredMessageAt: at(2) } },
+        open,
+      ),
+    ).toEqual({ since: open - 2 * HOUR, capped: false });
+    // Never marked and never written in: from when the chat began.
+    expect(
+      sinceLastVisitWindow(
+        { seenAt: undefined, chat: { createdAt: at(8), latestUserAuthoredMessageAt: null } },
+        open,
+      ),
+    ).toEqual({ since: open - 8 * HOUR, capped: false });
+  });
+
+  it("does not move when the page is opened", () => {
+    // Opening records a visit on the chat thread, which the window does not read.
+    const opened = { ...chatShell, lastVisitedAt: at(0), opens: { openedAt: open } };
+    expect(sinceLastVisitWindow({ seenAt: at(5), chat: opened }, open)).toEqual(window);
+  });
+
+  it("reaches back at most 14 days", () => {
     expect(
       sinceLastVisitWindow(
         {
-          lastVisitedAt: at(30),
-          opens: { openedAt: open - 1 * HOUR, score: 1, picks: [] },
-          updatedAt: at(30),
+          seenAt: at(24 * 30),
+          chat: { createdAt: at(24 * 40), latestUserAuthoredMessageAt: null },
         },
         open,
       ),
-    ).toEqual({ since: open - HOUR, until: open, reportsUntil: open - HOUR });
+    ).toEqual({ since: open - SINCE_LAST_SEEN_DAYS * 24 * HOUR, capped: true });
   });
 
-  it("is empty for a chat never visited, and under 30 minutes away", () => {
-    const updatedAt = at(1);
-    expect(sinceLastVisitWindow({ lastVisitedAt: null, opens: null, updatedAt }, open)).toBeNull();
-    // A server that predates read marks sends neither.
-    expect(sinceLastVisitWindow({ updatedAt }, open)).toBeNull();
-    expect(
-      sinceLastVisitWindow({ lastVisitedAt: at(29 / 60), opens: null, updatedAt }, open),
-    ).toBeNull();
-    expect(
-      sinceLastVisitWindow({ lastVisitedAt: at(30 / 60), opens: null, updatedAt }, open),
-    ).not.toBeNull();
+  it("is shown on another client until the mark moves, and empty there afterwards", () => {
+    const threads = [thread("fix-upload-test", { latestRun: run("completed", at(2)) })];
+    const settings = applyServerSettingsPatch(
+      applyServerSettingsPatch(
+        { ...DEFAULT_SERVER_SETTINGS, projectCoordinatorsEnabled: true },
+        projectCoordinatorPatch(project, chat.threadId),
+      ),
+      projectSeenPatch(project, chat.threadId, at(5)),
+    );
+    const linesOn = (current: typeof settings) =>
+      sinceLastVisitThreadLines(
+        threads,
+        chat,
+        sinceLastVisitWindow(
+          { seenAt: current.projectCoordinators[project]?.seenAt, chat: chatShell },
+          open,
+        ).since,
+      );
+    expect(linesOn(settings).map((line) => line.title)).toEqual(["fix-upload-test"]);
+    // Mark as seen on one device stores the newest listed change; every client reads the setting.
+    const seenAt = sinceLastVisitSeenAt(window, linesOn(settings));
+    expect(seenAt).toBe(at(2));
+    const marked = applyServerSettingsPatch(
+      settings,
+      projectSeenPatch(project, chat.threadId, seenAt),
+    );
+    expect(marked.projectCoordinators[project]?.threadId).toBe(chat.threadId);
+    expect(linesOn(marked)).toEqual([]);
   });
 });
 
-describe("captureSinceLastVisit", () => {
-  const harbor = new Set([project]);
-
-  it("adds each machine once, when its snapshot is live, so later shells leave it unchanged", () => {
-    const remote = EnvironmentId.make("env-remote");
-    const captured = captureSinceLastVisit(
-      { lastVisitedAt: at(5), opens: null, updatedAt: at(1) },
-      open,
-    )!;
-    expect(captured.window).toEqual(window);
-    const local = addSinceLastVisitEnvironment(captured, {
-      environmentId: env,
+describe("sinceLastVisitUnloadedBefore", () => {
+  it("says when a machine left out settled threads of the project, whose changes cannot be listed", () => {
+    const harbor = new Set([project]);
+    const older = (beforeHoursAgo: number, count: number) => ({
       projectIds: harbor,
-      threads: [
-        thread("fix-upload-test", { latestRun: run("completed", at(2)) }),
-        thread("on-remote", { environmentId: remote, latestRun: run("completed", at(3)) }),
-        thread("other-project", {
-          projectId: ProjectId.make("project-other"),
-          latestRun: run("completed", at(3)),
-        }),
-      ],
-      chatRef: chat,
-      olderSettled: null,
+      olderSettled: { beforeMs: open - beforeHoursAgo * HOUR, counts: new Map([[project, count]]) },
     });
-    expect(local.threadLines.map((line) => line.title)).toEqual(["fix-upload-test"]);
-    // Opening the thread later in this view must not take it off the card.
+    expect(sinceLastVisitUnloadedBefore([older(6, 4), older(2, 1)])).toBe(open - 2 * HOUR);
     expect(
-      addSinceLastVisitEnvironment(local, {
-        environmentId: env,
-        projectIds: harbor,
-        threads: [],
-        chatRef: chat,
-        olderSettled: null,
-      }),
-    ).toBe(local);
-    const both = addSinceLastVisitEnvironment(
-      addSinceLastVisitEnvironment(captured, {
-        environmentId: env,
-        projectIds: harbor,
-        threads: [
-          thread("fix-upload-test", {
-            latestRun: run("completed", at(2)),
-            pullRequests: [merged(230, at(0.5))],
-          }),
-        ],
-        chatRef: chat,
-        olderSettled: null,
-      }),
-      {
-        environmentId: remote,
-        projectIds: harbor,
-        threads: [
-          thread("on-remote", {
-            environmentId: remote,
-            latestRun: run("failed", at(1)),
-            pullRequests: [merged(230, at(0.5))],
-          }),
-        ],
-        chatRef: chat,
-        olderSettled: null,
-      },
-    );
-    expect(both.threadLines.map((line) => line.title)).toEqual([
-      "PR 230",
-      "on-remote",
-      "fix-upload-test",
-    ]);
-    expect([...both.environments]).toEqual([env, remote]);
-  });
-
-  it("says when settled threads that could have changed were not on the client", () => {
-    const captured = captureSinceLastVisit(
-      { lastVisitedAt: at(5), opens: null, updatedAt: at(1) },
-      open,
-    )!;
-    const add = (beforeHoursAgo: number, count: number) =>
-      addSinceLastVisitEnvironment(captured, {
-        environmentId: env,
-        projectIds: harbor,
-        threads: [],
-        chatRef: chat,
-        olderSettled: {
-          beforeMs: open - beforeHoursAgo * HOUR,
-          counts: new Map([[project, count]]),
-        },
-      }).unloadedBefore;
-    expect(add(2, 4)).toBe(open - 2 * HOUR);
-    // Settled before the last visit, but a pull request on one can still merge since.
-    expect(add(6, 4)).toBe(open - 6 * HOUR);
-    expect(add(2, 0)).toBeNull();
-  });
-
-  it("is empty for a chat never visited, such as one created on this page", () => {
-    expect(
-      captureSinceLastVisit({ lastVisitedAt: null, opens: null, updatedAt: at(0) }, open),
+      sinceLastVisitUnloadedBefore([older(2, 0), { projectIds: harbor, olderSettled: null }]),
     ).toBeNull();
   });
 });
@@ -273,11 +231,14 @@ describe("sinceLastVisitThreadLines", () => {
     expect(lines.map((line) => line.title)).toEqual(["PR 220"]);
   });
 
-  it("lists a pull request linked to several threads once", () => {
+  it("lists a pull request linked to several threads once, on any machine", () => {
     const lines = sinceLastVisitThreadLines(
       [
         thread("author", { pullRequests: [merged(214, at(1))] }),
-        thread("reviewer", { pullRequests: [merged(214, at(1))] }),
+        thread("reviewer", {
+          environmentId: EnvironmentId.make("env-remote"),
+          pullRequests: [merged(214, at(1))],
+        }),
       ],
       chat,
       window.since,
@@ -294,24 +255,19 @@ describe("sinceLastVisitReportLines", () => {
         report("r1", "backoff", 2, at(3), "replaced"),
         report("r2", "backoff", 3, at(2), "answered"),
         report("r3", "toml", 1, at(1), "posted"),
-        // A later version posted after the page opened replaced it; it still happened in the window.
+        // The newest version asks a question, which Needs you shows, so the topic is left out.
         report("r4", "telemetry", 1, at(4), "replaced"),
         report("r5", "telemetry", 2, at(-0.5), "open"),
         report("r6", "release", 1, at(2), "open"),
         report("r7", "fuzz", 1, at(2), "dismissed"),
-        // Dismissed, then replaced by a version posted after the page opened.
-        report("r8", "docs", 1, at(3), "replaced"),
-        report("r9", "docs", 2, at(0.5), "open"),
-        // Posted after the chat's last change before the page opened.
         report("r10", "late", 1, at(0.5), "posted"),
       ],
-      [{ messageId: "r8", version: 1 }],
       window,
     );
     expect(lines.map((line) => [line.messageId, line.version])).toEqual([
+      ["r10", 1],
       ["r3", 1],
       ["r2", 3],
-      ["r4", 1],
     ]);
   });
 });

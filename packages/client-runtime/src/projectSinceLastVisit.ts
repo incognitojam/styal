@@ -5,27 +5,23 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 
-/** Shorter gaps are hops between threads; the timeline already shows what happened. */
-const SINCE_LAST_VISIT_MIN_AWAY_MS = 30 * 60 * 1000;
+/** The card never reaches further back: a project nobody has caught up on stays bounded. */
+export const SINCE_LAST_SEEN_DAYS = 14;
 /** Up to this many changes show as one list; more are grouped and folded. */
 const SINCE_LAST_VISIT_FLAT_LIMIT = 6;
 const FOLDED_REPORTS = 3;
 const FOLDED_NAMES = 4;
 
-/** Epoch milliseconds. */
+/** Epoch milliseconds, on the chat server's clock. */
 export interface SinceLastVisitWindow {
-  /** The user's last visit, on the chat server's clock. */
   readonly since: number;
-  /** When the page opened, on this client's clock: for the 30-minute gap and time labels only. */
-  readonly until: number;
-  /** The chat's last change when the page opened, on its server's clock: later reports are new. */
-  readonly reportsUntil: number;
+  /** `since` was held to the last 14 days. */
+  readonly capped: boolean;
 }
-
-type MarkerShell = Pick<EnvironmentThreadShell, "lastVisitedAt" | "opens" | "updatedAt">;
 
 export type SinceLastVisitThreadShell = Pick<
   EnvironmentThreadShell,
@@ -92,24 +88,65 @@ const parse = (iso: string | null | undefined) => (iso ? Date.parse(iso) : Numbe
 const newestFirst = (a: { readonly at: number }, b: { readonly at: number }) => b.at - a.at;
 
 /**
- * When the user last saw the project chat, from any of their clients: the later of the chat's
- * read mark (the server's `lastVisitedAt`) and its last open, which covers a chat that did not
- * change while they looked. Null when the chat was never visited or the gap is under 30 minutes.
+ * Where the card starts: when the user last marked the project seen or wrote in its chat, on any
+ * device, or when the chat began. Opening the page moves neither. Held to the last 14 days.
  */
-export function sinceLastVisitWindow(chat: MarkerShell, now: number): SinceLastVisitWindow | null {
-  const marks = [parse(chat.lastVisitedAt), chat.opens?.openedAt ?? Number.NaN].filter(
-    (mark) => !Number.isNaN(mark),
-  );
-  if (marks.length === 0) return null;
-  const since = Math.max(...marks);
-  if (now - since < SINCE_LAST_VISIT_MIN_AWAY_MS) return null;
-  return { since, until: now, reportsUntil: Math.max(since, parse(chat.updatedAt)) };
+export function sinceLastVisitWindow(
+  input: {
+    readonly seenAt: string | null | undefined;
+    readonly chat: Pick<EnvironmentThreadShell, "latestUserAuthoredMessageAt" | "createdAt">;
+  },
+  now: number,
+): SinceLastVisitWindow {
+  const marks = [
+    parse(input.seenAt),
+    parse(input.chat.latestUserAuthoredMessageAt),
+    parse(input.chat.createdAt),
+  ].filter((mark) => !Number.isNaN(mark));
+  const since = marks.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...marks);
+  const floor = now - SINCE_LAST_SEEN_DAYS * 24 * 60 * 60 * 1000;
+  return since < floor ? { since: floor, capped: true } : { since, capped: false };
 }
 
 /**
- * What changed in the project's threads after `since`, newest first. The threads are a snapshot
- * taken when the page opened, so nothing later is in it. A shell carries only its latest run: an
- * earlier run that ended in the window and was followed by another is not listed.
+ * The time "Mark as seen" stores: the newest change the card lists, so anything that arrives
+ * afterwards is new. Times stay on the clocks that stamped them.
+ */
+export function sinceLastVisitSeenAt(
+  window: SinceLastVisitWindow,
+  lines: ReadonlyArray<{ readonly at: number }>,
+): string {
+  return DateTime.formatIso(
+    DateTime.makeUnsafe(Math.max(window.since, ...lines.map((line) => line.at))),
+  );
+}
+
+/**
+ * Where a machine's shell cut settled threads, when it left out some of the project's: their
+ * changes cannot be listed, since a pull request can merge long after its thread settled.
+ */
+export function sinceLastVisitUnloadedBefore(
+  machines: ReadonlyArray<{
+    readonly projectIds: ReadonlySet<ProjectId>;
+    readonly olderSettled: {
+      readonly beforeMs: number;
+      readonly counts: ReadonlyMap<ProjectId, number>;
+    } | null;
+  }>,
+): number | null {
+  let before: number | null = null;
+  for (const { projectIds, olderSettled } of machines) {
+    if (olderSettled === null) continue;
+    if (![...projectIds].some((projectId) => (olderSettled.counts.get(projectId) ?? 0) > 0))
+      continue;
+    before = Math.max(before ?? 0, olderSettled.beforeMs);
+  }
+  return before;
+}
+
+/**
+ * What changed in the project's threads after `since`, newest first. A shell carries only its
+ * latest run: an earlier run that ended in the window and was followed by another is not listed.
  */
 export function sinceLastVisitThreadLines(
   threads: ReadonlyArray<SinceLastVisitThreadShell>,
@@ -175,27 +212,22 @@ type ReportState = {
 
 /**
  * The chat's reports posted in the window, the latest version per topic, newest first. An open
- * question is in Needs you, and a dismissed report was already seen, even once a newer version
- * replaced it.
+ * question is in Needs you, and a dismissed report was already seen.
  */
 export function sinceLastVisitReportLines(
   reports: ReadonlyArray<ReportState>,
-  dismissals: ReadonlyArray<{ readonly messageId: string; readonly version: number }>,
   window: SinceLastVisitWindow,
 ): SinceLastVisitReportLine[] {
   const latest = new Map<string, ReportState>();
   for (const report of reports) {
     const tag = report.message.report;
-    const at = parse(report.message.createdAt);
-    if (!tag || !(at > window.since && at <= window.reportsUntil)) continue;
+    if (!tag || !(parse(report.message.createdAt) > window.since)) continue;
     if ((latest.get(tag.key)?.message.report?.version ?? 0) < tag.version)
       latest.set(tag.key, report);
   }
-  const dismissed = new Set(dismissals.map((ref) => `${ref.messageId}\0${ref.version}`));
   const lines: SinceLastVisitReportLine[] = [];
   for (const { message, state } of latest.values()) {
     if (state === "open" || state === "dismissed" || !message.report) continue;
-    if (dismissed.has(`${message.id}\0${message.report.version}`)) continue;
     lines.push({
       kind: "report",
       id: `report:${message.id}`,
@@ -221,76 +253,6 @@ export function sinceLastVisitHistoryGap(
   const loadedFrom = parse(history.earliestLoadedAt);
   if (Number.isNaN(loadedFrom)) return { loadedFrom: null };
   return loadedFrom > window.since ? { loadedFrom } : null;
-}
-
-export interface CapturedSinceLastVisit {
-  readonly window: SinceLastVisitWindow;
-  readonly threadLines: ReadonlyArray<SinceLastVisitThreadLine>;
-  /** The machines whose threads are in `threadLines`, each read once its snapshot was live. */
-  readonly environments: ReadonlySet<EnvironmentId>;
-  /**
-   * Settled threads before this time were not on the client, so their changes are not listed: a
-   * pull request can merge long after its thread settled. Null when every thread was there.
-   */
-  readonly unloadedBefore: number | null;
-}
-
-/**
- * Taken once per page view from the chat's live shell, before the page records the visit. Null
- * when the chat was never visited or the user was away under 30 minutes.
- */
-export function captureSinceLastVisit(
-  chat: MarkerShell,
-  now: number,
-): CapturedSinceLastVisit | null {
-  const window = sinceLastVisitWindow(chat, now);
-  return window === null
-    ? null
-    : { window, threadLines: [], environments: new Set(), unloadedBefore: null };
-}
-
-/**
- * Adds one machine's threads, read once from its live snapshot; a machine already added is kept as
- * it was. `olderSettled` is where that machine's shell cut settled threads, with how many it left
- * out per project.
- */
-export function addSinceLastVisitEnvironment(
-  captured: CapturedSinceLastVisit,
-  input: {
-    readonly environmentId: EnvironmentId;
-    readonly projectIds: ReadonlySet<ProjectId>;
-    readonly threads: ReadonlyArray<SinceLastVisitThreadShell>;
-    readonly chatRef: ThreadRef;
-    readonly olderSettled: {
-      readonly beforeMs: number;
-      readonly counts: ReadonlyMap<ProjectId, number>;
-    } | null;
-  },
-): CapturedSinceLastVisit {
-  if (captured.environments.has(input.environmentId)) return captured;
-  const threads = input.threads.filter(
-    (thread) =>
-      thread.environmentId === input.environmentId && input.projectIds.has(thread.projectId),
-  );
-  const older = input.olderSettled;
-  const leftOut =
-    older !== null &&
-    [...input.projectIds].some((projectId) => (older.counts.get(projectId) ?? 0) > 0);
-  // A pull request linked to threads on two machines is one line.
-  const listed = new Set(captured.threadLines.map((line) => line.id));
-  return {
-    ...captured,
-    threadLines: [
-      ...captured.threadLines,
-      ...sinceLastVisitThreadLines(threads, input.chatRef, captured.window.since).filter(
-        (line) => !listed.has(line.id),
-      ),
-    ].sort(newestFirst),
-    environments: new Set(captured.environments).add(input.environmentId),
-    unloadedBefore: leftOut
-      ? Math.max(captured.unloadedBefore ?? 0, older.beforeMs)
-      : captured.unloadedBefore,
-  };
 }
 
 export type SinceLastVisitGroup = "failed" | "reports" | "finished" | "merged";

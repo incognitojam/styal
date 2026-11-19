@@ -1640,7 +1640,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   return (
     <div
       className={cn(
-        isWorkLogRow || isSubagentGroup
+        isWorkLogRow || isSubagentGroup || row.kind === "inserted"
           ? undefined
           : row.kind === "turn-fold" || row.kind === "working"
             ? "pb-1.5"

@@ -50,6 +50,15 @@ export function projectCoordinatorPatch(
   return { projectCoordinators: { [projectId]: threadId === null ? null : { threadId } } };
 }
 
+/** Marks the project's page seen at `seenAt`, keeping its coordinator. */
+export function projectSeenPatch(
+  projectId: ProjectId,
+  threadId: ThreadId,
+  seenAt: string,
+): ServerSettingsPatch {
+  return { projectCoordinators: { [projectId]: { threadId, seenAt } } };
+}
+
 /** The thread a thread's reports go to now, as its environment's settings name it. */
 export function reportRecipientId(
   thread: {

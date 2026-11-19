@@ -24,6 +24,7 @@ import {
   EnvironmentId,
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
+  IsoDateTime,
   OmittedWhenNull,
   ProjectId,
   ThreadId,
@@ -1373,7 +1374,11 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
  * The thread a project's work reports to (Labs). A struct so a later per-project Home can add
  * fields without migrating the stored value.
  */
-export const ProjectCoordinator = Schema.Struct({ threadId: ThreadId });
+export const ProjectCoordinator = Schema.Struct({
+  threadId: ThreadId,
+  /** When the user last marked the project's page seen; the card lists what came after. */
+  seenAt: Schema.optional(IsoDateTime),
+});
 export type ProjectCoordinator = typeof ProjectCoordinator.Type;
 
 /** Reclaimable bytes from which the offline `styal doctor` repair is worth suggesting. */

@@ -367,6 +367,36 @@ function mergeSettingsEntries<Value>(
   return Object.fromEntries(next);
 }
 
+/**
+ * An entry replaces the project's coordinator, except a seen mark (one carrying `seenAt`): it
+ * applies only to the current coordinator and never moves the mark back, so a late "Mark as seen"
+ * cannot undo another device's coordinator change or newer mark.
+ */
+function mergeProjectCoordinators(
+  current: ServerSettings["projectCoordinators"],
+  patch: NonNullable<ServerSettingsPatch["projectCoordinators"]>,
+): ServerSettings["projectCoordinators"] {
+  const next = { ...current };
+  for (const [projectId, entry] of Object.entries(patch) as Array<
+    [keyof typeof next, (typeof patch)[keyof typeof patch]]
+  >) {
+    if (entry === null) {
+      delete next[projectId];
+      continue;
+    }
+    if (entry.seenAt === undefined) {
+      next[projectId] = entry;
+      continue;
+    }
+    const existing = next[projectId];
+    if (existing?.threadId !== entry.threadId) continue;
+    if (existing.seenAt !== undefined && Date.parse(existing.seenAt) >= Date.parse(entry.seenAt))
+      continue;
+    next[projectId] = { ...existing, seenAt: entry.seenAt };
+  }
+  return next;
+}
+
 // Secret persistence keys tokens by trimmed, lowercased host, so merge on the same key.
 const byHost = (tokens: unknown) =>
   Object.fromEntries(
@@ -737,7 +767,7 @@ export function applyServerSettingsPatch(
       : {}),
     ...(projectCoordinatorsPatch !== undefined
       ? {
-          projectCoordinators: mergeSettingsEntries(
+          projectCoordinators: mergeProjectCoordinators(
             current.projectCoordinators,
             projectCoordinatorsPatch,
           ),
