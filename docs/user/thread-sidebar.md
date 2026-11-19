@@ -181,8 +181,10 @@ open thread's project, or the first selected project when no thread is open. Cho
 **All projects** to clear the filter.
 
 With one project selected on web and desktop, its name appears above search instead of
-on every thread. Right-click the named filter for the project's folder actions. Selecting several
-projects or **All projects** shows every project's name again.
+on every thread, and its threads are listed below without a folder. When the project has a
+[project page](./project-settings.md#name-a-project-coordinator), click the name to open it and use
+the chevron to pick another project. Right-click the named filter for the project's folder actions.
+Selecting several projects or **All projects** shows every project's name again.
 
 ## Project folders
 
@@ -192,9 +194,9 @@ come first, marked with a pin, and the rest follow **Settings → General → Pr
 folder by its header to move the project, or across the **Pinned projects above** line to pin or
 unpin it. The order of pinned projects syncs to your other devices and project pickers. Moving a
 folder among the unpinned ones sets **Project order** to **Manual**, so it stays where you put it on
-this device. A project with no active threads has no folder unless it is pinned or you pick it in
-the project filter. An archived project's folder comes last and shows only while it has active
-threads.
+this device. A project with no active threads has no folder unless it is pinned or one of several
+projects you pick in the project filter. An archived project's folder comes last and shows only
+while it has active threads.
 
 Click a folder to open or close it. A closed folder shows how many threads it holds, and a dot when
 one of them needs you. Use the pen button on a folder to start a thread in that project; it starts
