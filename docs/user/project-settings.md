@@ -359,7 +359,8 @@ days. Questions and threads waiting on you stay in **Needs you** and the started
 lists fold into groups with **Show all**. If the chat's earlier history isn't loaded, **Load earlier**
 fetches it so older reports can be listed, and the list says when threads that settled long ago
 weren't checked. Each thread counts only its latest turn. The list appears when the page opens and
-goes away once you check, here or on another device.
+goes away once you check, here or on another device. While it shows, **Needs you** below it is
+folded to its heading; open either one to fold the other.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
