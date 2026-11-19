@@ -42,7 +42,7 @@ import {
   BranchToolbarEnvironmentSelector,
 } from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
-import { usePreparingAdd } from "../lib/addProjectToMachine";
+import { preparingAddKey, usePreparingAdds } from "../lib/addProjectToMachine";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
@@ -171,8 +171,8 @@ interface RunContextSelectorProps {
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId | null) => void;
-  /** Why the Add rows are unavailable, while an add from this draft prepares. */
-  addBusyReason: string | null;
+  /** Why a machine's Add row is unavailable: that add is already under way. */
+  addBusyReason: (environmentId: EnvironmentId) => string | null;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -387,13 +387,16 @@ const RunContextSelector = memo(function RunContextSelector({
                   {addTargets.map((target) => (
                     <MenuItem
                       key={target.environmentId}
-                      disabled={addBusyReason !== null}
+                      disabled={addBusyReason(target.environmentId) !== null}
                       onClick={() => onAddToMachine(target.environmentId)}
                     >
-                      <AddTargetLabel target={target} busyReason={addBusyReason} />
+                      <AddTargetLabel
+                        target={target}
+                        busyReason={addBusyReason(target.environmentId)}
+                      />
                     </MenuItem>
                   ))}
-                  <MenuItem disabled={addBusyReason !== null} onClick={() => onAddToMachine(null)}>
+                  <MenuItem onClick={() => onAddToMachine(null)}>
                     <AddWithOptionsLabel />
                   </MenuItem>
                 </MenuGroup>
@@ -696,9 +699,12 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
-  // One add at a time per draft: a second pick while the first prepares could start two clones.
-  const preparingAdd = usePreparingAdd(draftId ?? null);
-  const addBusyReason = preparingAdd ? `${preparingAdd.title}…` : null;
+  // A project goes to each machine once: its row waits while that add is under way.
+  const preparingAdds = usePreparingAdds();
+  const addBusyReason = (targetEnvironmentId: EnvironmentId) => {
+    const add = preparingAdds[preparingAddKey(activeProjectRef, targetEnvironmentId)];
+    return add ? `${add.title}…` : null;
+  };
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
       projectRef: activeProjectRef,

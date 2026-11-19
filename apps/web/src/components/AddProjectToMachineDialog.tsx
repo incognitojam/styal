@@ -29,10 +29,10 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import {
   COPYABLE_FILE_MAX_BYTES,
   type CancelledAddOutcome,
-  type PreparingAdd,
   addProjectToMachine,
   settleCancelledAdd,
   isDefaultCopiedFile,
+  preparingAddKey,
   readPreparingAdd,
   setPreparingAdd,
 } from "../lib/addProjectToMachine";
@@ -41,6 +41,7 @@ import { newProjectId } from "../lib/utils";
 import { readProject, subscribeProject, useProject } from "../state/entities";
 import { readEnvironment, useEnvironments } from "../state/environments";
 import { filesystemEnvironment } from "../state/filesystem";
+import { unsilenceProjectCloneToasts } from "../state/projectClones";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import {
@@ -83,10 +84,13 @@ const useRequest = create<{
   session: number;
   /** When the request was made; one click only trusts checks answered after it. */
   openedAt: number;
+  /** Adds picked while another is being decided; each starts when the one before it closes. */
+  queue: ReadonlyArray<AddProjectToMachineRequest>;
 }>(() => ({
   request: null,
   session: 0,
   openedAt: 0,
+  queue: [],
 }));
 
 let endRequestWithProject: (() => void) | null = null;
@@ -94,39 +98,56 @@ let endRequestWithProject: (() => void) | null = null;
 /** How long one click waits on its checks before the dialog opens to show them. */
 const QUICK_ADD_WAIT_MS = 3_000;
 
+/** A one-click add's place in the composer, from the click until its clone is listed. */
+function quickAddKey(request: AddProjectToMachineRequest | null) {
+  return request?.quick && request.targetEnvironmentId
+    ? preparingAddKey(request.projectRef, request.targetEnvironmentId)
+    : null;
+}
+
 /** Opens the dialog that clones a project onto another connected machine. */
 export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   if (readProject(request.projectRef) === null) return;
-  // One add at a time per draft: a second pick would race the first to start a clone.
-  if (request.quick && request.draftId && readPreparingAdd(request.draftId) !== null) return;
-  // A new request would replace one still preparing elsewhere; say so rather than drop it.
-  const current = useRequest.getState().request;
-  const preparing = current?.draftId ? readPreparingAdd(current.draftId) : null;
-  if (current && preparing && !preparing.sending && current.draftId !== request.draftId) {
-    const onCancel = preparing.onCancel;
-    const projectTitle = readProject(current.projectRef)?.title ?? "A project";
-    const machine = current.targetEnvironmentId
-      ? (readEnvironment(current.targetEnvironmentId)?.label ?? "another machine")
-      : "another machine";
-    toastManager.add({
-      type: "warning",
-      title: `Already adding ${projectTitle} to ${machine}`,
-      description: "Cancel that add, or wait until its clone starts, then try again.",
-      ...(onCancel ? { actionProps: { children: "Cancel that add", onClick: onCancel } } : {}),
-    });
+  const key = quickAddKey(request);
+  const existing = key ? readPreparingAdd(key) : null;
+  if (key && existing) {
+    // The same add picked again: show the one under way here rather than start a second clone.
+    if (request.draftId) setPreparingAdd(key, { ...existing, draftId: request.draftId });
     return;
   }
-  endPreparing();
-  endRequestWithProject?.();
+  if (useRequest.getState().request === null) {
+    start(request);
+    return;
+  }
+  // The dialog decides one add at a time, since any one-click add may need to ask.
+  if (key) {
+    setPreparingAdd(key, {
+      title: requestTitle(request),
+      draftId: request.draftId ?? null,
+      onCancel: () => {
+        useRequest.setState(({ queue }) => ({
+          queue: queue.filter((queued) => queued !== request),
+        }));
+        setPreparingAdd(key, null);
+      },
+    });
+  }
+  useRequest.setState(({ queue }) => ({ queue: [...queue, request] }));
+}
+
+function start(request: AddProjectToMachineRequest) {
   // The request ends when its project goes away, so a project that comes back
   // later cannot reopen a dialog nobody asked for.
   endRequestWithProject = subscribeProject(request.projectRef, (project) => {
     if (project === null) close();
   });
   const session = useRequest.getState().session + 1;
-  if (request.quick && request.targetEnvironmentId && request.draftId) {
-    setPreparingAdd(request.draftId, {
-      title: addingTitle(readEnvironment(request.targetEnvironmentId)?.label),
+  const key = quickAddKey(request);
+  if (key) {
+    const queued = readPreparingAdd(key);
+    setPreparingAdd(key, {
+      title: requestTitle(request),
+      draftId: queued ? queued.draftId : (request.draftId ?? null),
       onCancel: () => close(session),
     });
   }
@@ -134,6 +155,10 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
+const requestTitle = (request: AddProjectToMachineRequest) =>
+  addingTitle(
+    request.targetEnvironmentId ? readEnvironment(request.targetEnvironmentId)?.label : undefined,
+  );
 
 /** Says what became of an add cancelled after its clone request was sent, unless it was removed. */
 function announceCancelledAdd(outcome: CancelledAddOutcome, projectTitle: string, machine: string) {
@@ -163,19 +188,23 @@ function announceCancelledAdd(outcome: CancelledAddOutcome, projectTitle: string
   }
 }
 
-/** The open request's Preparing row goes with it, even if its dialog never mounted. */
-function endPreparing() {
-  const draftId = useRequest.getState().request?.draftId;
-  if (draftId && !readPreparingAdd(draftId)?.sending) setPreparingAdd(draftId, null);
-}
-
-/** Ends the request; with `session`, only if that request is still the open one. */
+/** Ends the request, and starts the next one waiting; with `session`, only if it is still open. */
 function close(session?: number) {
-  if (session !== undefined && useRequest.getState().session !== session) return;
-  endPreparing();
+  const state = useRequest.getState();
+  if (session !== undefined && state.session !== session) return;
+  const key = quickAddKey(state.request);
+  if (key && !readPreparingAdd(key)?.sending) setPreparingAdd(key, null);
   endRequestWithProject?.();
   endRequestWithProject = null;
   useRequest.setState({ request: null });
+  for (;;) {
+    const [next, ...queue] = useRequest.getState().queue;
+    if (!next) return;
+    useRequest.setState({ queue });
+    if (readProject(next.projectRef) !== null) return start(next);
+    const nextKey = quickAddKey(next);
+    if (nextKey) setPreparingAdd(nextKey, null);
+  }
 }
 
 export function AddProjectToMachineDialogHost() {
@@ -313,9 +342,8 @@ function AddProjectToMachineDialog({
   // Lands the user on the new machine right away; its composer shows the clone
   // and holds sends until it finishes. A draft open on the source project moves
   // over with whatever was typed in it.
-  const openClonedProject = (targetRef: ScopedProjectRef) => {
+  const openClonedProject = (targetRef: ScopedProjectRef, draftId: DraftId | undefined) => {
     const drafts = useComposerDraftStore.getState();
-    const draftId = request.draftId ?? (routeDraftId as DraftId | undefined);
     const draft = draftId ? drafts.getDraftSession(draftId) : null;
     if (
       draftId &&
@@ -339,28 +367,23 @@ function AddProjectToMachineDialog({
   const startClone = useStableCallback(async () => {
     if (!project || !target || starting.current) return;
     starting.current = true;
-    // While the clone request is out the row stays, even if another add replaces this dialog.
-    // Cancel then lets go of it: a clone that starts anyway is stopped and its project removed.
-    const draftId = request.draftId;
+    // While the clone request is out the row stays, and Cancel lets go of it: a clone that
+    // starts anyway is stopped and its project removed.
+    const key = quickAddKey(request);
+    const preparing = key ? readPreparingAdd(key) : null;
     let abandoned = false;
-    const sendingRow: PreparingAdd | null =
-      draftId !== undefined && readPreparingAdd(draftId) !== null
-        ? {
-            title: addingTitle(target.label),
-            sending: true,
-            onCancel: () => {
-              abandoned = true;
-              setPreparingAdd(draftId, null);
-              close(session);
-            },
-          }
-        : null;
-    if (draftId && sendingRow) setPreparingAdd(draftId, sendingRow);
-    const endSendingRow = () => {
-      if (draftId && sendingRow && readPreparingAdd(draftId) === sendingRow) {
-        setPreparingAdd(draftId, null);
-      }
-    };
+    if (key && preparing) {
+      setPreparingAdd(key, {
+        ...preparing,
+        title: addingTitle(target.label),
+        sending: true,
+        onCancel: () => {
+          abandoned = true;
+          setPreparingAdd(key, null);
+          close(session);
+        },
+      });
+    }
     // The server may clone for a project it already had instead; only a new one is ours to remove.
     const requestedProjectId = newProjectId();
     let projectId: ProjectId;
@@ -380,13 +403,13 @@ function AddProjectToMachineDialog({
       });
     } catch (cause) {
       starting.current = false;
-      endSendingRow();
       if (abandoned) return;
+      // The dialog shows the error, and its Clone button can try again.
+      if (key) setPreparingAdd(key, null);
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
       return;
     }
-    endSendingRow();
     const clonedRef = scopeProjectRef(target.environmentId, projectId);
     if (abandoned) {
       const projectTitle = project.title;
@@ -396,8 +419,18 @@ function AddProjectToMachineDialog({
       );
       return;
     }
+    // A one-click add moves the draft that shows it, which a later pick there may have taken.
+    const shownIn = key ? readPreparingAdd(key)?.draftId : undefined;
+    if (key) setPreparingAdd(key, null);
     close(session);
-    openClonedProject(clonedRef);
+    if (shownIn === null && request.draftId) {
+      unsilenceProjectCloneToasts(clonedRef);
+      return;
+    }
+    openClonedProject(
+      clonedRef,
+      (shownIn ?? request.draftId ?? routeDraftId) as DraftId | undefined,
+    );
   });
 
   const submit = async () => {
@@ -417,19 +450,6 @@ function AddProjectToMachineDialog({
     if (startNow) void startClone();
   }, [startNow, startClone]);
   const showDialog = !request.quick || decision === "ask" || error !== null;
-  const preparingTitle = showDialog ? null : addingTitle(target?.label);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shows the quick add in the source composer's banner, which this hidden dialog does not render
-  useEffect(() => {
-    const draftId = request.draftId;
-    if (!draftId || starting.current) return;
-    setPreparingAdd(
-      draftId,
-      preparingTitle === null ? null : { title: preparingTitle, onCancel: () => close(session) },
-    );
-    return () => {
-      if (!readPreparingAdd(draftId)?.sending) setPreparingAdd(draftId, null);
-    };
-  }, [preparingTitle, request.draftId, session]);
   if (!showDialog) return null;
 
   return (

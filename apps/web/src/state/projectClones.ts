@@ -49,6 +49,11 @@ export function silenceProjectCloneToasts(ref: ScopedProjectRef) {
   silencedCloneToasts.add(scopedProjectKey(ref));
 }
 
+/** For a clone whose project nobody is looking at after all. */
+export function unsilenceProjectCloneToasts(ref: ScopedProjectRef) {
+  silencedCloneToasts.delete(scopedProjectKey(ref));
+}
+
 export function isProjectCloneToastSilenced(ref: ScopedProjectRef): boolean {
   return silencedCloneToasts.has(scopedProjectKey(ref));
 }

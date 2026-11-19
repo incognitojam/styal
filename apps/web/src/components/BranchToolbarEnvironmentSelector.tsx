@@ -33,8 +33,8 @@ interface BranchToolbarEnvironmentSelectorProps {
   addTargets?: readonly AddProjectTarget[] | undefined;
   /** Adds to the named machine, or opens the dialog for null. */
   onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
-  /** Why the Add rows are unavailable, while an add from this draft prepares. */
-  addBusyReason?: string | null | undefined;
+  /** Why a machine's Add row is unavailable: that add is already under way. */
+  addBusyReason?: ((environmentId: EnvironmentId) => string | null) | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
@@ -42,6 +42,7 @@ const AUTO_VALUE = "action:auto";
 const ADD_OPTIONS_VALUE = "action:add-options";
 const addValue = (id: EnvironmentId) => `add:${id}`;
 const environmentValue = (id: EnvironmentId) => `env:${id}`;
+const noBusyReason = () => null;
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
   autoEnvironmentLabel,
@@ -52,7 +53,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onEnvironmentChange,
   addTargets = [],
   onAddToMachine,
-  addBusyReason = null,
+  addBusyReason = noBusyReason,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -188,12 +189,15 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
                 <SelectItem
                   key={target.environmentId}
                   value={addValue(target.environmentId)}
-                  disabled={addBusyReason !== null}
+                  disabled={addBusyReason(target.environmentId) !== null}
                 >
-                  <AddTargetLabel target={target} busyReason={addBusyReason} />
+                  <AddTargetLabel
+                    target={target}
+                    busyReason={addBusyReason(target.environmentId)}
+                  />
                 </SelectItem>
               ))}
-              <SelectItem value={ADD_OPTIONS_VALUE} disabled={addBusyReason !== null}>
+              <SelectItem value={ADD_OPTIONS_VALUE}>
                 <AddWithOptionsLabel />
               </SelectItem>
             </SelectGroup>

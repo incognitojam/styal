@@ -115,16 +115,22 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
 
 export interface PreparingAdd {
   readonly title: string;
+  /** The draft that shows this add and moves with its clone; null once another add took it. */
+  readonly draftId: string | null;
   /** Calls the add off; while the clone request is out, lets go of it. */
   readonly onCancel?: () => void;
   /** The clone request is out: the row and its holds stay until it settles, dialog or not. */
   readonly sending?: boolean;
 }
 
-/** One-click adds still checking whether to ask, keyed by the draft that moves with the clone. */
-const usePreparingAdds = create<{ adds: Readonly<Record<string, PreparingAdd>> }>(() => ({
+/** One-click adds from the click until their clone is listed, one per project and machine. */
+const usePreparingAddStore = create<{ adds: Readonly<Record<string, PreparingAdd>> }>(() => ({
   adds: {},
 }));
+
+export function preparingAddKey(projectRef: ScopedProjectRef, targetEnvironmentId: EnvironmentId) {
+  return `${scopedProjectKey(projectRef)}>${targetEnvironmentId}`;
+}
 
 const CANCEL_SETTLE_WAIT_MS = 10_000;
 
@@ -174,20 +180,33 @@ export async function settleCancelledAdd(
   return removed._tag === "Success" ? "removed" : "failed";
 }
 
-export function readPreparingAdd(draftId: string): PreparingAdd | null {
-  return usePreparingAdds.getState().adds[draftId] ?? null;
+export function readPreparingAdd(key: string): PreparingAdd | null {
+  return usePreparingAddStore.getState().adds[key] ?? null;
 }
 
-/** The draft's composer shows the clone's row from the click, before the clone exists. */
-export function setPreparingAdd(draftId: string, add: PreparingAdd | null) {
-  usePreparingAdds.setState(({ adds }) => {
-    const { [draftId]: _previous, ...rest } = adds;
-    return { adds: add === null ? rest : { ...rest, [draftId]: add } };
+/** A draft shows one add at a time: giving it to this add takes it from any other. */
+export function setPreparingAdd(key: string, add: PreparingAdd | null) {
+  usePreparingAddStore.setState(({ adds }) => {
+    const next: Record<string, PreparingAdd> = {};
+    for (const [otherKey, other] of Object.entries(adds)) {
+      if (otherKey === key) continue;
+      next[otherKey] =
+        add?.draftId && other.draftId === add.draftId ? { ...other, draftId: null } : other;
+    }
+    if (add) next[key] = add;
+    return { adds: next };
   });
 }
 
+/** The add a draft's composer shows, from the click until its clone is listed. */
 export function usePreparingAdd(draftId: string | null): PreparingAdd | null {
-  return usePreparingAdds((state) => (draftId ? (state.adds[draftId] ?? null) : null));
+  return usePreparingAddStore((state) =>
+    draftId ? (Object.values(state.adds).find((add) => add.draftId === draftId) ?? null) : null,
+  );
+}
+
+export function usePreparingAdds(): Readonly<Record<string, PreparingAdd>> {
+  return usePreparingAddStore((state) => state.adds);
 }
 
 /**
