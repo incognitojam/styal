@@ -64,8 +64,10 @@ function writtenFilePaths(
   );
 }
 
-const refreshAfterSourceCheckout = ({ environmentId }: { environmentId: EnvironmentId }) =>
-  sourceCheckoutRevision(environmentId);
+const refreshAfterSourceCheckout = (target: {
+  environmentId: EnvironmentId;
+  input: { readonly cwd: string };
+}) => sourceCheckoutRevision(target.environmentId, target.input.cwd);
 
 export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProjectNotLoadedError>()(
   "ScratchProjectNotLoadedError",

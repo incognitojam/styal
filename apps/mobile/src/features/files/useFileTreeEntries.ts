@@ -107,6 +107,8 @@ export function useFileTreeEntries(input: {
   readonly cwd: string | null;
   readonly environmentId: EnvironmentId | null;
   readonly searchQuery: string;
+  // The workspace whose source checkout status is watched, when the listing is one of its folders.
+  readonly workspaceCwd?: string | null;
 }) {
   const { cwd, environmentId } = input;
   const searching = input.searchQuery.trim().length > 0;
@@ -504,7 +506,9 @@ export function useFileTreeEntries(input: {
 
   // A source checkout restores folders without file events.
   useAtomSubscribe(
-    environmentId === null ? noEnvironmentSignal : sourceCheckoutRevision(environmentId),
+    environmentId === null || cwd === null
+      ? noEnvironmentSignal
+      : sourceCheckoutRevision(environmentId, input.workspaceCwd ?? cwd),
     () => void refresh(),
   );
 

@@ -659,6 +659,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     environmentId,
     cwd: canReadFiles ? directoryPath : null,
     searchQuery,
+    workspaceCwd: cwd,
   });
   const [modeOverride, setModeOverride] = useState<{
     readonly path: string;

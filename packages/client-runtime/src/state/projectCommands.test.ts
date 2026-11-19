@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthFilesystemWriteScope,
-  AuthSourceControlWriteScope,
   EnvironmentId,
   ProjectId,
   ProjectReadFileInput,
@@ -28,8 +27,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import type { EnvironmentProject } from "./models.ts";
-import { EnvironmentCacheStore } from "../platform/persistence.ts";
-import { createGitEnvironmentAtoms } from "./git.ts";
+import { sourceCheckoutRevision } from "./git.ts";
 import { createProjectEnvironmentAtoms } from "./projectCommands.ts";
 
 const decodeReadFileInput = Schema.decodeUnknownSync(ProjectReadFileInput);
@@ -65,7 +63,6 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
       Option.some({
         client: {
           [WS_METHODS.projectsEnsureScratch]: () => Effect.succeed({ projectId: PROJECT_ID }),
-          [WS_METHODS.gitCheckOutSources]: () => Effect.void,
           [WS_METHODS.projectsReadFile]: () =>
             Effect.gen(function* () {
               const byteLength = file.byteLength;
@@ -108,7 +105,6 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
   } as EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
   const runtime = Atom.runtime(
     Layer.mergeAll(
-      Layer.mock(EnvironmentCacheStore)({}),
       Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, {
         run: (_environmentId, effect) =>
           Effect.provideService(effect, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
@@ -140,22 +136,14 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
         sessionMethods: [],
         sessionCookieName: "test",
       },
-      scopes: [AuthFilesystemWriteScope, AuthSourceControlWriteScope],
-      permissions: [AuthFilesystemWriteScope, AuthSourceControlWriteScope],
+      scopes: [AuthFilesystemWriteScope],
+      permissions: [AuthFilesystemWriteScope],
     }),
   );
   const openScratch = Effect.promise(() =>
     commands.openScratch.run(registry, { environmentId: ENVIRONMENT_ID, input: {} }),
   );
-  return {
-    registry,
-    runtime,
-    storedProject,
-    openScratch,
-    commands,
-    metadataRequests,
-    readResponse,
-  };
+  return { registry, storedProject, openScratch, commands, metadataRequests, readResponse };
 });
 
 describe("writeFile metadata", () => {
@@ -285,7 +273,7 @@ describe("openScratch", () => {
 });
 
 describe("source checkout", () => {
-  it.effect("re-reads an open file once released sources are checked out", () =>
+  it.effect("re-reads an open file once freed sources come back", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness();
       h.readResponse.missing = true;
@@ -297,13 +285,10 @@ describe("source checkout", () => {
       const read = () => AtomRegistry.getResult(h.registry, file, { suspendOnWaiting: true });
       expect((yield* read()).exists).toBe(false);
       h.readResponse.missing = false;
-      const result = yield* Effect.promise(() =>
-        createGitEnvironmentAtoms(h.runtime).checkOutSources.run(h.registry, {
-          environmentId: ENVIRONMENT_ID,
-          input: { cwd: "/repo" },
-        }),
+      h.registry.update(
+        sourceCheckoutRevision(ENVIRONMENT_ID, "/repo"),
+        (revision) => revision + 1,
       );
-      expect(result._tag).toBe("Success");
       expect((yield* read()).contents).toBe("old");
     }).pipe(Effect.scoped),
   );

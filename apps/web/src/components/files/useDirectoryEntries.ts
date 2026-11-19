@@ -146,7 +146,7 @@ export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
     }
   };
   // A source checkout restores folders without file events, including ones that failed while released.
-  useAtomSubscribe(sourceCheckoutRevision(environmentId), () => {
+  useAtomSubscribe(sourceCheckoutRevision(environmentId, cwd), () => {
     refresh();
     for (const path of errors.keys()) void load(path);
   });
