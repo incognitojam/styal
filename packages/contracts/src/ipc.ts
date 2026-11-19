@@ -1180,6 +1180,12 @@ export const DesktopSystemNotificationSchema = Schema.Struct({
   title: Schema.String.check(Schema.isMaxLength(1_000)),
   body: Schema.String.check(Schema.isMaxLength(4_000)),
   tag: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  icon: Schema.optional(
+    Schema.String.check(
+      Schema.isMaxLength(256 * 1024),
+      Schema.isPattern(/^data:image\/png;base64,/),
+    ),
+  ),
 });
 export type DesktopSystemNotification = typeof DesktopSystemNotificationSchema.Type;
 

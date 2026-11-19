@@ -28,16 +28,34 @@ export const installSystemNotifications = Effect.fn("desktop.ipc.installSystemNo
       notification?.close();
     };
 
+    // On macOS the icon is a thumbnail beside the app icon; on Windows it takes the logo slot.
+    const notificationIcon = (icon: string | undefined) => {
+      if (icon === undefined) return undefined;
+      try {
+        const image = Electron.nativeImage.createFromDataURL(icon);
+        return image.isEmpty() ? undefined : image;
+      } catch {
+        return undefined;
+      }
+    };
+
     const showNotification = (
       title: string,
       body: string,
       tag: string,
+      icon: string | undefined,
       senderId: number | undefined,
     ) =>
       Effect.callback<DesktopSystemNotificationResult>((resume) => {
         const key = `${senderId}:${tag}`;
         close(key);
-        const notification = new Electron.Notification({ title, body, silent: true });
+        const image = notificationIcon(icon);
+        const notification = new Electron.Notification({
+          title,
+          body,
+          silent: true,
+          ...(image ? { icon: image } : {}),
+        });
         shown.set(key, notification);
         notification.once("show", () => resume(Effect.succeed("shown")));
         // macOS rejects every request while the app's notifications are off in System Settings.
@@ -69,11 +87,11 @@ export const installSystemNotifications = Effect.fn("desktop.ipc.installSystemNo
         payload: DesktopSystemNotificationSchema,
         result: DesktopSystemNotificationResultSchema,
         handler: Effect.fn("desktop.ipc.showSystemNotification")(function* (
-          { title, body, tag },
+          { title, body, tag, icon },
           event,
         ) {
           if (yield* macNotificationsDenied()) return "blocked" as const;
-          return yield* showNotification(title, body, tag, event?.sender.id);
+          return yield* showNotification(title, body, tag, icon, event?.sender.id);
         }),
       }),
     );

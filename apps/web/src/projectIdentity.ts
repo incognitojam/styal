@@ -39,3 +39,20 @@ export function deriveProjectIdentity(projectName: string): ProjectIdentity {
     color: projectColor(projectName),
   };
 }
+
+const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The project tile in a 16-unit square: the sidebar's SVG and the bitmap a notification carries
+ * both draw from these numbers. The text is stretched to `textWidth`.
+ */
+export const PROJECT_MONOGRAM_TILE = {
+  size: 16,
+  cornerRadius: 4,
+  backgroundOpacity: 0.14,
+  textX: 8,
+  textBaseline: 10.8,
+  fontSize: 8.25,
+  fontWeight: 700,
+  textWidth: (text: string) => (Array.from(monogramSegmenter.segment(text)).length === 1 ? 6 : 12),
+} as const;

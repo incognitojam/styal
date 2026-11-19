@@ -11,6 +11,8 @@ interface SystemNotificationOptions {
   readonly title: string;
   readonly body: string;
   readonly tag: string;
+  /** A PNG data URL; the notification is shown without it if it cannot be used. */
+  readonly icon?: string;
   readonly requireInteraction?: boolean;
   readonly onClick?: () => void;
 }
@@ -72,6 +74,7 @@ export function showSystemNotification({
   title,
   body,
   tag,
+  icon,
   onClick,
   requireInteraction = false,
 }: SystemNotificationOptions): SystemNotificationHandle | null {
@@ -84,7 +87,7 @@ export function showSystemNotification({
     });
     if (onClick) clickHandlers.set(tag, onClick);
     else clickHandlers.delete(tag);
-    void bridge.showSystemNotification({ title, body, tag }).then(
+    void bridge.showSystemNotification({ title, body, tag, ...(icon ? { icon } : {}) }).then(
       (result) => {
         setBlocked(result === "blocked");
         if (result === "blocked") warnBlockedOnce();
@@ -100,7 +103,13 @@ export function showSystemNotification({
   }
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return null;
   try {
-    const notification = new Notification(title, { body, tag, silent: true, requireInteraction });
+    const notification = new Notification(title, {
+      body,
+      tag,
+      silent: true,
+      requireInteraction,
+      ...(icon ? { icon } : {}),
+    });
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();

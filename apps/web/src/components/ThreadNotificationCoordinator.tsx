@@ -34,6 +34,8 @@ import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { environmentProjects } from "../state/projects";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { notificationProjectIcon, warmNotificationProjectIcon } from "../notificationProjectIcon";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
@@ -269,10 +271,15 @@ export function startThreadNotifications(
     )
       return;
     const tag = threadNotificationTag(environmentId, thread.id);
+    const project = registry.get(
+      environmentProjects.projectAtom(scopeProjectRef(environmentId, thread.projectId)),
+    );
+    const icon = project === null ? null : notificationProjectIcon(project);
     const notification = showSystemNotification({
       title,
       body: name,
       tag,
+      ...(icon === null ? {} : { icon }),
       requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
       onClick: () =>
         void router.navigate({
@@ -368,6 +375,17 @@ export function startThreadNotifications(
         );
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
+      // Draw the project's icon when work starts, so it is ready when the thread notifies.
+      if (
+        (status === "preparing" || status === "working") &&
+        prior?.status !== "preparing" &&
+        prior?.status !== "working"
+      ) {
+        const project = registry.get(
+          environmentProjects.projectAtom(scopeProjectRef(environmentId, rawThread.projectId)),
+        );
+        if (project !== null) warmNotificationProjectIcon(project);
+      }
       const state = {
         raw: rawThread,
         subagentRequest,
