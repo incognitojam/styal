@@ -1,8 +1,10 @@
 import { DATABASE_COMPACTION_RECOMMENDED_BYTES } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 
 import * as BootService from "../cloud/bootService.ts";
@@ -118,8 +120,16 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
   if (selected.includes("database")) {
     const service = yield* BootService.BootService;
     yield* Console.log("\nReclaiming database space. Each step is shown as it starts.");
-    // Event pruning is off unless T3CODE_EVENT_PRUNING=1; then its step removes nothing.
-    const pruning = yield* eventPruningEnabled;
+    const path = yield* Path.Path;
+    const { entries } = yield* CliService.readServiceEnv(path.dirname(path.dirname(databasePath)));
+    const pruningFlag = entries.T3CODE_EVENT_PRUNING;
+    const pruningConfig = ConfigProvider.layerAdd(
+      ConfigProvider.fromEnv({
+        env: pruningFlag === undefined ? {} : { T3CODE_EVENT_PRUNING: pruningFlag },
+      }),
+      { asPrimary: true },
+    );
+    const pruning = yield* eventPruningEnabled.pipe(Effect.provide(pruningConfig));
     const startedAt = yield* Clock.monotonicTimeNanos;
     const reportStep = (step: DatabaseMaintenance.DatabaseCompactStep) =>
       step === "prune-events" && !pruning
@@ -131,19 +141,18 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
           );
     // Report the repair before restarting, which can fail independently.
     yield* service.withStopped(
-      maintenance
-        .compact(databasePath, reportStep)
-        .pipe(
-          Effect.tap((result) =>
-            Clock.monotonicTimeNanos.pipe(
-              Effect.flatMap((now) =>
-                Console.log(
-                  `Done in ${formatElapsed(now - startedAt)}: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}${pruning ? `, ${result.deletedEventCount} superseded events removed` : ""}.`,
-                ),
+      maintenance.compact(databasePath, reportStep).pipe(
+        Effect.provide(pruningConfig),
+        Effect.tap((result) =>
+          Clock.monotonicTimeNanos.pipe(
+            Effect.flatMap((now) =>
+              Console.log(
+                `Done in ${formatElapsed(now - startedAt)}: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}${pruning ? `, ${result.deletedEventCount} superseded events removed` : ""}.`,
               ),
             ),
           ),
         ),
+      ),
     );
   }
   if (selected.includes("legacy")) {
