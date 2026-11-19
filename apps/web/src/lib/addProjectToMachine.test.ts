@@ -7,12 +7,13 @@ import { addProjectToMachine, settleCancelledAdd } from "./addProjectToMachine";
 
 const mocks = vi.hoisted(() => ({
   runAtomCommand: vi.fn(),
+  executeAtomQuery: vi.fn(),
 }));
 
 const clonesAtom = Atom.make<ReadonlyArray<ProjectCloneSnapshot>>([]).pipe(Atom.keepAlive);
 
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
-  executeAtomQuery: vi.fn(),
+  executeAtomQuery: mocks.executeAtomQuery,
   runAtomCommand: mocks.runAtomCommand,
   squashAtomCommandFailure: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock("../components/sourceControlAppAccessToast", () => ({
   suggestAppAccessForRemote: vi.fn(),
 }));
 vi.mock("../state/projects", () => ({ projectEnvironment: {} }));
+vi.mock("../state/filesystem", () => ({ filesystemEnvironment: { getMetadata: vi.fn() } }));
 vi.mock("../state/sourceControl", () => ({ sourceControlEnvironment: {} }));
 
 const projectId = ProjectId.make("project-1");
@@ -111,8 +113,14 @@ describe("settleCancelledAdd", () => {
     endedAt: null,
     sequence: 1,
   });
-  // Answers each command by its label; the cancel moves the clone to `phaseAfterCancel`.
-  const commands = (phaseAfterCancel: ProjectCloneSnapshot["phase"]) => {
+  // Answers each command by its label; the cancel moves the clone to `phaseAfterCancel`, and the
+  // folder check finds the destination gone unless `folderLeft`.
+  const commands = (phaseAfterCancel: ProjectCloneSnapshot["phase"], folderLeft = false) => {
+    mocks.executeAtomQuery.mockReset();
+    mocks.executeAtomQuery.mockResolvedValue({
+      _tag: "Success",
+      value: { entries: [folderLeft ? { kind: "directory" } : null] },
+    });
     mocks.runAtomCommand.mockReset();
     mocks.runAtomCommand.mockImplementation(
       async (_registry: unknown, _command: unknown, _args: unknown, options: { label: string }) => {
@@ -132,6 +140,14 @@ describe("settleCancelledAdd", () => {
     commands("cancelled");
 
     await expect(settleCancelledAdd(target, true)).resolves.toBe("removed");
+    expect(labels()).toEqual(["Cancel clone", "Remove cancelled clone"]);
+  });
+
+  it("reports a cancelled clone whose folder the machine could not delete", async () => {
+    appAtomRegistry.set(clonesAtom, [clone("running")]);
+    commands("cancelled", true);
+
+    await expect(settleCancelledAdd(target, true)).resolves.toBe("failed");
     expect(labels()).toEqual(["Cancel clone", "Remove cancelled clone"]);
   });
 

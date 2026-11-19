@@ -158,7 +158,7 @@ function announceCancelledAdd(outcome: CancelledAddOutcome, projectTitle: string
       toastManager.add({
         type: "warning",
         title: `Could not finish cancelling on ${machine}`,
-        description: `${projectTitle} may still be there. Check it in Settings → Projects.`,
+        description: `${projectTitle} may still be there, as a project or as its folder.`,
       });
   }
 }
