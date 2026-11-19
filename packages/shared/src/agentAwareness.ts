@@ -7,7 +7,7 @@ import {
   type RuntimeRequestId,
   type ServerSettings,
   type ThreadId,
-  threadNotificationName,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -138,7 +138,7 @@ export function projectThreadAwarenessV2(
     environmentId,
     threadId: thread.id,
     projectTitle: project.title,
-    threadTitle: threadNotificationName(input.settings, thread, () => project.title),
+    threadTitle: threadDisplayName(input.settings, thread, () => project.title),
     phase,
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),

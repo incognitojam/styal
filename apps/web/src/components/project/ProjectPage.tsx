@@ -21,12 +21,14 @@ import { useEnvironmentMachines, useEnvironments } from "../../state/environment
 import {
   useAllEnvironmentProjectSnapshotsReady,
   useEnvironmentShellStatuses,
+  useProject,
   useQuietThreadShell,
   useServerConfigs,
 } from "../../state/entities";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { environmentThreadShells, olderSettledThreads } from "../../state/threads";
+import { useProjectClone } from "../../state/projectClones";
 import { useEnvironmentShellStatus } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams, isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
@@ -166,11 +168,26 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
   // never starts there. A machine whose settings have not loaded yet keeps its draft.
   const isDraftCheckout = (member: { readonly environmentId: string; readonly id: string }) =>
     member.environmentId === draftSession?.environmentId && member.id === draftSession.projectId;
+  const unsentDraft =
+    chatThreadId === null && draftSession?.promotedTo == null ? draftSession : null;
+  // A machine the project was just added to keeps the draft while it clones and until its
+  // repository is known, when the checkout joins the project.
+  const unsentDraftRef = unsentDraft
+    ? scopeProjectRef(unsentDraft.environmentId, unsentDraft.projectId)
+    : null;
+  const draftClone = useProjectClone(unsentDraftRef);
+  const draftProject = useProject(unsentDraftRef);
+  const draftJoining =
+    unsentDraftRef !== null &&
+    !page.group.memberProjects.some(isDraftCheckout) &&
+    (draftClone !== null || (draftProject !== null && draftProject.repositoryIdentity == null));
   const draftOffChoices =
-    chatThreadId === null &&
-    draftSession !== null &&
-    draftSession.promotedTo == null &&
+    unsentDraft !== null &&
+    !draftJoining &&
     (off.some(isDraftCheckout) || !page.group.memberProjects.some(isDraftCheckout));
+  const hostRef =
+    draftJoining && unsentDraftRef ? unsentDraftRef : scopeProjectRef(environmentId, checkout.id);
+  const machineId = hostRef.environmentId;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens or moves the chat's draft in the composer draft store, which the page cannot hold in render
   useEffect(() => {
     if (draftOffChoices) {
@@ -245,9 +262,7 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     }).then(reportProjectCoordinatorFailure);
   };
 
-  const environmentLabel = environments.find(
-    (entry) => entry.environmentId === environmentId,
-  )?.label;
+  const environmentLabel = environments.find((entry) => entry.environmentId === machineId)?.label;
   const projectChat = {
     project: page.group,
     name: page.group.displayName,
@@ -256,15 +271,18 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     machine:
       environmentLabel === undefined
         ? null
-        : { label: environmentLabel, kind: machines.get(environmentId) ?? "server" },
+        : { label: environmentLabel, kind: machines.get(machineId) ?? "server" },
     newChatMachines:
       chatThreadId === null
         ? {
-            environmentIds: choices.map((choice) => choice.environmentId),
+            environmentIds: [
+              ...choices.map((choice) => choice.environmentId),
+              ...(machineId === environmentId ? [] : [machineId]),
+            ],
             offLabels: off.map((member) => labelOf(member.environmentId)),
           }
         : null,
-    onNewThread: () => void handleNewThread(scopeProjectRef(environmentId, checkout.id)),
+    onNewThread: () => void handleNewThread(hostRef),
     onOpenSettings: () =>
       void navigate({
         to: "/settings/projects",
