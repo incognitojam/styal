@@ -742,7 +742,7 @@ describe("deriveMessagesTimelineRows", () => {
       });
       expect(runningRows.some((row) => row.kind === "thinking")).toBe(false);
       expect(
-        deriveMessagesTimelineRows({ ...runningInput, isSynchronized: false }).find(
+        deriveMessagesTimelineRows({ ...runningInput, activityState: "unconfirmed" }).find(
           (row) => row.kind === "standalone-activity",
         ),
       ).toMatchObject({

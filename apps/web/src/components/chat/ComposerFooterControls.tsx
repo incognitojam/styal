@@ -200,6 +200,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
     isComplete: boolean;
   } | null;
   isRunning: boolean;
+  activityIsConfirmed?: boolean;
   canInterrupt: boolean;
   runId: string | null;
   followUpBehavior: "queue" | "steer";
@@ -229,6 +230,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         canOperateThread={props.canOperateThread}
         pendingAction={props.pendingAction}
         isRunning={props.isRunning}
+        activityIsConfirmed={props.activityIsConfirmed ?? true}
         canInterrupt={props.canInterrupt}
         runId={props.runId}
         followUpBehavior={props.followUpBehavior}

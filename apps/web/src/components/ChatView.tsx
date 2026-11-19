@@ -1,3 +1,4 @@
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import { resolveCacheLossBaseline } from "./chat/compaction.logic";
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
@@ -270,7 +271,7 @@ import { useEnvironmentQueryRefresh } from "../state/query";
 import { useEnvironmentScope } from "~/state/session";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
-import { threadEnvironment } from "../state/threads";
+import { threadActivityStateAtom, threadEnvironment } from "../state/threads";
 import {
   resolveProviderSkillsForCwd,
   resolveProvidersForCwd,
@@ -580,6 +581,9 @@ export default function ChatView(props: ChatViewProps) {
     ? deriveReportedModelSelection(serverProjection)
     : null;
   const threadStatus = useThreadStatus(routeThreadDetailRef);
+  const threadActivityState = useAtomValue(
+    threadActivityStateAtom(routeThreadDetailRef === null ? null : threadKey(routeThreadDetailRef)),
+  );
   const threadSyncPhase = resolveThreadSyncPhase({
     detailExists: serverProjection !== null,
     shellExists: serverThread !== null,
@@ -2041,8 +2045,17 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposerStable = useStableCallback(focusComposer);
   const canInterruptRunningThread =
     canOperateThread &&
-    threadStatus === "live" &&
-    deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
+    (threadActivityState === "inactive"
+      ? deriveCanInterruptRunningThread(
+          serverThreadShell !== null,
+          serverThreadShell?.runtime ?? null,
+        ) || (serverThreadShell?.pendingBackgroundTasks?.length ?? 0) > 0
+      : deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime) ||
+        (threadActivityState === "unconfirmed" &&
+          deriveCanInterruptRunningThread(
+            serverThreadShell !== null,
+            serverThreadShell?.runtime ?? null,
+          )));
   const onInterrupt = async () => {
     if (
       !activeThread ||
@@ -3394,7 +3407,7 @@ export default function ChatView(props: ChatViewProps) {
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const shownThreadSyncPhase = activeEnvironmentUnavailable ? null : delayedThreadSyncPhase;
   const threadNowWork =
-    threadStatus !== "live" || workflowRunReviewIncludesBackgroundWork ? null : workNow;
+    threadActivityState !== "live" || workflowRunReviewIncludesBackgroundWork ? null : workNow;
   const hasThreadNow =
     attentionNow !== null ||
     threadNowWork !== null ||
@@ -3748,6 +3761,7 @@ export default function ChatView(props: ChatViewProps) {
                   draftEntries={isServerThread ? null : draftTimelineEntries}
                   activeThreadKey={activeThreadKey}
                   syncing={threadSyncPhase !== null}
+                  activityState={threadActivityState}
                   detailLoading={threadDetailLoading}
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
@@ -4010,7 +4024,8 @@ export default function ChatView(props: ChatViewProps) {
                                     ? "Ask about this project or hand out work"
                                     : undefined
                                 }
-                                phase={phase}
+                                phase={threadActivityState === "inactive" ? "ready" : phase}
+                                activityIsConfirmed={threadActivityState === "live"}
                                 canSteer={!compactionBlocksSteer}
                                 canInterrupt={canInterruptRunningThread}
                                 isSendBusy={

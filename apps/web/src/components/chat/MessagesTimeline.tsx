@@ -1,3 +1,4 @@
+import type { ThreadActivityState } from "../../threadSync";
 import { CoordinatorReportsContext } from "./CoordinatorReports";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -254,7 +255,7 @@ interface MessagesTimelineProps {
   ) => boolean;
   onReplyToResponse?: TimelineRowSharedState["onReplyToResponse"];
   isWorking: boolean;
-  isSynchronized?: boolean;
+  activityState?: ThreadActivityState;
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   worktreeSetup?: WorktreeSetupSnapshot | null;
@@ -386,7 +387,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCiteAssistantText,
   onReplyToResponse,
   isWorking,
-  isSynchronized = true,
+  activityState = "live",
   runlessWorkActive = false,
   activeTurnStartedAt = null,
   worktreeSetup = null,
@@ -790,7 +791,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     expandedAttemptIds: visibleExpandedAttemptIds,
     expandedWorkGroupIds,
     isWorking,
-    isSynchronized,
+    activityState,
     runlessWorkActive,
     activeTurnStartedAt,
     turnDiffSummaries,
@@ -1209,8 +1210,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRun?.startedAt != null
       ? worktreeSetup
       : null;
-  const activityState: TimelineRowActivityState = {
-    isWorking: isWorking && isSynchronized,
+  const rowActivityState: TimelineRowActivityState = {
+    isWorking: isWorking && activityState === "live",
     isCompacting: compactionAwaitingRow,
     isRevertingCheckpoint,
     backgroundWorktreeSetup,
@@ -1224,7 +1225,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // starts from a baseline instead of a fresh, silent region.
   const activityAnnouncer = (
     <ThreadActivityAnnouncer
-      threadKey={announceTurnStatus && isSynchronized ? listIdentityKey : null}
+      threadKey={announceTurnStatus && activityState === "live" ? listIdentityKey : null}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
       requestId={awaitingRequestId}
       runId={announcedRun?.runId ?? null}
@@ -1495,7 +1496,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     <>
       {activityAnnouncer}
       <MarkdownFindContext value={findActive}>
-        <TimelineRowActivityCtx value={activityState}>
+        <TimelineRowActivityCtx value={rowActivityState}>
           <TooltipScrollDismissArea
             ref={attachTimelineViewportElement}
             className="relative h-full min-h-0"

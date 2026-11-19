@@ -59,11 +59,7 @@ export function ThreadTimeline({
   }, [activeThreadKey, detailLoading, entries]);
   return (
     <CoordinatorReportsContext value={coordinatorReports}>
-      <MessagesTimeline
-        {...timelineProps}
-        isSynchronized={!syncing}
-        timelineEntries={displayedEntries}
-      />
+      <MessagesTimeline {...timelineProps} timelineEntries={displayedEntries} />
     </CoordinatorReportsContext>
   );
 }

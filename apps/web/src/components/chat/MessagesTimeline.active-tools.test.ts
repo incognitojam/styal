@@ -8,7 +8,7 @@ describe("long active tool groups", () => {
     (isSynchronized) => {
       const runId = RunId.make("cached-waiting-run");
       const createdAt = "2026-10-12T00:00:00Z";
-      const rows = deriveMessagesTimelineRows({
+      const input = {
         timelineEntries: [
           {
             id: "cached-command",
@@ -28,11 +28,12 @@ describe("long active tool groups", () => {
         ],
         latestRun: { runId, status: "waiting", startedAt: createdAt, completedAt: null },
         isWorking: true,
-        isSynchronized,
+        activityState: isSynchronized ? "live" : "unconfirmed",
         activeTurnStartedAt: createdAt,
         turnDiffSummaries: [],
         supportsConversationRollback: false,
-      });
+      } as const;
+      const rows = deriveMessagesTimelineRows(input);
       const live = rows.find((row) => row.kind === "work-live");
       expect(live).toMatchObject({ active: isSynchronized });
       expect(live && liveWorkEntryLabel(live.entry, undefined, live.active, live.unconfirmed)).toBe(
@@ -42,6 +43,13 @@ describe("long active tool groups", () => {
         !isSynchronized,
       );
       expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+      const inactive = deriveMessagesTimelineRows({ ...input, activityState: "inactive" });
+      expect(
+        inactive.some(
+          (row) => row.kind === "working" || row.kind === "work-live" || row.kind === "thinking",
+        ),
+      ).toBe(false);
+      expect(inactive.some((row) => row.kind === "turn-fold")).toBe(false);
     },
   );
   it.each([false, true])(

@@ -631,8 +631,18 @@ describe("EnvironmentThreads", () => {
       yield* Scope.close(scope, Exit.void);
       yield* first.threadState.semaphore.release(1);
 
-      const resumed = yield* makeHarness({ resumeCache });
-      const state = yield* awaitThreadState(resumed.observed, (value) => value.status === "live");
+      const resumed = yield* makeHarness({ resumeCache, completionMarker: true });
+      const restored = yield* awaitThreadState(
+        resumed.observed,
+        (value) => Option.isSome(value.data) && value.serverSequence === undefined,
+      );
+      expect(restored.serverSequence).toBeUndefined();
+      yield* Queue.offer(resumed.inputs, synchronized());
+      const state = yield* awaitThreadState(
+        resumed.observed,
+        (value) => value.serverSequence !== undefined,
+      );
+      expect(state.serverSequence).toBe(CACHED_SNAPSHOT_SEQUENCE);
       expect(Option.getOrThrow(state.data).thread.title).toBe(BASE_PROJECTION.thread.title);
       expect(yield* Ref.get(resumed.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE);
       expect(yield* Ref.get(first.savedThreads)).toEqual([
@@ -2446,10 +2456,11 @@ describe("EnvironmentThreads", () => {
   it.effect("keeps replayed updates synchronizing until the completion marker arrives", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
-      yield* awaitThreadState(
+      const restored = yield* awaitThreadState(
         harness.observed,
         (value) => value.status === "synchronizing" && Option.isSome(value.data),
       );
+      expect(restored.serverSequence).toBeUndefined();
       expect(yield* Ref.get(harness.lastRequestCompletionMarker)).toBe(true);
 
       yield* Queue.offer(
@@ -2464,6 +2475,7 @@ describe("EnvironmentThreads", () => {
           value.data.value.thread.title === "Caught-up title",
       );
       expect(catchingUp.status).toBe("synchronizing");
+      expect(catchingUp.serverSequence).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
 
       yield* Queue.offer(harness.inputs, synchronized());
       const live = yield* awaitThreadState(
@@ -2594,6 +2606,7 @@ describe("EnvironmentThreads", () => {
       );
 
       expect(synchronizing.status).toBe("synchronizing");
+      expect(synchronizing.serverSequence).toBeUndefined();
       expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(2);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 1);
       expect(yield* Ref.get(harness.lastRequestCompletionMarker)).toBe(true);

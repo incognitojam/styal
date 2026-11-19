@@ -610,6 +610,55 @@ it.effect.each(["run.interrupt", "thread.stop"] as const)(
     }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect.each(["completed", "failed", "interrupted"] as const)(
+  "Stop accepts an already %s turn without interrupting a provider or changing its outcome",
+  (status) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make(`thread:ended-stop:${status}`);
+      yield* createWatchingThread(threadId, 77);
+      yield* orchestrator.dispatch({
+        type: "thread.stop",
+        commandId: CommandId.make(`unwatch:${status}`),
+        threadId,
+      });
+      yield* send(threadId, "finished work", "start_immediately");
+      const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+      const now = yield* DateTime.now;
+      yield* projections.apply({
+        id: EventId.make(`event:ended-stop:${status}`),
+        type: "run.updated",
+        threadId,
+        runId: run.id,
+        occurredAt: now,
+        payload: { ...run, status, completedAt: now },
+      });
+      const commandId = CommandId.make(`ended-stop:${status}`);
+      yield* orchestrator.dispatch({ type: "thread.stop", commandId, threadId });
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(after.runs[0]!.status, status);
+      assert.equal(
+        DateTime.toEpochMillis(after.runs[0]!.completedAt!),
+        DateTime.toEpochMillis(now),
+      );
+      const effects = yield* sql<{ readonly effect_type: string }>`
+      SELECT effect_type FROM orchestration_v2_effect_outbox WHERE command_id = ${commandId}
+    `;
+      assert.notInclude(
+        effects.map((effect) => effect.effect_type),
+        "provider-turn.interrupt",
+      );
+      const again = yield* orchestrator.dispatch({
+        type: "thread.stop",
+        commandId: CommandId.make(`ended-stop-again:${status}`),
+        threadId,
+      });
+      assert.lengthOf(again.storedEvents, 0);
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("a repeated Stop that changes nothing still stops the delegated tasks", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

@@ -1,3 +1,4 @@
+import type { ThreadActivityState } from "../../threadSync";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import type { ReactNode } from "react";
 import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
@@ -1876,7 +1877,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
-  isSynchronized?: boolean;
+  activityState?: ThreadActivityState;
   /** Native subagent work has no app run; runless entries form the live response. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
@@ -2751,12 +2752,14 @@ export function deriveMessagesTimelineRows(input: {
   );
   const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
   const visibleRows = result.flatMap<MessagesTimelineRow>((original) => {
+    const activity =
+      original.kind === "working" ||
+      original.kind === "thinking" ||
+      original.kind === "work-live" ||
+      (original.kind === "standalone-activity" && original.active);
+    if (input.activityState === "inactive" && activity) return [];
     const row =
-      input.isSynchronized === false &&
-      (original.kind === "working" ||
-        original.kind === "thinking" ||
-        original.kind === "work-live" ||
-        (original.kind === "standalone-activity" && original.active))
+      input.activityState === "unconfirmed" && activity
         ? {
             ...original,
             unconfirmed: true,
