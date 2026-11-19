@@ -748,6 +748,19 @@ it.effect(
         });
         yield* count(0);
         yield* orchestrator.dispatch({
+          type: "queued-run.edit",
+          commandId: CommandId.make("edit:answer:away"),
+          threadId: launcherId,
+          runId: queued.id,
+          text: "[Other report, version 1] Wait",
+        });
+        yield* count(1);
+        assert.isUndefined(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "answer:other",
+          )?.reportAnswer,
+        );
+        yield* orchestrator.dispatch({
           type: "queued-run.cancel",
           commandId: CommandId.make("cancel:answer"),
           threadId: launcherId,

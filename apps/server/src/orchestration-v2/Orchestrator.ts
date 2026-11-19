@@ -12433,6 +12433,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const emitEvent = emit(events, command);
     const editedAttachments =
       command.attachments === undefined ? {} : { attachments: command.attachments };
+    // An edit that drops the `[<title>, version <n>] ` prefix clients add no longer answers it.
+    const { reportAnswer, ...unlinked } = queuedMessage;
+    const answered =
+      reportAnswer === undefined
+        ? undefined
+        : (yield* loadProjectionForCommand(command, ["messages"], {
+            messageIds: [reportAnswer.messageId],
+          })).messages.find((message) => message.id === reportAnswer.messageId)?.report;
+    const stillAnswers =
+      answered !== undefined &&
+      command.text.startsWith(`[${answered.title}, version ${answered.version}] `);
     yield* emitEvent({
       type: "message.updated",
       threadId: command.threadId,
@@ -12441,7 +12452,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerInstanceId: queuedRun.providerInstanceId,
       occurredAt: now,
       payload: withoutGuestAttribution({
-        ...queuedMessage,
+        ...(stillAnswers ? queuedMessage : unlinked),
         text: command.text,
         ...editedAttachments,
         ...(command.context ? { context: command.context } : {}),
