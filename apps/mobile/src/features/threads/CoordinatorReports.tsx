@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/coordinator-reports";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 type ReportMessage = {
   id: MessageId;
@@ -46,6 +47,8 @@ export const CoordinatorReportsContext = createContext<{
   send: (text: string, reply: ReportReply) => Promise<void>;
   reply: (reply: ReportReply) => void;
   dismiss: (reply: ReportReply) => Promise<void>;
+  /** The report whose answers are pinned above the composer; its card leaves them out. */
+  pinned: MessageId | null;
 } | null>(null);
 
 export function CoordinatorReportMessage({
@@ -63,19 +66,9 @@ export function CoordinatorReportMessage({
   const [expanded, setExpanded] = useState(false);
   // Opening a reply chip or waiting row for an older version shows it, not its folded line.
   if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
-  const reply = { ref: { messageId: id, key: tag.key, version: tag.version }, title: tag.title };
-  const run = (action: () => Promise<void>) => {
-    setSending(true);
-    setError(null);
-    void action()
-      .catch(() => setError("Could not save your response. Try again."))
-      .finally(() => setSending(false));
-  };
   if (report.state === "replaced" && !expanded)
     return (
       <View className="mb-2 mt-3 flex-row items-center gap-2 border-l-2 border-border pl-3">
@@ -100,35 +93,9 @@ export function CoordinatorReportMessage({
       ) : null}
       {content}
       {report.state === "open" ? (
-        <View className="gap-2 rounded-xl bg-secondary p-3">
-          <Text className="font-t3-medium text-foreground">{tag.question}</Text>
-          <ReportAnswerOptions
-            answers={tag.answers ?? []}
-            disabled={!ctx.canOperate || sending}
-            onPick={(answer) => run(() => ctx.send(answer, reply))}
-          />
-          <View className="flex-row justify-between">
-            <Button
-              label="Reply…"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => ctx.reply(reply)}
-            />
-            <Button
-              label="Dismiss"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.dismiss(reply))}
-            />
-          </View>
-          {error ? (
-            <Text accessibilityRole="alert" className="text-danger">
-              {error}
-            </Text>
-          ) : null}
-        </View>
+        ctx.pinned === id ? null : (
+          <ReportAnswerBlock report={report} />
+        )
       ) : report.state === "answered" && report.answer ? (
         <AnsweredReport
           answer={report.answer}
@@ -140,6 +107,145 @@ export function CoordinatorReportMessage({
           Dismissed. The agent hears it on its next turn.
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+function replyTo(report: ReportState): ReportReply {
+  const tag = report.message.report!;
+  return {
+    ref: { messageId: report.message.id, key: tag.key, version: tag.version },
+    title: tag.title,
+  };
+}
+
+/**
+ * An open report's question and answers, with Reply… and Dismiss: inside its card, or pinned
+ * above the composer. `onDone` runs once an answer or a dismissal is saved.
+ */
+export function ReportAnswerBlock(props: {
+  readonly report: ReportState;
+  readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
+  readonly onReply?: (() => void) | undefined;
+  readonly onDone?: (() => void) | undefined;
+  /** Under the pinned panel's own header line. */
+  readonly pinned?: boolean;
+}) {
+  const ctx = use(CoordinatorReportsContext)!;
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const tag = props.report.message.report!;
+  const reply = replyTo(props.report);
+  const disabled = !ctx.canOperate || sending;
+  const run = (action: () => Promise<void>) => {
+    setSending(true);
+    setError(null);
+    void action()
+      .then(() => props.onDone?.())
+      .catch(() => setError("Could not save your response. Try again."))
+      .finally(() => setSending(false));
+  };
+  return (
+    <View className={`gap-2 rounded-xl bg-secondary p-3${props.pinned ? " pt-0" : ""}`}>
+      <Text className="font-t3-medium text-foreground">{tag.question}</Text>
+      <ReportAnswerOptions
+        answers={tag.answers ?? []}
+        disabled={disabled}
+        onPick={(answer) => run(() => ctx.send(answer, reply))}
+      />
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row">
+          <Button
+            label="Reply…"
+            size="compact"
+            tone="text"
+            disabled={disabled}
+            onPress={() => {
+              ctx.reply(reply);
+              props.onReply?.();
+            }}
+          />
+          {props.onReplyByVoice ? (
+            <Button
+              label="Reply by voice"
+              icon="mic"
+              size="compact"
+              tone="text"
+              disabled={disabled}
+              onPress={() => props.onReplyByVoice?.(reply)}
+            />
+          ) : null}
+        </View>
+        <Button
+          label="Dismiss"
+          size="compact"
+          tone="text"
+          disabled={disabled}
+          onPress={() => run(() => ctx.dismiss(reply))}
+        />
+      </View>
+      {error ? (
+        <Text accessibilityRole="alert" className="text-danger">
+          {error}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A report opened from Needs you: its answers stay above the composer while its body is read
+ * in the feed. It keeps to the version opened; a newer one is offered, never swapped in.
+ */
+export function PinnedReport(props: {
+  readonly id: MessageId;
+  readonly onClose: () => void;
+  readonly onShowLatest: (id: MessageId) => void;
+  readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
+  readonly onDone: () => void;
+}) {
+  const ctx = use(CoordinatorReportsContext);
+  const voice = useGlobalVoiceInput();
+  const report = ctx?.reports.find((entry) => entry.message.id === props.id);
+  if (!ctx || !report) return null;
+  const tag = report.message.report!;
+
+  return (
+    <View className="mx-3 mb-2 overflow-hidden rounded-xl bg-secondary">
+      <View className="flex-row items-center gap-2 pl-3">
+        <Text className="flex-1 text-xs text-foreground-secondary" numberOfLines={1}>
+          Report · {tag.title} · version {tag.version}
+        </Text>
+        <Button label="Close" size="compact" tone="text" onPress={props.onClose} />
+      </View>
+      {report.state === "open" ? (
+        <ReportAnswerBlock
+          pinned
+          report={report}
+          onReply={props.onClose}
+          // Hidden where dictation can't start, and while a recording is under way.
+          onReplyByVoice={voice.isAvailable && !voice.isBusy ? props.onReplyByVoice : undefined}
+          onDone={props.onDone}
+        />
+      ) : (
+        <View className="flex-row items-center gap-2 p-3 pt-0">
+          <Text className="flex-1 text-foreground">
+            {report.state === "replaced"
+              ? "A newer version of this report arrived."
+              : report.state === "dismissed"
+                ? "Dismissed."
+                : "Answered."}
+          </Text>
+          {report.state === "replaced" ? (
+            <Button
+              label="Show latest"
+              size="compact"
+              tone="text"
+              onPress={() => props.onShowLatest(report.latest.id)}
+            />
+          ) : null}
+        </View>
+      )}
     </View>
   );
 }

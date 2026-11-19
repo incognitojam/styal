@@ -333,9 +333,11 @@ tap the project's header instead; the chat has no row of its own there. The chat
 project's name as its title, how many threads are working, and its machine. **New thread** starts
 a thread in the project, and the menu holds **Project settings**, the files and the terminal. A
 notification about the chat, and a `styal://projects/<environment>/<project>` link, open it too.
-A **Needs you** line above its composer counts what the project's threads wait on; tap it to
-answer report questions, approvals and one-tap questions in a sheet, or **Reply by voice** to the
-chat's own reports. Anything else offers **Open thread**. Starting a project's first chat still happens on web or desktop.
+A **Needs you** line above its composer counts what the project's threads wait on; tap it for the
+list. Approve or decline an approval in the list. A report opens where it was posted, with its
+answers, **Reply…**, **Reply by voice** and **Dismiss** pinned above the composer while you read it.
+After you answer, the list opens again on what is left. A question opens its thread. Starting a
+project's first chat still happens on web or desktop.
 
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it

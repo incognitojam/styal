@@ -1,5 +1,6 @@
 import {
   CoordinatorReportsContext,
+  PinnedReport,
   ReportReplyStrip,
   type ReportAnswers,
   type ReportState,
@@ -268,6 +269,12 @@ export interface ThreadDetailScreenProps {
   readonly reportAnswers?: ReportAnswers | undefined;
   readonly reportReply?: ReportReply | null;
   readonly onReportReply?: (reply: ReportReply | null) => void;
+  /** A report opened from a project's Needs you, pinned above the composer while it is read. */
+  readonly openedReportId?: MessageId | null;
+  /** Runs once the opened report is answered, instead of reopening this screen's own list. */
+  readonly onOpenedReportDone?: (() => void) | undefined;
+  /** Changes when the project chat's Needs you list should open. */
+  readonly needsListRequest?: string | null;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
   readonly activityRun: ThreadFeedLatestRun | null;
@@ -547,6 +554,15 @@ function ThreadDetailBody(
   const composerDictationRef = useRef<{ readonly start: () => boolean }>(null);
   const chatRef = scopeThreadRef(props.environmentId, props.selectedThread.id);
   const projectChat = useProjectChatHeader(props.draftMode ? null : chatRef);
+  const [pinned, setPinned] = useState<{ threadKey: string; id: MessageId } | null>(() =>
+    props.openedReportId
+      ? {
+          threadKey: scopedThreadKey(props.environmentId, props.selectedThread.id),
+          id: props.openedReportId,
+        }
+      : null,
+  );
+  const [ownNeedsListRequest, setOwnNeedsListRequest] = useState("");
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
   const editingRunId = props.queuedRunEdit?.runId ?? null;
@@ -1495,11 +1511,24 @@ function ThreadDetailBody(
     const id = await props.onSendMessage(undefined, undefined, undefined, { text, reply });
     if (!id) throw new Error("Could not send answer");
   });
+  const pinnedReportId = pinned?.threadKey === selectedThreadKey ? pinned.id : null;
+  const openReport = (id: MessageId) => {
+    setPinned({ threadKey: selectedThreadKey, id });
+    requestThreadMessageJump(selectedThreadKey, id);
+  };
   const reportContext = {
     reports: props.reports ?? [],
     answers: props.reportAnswers ?? new Map(),
     opened:
-      openedReports.threadKey === selectedThreadKey ? openedReports.ids : new Set<MessageId>(),
+      pinnedReportId === null
+        ? openedReports.threadKey === selectedThreadKey
+          ? openedReports.ids
+          : new Set<MessageId>()
+        : new Set([
+            ...(openedReports.threadKey === selectedThreadKey ? openedReports.ids : []),
+            pinnedReportId,
+          ]),
+    pinned: pinnedReportId,
     target: jumpMessageId,
     scroll: (id: MessageId) => {
       setOpenedReports((current) => ({
@@ -1753,7 +1782,27 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    {projectChat === null ? (
+                    {pinnedReportId !== null ? (
+                      <CoordinatorReportsContext value={reportContext}>
+                        <PinnedReport
+                          id={pinnedReportId}
+                          onClose={() => setPinned(null)}
+                          onShowLatest={(id) => openReport(id)}
+                          onReplyByVoice={(reply) => {
+                            // A recording already under way keeps its own reply target.
+                            if (!composerDictationRef.current?.start()) return;
+                            props.onReportReply?.(reply);
+                            setPinned(null);
+                          }}
+                          onDone={() => {
+                            setPinned(null);
+                            if (props.onOpenedReportDone) props.onOpenedReportDone();
+                            else setOwnNeedsListRequest(uuidv4());
+                          }}
+                        />
+                      </CoordinatorReportsContext>
+                    ) : null}
+                    {projectChat !== null ? null : pinnedReportId !== null ? null : (
                       <NeedsYou
                         key={selectedThreadKey}
                         environmentId={props.environmentId}
@@ -1770,7 +1819,9 @@ function ThreadDetailBody(
                         reports={props.reports ?? []}
                         scroll={reportContext.scroll}
                       />
-                    ) : (
+                    )}
+                    {projectChat === null ? null : (
+                      // Stays mounted while a report is pinned, so its list can reopen after.
                       <ProjectNeedsYou
                         key={selectedThreadKey}
                         chat={chatRef}
@@ -1786,15 +1837,9 @@ function ThreadDetailBody(
                             : undefined
                         }
                         reports={props.reports ?? []}
-                        actions={{
-                          canOperate: reportContext.canOperate,
-                          send: reportContext.send,
-                          reply: reportContext.reply,
-                          replyByVoice: (reply) => {
-                            // A recording already under way keeps its own reply target.
-                            if (composerDictationRef.current?.start()) props.onReportReply?.(reply);
-                          },
-                        }}
+                        openRequest={`${props.needsListRequest ?? ""}:${ownNeedsListRequest}`}
+                        onOpenChatReport={openReport}
+                        barHidden={pinnedReportId !== null}
                       />
                     )}
                     <ProviderSignInCard
