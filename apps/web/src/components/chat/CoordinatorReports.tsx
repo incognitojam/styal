@@ -11,6 +11,7 @@ import {
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
 import { ComposerStackCard } from "./ComposerStackCard";
+import { NextUnreadChip } from "./NextUnreadChip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -252,13 +253,15 @@ export function NeedsYou({
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
   const needs = useProjectNeeds(project);
-  const folded = fold?.folded ?? ownFolded;
-  const setFolded = fold?.onFoldedChange ?? setOwnFolded;
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
+  // A single item costs less room than the click it would take to unfold it.
+  const stackFold = rows.length > 1 ? fold : undefined;
+  const folded = stackFold?.folded ?? ownFolded;
+  const setFolded = stackFold?.onFoldedChange ?? setOwnFolded;
   if (!rows.length && !answered) return null;
   const opened = rows.filter((row) => row.kind === "need" && row.need.key === openNeed);
   const visible = opened.length ? opened : expanded ? rows : rows.slice(0, 3);
@@ -270,6 +273,7 @@ export function NeedsYou({
     <ComposerStackCard
       label={rows.length ? "Needs you" : "Answered"}
       count={rows.length || undefined}
+      aside={<NextUnreadChip inline />}
       folded={folded}
       onFoldedChange={(next) => {
         collapse();

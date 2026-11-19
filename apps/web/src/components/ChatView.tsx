@@ -1113,6 +1113,13 @@ export default function ChatView(props: ChatViewProps) {
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
+  // Which card of the composer stack is open, per thread; replying to a report folds both.
+  const [composerStackOpen, setComposerStackOpen] = useState<{
+    threadKey: string | null;
+    open: "summary" | "needs" | null;
+  }>({ threadKey: null, open: "summary" });
+  const activeComposerStackOpen =
+    composerStackOpen.threadKey === activeThreadKey ? composerStackOpen.open : "summary";
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
     if (timelineAnchorMessageId === null) return false;
@@ -3713,6 +3720,7 @@ export default function ChatView(props: ChatViewProps) {
                           send: sendAppMessageStable,
                           reply: (ref, title) => {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
+                            setComposerStackOpen({ threadKey: activeThreadKey, open: null });
                             scheduleComposerFocus();
                           },
                           dismiss: (ref) => {
@@ -3880,7 +3888,7 @@ export default function ChatView(props: ChatViewProps) {
               <div ref={draftHeroTransitionGroupRef} className="chat-composer-lane w-full">
                 <div
                   data-chat-composer-stack="true"
-                  className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
+                  className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width) has-data-[composer-stack-card]:bg-background"
                 >
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
@@ -3917,6 +3925,10 @@ export default function ChatView(props: ChatViewProps) {
                         chatRef={routeThreadRef}
                         source={sinceLastVisit}
                         onOpenReport={scrollToReport}
+                        open={activeComposerStackOpen}
+                        onOpenChange={(open) =>
+                          setComposerStackOpen({ threadKey: activeThreadKey, open })
+                        }
                         renderNeedsYou={renderNeedsYou}
                       />
                     )}

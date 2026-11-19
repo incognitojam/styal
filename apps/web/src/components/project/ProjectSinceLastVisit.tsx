@@ -54,6 +54,7 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp, formatRelativeTimeLabel } from "../../timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
 import { ComposerStackCard } from "../chat/ComposerStackCard";
+import { NextUnreadChip } from "../chat/NextUnreadChip";
 import { InlineButton } from "../ui/button";
 
 type ReportReference = {
@@ -195,11 +196,16 @@ export function ProjectSinceLastVisit({
   chatRef,
   source,
   onOpenReport,
+  open,
+  onOpenChange,
   renderNeedsYou,
 }: {
   chatRef: ScopedThreadRef;
   source: ProjectSinceLastVisitSource;
   onOpenReport: (messageId: MessageId) => void;
+  /** Which card of the stack is open; the chat folds both while you reply to a report. */
+  open: "summary" | "needs" | null;
+  onOpenChange: (open: "summary" | "needs" | null) => void;
   /** `fold` is set while this card shows. */
   renderNeedsYou: (
     fold: { readonly folded: boolean; readonly onFoldedChange: (folded: boolean) => void } | null,
@@ -239,7 +245,6 @@ export function ProjectSinceLastVisit({
   const navigate = useNavigate();
   const openPrLink = useOpenPrLink();
   const [expanded, setExpanded] = useState<ReadonlySet<SinceLastVisitGroup>>(new Set());
-  const [open, setOpen] = useState<"summary" | "needs" | null>("summary");
   const shellStatuses = useEnvironmentShellStatuses();
   const canMarkSeen = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(chatRef.environmentId),
@@ -349,11 +354,11 @@ export function ProjectSinceLastVisit({
       <ComposerStackCard
         testId="project-since-last-visit"
         label="Since you last checked"
-        count={layout.total}
-        detail={sinceLabel}
+        detail={`${sinceLabel} · ${layout.total} ${layout.total === 1 ? "change" : "changes"}`}
+        aside={<NextUnreadChip inline />}
         action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
         folded={open !== "summary"}
-        onFoldedChange={(folded) => setOpen(folded ? null : "summary")}
+        onFoldedChange={(folded) => onOpenChange(folded ? null : "summary")}
       >
         {layout.sections.map((section) => (
           <SinceLastVisitSectionRows
@@ -376,7 +381,7 @@ export function ProjectSinceLastVisit({
       </ComposerStackCard>
       {renderNeedsYou({
         folded: open !== "needs",
-        onFoldedChange: (folded) => setOpen(folded ? null : "needs"),
+        onFoldedChange: (folded) => onOpenChange(folded ? null : "needs"),
       })}
     </>
   );
@@ -401,7 +406,7 @@ function SinceLastVisitSectionRows({
 }) {
   const more =
     section.hidden > 0 || footer ? (
-      <div className="ps-8 pe-3 pb-1.5 text-muted-foreground text-xs">
+      <div className="ps-8 pe-3 pb-2 text-muted-foreground text-xs">
         {section.hidden > 0 ? (
           <>
             {section.hidden} more ·{" "}

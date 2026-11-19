@@ -3,18 +3,20 @@ import type { ReactNode, Ref } from "react";
 
 import { cn } from "~/lib/utils";
 import { InlineButton } from "../ui/button";
+import { ScrollArea } from "../ui/scroll-area";
 
 /**
  * A card in the stack above the composer, such as Needs you or the project page's "Since you last
- * checked": one width, one gap, one header (label · count · detail, action at the end) and one
- * scrolling body, so the stack stays short enough to leave the timeline room on a phone. Folded,
- * only the header shows; the header's label folds and unfolds it.
+ * checked": one width, one gap, one header (label · count · detail, then `aside` and the action at
+ * the end) and one body that scrolls past min(15rem, 25% of the window), so the stack leaves the
+ * timeline room on a phone. Folded, only the header shows; the header's label folds and unfolds it.
  */
 export function ComposerStackCard({
   label,
   count,
   detail,
   action,
+  aside,
   footer,
   folded,
   onFoldedChange,
@@ -26,6 +28,8 @@ export function ComposerStackCard({
   count?: number | undefined;
   detail?: ReactNode;
   action?: { readonly label: string; readonly onClick: () => void } | null | undefined;
+  /** Shown only in the topmost card of the stack. */
+  aside?: ReactNode;
   footer?: ReactNode;
   folded: boolean;
   onFoldedChange: (folded: boolean) => void;
@@ -64,6 +68,14 @@ export function ComposerStackCard({
               {detail ? <> · {detail}</> : null}
             </span>
           </button>
+          {aside ? (
+            <span
+              data-composer-stack-aside
+              className="flex shrink-0 [[data-composer-stack-card]~[data-composer-stack-card]_&]:hidden"
+            >
+              {aside}
+            </span>
+          ) : null}
           {action ? (
             <InlineButton touchTarget="padded" onClick={action.onClick}>
               {action.label}
@@ -72,9 +84,9 @@ export function ComposerStackCard({
         </div>
         {folded ? null : (
           <>
-            <div className="flex max-h-[min(24rem,30dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
-              {children}
-            </div>
+            <ScrollArea radius="none" scrollFade className="h-auto max-h-[min(15rem,25dvh)]">
+              <div className="flex flex-col divide-y divide-border/60">{children}</div>
+            </ScrollArea>
             {footer}
           </>
         )}
