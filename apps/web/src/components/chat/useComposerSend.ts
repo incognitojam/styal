@@ -99,7 +99,7 @@ import {
   previewAnnotationContextReference,
   responseContextReference,
 } from "../../lib/composerContextRecords";
-import { beginReportResponse } from "../../state/coordinatorReports";
+import { beginReportResponse, hasUnconfirmedReply } from "../../state/coordinatorReports";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { Atom } from "effect/reactivity";
@@ -1163,6 +1163,18 @@ export function useComposerSend(input: ComposerSendInput) {
     if (reportReply === null) {
       sendInFlightRef.current = false;
       setThreadError(threadIdForSend, "This report already has a response.");
+      return;
+    }
+    // A reply restored after an unknown outcome, sent again without its report link.
+    if (
+      !input.reportReply &&
+      hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), outgoingMessageText)
+    ) {
+      sendInFlightRef.current = false;
+      setThreadError(
+        threadIdForSend,
+        "This reply may already have been sent. Wait for it to sync.",
+      );
       return;
     }
     if (sendQueuesBehindSetup) {

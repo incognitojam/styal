@@ -549,7 +549,6 @@ describe("MessagesTimeline messages", () => {
           reports: [report],
           answers: new Map(),
           responses: [],
-          delivery: { sending: [], queued: [] },
           answer: (text, ref) =>
             void respond(
               thread,
@@ -611,7 +610,6 @@ describe("MessagesTimeline messages", () => {
             clear: () => setTarget(null),
             scroll: (messageId) => setTarget({ messageId }),
             responses: [],
-            delivery: { sending: [], queued: [] },
             answer: () => {},
             reply: () => {},
             dismiss: () => {},
@@ -1623,7 +1621,6 @@ describe("MessagesTimeline attachments", () => {
           clear: () => {},
           scroll: () => {},
           responses: [],
-          delivery: { sending: [], queued: [] },
           answer: () => {},
           reply: () => {},
           dismiss: () => {},

@@ -1,17 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId } from "@t3tools/contracts";
 import {
   acknowledgeReportResponse,
-  answeredReportStatus,
   claimReportResponse,
   coordinatorReports,
   failReportResponse,
   formatReportAnswer,
-  needRowsWithResponses,
   pendingReportAnswers,
   pendingReportDismissals,
   pendingReportResponseCount,
-  reportAnswerDelivery,
   reportAnswerDisplay,
   REPORT_ANSWER_FAILED,
   reportResponseFailure,
@@ -119,10 +115,6 @@ describe("coordinator reports", () => {
     const messages = [report("a", "pr:1", 1)];
     const answered = [...messages, ...pendingReportAnswers(first!)];
     expect(coordinatorReports(answered, [])[0]?.state).toBe("answered");
-    const sending = pendingReportAnswers(first!).map((message) => message.id);
-    expect(reportAnswerDelivery("m1", { sending, queued: [] })).toBe("sending");
-    expect(reportAnswerDelivery("m1", { sending: [], queued: ["m1"] })).toBe("queued");
-    expect(reportAnswerDelivery("m1", { sending: [], queued: [] })).toBe("delivered");
 
     // A failed send leaves the report open and free to answer again.
     const failed = failReportResponse(first!, ref, "Could not send your answer.");
@@ -176,103 +168,5 @@ describe("coordinator reports", () => {
     expect(reportResponsePending(lost, answer)).toBe(false);
     expect(reportResponseFailure(lost, ref)?.message).toBe(REPORT_ANSWER_FAILED);
     expect(claimReportResponse(lost, { ...answer, messageId: "m2" })).not.toBeNull();
-  });
-});
-
-describe("answeredReportStatus", () => {
-  it("keeps a sent answer's row answering until the agent has it", () => {
-    const report = {
-      key: "shed",
-      title: "Shed",
-      version: 2,
-      question: "Start?",
-      answers: ["Start it", "Hold"],
-    };
-    const ref = { messageId: MessageId.make("report"), key: "shed", version: 2 };
-    const response = {
-      ref,
-      kind: "answer" as const,
-      messageId: MessageId.make("answer"),
-      text: "[Shed, version 2] Start it",
-      createdAt: "2026-11-19T10:00:00.000Z",
-    };
-    const answered = { report, response };
-    const projection = (queued: boolean, reportAnswer: typeof ref | null = ref) =>
-      ({
-        messages: [
-          {
-            id: response.messageId,
-            role: "user",
-            text: response.text,
-            reportAnswer: reportAnswer ?? undefined,
-          },
-        ],
-        runs: queued
-          ? [{ id: "run", status: "queued", userMessageId: response.messageId, ordinal: 2 }]
-          : [],
-        thread: { reportDismissals: [] },
-      }) as unknown as Parameters<typeof answeredReportStatus>[2];
-
-    expect(answeredReportStatus(answered, [response], null)).toEqual({
-      status: "sending",
-      chosen: "Start it",
-      reply: null,
-    });
-    expect(answeredReportStatus(answered, [], projection(true))).toMatchObject({
-      status: "queued",
-    });
-    expect(answeredReportStatus(answered, [], projection(false))).toBe("delivered");
-    // Before the thread loads, a response no longer pending may still be queued.
-    expect(answeredReportStatus(answered, [], null)).toBe("unknown");
-    // Cancelled in the queue: the message stays without its report reference.
-    expect(answeredReportStatus(answered, [], projection(false, null))).toBe("withdrawn");
-    expect(answeredReportStatus(answered, [{ ...response, failed: "Offline" }], null)).toBe(
-      "failed",
-    );
-    // A typed reply has no offered answer to mark.
-    expect(
-      answeredReportStatus(
-        { report, response: { ...response, text: "[Shed, version 2] Next week" } },
-        [{ ...response, text: "[Shed, version 2] Next week" }],
-        null,
-      ),
-    ).toEqual({ status: "sending", chosen: null, reply: "Next week" });
-    expect(
-      answeredReportStatus(
-        { report, response: { ref, kind: "dismiss" } },
-        [{ ref, kind: "dismiss" }],
-        null,
-      ),
-    ).toMatchObject({ status: "dismissing" });
-    // A dismissal is delivered only once the thread lists it, not when its pending entry goes.
-    const dismissal = { report, response: { ref, kind: "dismiss" as const } };
-    const loaded = projection(false);
-    expect(answeredReportStatus(dismissal, [], loaded)).toBe("withdrawn");
-    expect(
-      answeredReportStatus(dismissal, [], {
-        ...loaded!,
-        thread: {
-          ...loaded!.thread,
-          reportDismissals: [{ ...ref, id: "d", occurredAt: "", text: "" }],
-        },
-      } as Parameters<typeof answeredReportStatus>[2]),
-    ).toBe("delivered");
-  });
-});
-
-describe("needRowsWithResponses", () => {
-  it("keeps every response on its way in its place", () => {
-    const need = (key: string, createdAt: string) => ({ key, createdAt });
-    const [a, b, c] = [need("a", "1"), need("b", "2"), need("c", "3")];
-    // A and C were answered here and are still queued; the open list no longer has them.
-    expect(
-      needRowsWithResponses(
-        [b],
-        [
-          { need: c, responding: "queued" },
-          { need: a, responding: "sending" },
-        ],
-      ),
-    ).toEqual([{ need: a, responding: "sending" }, { need: b }, { need: c, responding: "queued" }]);
   });
 });

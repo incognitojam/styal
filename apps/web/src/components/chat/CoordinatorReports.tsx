@@ -1,26 +1,16 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { CheckIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import {
-  createContext,
-  use,
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
-  needRowsWithResponses,
-  pendingReportDismissals,
-  reportAnswerDelivery,
   reportAnswerDisplay,
   reportResponseFailure,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
-import type { ReportResponse } from "../../state/coordinatorReports";
+import { threadReportResponsesAtom, type ReportResponse } from "../../state/coordinatorReports";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
@@ -31,11 +21,9 @@ import {
   type AnsweredNeed,
   AnsweredNeedRow,
   ProjectNeedRow,
-  projectNeedResponsesAtom,
-  useAnsweredReportStatuses,
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
-import { useAtom } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
 
@@ -57,8 +45,6 @@ export const CoordinatorReportsContext = createContext<{
   answers: ReadonlyMap<MessageId, ReportAnswer>;
   /** Responses this client sent that the server does not show yet, and ones that failed. */
   responses: readonly ReportResponse[];
-  /** Message ids still sending, and ids of answers waiting in the queue behind a running turn. */
-  delivery: { sending: readonly string[]; queued: readonly string[] };
   answer: (text: string, ref: ReportReference) => void;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
@@ -67,24 +53,24 @@ export const CoordinatorReportsContext = createContext<{
   target: { messageId: MessageId } | null;
   clear: () => void;
 } | null>(null);
-/** Why a response failed, with the server's reason, when it gave one, on hover. */
+/** What was not sent, and why when the server said; the full line on hover if it is cut off. */
 export function ReportFailure({
   failure,
-  className,
 }: {
   failure: { readonly message: string; readonly detail?: string };
-  className?: string;
 }) {
+  const line =
+    failure.detail === undefined ? failure.message : `${failure.message} ${failure.detail}`;
   const text = (
-    <span role="alert" className={cn("min-w-0 truncate text-xs text-destructive", className)}>
-      {failure.message}
-    </span>
+    <p role="alert" className="min-w-0 truncate text-xs text-destructive">
+      {line}
+    </p>
   );
   if (failure.detail === undefined) return text;
   return (
     <Tooltip>
       <TooltipTrigger render={text} />
-      <TooltipPopup side="top">{failure.detail}</TooltipPopup>
+      <TooltipPopup side="top">{line}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -100,21 +86,7 @@ export function ReportAnswerBar({
   const ctx = use(CoordinatorReportsContext);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
-  const tag = report.message.report!;
-  const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
-  const dismissing = pendingReportDismissals(ctx.responses).some(
-    (pending) =>
-      pending.messageId === ref.messageId &&
-      pending.key === ref.key &&
-      pending.version === ref.version,
-  );
-  const delivery =
-    report.state === "answered" && report.answer
-      ? reportAnswerDelivery(report.answer.id, ctx.delivery)
-      : "delivered";
-  // Until the agent has the response the card keeps its open shape, so it does not jump.
-  const responding = dismissing ? "dismissing" : delivery === "delivered" ? null : delivery;
-  if (responding === null && report.state === "dismissed") {
+  if (report.state === "dismissed") {
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
@@ -124,8 +96,8 @@ export function ReportAnswerBar({
       </div>
     );
   }
-  if (responding === null && report.state === "answered" && report.answer) {
-    const { text, compact } = reportAnswerDisplay(report.answer, tag);
+  if (report.state === "answered" && report.answer) {
+    const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
     if (compact) {
       return (
         <div className={panelClassName}>
@@ -146,56 +118,39 @@ export function ReportAnswerBar({
       </div>
     );
   }
-  if (responding === null && report.state !== "open") return null;
-  const answers = tag.answers ?? [];
-  const chosen =
-    responding !== null && report.answer ? reportAnswerDisplay(report.answer, tag).text : null;
-  const failure = responding === null ? reportResponseFailure(ctx.responses, ref) : undefined;
-  const disabled = !ctx.canOperate || responding !== null;
+  if (report.state !== "open") return null;
+  const tag = report.message.report!;
+  const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
+  const disabled = !ctx.canOperate;
+  const failure = reportResponseFailure(ctx.responses, ref);
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
       <ReportAnswerOptions
-        answers={answers}
+        answers={tag.answers ?? []}
         disabled={disabled}
-        chosen={chosen}
         onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
       />
-      <div className="flex h-7 items-center gap-2 sm:h-6">
-        {responding !== null ? (
-          <span role="status" className="truncate px-2 text-xs text-muted-foreground">
-            {responding === "dismissing"
-              ? "Dismissing"
-              : responding === "queued"
-                ? "Queued until the current turn ends"
-                : chosen !== null && answers.includes(chosen)
-                  ? "Sending your answer"
-                  : "Sending your reply"}
-          </span>
-        ) : (
-          <>
-            <Button
-              size="xs"
-              variant="ghost-muted"
-              disabled={disabled}
-              onClick={() => ctx.reply(ref, tag.title)}
-            >
-              <ReplyIcon />
-              Reply…
-            </Button>
-            {failure ? <ReportFailure failure={failure} /> : null}
-            <Button
-              className="ms-auto"
-              size="xs"
-              variant="ghost-muted"
-              disabled={disabled}
-              onClick={() => ctx.dismiss(ref)}
-            >
-              <XIcon />
-              Dismiss
-            </Button>
-          </>
-        )}
+      {failure ? <ReportFailure failure={failure} /> : null}
+      <div className="flex items-center justify-between">
+        <Button
+          size="xs"
+          variant="ghost-muted"
+          disabled={disabled}
+          onClick={() => ctx.reply(ref, tag.title)}
+        >
+          <ReplyIcon />
+          Reply…
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost-muted"
+          disabled={disabled}
+          onClick={() => ctx.dismiss(ref)}
+        >
+          <XIcon />
+          Dismiss
+        </Button>
       </div>
     </div>
   );
@@ -205,13 +160,10 @@ export function ReportAnswerBar({
 export function ReportAnswerOptions({
   answers,
   disabled,
-  chosen = null,
   onPick,
 }: {
   answers: readonly string[];
   disabled: boolean;
-  /** The answer already sent, marked while it is on its way. */
-  chosen?: string | null;
   onPick: (answer: string) => void;
 }) {
   return answers.map((answer, index) => (
@@ -219,15 +171,12 @@ export function ReportAnswerOptions({
       key={answer}
       type="button"
       disabled={disabled}
-      aria-pressed={chosen === null ? undefined : answer === chosen}
       className={cn(
         "flex w-full cursor-pointer items-start gap-2 rounded-md border px-3 py-1.5 text-left hover:bg-accent/60 disabled:cursor-default disabled:opacity-64",
         index === 0 ? "border-primary/50 bg-primary/8" : "border-input bg-background/40",
-        answer === chosen && "border-primary bg-primary/12 disabled:opacity-100",
       )}
       onClick={() => onPick(answer)}
     >
-      {answer === chosen ? <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /> : null}
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{answer}</span>
       {index === 0 ? (
         <span className="shrink-0 rounded-full bg-primary/12 px-1.5 text-xs leading-5 text-primary">
@@ -308,57 +257,39 @@ export function NeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
-  // In a shared store, so leaving the page and coming back keeps each in-flight row.
-  const [sent, setSent] = useAtom(
-    projectNeedResponsesAtom(
-      threadKey(scopeThreadRef(reviewProps.environmentId, reviewProps.threadId)),
+  // The latest answer only; the rows follow each thread's own pending state.
+  const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
+  // The summary steps back if its send fails; the report's row is then open again.
+  const summaryRef = answered?.report?.need.thread;
+  const summaryResponses = useAtomValue(
+    threadReportResponsesAtom(
+      summaryRef ? threadKey(scopeThreadRef(summaryRef.environmentId, summaryRef.id)) : "",
     ),
   );
-  // The latest answer from this visit, shown once the agent has it.
-  const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
-  const summary = answered?.report;
-  const tracked = summary && !sent.includes(summary) ? [...sent, summary] : sent;
-  const statuses = useAnsweredReportStatuses(tracked);
+  const shownAnswered =
+    answered?.report &&
+    reportResponseFailure(summaryResponses, answered.report.response.ref) !== undefined
+      ? null
+      : answered;
   const needs = useProjectNeeds(project);
-  const needRows = needRowsWithResponses(
-    needs,
-    sent.flatMap((entry, index) => {
-      const status = statuses[index];
-      return typeof status === "object" ? [{ need: entry.need, responding: status }] : [];
-    }),
-  );
-  const outstanding = sent.filter(
-    (_, index) => typeof statuses[index] === "object" || statuses[index] === "unknown",
-  );
-  const settled = outstanding.length !== sent.length;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops settled responses from the shared store so their threads stop streaming
-  useEffect(() => {
-    if (settled) setSent(outstanding);
-  });
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
-    ...needRows.map((row) => ({ kind: "need" as const, ...row })),
+    ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
-  const waiting = rows.filter((row) => row.kind !== "need" || !row.responding).length;
-  const shownAnswered =
-    !summary || statuses[tracked.indexOf(summary)] === "delivered" ? answered : null;
   if (!rows.length && !shownAnswered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        {rows.length ? (
-          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-            {/* Rows still on their way are not counted. */}
-            <span>{waiting ? `Needs you · ${waiting}` : "Needs you"}</span>
-            {rows.length > 3 ? (
-              <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
-                {expanded ? "Show less" : `Show all ${rows.length}`}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+          <span>{rows.length ? `Needs you · ${rows.length}` : "Answered"}</span>
+          {rows.length > 3 ? (
+            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
+              {expanded ? "Show less" : `Show all ${rows.length}`}
+            </Button>
+          ) : null}
+        </div>
         <div className="flex max-h-[min(24rem,45dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
           {visible.map((row, index) =>
             row.kind === "run" ? (
@@ -375,19 +306,13 @@ export function NeedsYou({
                 need={row.need}
                 open={openNeed === row.need.key}
                 onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer, report) => {
+                onAnswered={(answer, report) =>
                   setAnswered({
                     threadTitle: row.need.thread.title,
                     answer,
                     ...(report ? { report } : {}),
-                  });
-                  if (report)
-                    setSent((current) => [
-                      ...current.filter((entry) => entry.need.key !== report.need.key),
-                      report,
-                    ]);
-                }}
-                {...(row.responding ? { responding: row.responding } : {})}
+                  })
+                }
               />
             ) : (
               <button

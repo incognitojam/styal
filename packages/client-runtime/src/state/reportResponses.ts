@@ -199,7 +199,7 @@ export function createReportResponses(
                   next,
                   response.ref,
                   reportResponseFailedMessage(response),
-                  "The thread does not show it.",
+                  "The server does not have it.",
                 )
               : next;
           return reportClosed(projection, response.ref)

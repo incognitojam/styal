@@ -8,7 +8,6 @@ import {
   pendingReportDismissals,
   reportAnswers,
 } from "@t3tools/client-runtime/coordinator-reports";
-import { threadKey as entityThreadKey } from "@t3tools/client-runtime/state/entities";
 import {
   dismissCoordinatorReport,
   respondToReport,
@@ -1103,7 +1102,7 @@ export default function ChatView(props: ChatViewProps) {
     title: string;
   } | null>(null);
   const reportResponses = useAtomValue(
-    threadReportResponsesAtom(activeThreadRef ? entityThreadKey(activeThreadRef) : ""),
+    threadReportResponsesAtom(activeThreadRef ? threadKey(activeThreadRef) : ""),
   );
   // Answers this client has sent and the server does not show yet read as given.
   const sendingReportAnswers = pendingReportAnswers(reportResponses);
@@ -1127,7 +1126,7 @@ export default function ChatView(props: ChatViewProps) {
       )
     : [];
   // A reply to a report that has since been answered or dismissed is no longer a reply.
-  // Kept while this client's reply may still be on its way, so a resend is refused, not sent plainly.
+  // Kept while a reply's outcome is unknown, so resending the restored draft is refused, not sent plainly.
   const activeReportReply =
     reportReply?.threadKey === activeThreadKey &&
     (reportStates.some(
@@ -1135,7 +1134,9 @@ export default function ChatView(props: ChatViewProps) {
     ) ||
       reportResponses.some(
         (response) =>
-          response.failed === undefined && response.ref.messageId === reportReply.ref.messageId,
+          response.failed === undefined &&
+          response.acknowledgedAt === Number.POSITIVE_INFINITY &&
+          response.ref.messageId === reportReply.ref.messageId,
       ))
       ? reportReply
       : null;
@@ -3761,14 +3762,6 @@ export default function ChatView(props: ChatViewProps) {
                           reports: reportStates,
                           answers: reportAnswerMessages,
                           responses: reportResponses,
-                          delivery: {
-                            sending: sendingReportAnswers.map((message) => message.id),
-                            queued: serverProjection
-                              ? getUserQueuedThreadRuns(serverProjection).map(
-                                  (run) => run.userMessageId,
-                                )
-                              : [],
-                          },
                           answer: (text, ref) => {
                             if (activeThreadRef === null || activeThreadId === null) return;
                             const messageId = newMessageId();

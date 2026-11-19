@@ -2,9 +2,9 @@ import type { CoordinatorReport } from "@t3tools/contracts";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 
-export const REPORT_ANSWER_FAILED = "Could not send your answer. Try again.";
-export const REPORT_REPLY_FAILED = "Could not send your reply. Try again.";
-const REPORT_DISMISS_FAILED = "Could not dismiss the report. Try again.";
+export const REPORT_ANSWER_FAILED = "Your answer was not sent.";
+export const REPORT_REPLY_FAILED = "Your reply was not sent.";
+const REPORT_DISMISS_FAILED = "The report was not dismissed.";
 
 /**
  * A response this client sent that the server does not show yet; one per report, so further
@@ -160,7 +160,7 @@ export function settleReportResponses<R extends Reference>(
             {
               ...entry,
               failed: reportResponseFailedMessage(entry),
-              failedDetail: "The thread does not show it.",
+              failedDetail: "The server does not have it.",
             },
           ]
         : [entry],
@@ -194,17 +194,4 @@ export function pendingReportDismissals<R extends Reference>(
   return pending.flatMap((entry) =>
     entry.kind === "dismiss" && entry.failed === undefined ? [entry.ref] : [],
   );
-}
-
-/**
- * How far a response has got: still sending (`sending` holds the ids of answer messages this
- * client has not had confirmed), waiting in the thread's queue behind a running turn, or with
- * the agent.
- */
-export function reportAnswerDelivery(
-  answerMessageId: string,
-  ids: { readonly sending: readonly string[]; readonly queued: readonly string[] },
-): "sending" | "queued" | "delivered" {
-  if (ids.sending.includes(answerMessageId)) return "sending";
-  return ids.queued.includes(answerMessageId) ? "queued" : "delivered";
 }
