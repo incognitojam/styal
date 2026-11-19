@@ -15,7 +15,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ProjectId,
   type ThreadId,
-  threadNotificationName,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
@@ -198,7 +198,7 @@ export function startThreadNotifications(
       );
     };
     const shouldSound = () => kind !== "completion" || !isViewed();
-    const name = threadNotificationName(
+    const name = threadDisplayName(
       registry.get(environmentServerConfigsAtom).get(environmentId)?.settings,
       thread,
       () => projectGroup(environmentId, thread.projectId)?.label ?? null,

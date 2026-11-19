@@ -137,8 +137,24 @@ export function useCommandPaletteThreadItems(input: {
   })();
 
   const { environments } = useEnvironments();
+  const settingsByEnvironment = new Map(
+    environments.map((environment) => [
+      environment.environmentId,
+      environment.serverConfig?.settings,
+    ]),
+  );
+  const projectNameByKey = new Map(
+    allProjectGroups.flatMap((group) =>
+      group.memberProjectRefs.map(
+        (ref) => [`${ref.environmentId}:${ref.projectId}`, group.displayName] as const,
+      ),
+    ),
+  );
   const threadItems = buildThreadActionItems({
     threads: listedThreads,
+    settingsOf: (environmentId) => settingsByEnvironment.get(environmentId),
+    projectNameOf: (thread) =>
+      projectNameByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null,
     ...(environments.length > 1
       ? {
           environmentLabelOf: (thread: (typeof threads)[number]) =>

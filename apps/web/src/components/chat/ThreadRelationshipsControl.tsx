@@ -16,6 +16,10 @@ import {
   projectedSubagentsToRuntime,
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  projectGroupLabel,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { deriveProviderSubagentStatus } from "@t3tools/client-runtime/state/thread-execution";
 import {
@@ -43,6 +47,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ServerProvider,
   type ThreadId,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
 import { groupBy } from "effect/Array";
@@ -72,7 +77,12 @@ import {
   useHiddenThreadKeys,
   useAnyEnvironmentHiding,
 } from "../../state/entities";
-import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
+import {
+  useEnvironment,
+  useEnvironmentProviders,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
+import { useClientSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import {
   applyProviderInstanceSettings,
@@ -406,6 +416,20 @@ function ReportsToRow(props: {
   const navigate = useNavigate();
   const launcherRef = scopeThreadRef(props.environmentId, props.launcherId);
   const launcher = useQuietThreadShell(launcherRef);
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
+  const projects = useProjects();
+  const groupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const launcherName =
+    launcher &&
+    threadDisplayName(settings ?? undefined, launcher, () =>
+      projectGroupLabel({
+        projects,
+        settings: groupingSettings,
+        preferredEnvironmentId: primaryEnvironmentId,
+        project: { environmentId: props.environmentId, projectId: launcher.projectId },
+      }),
+    );
   const stopReports = useAtomCommand(threadEnvironment.stopReports);
   return (
     <li className="group relative flex h-8 items-center rounded-lg">
@@ -429,7 +453,7 @@ function ReportsToRow(props: {
           <ThreadRelationshipIcon fallbackIcon={CornerLeftUpIcon} status={null} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/90">
-              Reports to {launcher?.title ?? "the thread that launched it"}
+              Reports to {launcherName ?? "the thread that launched it"}
             </span>
           </span>
         </TooltipTrigger>

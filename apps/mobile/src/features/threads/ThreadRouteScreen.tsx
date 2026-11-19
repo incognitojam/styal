@@ -42,6 +42,7 @@ import {
   ThreadId,
   type ProjectScript,
   type ServerProvider,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import {
   projectScriptCwd,
@@ -63,12 +64,12 @@ import { vcsEnvironment } from "../../state/vcs";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   reportRecipientId,
   shownReportRecipientId,
 } from "@t3tools/client-runtime/state/project-coordinators";
-import { useThreadShell } from "../../state/entities";
+import { useProject, useThreadShell } from "../../state/entities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
 import {
@@ -571,6 +572,11 @@ function ThreadRouteContent(
       ? null
       : scopeThreadRef(selectedThread.environmentId, recipientId),
   );
+  const reportsToProject = useProject(
+    reportsToThread === null
+      ? null
+      : scopeProjectRef(reportsToThread.environmentId, reportsToThread.projectId),
+  );
   const reportsToId =
     selectedThread === null
       ? null
@@ -585,7 +591,17 @@ function ThreadRouteContent(
       : selectedThread?.linkOrigin
         ? `From ${selectedThread.linkOrigin.label}`
         : null,
-    reportsToId === null ? null : `Reports to ${reportsToThread?.title ?? "its launcher"}`,
+    reportsToId === null
+      ? null
+      : `Reports to ${
+          reportsToThread === null
+            ? "its launcher"
+            : threadDisplayName(
+                routeEnvironmentRuntime?.serverConfig?.settings,
+                reportsToThread,
+                () => reportsToProject?.title ?? null,
+              )
+        }`,
   ]
     .filter(Boolean)
     .join(" · ");
