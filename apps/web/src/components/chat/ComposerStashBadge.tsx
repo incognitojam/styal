@@ -32,7 +32,8 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       density="comfortable"
       width="content"
       data-composer-shoulder-tab
-      className="ml-auto"
+      // Clear of the card's rounded corner, unless a notice beside it squares that corner.
+      className="ms-auto me-5.5 peer-has-data-[composer-banner-surface=attached]/composer-notices:me-0"
     >
       <ComposerBanner.Row
         render={<button type="button" />}

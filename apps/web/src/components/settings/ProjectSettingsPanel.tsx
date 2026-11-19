@@ -1,10 +1,11 @@
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
 import {
   type SidebarProjectGroupingMode,
   type EnvironmentId,
@@ -39,6 +40,8 @@ import {
   useProjectGroupUpdate,
   type ProjectGroupUpdate,
 } from "../../hooks/useProjectGroupUpdate";
+import { openAddProjectToMachine } from "../AddProjectToMachineDialog";
+import { useAddProjectTargets } from "../../hooks/useAddProjectTargets";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
@@ -665,6 +668,27 @@ function ProjectDetail({
     if (members) members.push(member);
     else checkoutsByEnvironment.set(member.environmentId, [member]);
   }
+  // The dialog lists and copies the source's ignored files, so a checkout this client can read on
+  // a connected machine comes first, then the primary machine's.
+  const readableIds = useEnvironmentsWithScope(allMembers, AuthFilesystemReadScope);
+  const isReadableSource = (member: SidebarProjectGroupMember) => {
+    const connection = environmentById.get(member.environmentId)?.connection.phase;
+    return (
+      readableIds.has(member.environmentId) &&
+      connection !== undefined &&
+      canCreateProjectInEnvironment(connection)
+    );
+  };
+  const cloneSources = allMembers
+    .filter((member) => member.repositoryIdentity?.locator.remoteUrl)
+    .toSorted(
+      (a, b) =>
+        Number(isReadableSource(b)) - Number(isReadableSource(a)) ||
+        Number(b.environmentId === primaryEnvironmentId) -
+          Number(a.environmentId === primaryEnvironmentId),
+    );
+  const cloneSource = cloneSources[0] ?? null;
+  const addTargets = useAddProjectTargets(cloneSource, allMembers);
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
       <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
@@ -695,6 +719,27 @@ function ProjectDetail({
           </SettingsRow>
         );
       })}
+      {cloneSource && addTargets.length > 0 ? (
+        <SettingsRow
+          title="Add to another machine"
+          description="Clone this project onto a connected machine that does not have it yet, with its .env files."
+          control={
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() =>
+                openAddProjectToMachine({
+                  projectRef: scopeProjectRef(cloneSource.environmentId, cloneSource.id),
+                  targetEnvironmentId:
+                    addTargets.length === 1 ? addTargets[0]!.environmentId : null,
+                })
+              }
+            >
+              {addTargets.length === 1 ? `Add to ${addTargets[0]!.label}` : "Add…"}
+            </Button>
+          }
+        />
+      ) : null}
     </SettingsSection>
   );
 

@@ -103,6 +103,8 @@ interface BranchToolbarProps {
   trailing?: ReactNode;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
+  /** Machines offered under Add to another machine; by default every machine without the project. */
+  addTargets?: readonly AddProjectTarget[];
   worktreeUnavailableReason?: string | null;
   /** The thread's token total, shown left of the branch picker. */
   threadUsage?: TurnUsageView | null;
@@ -635,6 +637,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   onComposerFocusRequest,
   availableEnvironments,
   onEnvironmentChange,
+  addTargets: addTargetsOverride,
   trailing,
   worktreeUnavailableReason = null,
   threadUsage = null,
@@ -691,9 +694,15 @@ export const BranchToolbar = memo(function BranchToolbar({
     ],
   );
 
-  const addTargets = useAddProjectTargets(activeProject, availableEnvironments);
+  const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
+  const addTargets = addTargetsOverride ?? defaultAddTargets;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
-    openAddProjectToMachine({ projectRef: activeProjectRef, targetEnvironmentId });
+    openAddProjectToMachine({
+      projectRef: activeProjectRef,
+      targetEnvironmentId,
+      draftId,
+      onlyTargets: addTargetsOverride?.map((target) => target.environmentId),
+    });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;
   const showEnvironmentPicker = hasMultipleEnvironments && onEnvironmentChange !== undefined;
@@ -806,7 +815,14 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
+                {...(addTargets.length > 0
+                  ? {
+                      onAddToMachine: () =>
+                        onAddToMachine(
+                          addTargets.length === 1 ? addTargets[0]!.environmentId : null,
+                        ),
+                    }
+                  : {})}
               />
               {showGitControls ? (
                 <Separator

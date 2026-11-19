@@ -22,7 +22,7 @@ import {
   type MessageId,
   type ModelSelection,
   type ServerConfig as T3ServerConfig,
-  threadNotificationName,
+  threadDisplayName,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
 import {
@@ -713,7 +713,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     // Arm after send so preference reads and native Activity startup do not delay tap-frame feedback.
     armAgentAwarenessLiveActivityForLocalWork({
       environmentId: props.environmentId,
-      threadTitle: threadNotificationName(
+      threadTitle: threadDisplayName(
         props.serverConfig?.settings,
         props.selectedThread,
         () => project?.title ?? null,

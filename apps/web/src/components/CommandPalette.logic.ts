@@ -29,7 +29,9 @@ import {
   type SourceControlRepositoryInfo,
   type SourceControlCloneDefaultRepository,
   type SourceControlDefaultRepositoryRemote,
+  type ServerSettings,
   THREAD_JUMP_KEYBINDING_COMMANDS,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
 import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
@@ -444,6 +446,12 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   runThread: (thread: TThread) => Promise<void>;
   /** Makes the environment searchable; pass it only with two or more environments. */
   environmentLabelOf?: (thread: TThread) => string | null;
+  /** Names each project's chat by its project; without it every thread shows its title. */
+  settingsOf?: (
+    environmentId: EnvironmentId,
+  ) => Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators"> | undefined;
+  /** The project's name for its chat, as the project page shows it. */
+  projectNameOf?: (thread: TThread) => string | null;
 }): CommandPaletteActionItem[] {
   // Callers order these: recents by last use, search results by rank.
   const visibleThreads = input.threads.filter(
@@ -454,6 +462,11 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     const projectTitle = input.projectByKey.get(
       `${thread.environmentId}:${thread.projectId}`,
     )?.title;
+    const title = threadDisplayName(
+      input.settingsOf?.(thread.environmentId),
+      thread,
+      () => input.projectNameOf?.(thread) ?? projectTitle ?? null,
+    );
     const descriptionParts: string[] = [];
 
     if (projectTitle) {
@@ -480,17 +493,18 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         kind: "action" as const,
         value: `thread:${thread.environmentId}:${thread.id}`,
         threadRef: { environmentId: thread.environmentId, threadId: thread.id },
-        searchTerms: [thread.title],
+        searchTerms: [title],
         threadSearch: threadSearchSubject(
           {
             ...thread,
+            title,
             latestUserMessageAt: thread.latestUserMessageAt ?? null,
             opens: thread.opens ?? null,
           },
           projectTitle,
           input.environmentLabelOf?.(thread),
         ),
-        title: thread.title,
+        title,
         description,
         timestamp: formatRelativeTimeLabel(
           resolveThreadDisplayTimestamp(thread, input.timestampMode ?? "last_prompted"),

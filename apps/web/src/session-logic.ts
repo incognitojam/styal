@@ -124,6 +124,8 @@ export type TimelineEntry = (
       readonly createdAt: string;
       readonly message: ChatMessage;
       readonly projectedItem?: OrchestrationV2ProjectedTurnItem;
+      /** Sent from this client and not yet confirmed by the server. */
+      readonly pending?: true;
     }
   | {
       readonly id: string;
@@ -755,6 +757,7 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         kind: "message",
         createdAt: message.createdAt,
         message,
+        pending: true,
       });
     }
   }

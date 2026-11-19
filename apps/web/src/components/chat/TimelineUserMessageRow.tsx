@@ -88,6 +88,7 @@ import { chatMarkdownClipboardPayload } from "../../markdown-clipboard";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { cn } from "~/lib/utils";
 import { markdownProseDirection } from "~/textDirection";
+import { useDeadlinePassed } from "~/hooks/useDeadline";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
@@ -115,6 +116,17 @@ import {
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
+
+// A send confirmed within this reads as sent from the start; only a slow one shows the edge.
+const UNSENT_EDGE_DELAY_MS = 500;
+
+/**
+ * A message the agent does not have yet has a dashed edge and no fill: one still sending,
+ * or one waiting in the queue. It takes the solid bubble once the agent has it. The edge is
+ * an overlay, so the bubble keeps its size when it fills and media-only messages show it too.
+ */
+export const UNSENT_BUBBLE_CLASS_NAME =
+  "relative text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border after:border-dashed after:border-muted-foreground/40";
 
 const BUBBLE_CHIP_CLASS_NAME =
   "[&_[data-slot=context-chip]]:[--context-chip-ink:var(--context-chip-message,var(--context-chip-accent))]";
@@ -586,6 +598,9 @@ export function ReportAnswerMessageBody(props: {
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const unsent = useDeadlinePassed(
+    row.pending ? Date.parse(row.message.createdAt) + UNSENT_EDGE_DELAY_MS : null,
+  );
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
   const senderRef =
     row.message.linkedSender ??
@@ -1008,7 +1023,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           BUBBLE_CHIP_CLASS_NAME,
           userMessage.attribution === "guest"
             ? guestBubbleClassName(false)
-            : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+            : unsent
+              ? UNSENT_BUBBLE_CLASS_NAME
+              : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+          // The edge sits on the media itself here, so it is drawn in two tones to show on any image.
+          unsent &&
+            (mediaOnly || fileCardsOnly || audioOnly) &&
+            "after:border-2 after:border-foreground/80 after:ring-2 after:ring-inset after:ring-background/70",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}
