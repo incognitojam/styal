@@ -2528,6 +2528,10 @@ export default function ChatView(props: ChatViewProps) {
               ),
               (element) => element.getBoundingClientRect(),
             ),
+            cards: Array.from(
+              composerOverlayElement.querySelectorAll<HTMLElement>("[data-composer-stack-card]"),
+              (element) => element.getBoundingClientRect(),
+            ),
           })
         : nextHeight;
     setScrollToEndClearance(clearance);

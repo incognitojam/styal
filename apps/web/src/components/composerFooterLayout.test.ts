@@ -4,6 +4,7 @@ import { resolveContextStripLabelsCompact } from "./BranchToolbar.logic";
 import {
   resolveRestingComposerControlsLayout,
   resolveRestingComposerControlsNaturalWidth,
+  resolveScrollToEndClearance,
 } from "./composerFooterLayout";
 
 describe("context strip labels and resting composer controls", () => {
@@ -92,5 +93,23 @@ describe("progressive composer controls", () => {
         previous = next;
       }
     }
+  });
+});
+
+describe("resolveScrollToEndClearance", () => {
+  // The overlay is 400px tall; the composer's surface starts 60px below a 40px stash tab on the right.
+  const base = {
+    overlayHeight: 400,
+    mainSurfaceTop: 340,
+    button: { left: 500, right: 620 },
+    attachments: [{ top: 300, left: 900, right: 1000 }],
+  };
+
+  it("lets a button beside a tab sit down next to it", () => {
+    expect(resolveScrollToEndClearance({ ...base, cards: [] })).toBe(360);
+  });
+
+  it("keeps the button above full-width cards stacked over the composer", () => {
+    expect(resolveScrollToEndClearance({ ...base, cards: [{ top: 120 }, { top: 210 }] })).toBe(400);
   });
 });

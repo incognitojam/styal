@@ -25,7 +25,11 @@ export function ComposerStackCard({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)" data-testid={testId}>
+    <div
+      className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)"
+      data-composer-stack-card
+      data-testid={testId}
+    >
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
         <div className="flex min-h-8 items-center justify-between gap-2 border-b border-border/60 px-3 text-muted-foreground text-xs">
           <span className="min-w-0 truncate">
