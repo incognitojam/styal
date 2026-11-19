@@ -28,7 +28,7 @@ export function Sheet(props: SheetProps) {
         <View
           collapsable={false}
           className={`${fit ? "" : "absolute inset-0 "}flex-col-reverse bg-header`}
-          style={fit ? { maxHeight: height * 0.9 } : undefined}
+          style={fit ? { maxHeight: height * 0.75 } : undefined}
         >
           <ScreenContent fitToContents={fit}>{props.children}</ScreenContent>
           <AppBar

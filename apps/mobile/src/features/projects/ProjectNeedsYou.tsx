@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { StackActions, useNavigation, useRoute } from "@react-navigation/native";
+import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import { waitingCoordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -11,7 +11,7 @@ import {
 import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { MessageId, ScopedThreadRef, ThreadWorkflowRunWatch } from "@t3tools/contracts";
-import { useState, type ComponentProps } from "react";
+import { useCallback, useRef, useState, type ComponentProps } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,11 +19,11 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Sheet } from "../../components/ui/Sheet";
-import { scopedThreadKey } from "../../lib/scopedEntities";
 import { environmentThreadDetails } from "../../state/threads";
 import { ChildApproval } from "../threads/ChildThreadApprovals";
 import type { ReportState } from "../threads/CoordinatorReports";
-import { requestThreadMessageJump } from "../threads/threadMessageJump";
+import { pendingThreadMessageJump } from "../threads/threadMessageJump";
+import { scopedThreadKey } from "../../lib/scopedEntities";
 import { WorkflowRunReviewCard } from "../threads/WorkflowRunReviewCard";
 import { useProjectChatNeedYou } from "./projectChats";
 import { oldestFirst } from "./projectNeedsYou.logic";
@@ -44,25 +44,27 @@ export function ProjectNeedsYou({
   chat,
   reports,
   runs,
-  openRequest,
-  onOpenChatReport,
-  barHidden,
   ...reviewProps
 }: {
   readonly chat: ScopedThreadRef;
   readonly reports: readonly ReportState[];
   readonly runs: readonly ThreadWorkflowRunWatch[];
-  /** Changes when the list should open, such as after an answer made from it. */
-  readonly openRequest: string;
-  readonly onOpenChatReport: (id: MessageId) => void;
-  /** While a report is pinned in its place: the list can still open, the line hides. */
-  readonly barHidden: boolean;
 } & Omit<ComponentProps<typeof WorkflowRunReviewCard>, "run">) {
   const navigation = useNavigation();
-  const route = useRoute();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  const [seenRequest, setSeenRequest] = useState(openRequest);
+  // A report opened from the list is on screen: coming back to the chat, however the report
+  // screen was left, reopens the list, unless Open thread asked for the report in this chat.
+  const reportOpen = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!reportOpen.current) return;
+      reportOpen.current = false;
+      if (pendingThreadMessageJump(scopedThreadKey(chat.environmentId, chat.threadId)) !== null)
+        return;
+      setOpen(true);
+    }, [chat.environmentId, chat.threadId]),
+  );
   const threads = useProjectChatNeedYou(chat);
   const needs = useNeeds(threads);
   const rows = oldestFirst<Row>(
@@ -76,44 +78,34 @@ export function ProjectNeedsYou({
     rowCreatedAt,
     rowKey,
   );
-  if (openRequest !== seenRequest) {
-    setSeenRequest(openRequest);
-    if (rows.length > 0) setOpen(true);
-  }
   // The list closes with its last item, so the next one shows the bar, not the list.
   if (rows.length === 0 && open) setOpen(false);
   if (rows.length === 0) return null;
-  const openInThread = (thread: ScopedThreadRef, reportId: MessageId | null) => {
+  const openItem = (thread: ScopedThreadRef, reportId: MessageId | null) => {
     setOpen(false);
-    if (reportId !== null) {
-      requestThreadMessageJump(scopedThreadKey(thread.environmentId, thread.threadId), reportId);
-    }
+    reportOpen.current = reportId !== null;
+    const ids = { environmentId: String(thread.environmentId), threadId: String(thread.threadId) };
     navigation.dispatch(
-      StackActions.push("Thread", {
-        environmentId: String(thread.environmentId),
-        threadId: String(thread.threadId),
-        ...(reportId === null ? {} : { report: String(reportId) }),
-        fromProject: route.key,
-      }),
+      reportId === null
+        ? StackActions.push("Thread", ids)
+        : StackActions.push("ThreadReport", { ...ids, report: String(reportId) }),
     );
   };
   return (
     <>
-      {barHidden ? null : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Needs you, ${rows.length}`}
-          accessibilityHint="Opens what the project is waiting on"
-          onPress={() => setOpen(true)}
-          className="mx-3 mb-2 flex-row items-center gap-2.5 rounded-xl bg-secondary px-3 py-2.5 active:opacity-70"
-        >
-          <View className="size-2 rounded-full bg-warning-foreground" />
-          <Text className="font-t3-medium text-foreground">Needs you · {rows.length}</Text>
-          <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
-            {rowTitle(rows[0]!)}
-          </Text>
-        </Pressable>
-      )}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Needs you, ${rows.length}`}
+        accessibilityHint="Opens what the project is waiting on"
+        onPress={() => setOpen(true)}
+        className="mx-3 mb-2 flex-row items-center gap-2.5 rounded-xl bg-secondary px-3 py-2.5 active:opacity-70"
+      >
+        <View className="size-2 rounded-full bg-warning-foreground" />
+        <Text className="font-t3-medium text-foreground">Needs you · {rows.length}</Text>
+        <Text className="flex-1 text-foreground-secondary" numberOfLines={1}>
+          {rowTitle(rows[0]!)}
+        </Text>
+      </Pressable>
       {open ? (
         <Sheet title="Needs you" fitToContents onClose={() => setOpen(false)}>
           <ScrollView
@@ -152,12 +144,11 @@ export function ProjectNeedsYou({
                   createdAt={rowCreatedAt(row)}
                   onPress={() => {
                     if (row.kind === "report") {
-                      setOpen(false);
-                      onOpenChatReport(row.report.message.id);
+                      openItem(chat, row.report.message.id);
                       return;
                     }
                     const { need } = row;
-                    openInThread(
+                    openItem(
                       scopeThreadRef(need.thread.environmentId, need.thread.id),
                       need.kind === "report" ? need.report.messageId : null,
                     );

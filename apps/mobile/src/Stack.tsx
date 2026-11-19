@@ -1,3 +1,4 @@
+import { ThreadReportRouteScreen } from "./features/threads/ThreadReportScreen";
 import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -668,6 +669,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: BrowserPreviewRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/browser`,
       options: { ...modalRoute({ header: "solid" }), gestureEnabled: false },
+    }),
+    ThreadReport: createNativeStackScreen({
+      screen: ThreadReportRouteScreen,
+      options: pageRoute(),
     }),
     ThreadReview: createNativeStackScreen({
       screen: ReviewSheet,

@@ -1,17 +1,10 @@
 import {
   CoordinatorReportsContext,
-  PinnedReport,
   ReportReplyStrip,
   type ReportAnswers,
   type ReportState,
 } from "./CoordinatorReports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import {
-  openedReportFinished,
-  openedReportGone,
-  openedReportView,
-  type OpenedReport,
-} from "./openedReport.logic";
 import { NeedsYou } from "./NeedsYou";
 import { ProjectNeedsYou } from "../projects/ProjectNeedsYou";
 import { useProjectChatHeader } from "../projects/projectChats";
@@ -275,13 +268,6 @@ export interface ThreadDetailScreenProps {
   readonly reportAnswers?: ReportAnswers | undefined;
   readonly reportReply?: ReportReply | null;
   readonly onReportReply?: (reply: ReportReply | null) => void;
-  /** A report opened from a project's Needs you, pinned above the composer while it is read. */
-  readonly openedReportId?: MessageId | null;
-  /** The project chat route that opened it; once it is answered, the app goes back there. */
-  readonly openedReportReturnTo?: string | null;
-  readonly onReturnToNeedsList?: ((routeKey: string) => void) | undefined;
-  /** Changes when the project chat's Needs you list should open. */
-  readonly needsListRequest?: string | null;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
   readonly activityRun: ThreadFeedLatestRun | null;
@@ -469,11 +455,7 @@ function ThreadDetailBody(
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
   const openInspector = useOpenThreadInspector();
-  const {
-    session: voiceInputSession,
-    isAvailable: voiceAvailable,
-    isBusy: voiceBusy,
-  } = useGlobalVoiceInput();
+  const { session: voiceInputSession } = useGlobalVoiceInput();
   const reportedModelSelection = useThreadReportedModelSelection(props.selectedThreadDetailRef);
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
@@ -562,19 +544,8 @@ function ThreadDetailBody(
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
   const agentsSegment = resolveSubagentPillSegment(turnSubagents);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
-  const composerDictationRef = useRef<{ readonly start: () => boolean }>(null);
   const chatRef = scopeThreadRef(props.environmentId, props.selectedThread.id);
   const projectChat = useProjectChatHeader(props.draftMode ? null : chatRef);
-  const [opened, setOpened] = useState<OpenedReport | null>(() =>
-    props.openedReportId
-      ? {
-          threadKey: scopedThreadKey(props.environmentId, props.selectedThread.id),
-          id: props.openedReportId,
-          returnTo: props.openedReportReturnTo ?? null,
-        }
-      : null,
-  );
-  const [ownNeedsListRequest, setOwnNeedsListRequest] = useState("");
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
   const editingRunId = props.queuedRunEdit?.runId ?? null;
@@ -1523,54 +1494,11 @@ function ThreadDetailBody(
     const id = await props.onSendMessage(undefined, undefined, undefined, { text, reply });
     if (!id) throw new Error("Could not send answer");
   });
-  const openedView = openedReportView(
-    opened,
-    selectedThreadKey,
-    props.reports ?? [],
-    props.reportReply?.ref.messageId ?? null,
-  );
-  const pinnedReportId = openedView?.visible ? opened!.id : null;
-  const openReport = (id: MessageId, returnTo: string | null) => {
-    setOpened({ threadKey: selectedThreadKey, id, returnTo });
-    requestThreadMessageJump(selectedThreadKey, id);
-  };
-  // Once the answer or dismissal is on record, wherever it came from: back to the list.
-  const [returning, setReturning] = useState<string | null>(null);
-  if (
-    openedReportGone(
-      opened,
-      selectedThreadKey,
-      props.reports ?? [],
-      // A report older than the loaded history is on its way while the jump or its page loads.
-      props.contentPresentation.kind === "ready" &&
-        jumpMessageId !== opened?.id &&
-        !historyForJump?.loading,
-    )
-  ) {
-    setOpened(null);
-  } else if (opened !== null && openedView !== null && openedReportFinished(openedView.report)) {
-    setOpened(null);
-    if (opened.returnTo === null) setOwnNeedsListRequest(uuidv4());
-    else setReturning(opened.returnTo);
-  }
-  const { onReturnToNeedsList } = props;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates back to the project chat after the answer is recorded; navigation is outside React
-  useEffect(() => {
-    if (returning !== null) onReturnToNeedsList?.(returning);
-  }, [returning, onReturnToNeedsList]);
   const reportContext = {
     reports: props.reports ?? [],
     answers: props.reportAnswers ?? new Map(),
     opened:
-      pinnedReportId === null
-        ? openedReports.threadKey === selectedThreadKey
-          ? openedReports.ids
-          : new Set<MessageId>()
-        : new Set([
-            ...(openedReports.threadKey === selectedThreadKey ? openedReports.ids : []),
-            pinnedReportId,
-          ]),
-    pinned: pinnedReportId,
+      openedReports.threadKey === selectedThreadKey ? openedReports.ids : new Set<MessageId>(),
     target: jumpMessageId,
     scroll: (id: MessageId) => {
       setOpenedReports((current) => ({
@@ -1784,8 +1712,7 @@ function ThreadDetailBody(
                         ? { count: browserTabs.tabs.length, onPress: () => openBrowserPreview() }
                         : null
                     }
-                    // It would sit on the report being read.
-                    showScrollToEnd={showScrollToEndButton && pinnedReportId === null}
+                    showScrollToEnd={showScrollToEndButton}
                     onScrollToEnd={handleScrollToEnd}
                     agents={agentsSegment}
                     onOpenAgents={() => {
@@ -1825,26 +1752,7 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    {pinnedReportId !== null ? (
-                      <CoordinatorReportsContext value={reportContext}>
-                        <PinnedReport
-                          id={pinnedReportId}
-                          onClose={() => setOpened(null)}
-                          onShowLatest={(id) => openReport(id, opened?.returnTo ?? null)}
-                          // Hidden where dictation can't start, and while a recording is under way.
-                          onReplyByVoice={
-                            voiceAvailable && !voiceBusy
-                              ? (reply) => {
-                                  if (composerDictationRef.current?.start()) {
-                                    props.onReportReply?.(reply);
-                                  }
-                                }
-                              : undefined
-                          }
-                        />
-                      </CoordinatorReportsContext>
-                    ) : null}
-                    {projectChat !== null ? null : pinnedReportId !== null ? null : (
+                    {projectChat !== null ? null : (
                       <NeedsYou
                         key={selectedThreadKey}
                         environmentId={props.environmentId}
@@ -1863,7 +1771,6 @@ function ThreadDetailBody(
                       />
                     )}
                     {projectChat === null ? null : (
-                      // Stays mounted while a report is pinned, so its list can reopen after.
                       <ProjectNeedsYou
                         key={selectedThreadKey}
                         chat={chatRef}
@@ -1879,9 +1786,6 @@ function ThreadDetailBody(
                             : undefined
                         }
                         reports={props.reports ?? []}
-                        openRequest={`${props.needsListRequest ?? ""}:${ownNeedsListRequest}`}
-                        onOpenChatReport={(id) => openReport(id, null)}
-                        barHidden={pinnedReportId !== null}
                       />
                     )}
                     <ProviderSignInCard
@@ -2114,7 +2018,6 @@ function ThreadDetailBody(
                         canOperateThread={props.canOperateThread}
                         reportedModelSelection={reportedModelSelection}
                         editorRef={composerEditorRef}
-                        dictationRef={composerDictationRef}
                         placeholder={
                           props.activePendingApproval
                             ? props.activePendingApproval.supportsFeedback

@@ -46,8 +46,6 @@ export const CoordinatorReportsContext = createContext<{
   send: (text: string, reply: ReportReply) => Promise<void>;
   reply: (reply: ReportReply) => void;
   dismiss: (reply: ReportReply) => Promise<void>;
-  /** The report whose answers are pinned above the composer; its card leaves them out. */
-  pinned: MessageId | null;
 } | null>(null);
 
 export function CoordinatorReportMessage({
@@ -92,9 +90,7 @@ export function CoordinatorReportMessage({
       ) : null}
       {content}
       {report.state === "open" ? (
-        ctx.pinned === id ? null : (
-          <ReportAnswerBlock report={report} />
-        )
+        <ReportAnswerBlock report={report} />
       ) : report.state === "answered" && report.answer ? (
         <AnsweredReport
           answer={report.answer}
@@ -110,7 +106,7 @@ export function CoordinatorReportMessage({
   );
 }
 
-function replyTo(report: ReportState): ReportReply {
+export function replyTo(report: ReportState): ReportReply {
   const tag = report.message.report!;
   return {
     ref: { messageId: report.message.id, key: tag.key, version: tag.version },
@@ -118,17 +114,8 @@ function replyTo(report: ReportState): ReportReply {
   };
 }
 
-/**
- * An open report's question and answers, with Reply… and Dismiss: inside its card, or pinned
- * above the composer.
- */
-export function ReportAnswerBlock(props: {
-  readonly report: ReportState;
-  readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
-  readonly onReply?: (() => void) | undefined;
-  /** Under the pinned panel's own header line. */
-  readonly pinned?: boolean;
-}) {
+/** An open report's question and answers in its card, with Reply… and Dismiss. */
+function ReportAnswerBlock(props: { readonly report: ReportState }) {
   const ctx = use(CoordinatorReportsContext)!;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +130,7 @@ export function ReportAnswerBlock(props: {
       .finally(() => setSending(false));
   };
   return (
-    <View className={`gap-2 rounded-xl bg-secondary p-3${props.pinned ? " pt-0" : ""}`}>
+    <View className="gap-2 rounded-xl bg-secondary p-3">
       <Text className="font-t3-medium text-foreground">{tag.question}</Text>
       <ReportAnswerOptions
         answers={tag.answers ?? []}
@@ -151,28 +138,13 @@ export function ReportAnswerBlock(props: {
         onPick={(answer) => run(() => ctx.send(answer, reply))}
       />
       <View className="flex-row items-center justify-between">
-        <View className="flex-row">
-          <Button
-            label="Reply…"
-            size="compact"
-            tone="text"
-            disabled={disabled}
-            onPress={() => {
-              ctx.reply(reply);
-              props.onReply?.();
-            }}
-          />
-          {props.onReplyByVoice ? (
-            <Button
-              label="Reply by voice"
-              icon="mic"
-              size="compact"
-              tone="text"
-              disabled={disabled}
-              onPress={() => props.onReplyByVoice?.(reply)}
-            />
-          ) : null}
-        </View>
+        <Button
+          label="Reply…"
+          size="compact"
+          tone="text"
+          disabled={disabled}
+          onPress={() => ctx.reply(reply)}
+        />
         <Button
           label="Dismiss"
           size="compact"
@@ -186,57 +158,6 @@ export function ReportAnswerBlock(props: {
           {error}
         </Text>
       ) : null}
-    </View>
-  );
-}
-
-/**
- * A report opened from Needs you: its answers stay above the composer while its body is read
- * in the feed. It keeps to the version opened; a newer one is offered, never swapped in.
- */
-export function PinnedReport(props: {
-  readonly id: MessageId;
-  readonly onClose: () => void;
-  readonly onShowLatest: (id: MessageId) => void;
-  readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
-}) {
-  const ctx = use(CoordinatorReportsContext);
-  const report = ctx?.reports.find((entry) => entry.message.id === props.id);
-  if (!ctx || !report) return null;
-  const tag = report.message.report!;
-
-  return (
-    // Opaque down to the composer, so the report scrolling behind doesn't show through.
-    <View className="bg-thread-canvas px-3 pb-2">
-      <View className="overflow-hidden rounded-xl bg-secondary">
-        <View className="flex-row items-center gap-2 pl-3">
-          <Text className="flex-1 text-xs text-foreground-secondary" numberOfLines={1}>
-            Report · {tag.title} · version {tag.version}
-          </Text>
-          <Button label="Close" size="compact" tone="text" onPress={props.onClose} />
-        </View>
-        {report.state === "open" ? (
-          <ReportAnswerBlock pinned report={report} onReplyByVoice={props.onReplyByVoice} />
-        ) : (
-          <View className="flex-row items-center gap-2 p-3 pt-0">
-            <Text className="flex-1 text-foreground">
-              {report.state === "replaced"
-                ? "A newer version of this report arrived."
-                : report.state === "dismissed"
-                  ? "Dismissed."
-                  : "Answered."}
-            </Text>
-            {report.state === "replaced" ? (
-              <Button
-                label="Show latest"
-                size="compact"
-                tone="text"
-                onPress={() => props.onShowLatest(report.latest.id)}
-              />
-            ) : null}
-          </View>
-        )}
-      </View>
     </View>
   );
 }

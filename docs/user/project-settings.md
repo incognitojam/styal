@@ -334,10 +334,11 @@ project's name as its title, how many threads are working, and its machine. **Ne
 a thread in the project, and the menu holds **Project settings**, the files and the terminal. A
 notification about the chat, and a `styal://projects/<environment>/<project>` link, open it too.
 A **Needs you** line above its composer counts what the project's threads wait on; tap it for the
-list. Approve or decline an approval in the list. A report opens where it was posted, with its
-answers, **Reply…**, **Reply by voice** and **Dismiss** pinned above the composer while you read it.
-After you answer, the list opens again on what is left. A question opens its thread. Starting a
-project's first chat still happens on web or desktop.
+list. Approve or decline an approval in the list. A report opens on its own screen: its whole body,
+with its question, answers, **Reply…**, **Reply by voice** and **Dismiss** below it, and a button
+that opens the thread it came from. Going back, or answering, returns to the list on what is left.
+If a newer version of the report arrives while you read, **Show latest** opens it. A question opens
+its thread. Starting a project's first chat still happens on web or desktop.
 
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it
