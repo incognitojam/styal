@@ -87,7 +87,11 @@ describe("welcome route relay authentication", () => {
           createRoute({
             getParentRoute: () => Route,
             path: "/approve-agent",
-            component: welcomeRoute.options.component,
+            component: () => (
+              <button type="button" onClick={openRelaySignIn}>
+                Sign in
+              </button>
+            ),
           }),
         ]),
         history: createMemoryHistory({ initialEntries: [path] }),
