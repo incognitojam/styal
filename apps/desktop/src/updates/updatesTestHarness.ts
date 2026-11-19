@@ -25,6 +25,7 @@ import { makeNativeUpdatesFakes, type NativeUpdatesFakeOptions } from "./nativeU
 export const flushCallbacks = Effect.yieldNow;
 
 export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
+  readonly quitUpdateResponse?: number;
   readonly confirmShutdown?: Effect.Effect<boolean>;
   readonly installWait?: Effect.Effect<void>;
   readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
@@ -338,8 +339,11 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       Layer.succeed(ElectronDialog.ElectronDialog, {
         pickFolder: Effect.fn("test.dialog.pickFolder")(() => Effect.succeedNone),
         pickFiles: Effect.fn("test.dialog.pickFiles")(() => Effect.succeed([])),
-        showMessageBox: Effect.fn("test.dialog.showMessageBox")(() =>
-          Effect.succeed({ response: 0, checkboxChecked: false }),
+        showMessageBox: Effect.fn("test.dialog.showMessageBox")((input) =>
+          Effect.sync(() => {
+            refusalDialogs.push(input.detail ?? input.message);
+            return { response: options.quitUpdateResponse ?? 0, checkboxChecked: false };
+          }),
         ),
         showErrorBox: Effect.fn("test.dialog.showErrorBox")((_title, content) =>
           Effect.sync(() => {

@@ -281,9 +281,8 @@ function quitFromSignal(
       const state = yield* DesktopState.DesktopState;
       if (yield* Ref.get(state.quitting)) return;
       const updates = yield* DesktopUpdates.DesktopUpdates;
-      if (!(yield* updates.prepareForQuit)) return;
-      const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
-      if (wasQuitting) return;
+      if (!(yield* updates.prepareForQuit())) return;
+      yield* Ref.set(state.quitting, true);
       yield* startWaitingForShutdown(quit);
       yield* logLifecycleInfo("process signal received", { signal });
       const shutdownStartedAt = yield* requestDesktopShutdownAndWait();
@@ -304,9 +303,9 @@ export const make = DesktopLifecycle.of({
     const state = yield* DesktopState.DesktopState;
     if (yield* Ref.get(state.quitting)) return false;
     const updates = yield* DesktopUpdates.DesktopUpdates;
-    if (!(yield* updates.prepareForQuit)) return false;
     const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
-    if (!(yield* guard.confirm("restart", options))) return false;
+    if (!(yield* updates.prepareForQuit(guard.confirm("restart", options), "restart")))
+      return false;
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
     yield* Ref.set(state.quitting, true);
     return yield* Effect.gen(function* () {
@@ -384,12 +383,8 @@ export const make = DesktopLifecycle.of({
             return;
           }
           const updates = yield* DesktopUpdates.DesktopUpdates;
-          if (!(yield* updates.prepareForQuit)) {
-            quitCheckPending = false;
-            return;
-          }
           const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
-          if (!(yield* guard.confirm("quit"))) {
+          if (!(yield* updates.prepareForQuit(guard.confirm("quit")))) {
             quitCheckPending = false;
             return;
           }

@@ -947,7 +947,7 @@ describe("DesktopUpdates", () => {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
         yield* Ref.set((yield* DesktopState.DesktopState).quitting, true);
-        assert.isTrue(yield* updates.prepareForQuit);
+        assert.isTrue(yield* updates.prepareForQuit());
         assert.deepEqual(harness.installs, []);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1053,7 +1053,7 @@ describe("DesktopUpdates", () => {
             yield* flushCallbacks;
           }
           yield* Ref.set(desktopState.quitting, true);
-          assert.isTrue(yield* updates.prepareForQuit);
+          assert.isTrue(yield* updates.prepareForQuit());
           assert.deepEqual(harness.installs, []);
           assert.isFalse(harness.autoInstallOnAppQuit());
         }),

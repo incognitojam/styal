@@ -22,8 +22,10 @@ export class ElectronNativeUpdaterError extends Schema.TaggedError<ElectronNativ
 ) {
   override get message(): string {
     return this.operation === "stage"
-      ? "Squirrel.Mac could not stage the downloaded update."
-      : `Cannot safely clear a previous native update. ${this.cause instanceof Error ? this.cause.message : "Have your administrator inspect the ShipIt launchd job."} Keep styal open until it is resolved; quitting could install the previous update. This does not disable update checks or downloads.`;
+      ? "macOS couldn't prepare the downloaded update for installing."
+      : this.cause instanceof Error
+        ? this.cause.message
+        : "If this keeps happening, ask your administrator to check styal's update job in launchd.";
   }
 }
 
@@ -49,26 +51,26 @@ const runningAppBundlePath = () =>
 // Squirrel names its job and cache directory `<bundle id>.ShipIt`.
 const shipItJobLabel = async () => {
   const infoPlist = NodePath.join(runningAppBundlePath(), "Contents", "Info.plist");
-  const { stdout } = await execFile("plutil", [
-    "-extract",
-    "CFBundleIdentifier",
-    "raw",
-    "-o",
-    "-",
-    infoPlist,
-  ]);
+  const { stdout } = await execFile(
+    "plutil",
+    ["-extract", "CFBundleIdentifier", "raw", "-o", "-", infoPlist],
+    { timeout: 5_000, encoding: "utf8" },
+  );
   const bundleIdentifier = stdout.trim();
   if (bundleIdentifier === "") throw new Error(`No CFBundleIdentifier in ${infoPlist}`);
   return `${bundleIdentifier}.ShipIt`;
 };
 
 const inspectJob = async (target: string, label: string) =>
-  execFile("launchctl", ["print", target]).then(
-    ({ stdout }) => ({ running: isPendingNativeUpdateJob(stdout) }),
+  execFile("launchctl", ["print", target], { timeout: 5_000, encoding: "utf8" }).then(
+    ({ stdout }) => {
+      const running = isPendingNativeUpdateJob(stdout);
+      return { running, finished: !running && /^\s*last exit code = 0\s*$/m.test(stdout) };
+    },
     (error: unknown) => {
       if (isNativeUpdateJobMissing(error, label)) return undefined;
       throw new Error(
-        `Could not inspect ${target}. Have your administrator check launchctl permissions.`,
+        `styal couldn't check its update job. For your administrator: launchctl print ${target} failed.`,
         { cause: error },
       );
     },
@@ -109,27 +111,31 @@ export const make = ElectronNativeUpdater.of({
         // Inspect both before removing either: a privileged installer may share the user's request.
         const jobs = await Promise.all(targets.map((target) => inspectJob(target, label)));
         for (const [index, job] of jobs.entries()) {
-          if (job?.running && !options?.ownStaged) {
+          if (job?.running && !(options?.ownStaged && index === 0)) {
             throw new Error(
-              `${targets[index]} is running or waiting for app exit. Have your administrator inspect it; an active installation must finish before this action can proceed.`,
+              `An update is running or waiting for styal to quit. For your administrator: launchd job ${targets[index]}.`,
             );
           }
         }
         for (const [index, job] of jobs.entries()) {
-          if (job === undefined) continue;
+          // A successful stopped job will not respawn; Squirrel replaces it before its next submit.
+          if (job === undefined || job.finished) continue;
           const target = targets[index]!;
           // A job staged by this process cannot have passed its app-termination wait.
-          await execFile("launchctl", ["bootout", target]).catch(async (error: unknown) => {
+          await execFile("launchctl", ["bootout", target], {
+            timeout: 5_000,
+            encoding: "utf8",
+          }).catch(async (error: unknown) => {
             if ((await inspectJob(target, label)) !== undefined) {
               throw new Error(
-                `Could not remove ${target}. Ask your administrator to unload this job after checking that no installation is active.`,
+                `styal couldn't remove its update job. For your administrator: unload ${target} after confirming no installation is running.`,
                 { cause: error },
               );
             }
           });
           if ((await inspectJob(target, label)) !== undefined) {
             throw new Error(
-              `${target} is still loaded. Ask your administrator to inspect it before quitting.`,
+              `styal's update job is still loaded. For your administrator: ${target}.`,
             );
           }
         }

@@ -72,7 +72,7 @@ describe("native ShipIt cleanup", () => {
     Effect.gen(function* () {
       const state = setup({ user });
       yield* make.discard();
-      expect(state.removed).toEqual([userTarget]);
+      expect(state.removed).toEqual(user.includes("last exit code = 0") ? [] : [userTarget]);
       expect(remove).not.toHaveBeenCalled();
     }),
   );
@@ -93,7 +93,7 @@ describe("native ShipIt cleanup", () => {
           [target === userTarget ? "user" : "system"]: "state = running\npid = 42",
         });
         const error = yield* make.discard().pipe(Effect.flip);
-        expect(error.message).toContain("running or waiting for app exit");
+        expect(error.message).toContain("running or waiting for styal to quit");
         expect(state.removed).toEqual([]);
         expect(remove).not.toHaveBeenCalled();
       }),
@@ -130,6 +130,29 @@ describe("native ShipIt cleanup", () => {
       expect(remove).not.toHaveBeenCalled();
       setup();
       yield* make.discard();
+    }),
+  );
+
+  it.effect("ignores a finished successful system job without requiring root", () =>
+    Effect.gen(function* () {
+      const state = setup({
+        system: "state = not running\nlast exit code = 0",
+        removalDenied: true,
+      });
+      yield* make.discard();
+      expect(state.jobs.has(systemTarget)).toBe(true);
+      expect(state.removed).toEqual([]);
+    }),
+  );
+  it.effect("does not extend user-stage ownership to a running system job", () =>
+    Effect.gen(function* () {
+      const state = setup({
+        user: "state = running\npid = 42",
+        system: "state = running\npid = 84",
+      });
+      yield* make.discard({ ownStaged: true }).pipe(Effect.flip);
+      expect(state.removed).toEqual([]);
+      expect(state.jobs.size).toBe(2);
     }),
   );
 

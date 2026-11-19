@@ -111,7 +111,7 @@ const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 export class DesktopUpdateActionInProgressError extends Schema.TaggedError<DesktopUpdateActionInProgressError>()(
   "DesktopUpdateActionInProgressError",
   {
-    action: Schema.Literals(["check", "download", "install", "channel"]),
+    action: Schema.Literals(["check", "download", "install", "channel", "quit"]),
     requestedChannel: DesktopUpdateChannelSchema,
   },
 ) {
@@ -229,7 +229,10 @@ export class DesktopUpdates extends Context.Service<
     ) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
-    readonly prepareForQuit: Effect.Effect<boolean>;
+    readonly prepareForQuit: (
+      confirm?: Effect.Effect<boolean>,
+      action?: DesktopShutdownGuard.ShutdownAction,
+    ) => Effect.Effect<boolean>;
     readonly installPrepared: (
       expectedVersion: string,
       consent?: DesktopInstallConsent,
@@ -406,6 +409,7 @@ export const make = Effect.gen(function* () {
   >([]);
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
+  const quitRequestedRef = yield* Ref.make(false);
   const nativeStagePendingRef = yield* Ref.make(false);
   const nativeStagedRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
@@ -516,14 +520,26 @@ export const make = Effect.gen(function* () {
   const activeUpdateAction = Ref.get(activeUpdateActionRef);
 
   const tryStartUpdateAction = (action: UpdateAction): Effect.Effect<boolean> =>
-    Ref.modify(activeUpdateActionRef, (activeAction) =>
-      Option.isSome(activeAction) ? [false, activeAction] : [true, Option.some(action)],
+    Ref.get(quitRequestedRef).pipe(
+      Effect.flatMap((quitting) =>
+        quitting
+          ? Effect.succeed(false)
+          : Ref.modify(activeUpdateActionRef, (activeAction) =>
+              Option.isSome(activeAction) ? [false, activeAction] : [true, Option.some(action)],
+            ),
+      ),
     );
 
-  const tryStartChannelChange = Ref.modify(activeUpdateActionRef, (activeAction) =>
-    Option.isSome(activeAction)
-      ? [activeAction, activeAction]
-      : [Option.none<UpdateAction>(), Option.some<UpdateAction>("channel")],
+  const tryStartChannelChange = Ref.get(quitRequestedRef).pipe(
+    Effect.flatMap((quitting) =>
+      quitting
+        ? Effect.succeedSome<UpdateAction | "quit">("quit")
+        : Ref.modify(activeUpdateActionRef, (activeAction) =>
+            Option.isSome(activeAction)
+              ? [activeAction, activeAction]
+              : [Option.none<UpdateAction>(), Option.some<UpdateAction>("channel")],
+          ),
+    ),
   );
 
   const finishUpdateAction = (action: UpdateAction): Effect.Effect<void> =>
@@ -999,12 +1015,23 @@ export const make = Effect.gen(function* () {
               yield* updateState((current) =>
                 reduceDesktopUpdateStateOnInstallFailure(
                   current,
-                  "The native updater is still preparing. Keep styal open; download the update again after preparation finishes.",
+                  "Preparing the update is taking longer than expected. Keep styal open for a few minutes, then download the update again.",
                 ),
               );
               return { accepted: true, completed: false, failed: true };
             }
             if (Exit.isFailure(staged.value)) return yield* Effect.failCause(staged.value.cause);
+          }
+          if (
+            environment.platform === "darwin" &&
+            consent === "ask" &&
+            !(yield* guard.confirm("restart", {
+              title: "Install the downloaded update and restart styal?",
+            }))
+          ) {
+            yield* discardOwnNativeUpdate;
+            yield* finishUpdateAction("install");
+            return { accepted: false, completed: false, failed: false };
           }
           if (environment.platform === "darwin" && consent === "require-safe") {
             const checks = yield* guard.inspect.pipe(
@@ -1018,7 +1045,7 @@ export const make = Effect.gen(function* () {
                 completed: false,
                 failed: false,
                 reason:
-                  "Activity changed while the native update was preparing. Try updating again to review and confirm running work.",
+                  "Activity changed while the update was preparing. Try updating again to review and confirm running work.",
               };
             }
           }
@@ -1322,28 +1349,68 @@ export const make = Effect.gen(function* () {
   });
 
   return DesktopUpdates.of({
-    prepareForQuit: stateMutex.withPermits(1)(
-      Effect.gen(function* () {
-        if (environment.platform !== "darwin" || !environment.isPackaged) return true;
-        const action = yield* activeUpdateAction;
-        if (
-          Option.isSome(action) &&
-          (action.value === "install" || action.value === "install-recovery")
-        ) {
-          yield* dialog.showErrorBox(
-            "Native update is still preparing",
-            "Keep styal open until the native update finishes preparing, then try again.",
-          );
-          return false;
+    prepareForQuit: Effect.fn("desktop.updates.prepareForQuit")(function* (
+      confirm: Effect.Effect<boolean> = Effect.succeed(true),
+      action: DesktopShutdownGuard.ShutdownAction = "quit",
+    ) {
+      const reserved = yield* stateMutex.withPermits(1)(
+        Ref.getAndSet(quitRequestedRef, true).pipe(Effect.map((previous) => !previous)),
+      );
+      if (!reserved) return false;
+      return yield* Effect.gen(function* () {
+        if (environment.platform === "darwin" && environment.isPackaged) {
+          const active = yield* activeUpdateAction;
+          let warning: string | undefined;
+          let preparing = false;
+          if (
+            Option.isSome(active) &&
+            (active.value === "install" || active.value === "install-recovery")
+          ) {
+            preparing = true;
+            warning =
+              "styal is still preparing the update you chose to install. If you quit now, it may install the next time styal closes, or you may need to download it again. Choose Cancel to keep styal open until it's ready.";
+          } else {
+            const failure = yield* nativeUpdater
+              .discard({ ownStaged: yield* Ref.get(nativeStagedRef) })
+              .pipe(
+                Effect.tap(() => Ref.set(nativeStagedRef, false)),
+                Effect.as(undefined),
+                Effect.catch((error) => Effect.succeed(error.message)),
+              );
+            if (failure !== undefined)
+              warning =
+                "An update prepared by an earlier version of styal is still scheduled, and styal can't safely remove it. If you quit now, macOS may install that update, which can be older than the version you're using. Choose Cancel to keep styal open.\n\n" +
+                failure;
+          }
+          if (warning !== undefined) {
+            const result = yield* dialog
+              .showMessageBox({
+                type: "warning",
+                title: preparing
+                  ? "Update in progress"
+                  : "An earlier update is still waiting to install",
+                message: preparing
+                  ? action === "restart"
+                    ? "Restart while the update is being prepared?"
+                    : "Quit while the update is being prepared?"
+                  : action === "restart"
+                    ? "Restart anyway?"
+                    : "Quit anyway?",
+                detail: warning,
+                buttons: ["Cancel", action === "restart" ? "Restart anyway" : "Quit anyway"],
+                defaultId: 0,
+                cancelId: 0,
+                noLink: true,
+              })
+              .pipe(Effect.orElseSucceed(() => ({ response: 0, checkboxChecked: false })));
+            if (result.response !== 1) return false;
+          }
         }
-        return yield* nativeUpdater.discard({ ownStaged: yield* Ref.get(nativeStagedRef) }).pipe(
-          Effect.as(true),
-          Effect.catch((error) =>
-            dialog.showErrorBox("Cannot safely quit styal", error.message).pipe(Effect.as(false)),
-          ),
-        );
-      }),
-    ),
+        if (!(yield* confirm)) return false;
+        yield* Ref.set(desktopState.quitting, true);
+        return true;
+      }).pipe(Effect.ensuring(Ref.set(quitRequestedRef, false)));
+    }),
     getState: Ref.get(updateStateRef),
     isActionActive: activeUpdateAction.pipe(Effect.map(Option.isSome)),
     isInstallActive: activeUpdateAction.pipe(

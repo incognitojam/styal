@@ -125,7 +125,12 @@ const makeLifecycleLayer = (
         download: Effect.die("unexpected download"),
         install: Effect.die("unexpected install"),
         isActionActive: Effect.succeed(false),
-        prepareForQuit,
+        prepareForQuit: Effect.fn("test.prepareForQuit")(
+          (confirm: Effect.Effect<boolean> = Effect.succeed(true)) =>
+            prepareForQuit.pipe(
+              Effect.flatMap((ready) => (ready ? confirm : Effect.succeed(false))),
+            ),
+        ),
         isInstallActive: Effect.succeed(false),
         subscribe: Effect.die("unexpected subscription"),
         installPrepared: () => Effect.die("unexpected prepared install"),

@@ -107,7 +107,7 @@ describe("native updater lifecycle", () => {
           const updates = yield* DesktopUpdates.DesktopUpdates;
           yield* updates.configure;
           assert.isFalse(harness.squirrel.job);
-          assert.isTrue(yield* updates.prepareForQuit);
+          assert.isTrue(yield* updates.prepareForQuit());
           assert.equal((yield* updates.getState).enabled, !disabled);
           assert.equal(harness.squirrel.stageCount, 0);
         }),
@@ -127,7 +127,7 @@ describe("native updater lifecycle", () => {
           yield* updates.configure;
           assert.isTrue(harness.squirrel.job);
           assert.isTrue((yield* updates.check("manual")).checked);
-          assert.isFalse(yield* updates.prepareForQuit);
+          assert.isFalse(yield* updates.prepareForQuit());
           assert.lengthOf(harness.refusalDialogs, 1);
           yield* updates.setChannel("nightly").pipe(Effect.flip);
           assert.equal((yield* updates.getState).channel, "latest");
@@ -141,7 +141,7 @@ describe("native updater lifecycle", () => {
           assert.deepEqual(harness.installSteps, []);
           // The inherited transaction finishes outside this process; a later action re-inspects it.
           harness.squirrel.job = false;
-          assert.isTrue(yield* updates.prepareForQuit);
+          assert.isTrue(yield* updates.prepareForQuit());
           assert.equal((yield* updates.setChannel("nightly")).channel, "nightly");
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -225,7 +225,7 @@ describe("native updater lifecycle", () => {
             yield* Deferred.await(started);
             yield* Fiber.interrupt(install);
             assert.isFalse((yield* updates.check("manual")).checked);
-            assert.isFalse(yield* updates.prepareForQuit);
+            assert.isFalse(yield* updates.prepareForQuit());
             const { changes } = yield* updates.subscribe;
             const recovered = yield* changes.pipe(
               Stream.filter((state) => state.downloadedVersion === null),
@@ -243,32 +243,117 @@ describe("native updater lifecycle", () => {
         ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
       }),
   );
-  it.effect("rechecks unconfirmed activity after native staging before stopping backends", () =>
+  it.effect.each(["ask", "require-safe"] as const)(
+    "rechecks %s activity after native staging before stopping backends",
+    (consent) =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const harness = makeHarness({
+          confirmShutdown: Effect.sync(() => harness.activity.hosts[0] !== null),
+          nativeStageWait: Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+          ),
+        });
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const updates = yield* DesktopUpdates.DesktopUpdates;
+            yield* updates.configure;
+            harness.emit("update-downloaded", { version: "1.2.4" });
+            yield* flushCallbacks;
+            const install = yield* (
+              consent === "ask" ? updates.install : updates.installPrepared("1.2.4", "require-safe")
+            ).pipe(Effect.forkScoped);
+            yield* Deferred.await(started);
+            harness.activity.hosts = [null];
+            yield* Deferred.succeed(release, undefined);
+            assert.isFalse((yield* Fiber.join(install)).accepted);
+            assert.isFalse(harness.squirrel.job);
+            assert.deepEqual(harness.installSteps, []);
+          }),
+        ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+      }),
+  );
+  it.effect("reserves quit through confirmation and releases it after cancellation", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
-      const harness = makeHarness({
-        nativeStageWait: Deferred.succeed(started, undefined).pipe(
-          Effect.andThen(Deferred.await(release)),
-        ),
-      });
+      const harness = makeHarness();
       yield* Effect.scoped(
         Effect.gen(function* () {
           const updates = yield* DesktopUpdates.DesktopUpdates;
+          const state = yield* DesktopState.DesktopState;
           yield* updates.configure;
           harness.emit("update-downloaded", { version: "1.2.4" });
           yield* flushCallbacks;
-          const install = yield* updates
-            .installPrepared("1.2.4", "require-safe")
+          const quit = yield* updates
+            .prepareForQuit(
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as(false),
+              ),
+            )
             .pipe(Effect.forkScoped);
           yield* Deferred.await(started);
-          harness.activity.hosts = [null];
+          assert.isFalse((yield* updates.installPrepared("1.2.4")).accepted);
+          assert.equal(harness.squirrel.stageCount, 0);
           yield* Deferred.succeed(release, undefined);
-          assert.isFalse((yield* Fiber.join(install)).accepted);
-          assert.isFalse(harness.squirrel.job);
-          assert.deepEqual(harness.installSteps, []);
+          assert.isFalse(yield* Fiber.join(quit));
+          assert.isFalse(yield* Ref.get(state.quitting));
+          assert.isTrue((yield* updates.installPrepared("1.2.4")).accepted);
         }),
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     }),
+  );
+  it.effect("drops native ownership after a successful quit preflight is cancelled", () => {
+    let failRemoval = true;
+    const harness = makeHarness({
+      inheritedNativeJobActive: true,
+      discardNativeUpdateFailure: () => failRemoval && harness.squirrel.stageCount > 0,
+      installError: new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+        channel: null,
+        isSilent: true,
+        isForceRunAfter: true,
+        cause: new Error("handoff failed"),
+      }),
+    });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        assert.isTrue((yield* updates.installPrepared("1.2.4")).failed);
+        assert.isTrue(harness.squirrel.job);
+        failRemoval = false;
+        assert.isFalse(yield* updates.prepareForQuit(Effect.succeed(false)));
+        assert.isFalse(harness.squirrel.job);
+        harness.squirrel.job = true;
+        assert.isFalse(yield* updates.prepareForQuit());
+        assert.isTrue(harness.squirrel.job);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+  it.effect.each([0, 1])(
+    "offers an informed quit choice for an inherited installer: %s",
+    (response) => {
+      const harness = makeHarness({
+        inheritedShipItRequest: "1.2.2",
+        inheritedNativeJobActive: true,
+        quitUpdateResponse: response,
+      });
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          const state = yield* DesktopState.DesktopState;
+          yield* updates.configure;
+          assert.equal(yield* updates.prepareForQuit(), response === 1);
+          assert.equal(yield* Ref.get(state.quitting), response === 1);
+          assert.isTrue(harness.squirrel.job);
+          assert.equal(harness.squirrel.request, "1.2.2");
+          assert.include(harness.refusalDialogs[0], "older than the version");
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
   );
 });

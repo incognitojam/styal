@@ -129,14 +129,16 @@ native feed, even when the archive is cached.
 
 Squirrel's ShipIt job can outlive the build that prepared it and installs on app exit. Startup
 cleanup runs even with managed updates disabled. The
-[native adapter](../../apps/desktop/src/electron/ElectronNativeUpdater.ts) unloads stopped user or
-system jobs only when permitted and verifies absence. It preserves request files and installer
-preferences because interrupted installations need them for recovery. A running inherited job is
-ambiguous: it may be waiting for app exit or already installing. Cleanup never terminates it;
-only a job staged by this still-running process is known to be waiting safely. Inspection or
-removal failures leave checks and downloads available but refuse channel changes, installation,
-and normal quit or relaunch with instructions to inspect the job. These actions re-inspect on
-retry rather than permanently disabling updates.
+[native adapter](../../apps/desktop/src/electron/ElectronNativeUpdater.ts) unloads stopped jobs
+when permitted and verifies absence. A stopped job with a successful exit is harmless, including
+one in the system domain that only root can unload; Squirrel replaces it before the next submit.
+Request files and installer preferences stay intact because interrupted installations need them
+for recovery. A running inherited job may be waiting for app exit or already installing, so
+cleanup never terminates it. Only this process's own user-domain staged job may bypass that guard.
+Inspection and removal failures leave checks and downloads available; unsafe installs and channel
+changes refuse and re-inspect on retry. Quit and relaunch offer an informed choice about allowing
+the inherited installation, rather than forcing users to kill the app. Quit admission stays
+reserved through the activity prompt and shutdown commitment so a new install cannot race it.
 
 ## Desktop shutdown activity checks
 

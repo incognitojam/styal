@@ -13,7 +13,7 @@ export interface NativeUpdatesFakeOptions {
   readonly nativeStageWait?: Effect.Effect<void>;
   readonly afterNativeDiscard?: Effect.Effect<void>;
   readonly inspectNativeUpdateFailure?: boolean;
-  readonly discardNativeUpdateFailure?: "job-removal";
+  readonly discardNativeUpdateFailure?: "job-removal" | (() => boolean);
   /** A ShipIt job and request left by an earlier process. */
   readonly inheritedShipItRequest?: string;
 }
@@ -80,7 +80,9 @@ export function makeNativeUpdatesFakes(options: NativeUpdatesFakeOptions) {
         if (
           options.inspectNativeUpdateFailure ||
           (squirrel.job && options.inheritedNativeJobActive && !discardOptions?.ownStaged) ||
-          options.discardNativeUpdateFailure === "job-removal"
+          (typeof options.discardNativeUpdateFailure === "function"
+            ? options.discardNativeUpdateFailure()
+            : options.discardNativeUpdateFailure === "job-removal")
         ) {
           return Effect.fail(
             new ElectronNativeUpdater.ElectronNativeUpdaterError({

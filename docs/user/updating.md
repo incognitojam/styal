@@ -185,9 +185,12 @@ Quitting does not start an installation. Changing the track cancels a pending
 download from the previous track.
 
 An older build may have left a native macOS installer behind. styal clears it on startup
-when safe. If it cannot safely do so, channel changes, installation and quitting explain
-what needs an administrator's attention. Checks and downloads remain available. Keep
-styal open until the old installer is resolved so it cannot unexpectedly install on exit.
+when safe. A finished installer does not block updates. If an installer is still
+running or cannot be checked, styal warns that quitting could install its version,
+even if it is older than this app. **Cancel** keeps the app open; **Quit anyway**
+allows that installation to finish. Checks and downloads remain available.
+Changing tracks or starting another installation may need an administrator to
+resolve the old installer first.
 
 After an update to a newer release on the same track, the desktop app names the
 version the next time you look at its window, with a link to its release notes.
@@ -200,7 +203,7 @@ devices. A restart proceeds directly when every check succeeds and all active
 threads can continue. Terminal commands, waiting requests and unchecked activity
 still require confirmation. Quit asks about active work even when threads can
 continue, because they resume only when styal next starts. You can cancel or
-continue; cancelling keeps the downloaded update. If the confirmation
+continue; cancelling keeps the app open. If the confirmation
 cannot be displayed and the app stays unresponsive, choose **Quit** again after
 five seconds to exit. This can interrupt running work.
 

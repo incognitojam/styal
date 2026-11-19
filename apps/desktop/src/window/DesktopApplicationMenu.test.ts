@@ -67,7 +67,9 @@ const layerElectronDialog = Layer.succeed(ElectronDialog.ElectronDialog, {
 const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   getState: Effect.die("unexpected getState"),
   isActionActive: Effect.succeed(false),
-  prepareForQuit: Effect.succeed(true),
+  prepareForQuit: Effect.fn("test.prepareForQuit")(
+    (confirm: Effect.Effect<boolean> = Effect.succeed(true)) => confirm,
+  ),
   isInstallActive: Effect.succeed(false),
   subscribe: Effect.die("unexpected subscribe"),
   emitState: Effect.void,
