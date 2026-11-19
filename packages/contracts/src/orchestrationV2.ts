@@ -109,12 +109,17 @@ export const CoordinatorReportInput = Schema.Struct({
     Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(80))).check(Schema.isMaxLength(4)),
   ),
 });
+export const CoordinatorReportOutcome = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const CoordinatorReport = Schema.Struct({
   key: CoordinatorReportInput.fields.key,
   title: CoordinatorReportInput.fields.title,
   version: PositiveInt,
   question: CoordinatorReportInput.fields.question,
   answers: CoordinatorReportInput.fields.answers,
+  /** The agent closed this version's question without a new version. */
+  resolved: Schema.optional(
+    Schema.Struct({ at: IsoDateTime, outcome: Schema.optional(CoordinatorReportOutcome) }),
+  ),
 });
 export type CoordinatorReport = typeof CoordinatorReport.Type;
 export const CoordinatorReportDismissal = Schema.Struct({
@@ -3866,6 +3871,14 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     messageId: MessageId,
     ...CoordinatorReportInput.fields,
+  }),
+  /** Closes the question on the key's latest version. */
+  Schema.Struct({
+    type: Schema.Literal("report.resolve"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    key: CoordinatorReportInput.fields.key,
+    outcome: Schema.optional(CoordinatorReportOutcome),
   }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({

@@ -1768,7 +1768,11 @@ function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
     const report = message.report!;
     const key = referenceKey({ messageId: message.id, key: report.key, version: report.version });
     return (
-      message.role === "assistant" && !!report.question && !answered.has(key) && !dismissed.has(key)
+      message.role === "assistant" &&
+      !!report.question &&
+      !report.resolved &&
+      !answered.has(key) &&
+      !dismissed.has(key)
     );
   });
 }
@@ -7039,6 +7043,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       WHERE report.thread_id = t.thread_id AND report.role = 'assistant'
         AND json_extract(report.payload_json, '$.report.key') IS NOT NULL
         AND json_extract(report.payload_json, '$.report.question') IS NOT NULL
+        AND json_extract(report.payload_json, '$.report.resolved') IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_messages newer
             INDEXED BY orchestration_v2_projection_messages_report_key_idx

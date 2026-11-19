@@ -634,6 +634,7 @@ export function threadHasUnfinishedWork(records: {
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
   switch (command.type) {
     case "report.post":
+    case "report.resolve":
     case "report.dismiss":
     case "thread.create":
     case "thread.archive":
@@ -4051,7 +4052,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   const dispatchCoordinatorReport = Effect.fn("Orchestrator.dispatchCoordinatorReport")(function* (
-    command: Extract<OrchestrationV2ServerCommand, { type: "report.post" | "report.dismiss" }>,
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { type: "report.post" | "report.resolve" | "report.dismiss" }
+    >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
@@ -4099,6 +4103,51 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...existing,
         answerNoteEffect(thread.id, `${message.id}:dismissed`, {
           answered: { kind: "report", messageId: message.id, answerMessageId: null },
+        }),
+      ]);
+      return;
+    }
+    if (command.type === "report.resolve") {
+      const latest = projection.messages.reduce<OrchestrationV2ConversationMessage | undefined>(
+        (current, message) =>
+          message.report?.key === command.key &&
+          message.report.version > (current?.report?.version ?? 0)
+            ? message
+            : current,
+        undefined,
+      );
+      const report = latest?.report;
+      if (!latest || !report?.question || report.resolved) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: !report
+            ? `No report has key "${command.key}".`
+            : report.resolved
+              ? `Version ${report.version} of report "${command.key}" is already resolved.`
+              : `Version ${report.version} of report "${command.key}" asks no question.`,
+        });
+      }
+      yield* emitEvent({
+        type: "message.updated",
+        ...eventFields,
+        payload: {
+          ...latest,
+          report: {
+            ...report,
+            resolved: {
+              at: DateTime.formatIso(now),
+              ...(command.outcome === undefined ? {} : { outcome: command.outcome }),
+            },
+          },
+        },
+      });
+      // Its own agent resolves a report, so the note names this thread.
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        answerNoteEffect(thread.id, `${latest.id}:resolved`, {
+          answered: { kind: "report", messageId: latest.id, answerMessageId: null, resolved: true },
+          byThreadId: thread.id,
         }),
       ]);
       return;
@@ -15737,6 +15786,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadProjectAdoptFolder(command, events);
         break;
       case "report.post":
+      case "report.resolve":
       case "report.dismiss":
         yield* dispatchCoordinatorReport(command, events, effects);
         break;

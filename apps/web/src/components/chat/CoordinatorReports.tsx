@@ -1,6 +1,6 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { CheckIcon, FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
@@ -72,6 +72,23 @@ export function ReportAnswerBar({
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
           <XIcon />
           Dismissed. The agent hears it on its next turn.
+        </span>
+      </div>
+    );
+  }
+  if (report.state === "resolved") {
+    const outcome = report.message.report!.resolved!.outcome;
+    return (
+      <div className={panelClassName}>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+          <CheckIcon />
+          {outcome ? (
+            <span>
+              Resolved: <span className="text-foreground">{outcome}</span>
+            </span>
+          ) : (
+            "Resolved"
+          )}
         </span>
       </div>
     );

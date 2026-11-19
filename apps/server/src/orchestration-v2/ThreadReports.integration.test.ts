@@ -771,6 +771,32 @@ it.effect(
           undefined,
         );
 
+        // The agent closes the question without a new version; a later version asks again.
+        const resolve = (key: string, id: string) =>
+          orchestrator.dispatch({
+            type: "report.resolve",
+            commandId: CommandId.make(id),
+            threadId: launcherId,
+            key,
+            outcome: "Fixed in abc123",
+          });
+        yield* resolve("issue:9", "resolve:other");
+        yield* count(0);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "report:other",
+          )?.report?.resolved?.outcome,
+          "Fixed in abc123",
+        );
+        for (const [key, cause] of [
+          ["issue:9", 'Version 1 of report "issue:9" is already resolved.'],
+          ["issue:404", 'No report has key "issue:404".'],
+        ] as const) {
+          assert.include(String((yield* Effect.flip(resolve(key, `resolve:${key}`))).cause), cause);
+        }
+        yield* post("report:other:2", "issue:9");
+        yield* count(1);
+
         yield* endTurn(last, "completed");
       }),
     ),
@@ -1114,11 +1140,13 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             threadId: launchedId,
             messageId: MessageId.make(`report:${key}`),
             key,
-            title: key === "merge" ? "Merge the fix?" : "Old plan",
+            title: key === "merge" ? "Merge the fix?" : key === "ship" ? "Ship it?" : "Old plan",
             body: "Ready.",
+            ...(key === "ship" ? { question: "Ship?" } : {}),
           });
         yield* post("merge");
         yield* post("plan");
+        yield* post("ship");
         yield* endTurn(turn, "completed");
         yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
           sender: "user",
@@ -1132,12 +1160,20 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           key: "plan",
           version: 1,
         });
+        yield* orchestrator.dispatch({
+          type: "report.resolve",
+          commandId: CommandId.make("resolve:ship"),
+          threadId: launchedId,
+          key: "ship",
+          outcome: "Shipped",
+        });
         yield* worker.drain();
         assert.deepEqual(
           (yield* notes()).map((note) => note.text),
           [
             `- "Fix the login page" (${launchedId}): the user answered the report "Merge the fix?" with "Merge it".`,
             `- "Fix the login page" (${launchedId}): the user dismissed the report "Old plan".`,
+            `- "Fix the login page" (${launchedId}): its agent resolved the report "Ship it?" as "Shipped".`,
           ],
         );
 

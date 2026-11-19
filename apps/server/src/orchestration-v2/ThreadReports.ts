@@ -556,16 +556,22 @@ const recordAnswerNote = Effect.fnUntraced(function* (
     // Clients send `[<title>, version <n>] <answer>` (formatReportAnswer in client-runtime).
     const prefix = `[${report.title}, version ${report.version}] `;
     const reply = answer?.text.startsWith(prefix) ? answer.text.slice(prefix.length) : answer?.text;
-    what =
-      reply === undefined
+    what = answered.resolved
+      ? `resolved the report ${quote(report.title)}${report.resolved?.outcome ? ` as ${quote(report.resolved.outcome)}` : ""}`
+      : reply === undefined
         ? `dismissed the report ${quote(report.title)}`
         : `answered the report ${quote(report.title)} with ${quote(reply)}`;
   }
-  const who = trigger.byThreadId === undefined ? "the user" : `thread ${trigger.byThreadId}`;
+  const who =
+    trigger.byThreadId === undefined
+      ? "the user"
+      : trigger.byThreadId === thread.id
+        ? "its agent"
+        : `thread ${trigger.byThreadId}`;
   const key =
     answered.kind === "request"
       ? answered.requestId
-      : `${answered.messageId}:${answered.answerMessageId ?? "dismissed"}`;
+      : `${answered.messageId}:${answered.answerMessageId ?? (answered.resolved ? "resolved" : "dismissed")}`;
   yield* threads.dispatch({
     type: "thread.answer-notes.update",
     commandId: CommandId.make(`server:answer-note:${thread.id}:${key}`),

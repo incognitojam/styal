@@ -53,6 +53,18 @@ describe("coordinator reports", () => {
         [],
       ).map((x) => x.latest.report?.version),
     ).toEqual([3, 3, 3]);
+    const resolved = {
+      ...report("c", "pr:1", 2),
+      report: { ...report("c", "pr:1", 2).report, resolved: { at: "2026-11-19T00:00:00Z" } },
+    };
+    expect(coordinatorReports([...messages.slice(0, 2), resolved], []).map((x) => x.state)).toEqual(
+      ["replaced", "open", "resolved"],
+    );
+    expect(
+      coordinatorReports([...messages.slice(0, 2), resolved, report("d", "pr:1", 3)], []).map(
+        (x) => x.state,
+      ),
+    ).toEqual(["replaced", "open", "replaced", "open"]);
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {

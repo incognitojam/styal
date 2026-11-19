@@ -810,6 +810,7 @@ const make = Effect.gen(function* () {
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
       case "report.post":
+      case "report.resolve":
       case "report.dismiss":
         return serverSettings.getSettings.pipe(
           Effect.orDie,

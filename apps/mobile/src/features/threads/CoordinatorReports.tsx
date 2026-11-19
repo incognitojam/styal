@@ -143,6 +143,10 @@ export function CoordinatorReportMessage({
           display={reportAnswerDisplay(report.answer, tag)}
           renderAnswer={renderAnswer}
         />
+      ) : report.state === "resolved" ? (
+        <Text className="text-foreground-secondary">
+          {tag.resolved?.outcome ? `Resolved: ${tag.resolved.outcome}` : "Resolved"}
+        </Text>
       ) : report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
           Dismissed. The agent hears it on its next turn.

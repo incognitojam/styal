@@ -169,7 +169,7 @@ type ReportState = {
     readonly createdAt: string;
     readonly report?: Pick<CoordinatorReport, "key" | "title" | "version"> | undefined;
   };
-  /** As `coordinatorReports` gives it: replaced, answered, dismissed, open or posted. */
+  /** As `coordinatorReports` gives it: replaced, resolved, answered, dismissed, open or posted. */
   readonly state: string;
 };
 
