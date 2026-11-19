@@ -36,6 +36,7 @@ import {
   workEntriesViewedImagePaths,
   omitUserAttachmentImages,
   omitViewedSources,
+  runDocumentPages,
   assistantLinkedUrlKeysByRunId,
   workEntriesViewedSources,
   type ViewedSource,
@@ -748,6 +749,7 @@ function expandedWorkGroupRow(
 }
 
 const NO_URL_KEYS: ReadonlySet<string> = new Set();
+const NO_DOCUMENT_PAGES: ReadonlyMap<string, string | undefined> = new Map();
 
 /** The sources a subagent row's subagents used, shown under that row. */
 function subagentViewedSourcesRows(
@@ -2736,6 +2738,14 @@ export function deriveMessagesTimelineRows(input: {
     viewedPageRunIds(result),
   );
   const shownSourceKeysByRunId = new Map<string | null, Set<string>>();
+  const sourcesByRunId = new Map<string | null, Array<readonly ViewedSource[]>>();
+  for (const row of result) {
+    if (row.kind !== "viewed-images") continue;
+    sourcesByRunId.set(row.runId, [...(sourcesByRunId.get(row.runId) ?? []), row.sources]);
+  }
+  const documentPagesByRunId = new Map(
+    [...sourcesByRunId].map(([runId, lists]) => [runId, runDocumentPages(lists)] as const),
+  );
   const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
@@ -2746,6 +2756,7 @@ export function deriveMessagesTimelineRows(input: {
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
       shownSourceKeys,
+      documentPages: documentPagesByRunId.get(row.runId) ?? NO_DOCUMENT_PAGES,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];

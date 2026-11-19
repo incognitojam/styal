@@ -59,10 +59,10 @@ export function viewedSourceKey(source: ViewedSource): string {
 }
 
 export function turnItemViewedSources(item: ViewedSourceItem): ReadonlyArray<ViewedSource> {
-  if (item.status === "cancelled") return [];
-  // A subagent that failed may still have read things; its summary lists them.
+  // A subagent's summary lists what it read before it failed or was stopped.
   if (item.type === "subagent") return item.viewedSources ?? [];
   if (
+    item.status === "cancelled" ||
     item.status === "failed" ||
     (item.type !== "dynamic_tool" && item.type !== "web_search") ||
     item.toolNonExecutionKind !== undefined

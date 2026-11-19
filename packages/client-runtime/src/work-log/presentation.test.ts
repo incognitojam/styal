@@ -9,6 +9,7 @@ import {
   assistantLinkedUrlKeysByRunId,
   foldViewedSources,
   omitViewedSources,
+  runDocumentPages,
   workEntriesViewedSources,
   omitRetriedFindingsReports,
   resolveWorkEntryToolPresentation,
@@ -836,7 +837,7 @@ describe("viewed sources", () => {
   it("leaves out the user's attachments, pages the run's reply links, and repeated searches", () => {
     const sources = [
       { kind: "document", path: "/data/attachments/own.pdf" },
-      { kind: "document", path: "/repo/spec.pdf" },
+      { kind: "document", path: "/repo/spec.pdf", pages: "1-3" },
       { kind: "page", url: "https://docs.example.com/menus" },
       { kind: "page", url: "https://ui.example.org/sidebar" },
       { kind: "page", url: "https://help.example.io/export" },
@@ -879,6 +880,11 @@ describe("viewed sources", () => {
         linkedUrlKeys: linked.get("run-1") ?? new Set(),
         // An earlier strip of the run already shows this search and this page.
         shownSourceKeys: new Set(["search:menu guidelines", "page:status.example.org/uptime"]),
+        // Another strip of the run read other pages of the spec.
+        documentPages: runDocumentPages([
+          [{ kind: "document", path: "/repo/spec.pdf", pages: "1-3" }],
+          [{ kind: "document", path: "/repo/spec.pdf", pages: "10-12" }],
+        ]),
       }),
     ).toEqual([
       { kind: "document", path: "/repo/spec.pdf" },

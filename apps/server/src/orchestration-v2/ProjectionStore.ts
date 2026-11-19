@@ -2306,7 +2306,7 @@ function shellFromState(input: {
 }
 
 const ViewedSourceRow = Schema.Struct({
-  type: Schema.Literals(["dynamic_tool", "web_search", "subagent"]),
+  type: Schema.Literals(["dynamic_tool", "web_search"]),
   status: OrchestrationV2TurnItemStatus,
   toolNonExecutionKind: Schema.NullOr(Schema.String),
   viewedDocument: Schema.NullOr(OrchestrationV2ViewedDocument),
@@ -2317,21 +2317,16 @@ const ViewedSourceRow = Schema.Struct({
       Schema.Struct({ url: Schema.NullOr(Schema.String), title: Schema.NullOr(Schema.String) }),
     ),
   ),
-  viewedSources: Schema.NullOr(Schema.Array(OrchestrationV2ViewedSource)),
 });
+const VIEWED_SOURCE_THREAD_DEPTH = 6;
+const VIEWED_SOURCE_THREAD_LIMIT = 200;
+
 // A row that does not decode is left out of the summary rather than failing the read.
 const decodeViewedSourceRow = Schema.decodeUnknownOption(Schema.fromJsonString(ViewedSourceRow));
 
 function viewedSourceItemFromRow(row: typeof ViewedSourceRow.Type): ViewedSourceItem {
   const nonExecution =
     row.toolNonExecutionKind === null ? {} : { toolNonExecutionKind: row.toolNonExecutionKind };
-  if (row.type === "subagent") {
-    return {
-      type: "subagent",
-      status: row.status,
-      ...(row.viewedSources === null ? {} : { viewedSources: row.viewedSources }),
-    };
-  }
   if (row.type === "dynamic_tool") {
     return {
       type: "dynamic_tool",
@@ -6453,10 +6448,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       );
 
     // Only the fields a source needs, so page text and tool output stay out of the read.
-    const getViewedSourceSummary: ProjectionStoreV2Shape["getViewedSourceSummary"] = ({
-      threadId,
-      runId,
-    }) =>
+    const readViewedSourceItems = (threadId: ThreadId, runId: RunId | undefined) =>
       sql<{ source_json: string }>`SELECT json_object(
           'type', item.type,
           'status', item.status,
@@ -6468,25 +6460,60 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT json_group_array(json_object(
               'url', json_extract(result.value, '$.url'),
               'title', json_extract(result.value, '$.title')))
-            FROM json_each(item.payload_json, '$.results') AS result)),
-          'viewedSources', item.payload_json -> '$.viewedSources'
+            FROM json_each(item.payload_json, '$.results') AS result))
         ) AS source_json
         FROM orchestration_v2_projection_turn_items AS item
         WHERE item.thread_id = ${threadId}
           ${runId === undefined ? sql`` : sql`AND item.run_id = ${runId}`}
           AND (item.type = 'web_search'
-            OR (item.type = 'dynamic_tool' AND item.payload_json LIKE '%"viewedDocument"%')
-            OR (item.type = 'subagent' AND item.payload_json LIKE '%"viewedSources"%'))
+            OR (item.type = 'dynamic_tool' AND item.payload_json LIKE '%"viewedDocument"%'))
         ORDER BY item.ordinal`.pipe(
         Effect.map((rows) =>
-          subagentViewedSourceSummary(
-            rows.flatMap(({ source_json }) =>
-              Option.toArray(decodeViewedSourceRow(source_json)).map(viewedSourceItemFromRow),
-            ),
+          rows.flatMap(({ source_json }) =>
+            Option.toArray(decodeViewedSourceRow(source_json)).map(viewedSourceItemFromRow),
           ),
         ),
-        Effect.mapError(controlReadError(threadId)),
       );
+
+    // Child threads come from subagent records, not the parent's subagent rows: workflow members
+    // have no row, and a child's row may not hold its summary yet when its parent finishes.
+    const readSubagentChildThreadIds = (threadId: ThreadId, runId: RunId | undefined) =>
+      sql<{ child_thread_id: ThreadId }>`SELECT child_thread_id
+        FROM orchestration_v2_projection_subagents
+        WHERE thread_id = ${threadId}
+          ${runId === undefined ? sql`` : sql`AND run_id = ${runId}`}
+          AND child_thread_id IS NOT NULL
+        ORDER BY started_at, subagent_id`.pipe(
+        Effect.map((rows) => rows.map((row) => row.child_thread_id)),
+      );
+
+    const getViewedSourceSummary: ProjectionStoreV2Shape["getViewedSourceSummary"] = (input) =>
+      collectViewedSourceItems(input).pipe(
+        Effect.map(subagentViewedSourceSummary),
+        Effect.mapError(controlReadError(input.threadId)),
+      );
+
+    const collectViewedSourceItems = Effect.fn("ProjectionStore.collectViewedSourceItems")(
+      function* (input: { readonly threadId: ThreadId; readonly runId?: RunId }) {
+        const items: ViewedSourceItem[] = [];
+        const visited = new Set<ThreadId>();
+        let pending: Array<{ readonly threadId: ThreadId; readonly runId?: RunId }> = [input];
+        // A subagent tree is a few levels deep; the bounds stop a cycle or a runaway tree.
+        for (let depth = 0; depth < VIEWED_SOURCE_THREAD_DEPTH && pending.length > 0; depth += 1) {
+          const next: typeof pending = [];
+          for (const { threadId, runId } of pending) {
+            if (visited.has(threadId) || visited.size >= VIEWED_SOURCE_THREAD_LIMIT) continue;
+            visited.add(threadId);
+            items.push(...(yield* readViewedSourceItems(threadId, runId)));
+            for (const childThreadId of yield* readSubagentChildThreadIds(threadId, runId)) {
+              next.push({ threadId: childThreadId });
+            }
+          }
+          pending = next;
+        }
+        return items;
+      },
+    );
 
     // A live run fork shows its source's history through the fork run without copying it.
     const shownByLiveFork = (threadId: ThreadId, runIdColumn: string) => sql`

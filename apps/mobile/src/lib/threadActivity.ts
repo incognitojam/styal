@@ -44,6 +44,7 @@ import {
   workEntriesViewedImagePaths,
   omitUserAttachmentImages,
   omitViewedSources,
+  runDocumentPages,
   assistantLinkedUrlKeysByRunId,
   workEntriesViewedSources,
   type ViewedSource,
@@ -2073,6 +2074,14 @@ export function deriveThreadFeedPresentation(
     viewedPageRunIds(rows),
   );
   const shownSourceKeysByRunId = new Map<string | null, Set<string>>();
+  const sourcesByRunId = new Map<string | null, Array<readonly ViewedSource[]>>();
+  for (const row of rows) {
+    if (row.type !== "viewed-images") continue;
+    sourcesByRunId.set(row.runId, [...(sourcesByRunId.get(row.runId) ?? []), row.sources]);
+  }
+  const documentPagesByRunId = new Map(
+    [...sourcesByRunId].map(([runId, lists]) => [runId, runDocumentPages(lists)] as const),
+  );
   const visibleRows = rows.flatMap<ThreadFeedEntry>((row) => {
     if (row.type !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
@@ -2083,6 +2092,7 @@ export function deriveThreadFeedPresentation(
       linkedUrlKeys:
         (row.runId === null ? undefined : linkedUrlKeysByRunId.get(row.runId)) ?? NO_URL_KEYS,
       shownSourceKeys,
+      documentPages: documentPagesByRunId.get(row.runId) ?? NO_DOCUMENT_PAGES,
     });
     if (paths.length === 0 && sources.length === 0) return [];
     return [paths === row.paths && sources === row.sources ? row : { ...row, paths, sources }];
@@ -2095,6 +2105,7 @@ export function deriveThreadFeedPresentation(
 }
 
 const NO_URL_KEYS: ReadonlySet<string> = new Set();
+const NO_DOCUMENT_PAGES: ReadonlyMap<string, string | undefined> = new Map();
 
 /** The sources a subagent group's subagents used, shown under that group. */
 function subagentViewedSourcesRows(row: ThreadFeedEntry): ThreadFeedEntry[] {

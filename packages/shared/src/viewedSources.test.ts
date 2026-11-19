@@ -42,10 +42,11 @@ describe("subagentViewedSourceSummary", () => {
             { kind: "page", url: "https://legal.example.net/terms" },
           ],
         },
+        // Stopped after reading this page; the page still counts.
         {
           type: "subagent",
           status: "cancelled",
-          viewedSources: [{ kind: "page", url: "https://x.example.org/" }],
+          viewedSources: [{ kind: "page", url: "https://status.example.org/uptime" }],
         },
         fetch("https://help.example.io/export", "failed"),
       ]),
@@ -53,6 +54,7 @@ describe("subagentViewedSourceSummary", () => {
       { kind: "document", path: "/repo/contracts/vendor-a.pdf", pages: "1-4" },
       { kind: "page", url: "https://docs.example.com/retention" },
       { kind: "page", url: "https://legal.example.net/terms" },
+      { kind: "page", url: "https://status.example.org/uptime" },
       {
         kind: "search",
         query: "retention policy",

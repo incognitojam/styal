@@ -782,21 +782,51 @@ export function omitViewedSources(
     readonly attachmentIds: ReadonlySet<string>;
     readonly linkedUrlKeys: ReadonlySet<string>;
     readonly shownSourceKeys: Set<string>;
+    /** The run's range per document, from `runDocumentPages`. */
+    readonly documentPages: ReadonlyMap<string, string | undefined>;
   },
 ): readonly ViewedSource[] {
-  const retained = sources.filter((source) => {
+  let changed = false;
+  const retained = sources.flatMap((source): ViewedSource[] => {
     if (source.kind === "document" && isUserAttachmentPath(source.path, input.attachmentIds)) {
-      return false;
+      changed = true;
+      return [];
     }
     if (source.kind === "page" && input.linkedUrlKeys.has(viewedSourceUrlKey(source.url)!)) {
-      return false;
+      changed = true;
+      return [];
     }
     const key = viewedSourceKey(source);
-    if (input.shownSourceKeys.has(key)) return false;
+    if (input.shownSourceKeys.has(key)) {
+      changed = true;
+      return [];
+    }
     input.shownSourceKeys.add(key);
-    return true;
+    const pages = source.kind === "document" ? input.documentPages.get(source.path) : undefined;
+    if (source.kind !== "document" || pages === source.pages) return [source];
+    changed = true;
+    return [{ kind: "document", path: source.path, ...(pages === undefined ? {} : { pages }) }];
   });
-  return retained.length === sources.length ? sources : retained;
+  return changed ? retained : sources;
+}
+
+/**
+ * Each document's page range across one run's strips: the range when every read named the same
+ * one, otherwise none, since the chip shows the document once for the whole run.
+ */
+export function runDocumentPages(
+  sourceLists: Iterable<readonly ViewedSource[]>,
+): Map<string, string | undefined> {
+  const pagesByPath = new Map<string, string | undefined>();
+  for (const sources of sourceLists) {
+    for (const source of sources) {
+      if (source.kind !== "document") continue;
+      if (!pagesByPath.has(source.path)) pagesByPath.set(source.path, source.pages);
+      else if (pagesByPath.get(source.path) !== source.pages)
+        pagesByPath.set(source.path, undefined);
+    }
+  }
+  return pagesByPath;
 }
 
 export function foldViewedSources<Source>(

@@ -4235,7 +4235,12 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
         runStatus: "completed",
         now,
       });
-      const base = (id: string, itemThreadId: ThreadId, itemRunId: RunId, ordinal: number) => ({
+      const base = (
+        id: string,
+        itemThreadId: ThreadId,
+        itemRunId: RunId | null,
+        ordinal: number,
+      ) => ({
         id: TurnItemId.make(id),
         threadId: itemThreadId,
         runId: itemRunId,
@@ -4296,6 +4301,91 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
         ],
       });
 
+      // The child started native subagents; only their records exist, as for workflow members,
+      // and one was stopped after it had fetched a page.
+      const grandchild = (name: string, status: "completed" | "cancelled", url: string) => {
+        const grandchildThreadId = ThreadId.make(`thread:sources-grandchild:${name}`);
+        const taskNodeId = NodeId.make(`node:sources-grandchild:${name}`);
+        return [
+          {
+            id: EventId.make(`event:sources-grandchild:${name}:thread`),
+            type: "thread.created" as const,
+            threadId: grandchildThreadId,
+            occurredAt: now,
+            payload: {
+              createdBy: "agent" as const,
+              creationSource: "provider" as const,
+              id: grandchildThreadId,
+              projectId,
+              title: name,
+              providerInstanceId: modelSelection.instanceId,
+              modelSelection,
+              runtimeMode: "full-access" as const,
+              interactionMode: "default" as const,
+              branch: null,
+              worktreePath: null,
+              activeProviderThreadId: null,
+              lineage: {
+                parentThreadId: child.childThreadId,
+                relationshipToParent: "subagent" as const,
+                rootThreadId: threadId,
+              },
+              forkedFrom: { type: "node" as const, nodeId: taskNodeId },
+              createdAt: now,
+              updatedAt: now,
+              archivedAt: null,
+              settledOverride: null,
+              settledAt: null,
+              lastVisitedAt: null,
+              deletedAt: null,
+            },
+          },
+          {
+            id: EventId.make(`event:sources-grandchild:${name}:task`),
+            type: "subagent.updated" as const,
+            threadId: child.childThreadId,
+            runId: child.childRunId,
+            nodeId: taskNodeId,
+            driver,
+            providerInstanceId: modelSelection.instanceId,
+            occurredAt: now,
+            payload: {
+              id: taskNodeId,
+              threadId: child.childThreadId,
+              runId: child.childRunId,
+              parentNodeId: rootNodeId,
+              origin: "provider_native" as const,
+              createdBy: "agent" as const,
+              driver,
+              providerInstanceId: modelSelection.instanceId,
+              providerThreadId: null,
+              childThreadId: grandchildThreadId,
+              nativeTaskRef: null,
+              prompt: name,
+              title: null,
+              model: null,
+              status,
+              result: null,
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+            },
+          },
+          item({
+            ...base(`turn-item:sources-grandchild:${name}:fetch`, grandchildThreadId, null, 1),
+            type: "web_search",
+            patterns: [url],
+            fetchedUrl: url,
+          }),
+        ];
+      };
+      yield* eventSink.write({
+        events: [
+          ...grandchild("finished", "completed", "https://help.example.io/export"),
+          ...grandchild("stopped", "cancelled", "https://status.example.org/uptime"),
+        ],
+      });
+
       yield* orchestrator.recoverDelegatedTask(child.childThreadId, {
         sourceRunId: child.childRunId,
       });
@@ -4306,6 +4396,8 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
       assert.equal(row?.status, "completed");
       assert.deepEqual(row?.type === "subagent" ? row.viewedSources : undefined, [
         { kind: "page", url: "https://docs.example.com/retention" },
+        { kind: "page", url: "https://help.example.io/export" },
+        { kind: "page", url: "https://status.example.org/uptime" },
       ]);
       assert.notInclude(JSON.stringify(row), "PAGE_TEXT");
     }),

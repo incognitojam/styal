@@ -3346,8 +3346,16 @@ describe("deriveMessagesTimelineRows", () => {
             createdBy: "user" as const,
             creationSource: "web" as const,
           },
-          subagent("first", 1, "provider-turn-1", [retention, query]),
-          subagent("second", 2, "provider-turn-2", [retention, terms]),
+          subagent("first", 1, "provider-turn-1", [
+            { kind: "document", path: "/repo/spec.pdf", pages: "1-3" },
+            retention,
+            query,
+          ]),
+          subagent("second", 2, "provider-turn-2", [
+            { kind: "document", path: "/repo/spec.pdf", pages: "10-12" },
+            retention,
+            terms,
+          ]),
         ].map((item, position) => ({
           position,
           visibility: "local" as const,
@@ -3376,7 +3384,8 @@ describe("deriveMessagesTimelineRows", () => {
           : [],
       ),
     ).toEqual([
-      { after: "event", sources: [retention, query] },
+      // The spec was read at two ranges in the turn, so its one chip names no range.
+      { after: "event", sources: [{ kind: "document", path: "/repo/spec.pdf" }, retention, query] },
       // The second subagent opened the same retention page; it shows once in the turn.
       { after: "event", sources: [terms] },
     ]);
