@@ -84,12 +84,15 @@ const useRequest = create<{
   session: number;
   /** When the request was made; one click only trusts checks answered after it. */
   openedAt: number;
+  /** The open one-click add's composer row; it follows the machine the dialog clones to. */
+  key: string | null;
   /** Adds picked while another is being decided; each starts when the one before it closes. */
   queue: ReadonlyArray<AddProjectToMachineRequest>;
 }>(() => ({
   request: null,
   session: 0,
   openedAt: 0,
+  key: null,
   queue: [],
 }));
 
@@ -151,7 +154,7 @@ function start(request: AddProjectToMachineRequest) {
       onCancel: () => close(session),
     });
   }
-  useRequest.setState({ request, session, openedAt: Date.now() });
+  useRequest.setState({ request, session, openedAt: Date.now(), key });
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
@@ -192,11 +195,10 @@ function announceCancelledAdd(outcome: CancelledAddOutcome, projectTitle: string
 function close(session?: number) {
   const state = useRequest.getState();
   if (session !== undefined && state.session !== session) return;
-  const key = quickAddKey(state.request);
-  if (key && !readPreparingAdd(key)?.sending) setPreparingAdd(key, null);
+  if (state.key && !readPreparingAdd(state.key)?.sending) setPreparingAdd(state.key, null);
   endRequestWithProject?.();
   endRequestWithProject = null;
-  useRequest.setState({ request: null });
+  useRequest.setState({ request: null, key: null });
   for (;;) {
     const [next, ...queue] = useRequest.getState().queue;
     if (!next) return;
@@ -364,24 +366,34 @@ function AddProjectToMachineDialog({
 
   // Shared by the Clone button and one click, so one request can never start two clones.
   const starting = useRef(false);
+  // While the clone request is out, cancelling lets go of it: a clone that starts anyway is
+  // stopped and its project removed.
+  const abandon = useRef<(() => void) | null>(null);
   const startClone = useStableCallback(async () => {
     if (!project || !target || starting.current) return;
     starting.current = true;
-    // While the clone request is out the row stays, and Cancel lets go of it: a clone that
-    // starts anyway is stopped and its project removed.
-    const key = quickAddKey(request);
-    const preparing = key ? readPreparingAdd(key) : null;
+    let key = useRequest.getState().key;
+    const clicked = key ? readPreparingAdd(key) : null;
+    // The dialog cloned to another machine than the one clicked: the row moves to that add,
+    // unless an add waiting its turn already has it.
+    if (key && clicked && key !== preparingAddKey(request.projectRef, target.environmentId)) {
+      setPreparingAdd(key, null);
+      key = preparingAddKey(request.projectRef, target.environmentId);
+      if (readPreparingAdd(key)) key = null;
+      useRequest.setState({ key });
+    }
     let abandoned = false;
-    if (key && preparing) {
+    abandon.current = () => {
+      abandoned = true;
+      if (key) setPreparingAdd(key, null);
+      close(session);
+    };
+    if (key && clicked) {
       setPreparingAdd(key, {
-        ...preparing,
+        ...clicked,
         title: addingTitle(target.label),
         sending: true,
-        onCancel: () => {
-          abandoned = true;
-          setPreparingAdd(key, null);
-          close(session);
-        },
+        onCancel: abandon.current,
       });
     }
     // The server may clone for a project it already had instead; only a new one is ours to remove.
@@ -403,13 +415,23 @@ function AddProjectToMachineDialog({
       });
     } catch (cause) {
       starting.current = false;
+      abandon.current = null;
       if (abandoned) return;
-      // The dialog shows the error, and its Clone button can try again.
-      if (key) setPreparingAdd(key, null);
+      // The dialog shows the error, and its Clone button can try again for the same draft.
+      const sending = key ? readPreparingAdd(key) : null;
+      if (key && sending) {
+        setPreparingAdd(
+          key,
+          useRequest.getState().session === session
+            ? { ...sending, sending: false, onCancel: () => close(session) }
+            : null,
+        );
+      }
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
       return;
     }
+    abandon.current = null;
     const clonedRef = scopeProjectRef(target.environmentId, projectId);
     if (abandoned) {
       const projectTitle = project.title;
@@ -420,7 +442,7 @@ function AddProjectToMachineDialog({
       return;
     }
     // A one-click add moves the draft that shows it, which a later pick there may have taken.
-    const shownIn = key ? readPreparingAdd(key)?.draftId : undefined;
+    const shownIn = key ? readPreparingAdd(key)?.draftId : clicked?.draftId;
     if (key) setPreparingAdd(key, null);
     close(session);
     if (shownIn === null && request.draftId) {
@@ -432,6 +454,8 @@ function AddProjectToMachineDialog({
       (shownIn ?? request.draftId ?? routeDraftId) as DraftId | undefined,
     );
   });
+  // Dismissing the dialog while its clone request is out cancels that clone too.
+  const dismiss = () => (abandon.current ? abandon.current() : close());
 
   const submit = async () => {
     if (!project || !target || submitting) return;
@@ -456,7 +480,7 @@ function AddProjectToMachineDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) close();
+        if (!open) dismiss();
       }}
     >
       <DialogPopup className="sm:max-w-xl">
@@ -653,7 +677,7 @@ function AddProjectToMachineDialog({
             {error ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
           </DialogPanel>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => close()}>
+            <Button type="button" variant="outline" onClick={dismiss}>
               Cancel
             </Button>
             <Button type="submit" disabled={unavailable || submitting}>

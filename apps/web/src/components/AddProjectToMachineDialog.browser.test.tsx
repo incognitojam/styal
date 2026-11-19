@@ -1,6 +1,7 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { DraftId } from "../composerDraftStore";
 import { preparingAddKey, readPreparingAdd } from "../lib/addProjectToMachine";
@@ -60,6 +61,16 @@ const scene = vi.hoisted(() => {
     // Answers both of the dialog's checks: no ignored files, and no folder at the destination.
     answered: {
       data: { files: [], truncated: false, entries: [null] },
+      dataUpdatedAt: Number.MAX_SAFE_INTEGER,
+      error: null,
+      failure: null,
+      isPending: false,
+      isSuccess: true,
+      refresh,
+    },
+    // As `answered`, with a .env file that would be copied, so one click asks.
+    withEnvFile: {
+      data: { files: [{ path: ".env", byteLength: 12 }], truncated: false, entries: [null] },
       dataUpdatedAt: Number.MAX_SAFE_INTEGER,
       error: null,
       failure: null,
@@ -150,6 +161,11 @@ const SOURCE = {
 
 const keyFor = (target: string, ref = projectRef) =>
   preparingAddKey(ref, EnvironmentId.make(target));
+
+// Base UI's inert backdrop takes pointer events in the test frame, so dialog buttons are
+// clicked through the DOM.
+const clickButton = (name: string) =>
+  act(() => (page.getByRole("button", { name }).element() as HTMLElement).click());
 
 const machine = (name: string) => ({
   environmentId: EnvironmentId.make(name),
@@ -315,5 +331,101 @@ describe("AddProjectToMachineDialog", () => {
       ),
     );
     await expect.element(screen.getByText("Add to another machine")).not.toBeInTheDocument();
+  });
+
+  it("moves the draft that took over an add, even after a failed start and a retry", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.answered });
+    let failStart: (cause: Error) => void = () => undefined;
+    scene.add
+      .mockImplementationOnce(
+        () =>
+          new Promise<ProjectId>((_resolve, reject) => {
+            failStart = reject;
+          }),
+      )
+      .mockImplementation(() => new Promise<ProjectId>(() => undefined));
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+    const ref = scopeProjectRef(environmentId, ProjectId.make("project-7"));
+    const quickAdd = (draftId: string) =>
+      openAddProjectToMachine({
+        projectRef: ref,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId: DraftId.make(draftId),
+      });
+
+    await act(() => quickAdd("draft-7"));
+    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledOnce());
+    await act(() => quickAdd("draft-8"));
+    await act(() => failStart(new Error("The machine went away.")));
+    await expect.element(screen.getByText("The machine went away.")).toBeInTheDocument();
+    await clickButton("Clone to machine-a");
+
+    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledTimes(2));
+    expect(readPreparingAdd(keyFor("machine-a", ref))).toMatchObject({
+      draftId: "draft-8",
+      sending: true,
+    });
+  });
+
+  it("cancels the clone when the dialog is dismissed while its request is out", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.answered });
+    scene.discard.mockResolvedValue("removed");
+    let finishAdd: (projectId: ProjectId) => void = () => undefined;
+    scene.add.mockImplementation(
+      () =>
+        new Promise<ProjectId>((resolve) => {
+          finishAdd = resolve;
+        }),
+    );
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+
+    await act(() =>
+      openAddProjectToMachine({ projectRef, targetEnvironmentId: EnvironmentId.make("machine-a") }),
+    );
+    await clickButton("Clone to machine-a");
+    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledOnce());
+    await clickButton("Cancel");
+    await expect.element(screen.getByText("Add to another machine")).not.toBeInTheDocument();
+
+    await act(() => finishAdd(ProjectId.make("project-9")));
+    await vi.waitFor(() =>
+      expect(scene.discard).toHaveBeenCalledWith(
+        scopeProjectRef(EnvironmentId.make("machine-a"), ProjectId.make("project-9")),
+        false,
+      ),
+    );
+  });
+
+  it("follows the machine picked in the dialog when one click had to ask", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.withEnvFile });
+    scene.add.mockImplementation(() => new Promise<ProjectId>(() => undefined));
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a"), machine("machine-b")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+    const ref = scopeProjectRef(environmentId, ProjectId.make("project-10"));
+
+    await act(() =>
+      openAddProjectToMachine({
+        projectRef: ref,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId: DraftId.make("draft-10"),
+      }),
+    );
+    await userEvent.click(screen.getByRole("combobox", { name: "Machine to add the project to" }));
+    await userEvent.click(screen.getByRole("option", { name: "machine-b" }));
+    await clickButton("Clone to machine-b");
+
+    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledOnce());
+    expect(readPreparingAdd(keyFor("machine-a", ref))).toBeNull();
+    expect(readPreparingAdd(keyFor("machine-b", ref))).toMatchObject({
+      draftId: "draft-10",
+      sending: true,
+    });
   });
 });
