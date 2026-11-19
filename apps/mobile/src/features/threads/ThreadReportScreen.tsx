@@ -19,35 +19,44 @@ import {
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ScrollView, useWindowDimensions, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
+import { useSharedValue } from "react-native-reanimated";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { uuidv4 } from "../../lib/uuid";
 
 import { AppBar } from "../../components/ui/AppBar";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { FilePreviewGallery } from "../../components/ui/FilePreviewGallery";
 import { PresentationSource } from "../../components/ui/NativePresentation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { appAtomRegistry } from "../../state/atom-registry";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import { useEnvironmentScope } from "../../state/session";
 import { threadEnvironment, useEnvironmentThread } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  composerDraftsAtom,
-  getComposerDraftSnapshot,
-  setComposerDraftText,
-  useComposerDraft,
-} from "../../state/use-composer-drafts";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
-import { useVoiceInputController } from "../voice-input/useVoiceInputController";
-import { replyTo, ReportAnswerOptions, type ReportState } from "./CoordinatorReports";
+import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
+import { ComposerPopoverHost } from "./ComposerPopoverHost";
+import {
+  replyTo,
+  ReportAnswerOptions,
+  ReportReplyStrip,
+  type ReportState,
+} from "./CoordinatorReports";
 import { messageImageGallery } from "./messageImageGallery";
 import { AssistantMessageBody, useThreadMarkdown } from "./ThreadFeed";
+import { ThreadComposer } from "./ThreadComposer";
 import { requestThreadMessageJump } from "./threadMessageJump";
 import { findOpenedReport, reportBodyMarkdown, reportFinished } from "./threadReport.logic";
 
@@ -74,8 +83,12 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
   const environmentId = EnvironmentId.make(params.environmentId);
   const threadId = ThreadId.make(params.threadId);
   const reportId = MessageId.make(params.report);
-  const { selectedThread, selectedThreadDetailRef, selectedEnvironmentRuntime } =
-    useThreadSelection();
+  const {
+    selectedThread,
+    selectedThreadDetailRef,
+    selectedEnvironmentRuntime,
+    selectedEnvironmentConnection,
+  } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState({ startSideChat: startNoSideChat });
   const threadState = useEnvironmentThread(
@@ -148,6 +161,26 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
     skills,
     presentationKind: "report",
   });
+  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const insets = useSafeAreaInsets();
+  const popoverHeight = useSharedValue(0);
+  const dictationRef = useRef<{ readonly start: () => boolean }>(null);
+  const startDictation = useRef(false);
+  const voiceAvailable = useGlobalVoiceInput().isAvailable;
+  const replying = report !== null && composer.reportReply?.ref.messageId === report.message.id;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts dictation in the composer that Reply by voice just mounted; its handle exists only after mount
+  useEffect(() => {
+    if (!replying || !startDictation.current) return;
+    startDictation.current = false;
+    dictationRef.current?.start();
+  }, [replying]);
+  // The bar folds to its question while the report scrolls, so the report gets the screen.
+  const [barFolded, setBarFolded] = useState(false);
+  const unfoldAtEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 24) setBarFolded(false);
+  };
   const tag = report?.message.report;
   const versions = tag
     ? composer.reports.filter((entry) => entry.message.report?.key === tag.key)
@@ -185,6 +218,9 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
             <ScrollView
               className="flex-1"
               onLayout={(event) => setBodyWidth(event.nativeEvent.layout.width)}
+              onScrollBeginDrag={() => setBarFolded(true)}
+              onScrollEndDrag={unfoldAtEnd}
+              onMomentumScrollEnd={unfoldAtEnd}
               contentInsetAdjustmentBehavior="automatic"
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ padding: BODY_PADDING, paddingBottom: 32 }}
@@ -213,21 +249,74 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
                 />
               </FilePreviewGallery>
             </ScrollView>
-            <ReportAnswerBar
-              environmentId={environmentId}
-              threadId={threadId}
-              report={report}
-              draftKey={composer.composerDraftKey}
-              threadTitle={selectedThread?.title ?? "Thread"}
-              onShowLatest={(id) => navigation.dispatch(CommonActions.setParams({ report: id }))}
-              send={async (text, reply) => {
-                const id = await composer.onSendMessage(undefined, undefined, undefined, {
-                  text,
-                  reply,
-                });
-                return id !== null;
-              }}
-            />
+            {replying && selectedThread !== null && tag ? (
+              <ComposerPopoverHost hidden={false} inFlow popoverHeight={popoverHeight}>
+                <ThreadComposer
+                  header={
+                    <ReportReplyStrip
+                      title={tag.title}
+                      version={tag.version}
+                      question={tag.question}
+                      onCancel={() => composer.onReportReply(null)}
+                    />
+                  }
+                  canOperateThread={canOperate}
+                  placeholder="Your reply"
+                  connectionState={selectedEnvironmentRuntime?.connectionState ?? "available"}
+                  environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
+                  selectedThread={selectedThread}
+                  hasCompactableConversation={false}
+                  serverConfig={selectedEnvironmentRuntime?.serverConfig ?? null}
+                  queueCount={composer.selectedThreadQueueCount}
+                  activeThreadBusy={composer.activeThreadBusy}
+                  canStopThread={false}
+                  environmentId={environmentId}
+                  projectCwd={selectedThreadCwd}
+                  draftKey={composer.composerDraftKey ?? undefined}
+                  followUpBehavior={composer.followUpBehavior}
+                  canSteerActiveTurn={composer.canSteerActiveTurn}
+                  hidden={false}
+                  dictationRef={dictationRef}
+                  bottomInset={keyboardVisible ? 8 : insets.bottom}
+                  onChangeDraftMessage={composer.onChangeDraftMessage}
+                  onPickDraftMedia={composer.onPickDraftMedia}
+                  onPickDraftFiles={composer.onPickDraftFiles}
+                  onNativePasteImages={composer.onNativePasteImages}
+                  onNativePasteText={composer.onNativePasteText}
+                  onRemoveDraftImage={composer.onRemoveDraftImage}
+                  onStopThread={() => undefined}
+                  onResumeQueue={null}
+                  onSendMessage={(followUp) => composer.onSendMessage(followUp)}
+                  onShowUsageLimits={() => undefined}
+                  canSwitchProvider={composer.canSwitchThreadProvider}
+                />
+              </ComposerPopoverHost>
+            ) : (
+              <ReportAnswerBar
+                environmentId={environmentId}
+                threadId={threadId}
+                report={report}
+                folded={barFolded}
+                onUnfold={() => setBarFolded(false)}
+                onShowLatest={(id) => navigation.dispatch(CommonActions.setParams({ report: id }))}
+                onReply={() => composer.onReportReply(replyTo(report))}
+                onReplyByVoice={
+                  voiceAvailable
+                    ? () => {
+                        startDictation.current = true;
+                        composer.onReportReply(replyTo(report));
+                      }
+                    : undefined
+                }
+                send={async (text, reply) => {
+                  const id = await composer.onSendMessage(undefined, undefined, undefined, {
+                    text,
+                    reply,
+                  });
+                  return id !== null;
+                }}
+              />
+            )}
           </>
         )}
         {markdown.previews}
@@ -238,21 +327,22 @@ export function ThreadReportRouteScreen(_props: StaticScreenProps<ThreadReportPa
 
 /**
  * The report's question and answers, held under its body: at most part of the screen, its answers
- * scrolling inside it, so the report keeps the rest.
+ * scrolling inside it, and folded to the question while the report scrolls.
  */
 function ReportAnswerBar(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly report: ReportState;
-  readonly draftKey: string | null;
-  readonly threadTitle: string;
+  readonly folded: boolean;
+  readonly onUnfold: () => void;
   readonly onShowLatest: (id: string) => void;
+  readonly onReply: () => void;
+  /** Absent where dictation can't start. */
+  readonly onReplyByVoice: (() => void) | undefined;
   readonly send: (text: string, reply: ReportReply) => Promise<boolean>;
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const bottomInset = keyboardVisible ? 0 : insets.bottom;
   const tag = props.report.message.report!;
   const reply = replyTo(props.report);
   const canOperate = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
@@ -261,21 +351,6 @@ function ReportAnswerBar(props: {
   const dismissReport = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [replying, setReplying] = useState(false);
-  const draft = useComposerDraft(props.draftKey);
-  const [selection, setSelection] = useState({ start: 0, end: 0 });
-  const voice = useVoiceInputController({
-    ownerKey: props.draftKey === null ? null : `report:${props.draftKey}`,
-    label: props.threadTitle,
-    readDraftMessage: () =>
-      props.draftKey === null ? null : getComposerDraftSnapshot(props.draftKey).text,
-    subscribeToDraftChanges: (onChange) => appAtomRegistry.subscribe(composerDraftsAtom, onChange),
-    selection,
-    onChangeDraftMessage: (text) => {
-      if (props.draftKey !== null) setComposerDraftText(props.draftKey, text);
-    },
-    onChangeSelection: setSelection,
-  });
   // A sent response keeps the bar disabled until the thread records it and the screen closes.
   const run = (action: () => Promise<boolean>) => {
     setBusy(true);
@@ -293,11 +368,10 @@ function ReportAnswerBar(props: {
     );
   };
   const disabled = !canRespond || busy;
-  const replyText = draft.text.trim();
 
   if (props.report.state === "replaced")
     return (
-      <AnswerBarFrame bottom={bottomInset}>
+      <AnswerBarFrame bottom={insets.bottom}>
         <View className="flex-row items-center gap-2">
           <Text className="flex-1 text-foreground">A newer version of this report arrived.</Text>
           <Button
@@ -310,123 +384,81 @@ function ReportAnswerBar(props: {
       </AnswerBarFrame>
     );
   if (props.report.state !== "open") return null;
+  if (props.folded)
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${tag.question ?? "Answers"}, show answers`}
+        onPress={props.onUnfold}
+        className="active:opacity-70"
+      >
+        <AnswerBarFrame bottom={insets.bottom}>
+          <View className="flex-row items-center gap-2">
+            <Text className="flex-1 font-t3-medium text-foreground" numberOfLines={1}>
+              {tag.question}
+            </Text>
+            <SymbolView name="chevron.up" size={13} tintColorClassName="accent-foreground-muted" />
+          </View>
+        </AnswerBarFrame>
+      </Pressable>
+    );
 
   return (
-    <AnswerBarFrame bottom={bottomInset} maxHeight={height * 0.45}>
-      <Text className="font-t3-medium text-foreground" numberOfLines={replying ? 1 : 2}>
+    <AnswerBarFrame bottom={insets.bottom} maxHeight={height * 0.45}>
+      <Text className="font-t3-medium text-foreground" numberOfLines={2}>
         {tag.question}
       </Text>
-      {replying ? (
-        <>
-          <TextInput
-            autoFocus
-            multiline
-            editable={!voice.freezesEditor}
-            value={draft.text}
-            onChangeText={(text) => {
-              if (props.draftKey !== null) setComposerDraftText(props.draftKey, text);
-            }}
-            onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-            placeholder="Your reply"
-            accessibilityLabel="Your reply"
-            className="max-h-36 min-h-12 rounded-lg border border-border px-3 py-3 text-base text-foreground"
+      <ScrollView
+        className="shrink"
+        contentContainerClassName="gap-2"
+        keyboardShouldPersistTaps="handled"
+      >
+        <ReportAnswerOptions
+          answers={tag.answers ?? []}
+          disabled={disabled}
+          onPick={(answer) => run(() => props.send(answer, reply))}
+        />
+      </ScrollView>
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row">
+          <Button
+            label="Reply…"
+            size="compact"
+            tone="text"
+            disabled={disabled}
+            onPress={props.onReply}
           />
-          {voice.isBusy ? (
-            <View className="flex-row items-center justify-between">
-              <Text className="text-foreground-secondary">
-                {voice.state.phase === "recording" ? "Listening…" : "Transcribing…"}
-              </Text>
-              <Button label="Stop" size="compact" tone="text" onPress={voice.stop} />
-            </View>
-          ) : null}
-          {voice.state.error ? (
-            <Text accessibilityRole="alert" className="text-danger">
-              {voice.state.error}
-            </Text>
-          ) : null}
-          <View className="flex-row items-center justify-between">
+          {props.onReplyByVoice ? (
             <Button
-              label="Cancel"
-              size="compact"
-              tone="text"
-              onPress={() => {
-                voice.cancel();
-                setReplying(false);
-              }}
-            />
-            <Button
-              label="Send reply"
-              size="compact"
-              tone="primary"
-              disabled={disabled || replyText.length === 0 || voice.blocksSubmission}
-              onPress={() =>
-                run(async () => {
-                  const ok = await props.send(replyText, reply);
-                  if (ok && props.draftKey !== null) setComposerDraftText(props.draftKey, "");
-                  return ok;
-                })
-              }
-            />
-          </View>
-        </>
-      ) : (
-        <>
-          <ScrollView
-            className="shrink"
-            contentContainerClassName="gap-2"
-            keyboardShouldPersistTaps="handled"
-          >
-            <ReportAnswerOptions
-              answers={tag.answers ?? []}
-              disabled={disabled}
-              onPick={(answer) => run(() => props.send(answer, reply))}
-            />
-          </ScrollView>
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row">
-              <Button
-                label="Reply…"
-                size="compact"
-                tone="text"
-                disabled={disabled}
-                onPress={() => setReplying(true)}
-              />
-              {voice.isAvailable ? (
-                <Button
-                  label="Reply by voice"
-                  icon="mic"
-                  size="compact"
-                  tone="text"
-                  disabled={disabled}
-                  onPress={() => {
-                    setReplying(true);
-                    voice.start();
-                  }}
-                />
-              ) : null}
-            </View>
-            <Button
-              label="Dismiss"
+              label="Reply by voice"
+              icon="mic"
               size="compact"
               tone="text"
               disabled={disabled}
-              onPress={() =>
-                run(async () => {
-                  const result = await dismissReport({
-                    environmentId: props.environmentId,
-                    input: {
-                      commandId: CommandId.make(uuidv4()),
-                      threadId: props.threadId,
-                      ...reply.ref,
-                    },
-                  });
-                  return !AsyncResult.isFailure(result);
-                })
-              }
+              onPress={props.onReplyByVoice}
             />
-          </View>
-        </>
-      )}
+          ) : null}
+        </View>
+        <Button
+          label="Dismiss"
+          size="compact"
+          tone="text"
+          disabled={disabled}
+          onPress={() =>
+            run(async () => {
+              const result = await dismissReport({
+                environmentId: props.environmentId,
+                input: {
+                  commandId: CommandId.make(uuidv4()),
+                  threadId: props.threadId,
+                  ...reply.ref,
+                },
+              });
+              return !AsyncResult.isFailure(result);
+            })
+          }
+        />
+      </View>
       {error ? (
         <Text accessibilityRole="alert" className="text-danger">
           {error}

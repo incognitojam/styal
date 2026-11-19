@@ -336,7 +336,8 @@ notification about the chat, and a `styal://projects/<environment>/<project>` li
 A **Needs you** line above its composer counts what the project's threads wait on; tap it for the
 list. Approve or decline an approval in the list. A report opens on its own screen: its whole body,
 with its question, answers, **Reply…**, **Reply by voice** and **Dismiss** below it, and a button
-that opens the thread it came from. Going back, or answering, returns to the list on what is left.
+that opens the thread it came from. **Reply…** brings up the thread's composer, so a reply can carry
+files and images; **Reply by voice** opens it and starts dictation. Going back, or answering, returns to the list on what is left.
 If a newer version of the report arrives while you read, **Show latest** opens it. A question opens
 its thread. Starting a project's first chat still happens on web or desktop.
 

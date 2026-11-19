@@ -208,6 +208,11 @@ export function useThreadDraftForThread(input: {
 
 const NO_SETTINGS = Atom.make(null);
 
+/** The report the next message replies to, per thread: the thread and its report screen share it. */
+const reportReplyAtom = Atom.family((_threadKey: string) =>
+  Atom.make<ReportReply | null>(null).pipe(Atom.keepAlive),
+);
+
 export function useThreadComposerState(input: {
   /** Forks the thread into a side chat that gets `prompt`; resolves false when it did not start. */
   readonly startSideChat: (
@@ -265,13 +270,8 @@ export function useThreadComposerState(input: {
       ? serverEnvironment.settingsValueAtom(selectedThreadShell.environmentId)
       : NO_SETTINGS,
   );
-  const [reportReply, setReportReply] = useState<(ReportReply & { threadKey: string }) | null>(
-    null,
-  );
-  const activeReportReply =
-    reportSettings?.coordinatorReportsEnabled && reportReply?.threadKey === selectedThreadKey
-      ? reportReply
-      : null;
+  const reportReply = useAtomValue(reportReplyAtom(selectedThreadKey ?? ""));
+  const activeReportReply = reportSettings?.coordinatorReportsEnabled ? reportReply : null;
   const reports = reportSettings?.coordinatorReportsEnabled
     ? coordinatorReports(
         (selectedThreadMessages ?? []).map((message) => ({
@@ -878,7 +878,7 @@ export function useThreadComposerState(input: {
       return messageId;
     }
     clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
-    setReportReply(null);
+    appAtomRegistry.set(reportReplyAtom(threadKey), null);
     if (freshContext) setFreshSessionPending(threadKey, false);
     enqueuePromise.then(
       () => {
@@ -961,10 +961,9 @@ export function useThreadComposerState(input: {
     reports,
     reportAnswers: reportAnswerMessages,
     reportReply: activeReportReply,
-    onReportReply: (reply: ReportReply | null) =>
-      setReportReply(
-        reply && selectedThreadKey ? { ...reply, threadKey: selectedThreadKey } : null,
-      ),
+    onReportReply: (reply: ReportReply | null) => {
+      if (selectedThreadKey) appAtomRegistry.set(reportReplyAtom(selectedThreadKey), reply);
+    },
     selectedThreadFeed,
     selectedThreadActivityRun,
     selectedThreadAnnouncedRun,

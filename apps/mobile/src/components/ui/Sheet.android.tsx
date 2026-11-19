@@ -12,7 +12,7 @@ export function Sheet(props: SheetProps) {
   const containerStyle = useResolveClassNames("bg-header");
   const [isOpen, setIsOpen] = useState(true);
   const { height } = useWindowDimensions();
-  const fit = props.fitToContents === true;
+  const fit = props.fitToContents !== undefined;
   return (
     <FormSheet
       isOpen={isOpen}
@@ -34,7 +34,9 @@ export function Sheet(props: SheetProps) {
           <AppBar
             sheet
             title={props.title}
-            onBack={props.dismissDisabled ? undefined : () => setIsOpen(false)}
+            onBack={
+              props.dismissDisabled || props.hideCloseButton ? undefined : () => setIsOpen(false)
+            }
             hideBottomBorder
           />
           <View

@@ -53,6 +53,7 @@ export function ProjectNeedsYou({
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const [listHeight, setListHeight] = useState<number | null>(null);
   // A report opened from the list is on screen: coming back to the chat, however the report
   // screen was left, reopens the list, unless Open thread asked for the report in this chat.
   const reportOpen = useRef(false);
@@ -107,11 +108,17 @@ export function ProjectNeedsYou({
         </Text>
       </Pressable>
       {open ? (
-        <Sheet title="Needs you" fitToContents onClose={() => setOpen(false)}>
+        <Sheet
+          title="Needs you"
+          fitToContents={{ contentHeight: listHeight }}
+          hideCloseButton
+          onClose={() => setOpen(false)}
+        >
           <ScrollView
             contentInsetAdjustmentBehavior="automatic"
             keyboardShouldPersistTaps="handled"
             contentContainerClassName="px-4"
+            onContentSizeChange={(_, height) => setListHeight(height)}
             // Clear of the home indicator, which the sheet runs under.
             contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           >
