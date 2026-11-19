@@ -26,6 +26,7 @@ export interface ProjectPage {
   /** `environmentId:threadId` of the chat, once it exists. */
   readonly chatThreadKey: string | null;
   readonly statusLine: string | null;
+  readonly working: number;
   /** The threads the status line counts as needing you. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
 }
@@ -86,6 +87,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       chatThreadKey:
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
       statusLine: null,
+      working: 0,
       needYou: [],
     });
   }
@@ -103,6 +105,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     pages.set(projectKey, {
       ...page,
       statusLine: formatProjectStatusLine(counts),
+      working: counts.working,
       needYou: counts.needYou,
     });
   }

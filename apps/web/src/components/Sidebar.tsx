@@ -4075,6 +4075,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         if (item.kind === "project-header") {
                           const folder = folderByGroup.get(item.group);
                           if (folder === undefined) continue;
+                          const projectPage = projectPages.get(folder.group.projectKey);
                           items.push(
                             <SidebarProjectFolderHeader
                               key={`project-folder:${folder.group.projectKey}`}
@@ -4082,10 +4083,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               collapsed={folder.collapsed}
                               hiddenThreads={folder.hiddenThreads}
                               chat={folder.chat}
-                              {...(projectPages.has(folder.group.projectKey)
+                              {...(projectPage
                                 ? {
-                                    statusLine:
-                                      projectPages.get(folder.group.projectKey)?.statusLine ?? null,
+                                    statusLine: projectPage.statusLine,
+                                    workingCount: projectPage.working,
+                                    needYouCount: projectPage.needYou.length,
                                     selected:
                                       routeProjectKey === folder.group.projectKey ||
                                       isRouteChat(folder.group.projectKey),

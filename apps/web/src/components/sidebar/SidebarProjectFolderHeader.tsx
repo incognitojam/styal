@@ -2,7 +2,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDownIcon, PinIcon, SquarePenIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CircleDashedIcon,
+  MessageCircleQuestionIcon,
+  PinIcon,
+  SquarePenIcon,
+} from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
@@ -17,6 +23,8 @@ import {
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SIDEBAR_ATTENTION_STATUS } from "./attentionStatus";
+import { SidebarProjectCardPopup } from "./SidebarProjectCard";
 
 const FOLDER_DOT_CLASS_NAME = {
   attention: "bg-warning",
@@ -80,7 +88,10 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   /** Set while the project has a page: the name opens it and the chevron alone toggles. */
   onOpen?: ((group: SidebarProjectSnapshot) => void) | undefined;
   selected?: boolean | undefined;
+  /** Set with the project's page: what it counts as working and needing you. */
   statusLine?: string | null | undefined;
+  workingCount?: number | undefined;
+  needYouCount?: number | undefined;
   /** Set while the route is the chat's thread, which this header stands for. */
   revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
   pinned: boolean;
@@ -120,57 +131,88 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         props.onContextMenu(group, { x: event.clientX, y: event.clientY });
       }}
     >
-      <button
-        {...listeners}
-        type="button"
-        ref={(row) =>
-          row && props.revealRef && props.chat
-            ? props.revealRef(
-                row,
-                scopedThreadKey(scopeThreadRef(props.chat.environmentId, props.chat.id)),
-              )
-            : undefined
-        }
-        data-sidebar-row={rowId}
-        aria-expanded={!collapsed}
-        aria-current={props.selected ? "page" : undefined}
-        onClick={() => (props.onOpen ? props.onOpen(group) : props.onToggle(group))}
-        className={cn(
-          "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          props.selected && "bg-sidebar-row-active",
-          isDragging && "bg-sidebar-row-hover",
-        )}
-      >
-        <ProjectFavicon project={group} className="size-4 shrink-0" />
-        {props.pinned ? (
-          <PinIcon aria-label="Pinned" className="-ml-1 size-3 shrink-0 text-muted-foreground" />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
-          {group.displayName}
-        </span>
-        {props.statusLine ? (
-          <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
-            {props.statusLine}
+      <Tooltip disabled={isDragging}>
+        <TooltipTrigger
+          render={
+            <button
+              {...listeners}
+              type="button"
+              ref={(row) =>
+                row && props.revealRef && props.chat
+                  ? props.revealRef(
+                      row,
+                      scopedThreadKey(scopeThreadRef(props.chat.environmentId, props.chat.id)),
+                    )
+                  : undefined
+              }
+              data-sidebar-row={rowId}
+              aria-expanded={!collapsed}
+              aria-current={props.selected ? "page" : undefined}
+              onClick={() => (props.onOpen ? props.onOpen(group) : props.onToggle(group))}
+              className={cn(
+                "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                props.selected && "bg-sidebar-row-active",
+                isDragging && "bg-sidebar-row-hover",
+              )}
+            />
+          }
+        >
+          <ProjectFavicon project={group} className="size-4 shrink-0" />
+          {props.pinned ? (
+            <PinIcon aria-label="Pinned" className="-ml-1 size-3 shrink-0 text-muted-foreground" />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
+            {group.displayName}
           </span>
-        ) : null}
-        {/* The New thread action takes this place on hover, as it does the count's. */}
-        <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
-          <SidebarFolderDot dot={dot} />
-        </span>
-        {collapsed && hiddenThreads.length > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
-            {hiddenThreads.length}
+          {/* Keeps room for the New thread action, which covers it on hover. */}
+          <span className="flex shrink-0 items-center justify-end gap-2.5 group-hover/project-folder:min-w-6 group-has-[[data-sidebar-action-for]:focus-visible]/project-folder:min-w-6 pointer-coarse:min-w-7">
+            {props.statusLine ? (
+              // Icons and counts, so the name keeps the row; the card spells them out.
+              <span className="flex items-center gap-1.5 text-xs tabular-nums group-hover/project-folder:invisible pointer-coarse:invisible">
+                <span className="sr-only">{props.statusLine}</span>
+                {props.workingCount ? (
+                  <span aria-hidden className="flex items-center gap-0.5 text-info-foreground">
+                    <CircleDashedIcon className="size-3" />
+                    {props.workingCount}
+                  </span>
+                ) : null}
+                {props.needYouCount ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "flex items-center gap-0.5",
+                      SIDEBAR_ATTENTION_STATUS.input.className,
+                    )}
+                  >
+                    <MessageCircleQuestionIcon className="size-3" />
+                    {props.needYouCount}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
+              <SidebarFolderDot dot={dot} />
+            </span>
+            {collapsed && hiddenThreads.length > 0 ? (
+              <span className="text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+                {hiddenThreads.length}
+              </span>
+            ) : null}
           </span>
-        ) : null}
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
-            collapsed && "-rotate-90",
-            props.onOpen && "invisible",
-          )}
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
+              collapsed && "-rotate-90",
+              props.onOpen && "invisible",
+            )}
+          />
+        </TooltipTrigger>
+        <SidebarProjectCardPopup
+          group={group}
+          chat={props.onOpen ? (props.chat ?? null) : undefined}
         />
-      </button>
+      </Tooltip>
       {props.onOpen ? (
         <button
           type="button"
@@ -189,7 +231,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           />
         </button>
       ) : null}
-      {/* Sits over the count, which hides on hover, and left of the chevron. */}
+      {/* Sits over the status slot, which hides on hover, and left of the chevron. */}
       <span className="absolute right-6 bottom-0 flex h-8 items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
         <Tooltip>
           <TooltipTrigger
