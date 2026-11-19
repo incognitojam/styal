@@ -2040,7 +2040,9 @@ export default function ChatView(props: ChatViewProps) {
   };
   const focusComposerStable = useStableCallback(focusComposer);
   const canInterruptRunningThread =
-    canOperateThread && deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
+    canOperateThread &&
+    threadStatus === "live" &&
+    deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
   const onInterrupt = async () => {
     if (
       !activeThread ||
@@ -3391,7 +3393,8 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const shownThreadSyncPhase = activeEnvironmentUnavailable ? null : delayedThreadSyncPhase;
-  const threadNowWork = workflowRunReviewIncludesBackgroundWork ? null : workNow;
+  const threadNowWork =
+    threadStatus !== "live" || workflowRunReviewIncludesBackgroundWork ? null : workNow;
   const hasThreadNow =
     attentionNow !== null ||
     threadNowWork !== null ||
