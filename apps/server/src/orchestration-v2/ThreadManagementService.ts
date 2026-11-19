@@ -103,6 +103,12 @@ export function withCreationProvenance(
     case "thread.merge_back":
     case "delegated_task.request":
       return { ...command, ...provenance };
+    case "runtime-request.respond": {
+      const { senderThreadId: _senderThreadId, ...rest } = command;
+      return { ...rest, createdBy: provenance.createdBy };
+    }
+    case "thread.user-input.dismiss":
+      return { ...command, createdBy: provenance.createdBy };
     default:
       return command;
   }
@@ -123,6 +129,7 @@ function existingThreadIdsForCommand(
     case "thread.report-target.clear":
     case "thread.report-target.set":
     case "thread.report-target.blocked-report":
+    case "thread.answer-notes.update":
       return [];
     case "thread.fork":
       return [command.sourceThreadId];

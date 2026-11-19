@@ -297,6 +297,7 @@ export const declarations = {
           requestId,
         });
         const answers = yield* required(input.answers, "answers");
+        const caller = (yield* McpInvocationContext.McpInvocationContext).thread;
         const result = yield* threads
           .dispatch({
             type: "runtime-request.respond",
@@ -304,6 +305,8 @@ export const declarations = {
             commandId: yield* newCommandId(),
             requestId,
             answers,
+            createdBy: "agent",
+            ...(caller === undefined ? {} : { senderThreadId: caller.threadId }),
           })
           .pipe(Effect.mapError(dispatchFailure));
         return { sequence: result.sequence };

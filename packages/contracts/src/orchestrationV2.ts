@@ -581,6 +581,12 @@ export const OrchestrationV2AppThread = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   reportDismissals: Schema.optional(Schema.Array(CoordinatorReportDismissal)),
+  /** Answers given in the threads reporting here, for this thread's next turn; capped. */
+  answerNotes: Schema.optional(
+    Schema.Array(
+      Schema.Struct({ id: Schema.String, text: Schema.String, occurredAt: IsoDateTime }),
+    ),
+  ),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   /** CI workflow runs the server watches for this thread's agent. */
   workflowRuns: Schema.optional(Schema.Array(ThreadWorkflowRunWatch)),
@@ -3735,6 +3741,9 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     requestId: RuntimeRequestId,
+    /** Who answered: the server stamps it, and only an agent's answer names its thread. */
+    createdBy: Schema.optional(OrchestrationV2Actor),
+    senderThreadId: Schema.optional(ThreadId),
     decision: Schema.optional(ProviderApprovalDecision),
     feedback: Schema.optional(Schema.String),
     answers: Schema.optional(ProviderUserInputAnswers),
@@ -3745,6 +3754,7 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     requestId: RuntimeRequestId,
+    createdBy: Schema.optional(OrchestrationV2Actor),
   }),
   Schema.Struct({
     type: Schema.Literal("checkpoint.rollback"),
@@ -4157,6 +4167,16 @@ const OrchestrationV2InternalCommand = Schema.Union([
     threadId: ThreadId,
     requestId: RuntimeRequestId,
     recipient: Schema.NullOr(ThreadId),
+  }),
+  /** Adds an answer note for the thread's next turn, or drops the notes a turn delivered. */
+  Schema.Struct({
+    type: Schema.Literal("thread.answer-notes.update"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    note: Schema.optional(
+      Schema.Struct({ id: Schema.String, text: Schema.String, occurredAt: IsoDateTime }),
+    ),
+    delivered: Schema.Array(Schema.String),
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

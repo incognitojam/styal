@@ -86,7 +86,7 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
-import { threadReportNote } from "./ThreadReports.ts";
+import { answerNotesText, threadReportNote } from "./ThreadReports.ts";
 import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -1095,7 +1095,17 @@ export const layer: Layer.Layer<
           .flatMap((turn) => turn.inlineContextIds ?? []),
         runId: run.id,
       });
-      const nextTurnContext = [
+      // Several answers given while the chat was away reach it as one list.
+      const answerNotes = (projection.thread.answerNotes ?? []).filter(
+        (note) => !deliveredContextIds.has(note.id),
+      );
+      const nextTurnContext: ReadonlyArray<{
+        readonly id: string;
+        readonly text: string;
+        readonly occurredAt: string;
+        /** The notes one entry carries, when it is several. */
+        readonly ids?: ReadonlyArray<string>;
+      }> = [
         ...(projection.thread.pullRequests ?? [])
           .filter((link) => link.source !== "stack-dismissed")
           .flatMap((link) => (link.turnContext === undefined ? [] : [link.turnContext])),
@@ -1106,6 +1116,16 @@ export const layer: Layer.Layer<
         ...(coordinatorNote === null
           ? []
           : [{ ...coordinatorNote, occurredAt: DateTime.formatIso(yield* DateTime.now) }]),
+        ...(answerNotes.length === 0
+          ? []
+          : [
+              {
+                id: answerNotes[0]!.id,
+                ids: answerNotes.map((note) => note.id),
+                occurredAt: answerNotes[0]!.occurredAt,
+                text: answerNotesText(answerNotes.map((note) => note.text)),
+              },
+            ]),
       ]
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
@@ -1982,7 +2002,9 @@ export const layer: Layer.Layer<
               turnInput.message.createdBy === "agent" &&
               turnInput.message.creationSource === "provider"
             );
-          inlineContextIds = sendsPrompt ? nextTurnContext.map((note) => note.id) : [];
+          inlineContextIds = sendsPrompt
+            ? nextTurnContext.flatMap((note) => note.ids ?? [note.id])
+            : [];
           const context = [
             delivery.context,
             sideChatContext,

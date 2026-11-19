@@ -12,6 +12,7 @@ import {
   RunId,
   RuntimeRequestId,
   ThreadId,
+  TurnItemId,
 } from "@t3tools/contracts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -36,7 +37,7 @@ import {
   reportRecipient,
 } from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { checkThreadReport } from "./ThreadReports.ts";
+import { answerNotesText, checkThreadReport } from "./ThreadReports.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
@@ -92,7 +93,14 @@ const makeHelpers = (input: {
     const send = (
       threadId: ThreadId,
       text: string,
-      options?: { readonly sender?: "user" | "agent" },
+      options?: {
+        readonly sender?: "user" | "agent";
+        readonly reportAnswer?: {
+          readonly messageId: MessageId;
+          readonly key: string;
+          readonly version: number;
+        };
+      },
     ) =>
       Effect.gen(function* () {
         const before = started.length;
@@ -118,6 +126,7 @@ const makeHelpers = (input: {
           dispatchMode: { type: "start_immediately" },
           createdBy: sender,
           creationSource: sender === "agent" ? "mcp" : "web",
+          ...(options?.reportAnswer === undefined ? {} : { reportAnswer: options.reportAnswer }),
         });
         yield* worker.drain();
         yield* Fiber.join(recorded);
@@ -223,6 +232,82 @@ const makeHelpers = (input: {
         yield* worker.drain();
       });
 
+    /** A pending question or approval with the timeline item a person reads it from. */
+    const ask = (
+      turn: ProviderAdapter.ProviderAdapterV2TurnInput,
+      id: string,
+      kind: "question" | "approval",
+      messageMode = false,
+    ) =>
+      Effect.gen(function* () {
+        const now = yield* DateTime.now;
+        const requestId = RuntimeRequestId.make(id);
+        const nodeId = turn.rootNodeId ?? NodeId.make("node:unused");
+        const providerTurnId = ProviderTurnId.make(`provider-turn:${turn.attemptId}`);
+        const seen = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "runtime-request.updated" && event.payload.id === requestId,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* Queue.offer(events, {
+          type: "turn_item.updated",
+          driver,
+          turnItem: {
+            id: TurnItemId.make(`turn-item:${id}`),
+            threadId: turn.threadId,
+            runId: turn.runId,
+            nodeId,
+            providerThreadId: turn.providerThread.id,
+            providerTurnId,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 50,
+            status: "waiting",
+            title: kind === "question" ? "Question" : "Run vp i",
+            startedAt: now,
+            completedAt: null,
+            updatedAt: now,
+            ...(kind === "question"
+              ? {
+                  type: "user_input_request" as const,
+                  requestId,
+                  questions: [
+                    { id: "db", header: "Database", question: "Which database?", options: [] },
+                  ],
+                }
+              : {
+                  type: "approval_request" as const,
+                  requestId,
+                  requestKind: "command" as const,
+                  prompt: "Run vp i",
+                }),
+          },
+        });
+        yield* Queue.offer(events, {
+          type: "runtime_request.updated",
+          driver,
+          threadId: turn.threadId,
+          runtimeRequest: {
+            id: requestId,
+            nodeId,
+            providerTurnId,
+            nativeRequestRef: null,
+            kind: kind === "question" ? "user_input" : "command",
+            status: "pending",
+            responseCapability: messageMode
+              ? { type: "message" }
+              : { type: "live", providerSessionId: turn.providerThread.providerSessionId! },
+            createdAt: now,
+            resolvedAt: null,
+          },
+        });
+        yield* Fiber.join(seen);
+        yield* worker.drain();
+      });
+
     const reports = () =>
       orchestrator.getThreadProjection(launcherId).pipe(
         Effect.map((projection) =>
@@ -250,6 +335,7 @@ const makeHelpers = (input: {
       send,
       endTurn,
       askQuestion,
+      ask,
       reports,
     };
   });
@@ -955,6 +1041,141 @@ it.effect("recording a sent report keeps a blocked report recorded after its rea
           "request:early",
           "request:late",
         ]);
+      }),
+    { coordinator: true },
+  ),
+);
+
+it.effect("answers given outside the chat reach it on its next turn as one list, once", () =>
+  harness(
+    "coordinator-answer-notes",
+    ({ orchestrator, send, endTurn, ask, worker, started }) =>
+      Effect.gen(function* () {
+        const chatTurn = yield* send(launcherId, "Coordinate the batch");
+        yield* endTurn(chatTurn, "completed");
+        const turn = yield* send(launchedId, "Fix the login page");
+        yield* ask(turn, "request:db", "question");
+        yield* ask(turn, "request:install", "approval");
+        yield* ask(turn, "request:own", "question");
+        yield* ask(turn, "request:server", "question");
+        yield* ask(turn, "request:skip", "question", true);
+        const respond = (
+          requestId: string,
+          answer: { readonly decision?: "accept" } | { readonly answers?: Record<string, string> },
+          by?: { readonly createdBy: "user" | "agent"; readonly senderThreadId?: ThreadId },
+        ) =>
+          orchestrator.dispatch({
+            type: "runtime-request.respond",
+            commandId: CommandId.make(`respond:${requestId}`),
+            threadId: launchedId,
+            requestId: RuntimeRequestId.make(requestId),
+            ...answer,
+            ...by,
+          });
+        const chatTurns = () => started.filter((input) => input.threadId === launcherId).length;
+        const before = chatTurns();
+        yield* respond("request:db", { answers: { db: "Postgres" } }, { createdBy: "user" });
+        yield* respond("request:install", { decision: "accept" }, { createdBy: "user" });
+        // The chat's own answer, and one the server gives, name no one the chat has not heard.
+        yield* respond(
+          "request:own",
+          { answers: { db: "SQLite" } },
+          { createdBy: "agent", senderThreadId: launcherId },
+        );
+        yield* respond("request:server", { answers: { db: "MySQL" } });
+        yield* orchestrator.dispatch({
+          type: "thread.user-input.dismiss",
+          commandId: CommandId.make("dismiss:skip"),
+          threadId: launchedId,
+          requestId: RuntimeRequestId.make("request:skip"),
+          createdBy: "user",
+        });
+        yield* worker.drain();
+        assert.equal(chatTurns(), before, "an answer does not wake the chat");
+
+        const next = yield* send(launcherId, "What is left?");
+        const text = next.message.text;
+        const head = answerNotesText([]);
+        assert.equal(text.split(head).length, 2, "one list");
+        assert.include(
+          text,
+          `- "Fix the login page" (${launchedId}): the user answered the question "Which database?" with "Postgres".`,
+        );
+        assert.include(
+          text,
+          `- "Fix the login page" (${launchedId}): the user approved "Run vp i".`,
+        );
+        assert.include(
+          text,
+          `- "Fix the login page" (${launchedId}): the user dismissed the question "Which database?".`,
+        );
+        assert.notInclude(text, "SQLite");
+        assert.notInclude(text, "MySQL");
+        yield* endTurn(next, "completed");
+        const notes = () =>
+          orchestrator
+            .getThreadProjection(launcherId)
+            .pipe(Effect.map((projection) => projection.thread.answerNotes ?? []));
+        assert.deepEqual(yield* notes(), [], "dropped once delivered");
+        const again = yield* send(launcherId, "Anything else?");
+        assert.notInclude(again.message.text, head, "delivered once");
+        yield* endTurn(again, "completed");
+
+        // A report answered, as clients send it, and another dismissed.
+        const post = (key: string) =>
+          orchestrator.dispatch({
+            type: "report.post",
+            commandId: CommandId.make(`report:${key}`),
+            threadId: launchedId,
+            messageId: MessageId.make(`report:${key}`),
+            key,
+            title: key === "merge" ? "Merge the fix?" : "Old plan",
+            body: "Ready.",
+          });
+        yield* post("merge");
+        yield* post("plan");
+        yield* endTurn(turn, "completed");
+        yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
+          sender: "user",
+          reportAnswer: { messageId: MessageId.make("report:merge"), key: "merge", version: 1 },
+        });
+        yield* orchestrator.dispatch({
+          type: "report.dismiss",
+          commandId: CommandId.make("dismiss:plan"),
+          threadId: launchedId,
+          messageId: MessageId.make("report:plan"),
+          key: "plan",
+          version: 1,
+        });
+        yield* worker.drain();
+        assert.deepEqual(
+          (yield* notes()).map((note) => note.text),
+          [
+            `- "Fix the login page" (${launchedId}): the user answered the report "Merge the fix?" with "Merge it".`,
+            `- "Fix the login page" (${launchedId}): the user dismissed the report "Old plan".`,
+          ],
+        );
+
+        // Kept for the next turn, at most the latest ten.
+        for (let index = 0; index < 12; index++) {
+          yield* orchestrator.dispatch({
+            type: "thread.answer-notes.update",
+            commandId: CommandId.make(`note:${index}`),
+            threadId: launcherId,
+            note: {
+              id: `note:${index}`,
+              text: `- note ${index}`,
+              occurredAt: "2026-11-19T00:00:00.000Z",
+            },
+            delivered: [],
+          });
+        }
+        const capped =
+          (yield* orchestrator.getThreadProjection(launcherId)).thread.answerNotes ?? [];
+        assert.deepEqual(
+          capped.map((note) => note.id),
+          Array.from({ length: 10 }, (_, index) => `note:${index + 2}`),
+        );
       }),
     { coordinator: true },
   ),
