@@ -3,6 +3,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { resolvePastedPath } from "@t3tools/shared/path";
 import {
   type EnvironmentId,
+  type ProjectId,
   type ProjectIgnoredFile,
   type ScopedProjectRef,
   resolveEnvironmentMachineKind,
@@ -12,7 +13,7 @@ import {
   cloneUrlForProtocol,
   cloneUrlProtocol,
 } from "@t3tools/shared/cloneUrl";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { create } from "zustand";
 
@@ -27,7 +28,9 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import {
   COPYABLE_FILE_MAX_BYTES,
+  type PreparingAdd,
   addProjectToMachine,
+  discardStartedClone,
   isDefaultCopiedFile,
   readPreparingAdd,
   setPreparingAdd,
@@ -60,6 +63,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
+import { toastManager } from "./ui/toast";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
 
 interface AddProjectToMachineRequest {
@@ -94,6 +98,17 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   if (readProject(request.projectRef) === null) return;
   // One add at a time per draft: a second pick would race the first to start a clone.
   if (request.quick && request.draftId && readPreparingAdd(request.draftId) !== null) return;
+  // A new request would replace one still preparing elsewhere; say so rather than drop it.
+  const current = useRequest.getState().request;
+  const preparing = current?.draftId ? readPreparingAdd(current.draftId) : null;
+  if (preparing && !preparing.sending && current?.draftId !== request.draftId) {
+    toastManager.add({
+      type: "warning",
+      title: "Another add is still preparing",
+      description: `${preparing.title}. Cancel it, or wait until its clone starts.`,
+    });
+    return;
+  }
   endPreparing();
   endRequestWithProject?.();
   // The request ends when its project goes away, so a project that comes back
@@ -289,13 +304,31 @@ function AddProjectToMachineDialog({
   const startClone = useStableCallback(async () => {
     if (!project || !target || starting.current) return;
     starting.current = true;
-    // Once the clone is being sent it can no longer be called off from the row, and the row stays
-    // until the request settles, even if another add replaces this dialog meanwhile.
+    // While the clone request is out the row stays, even if another add replaces this dialog.
+    // Cancel then lets go of it: a clone that starts anyway is stopped and its project removed.
     const draftId = request.draftId;
-    const sendingRow = draftId !== undefined && readPreparingAdd(draftId) !== null;
-    if (sendingRow) setPreparingAdd(draftId, { title: addingTitle(target.label), sending: true });
+    let abandoned = false;
+    const sendingRow: PreparingAdd | null =
+      draftId !== undefined && readPreparingAdd(draftId) !== null
+        ? {
+            title: addingTitle(target.label),
+            sending: true,
+            onCancel: () => {
+              abandoned = true;
+              setPreparingAdd(draftId, null);
+              close(session);
+            },
+          }
+        : null;
+    if (draftId && sendingRow) setPreparingAdd(draftId, sendingRow);
+    const endSendingRow = () => {
+      if (draftId && sendingRow && readPreparingAdd(draftId) === sendingRow) {
+        setPreparingAdd(draftId, null);
+      }
+    };
+    let projectId: ProjectId;
     try {
-      const projectId = await addProjectToMachine({
+      projectId = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
         subdirectory: projectSubdirectory(
           project.repositoryIdentity?.rootPath,
@@ -308,15 +341,22 @@ function AddProjectToMachineDialog({
         destinationPath: destinationPath.trim(),
         files: files.filter((file) => selectedFiles.has(file.path)).map((file) => file.path),
       });
-      close(session);
-      openClonedProject(scopeProjectRef(target.environmentId, projectId));
     } catch (cause) {
       starting.current = false;
+      endSendingRow();
+      if (abandoned) return;
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
-    } finally {
-      if (sendingRow) setPreparingAdd(draftId, null);
+      return;
     }
+    endSendingRow();
+    const clonedRef = scopeProjectRef(target.environmentId, projectId);
+    if (abandoned) {
+      void discardStartedClone(clonedRef);
+      return;
+    }
+    close(session);
+    openClonedProject(clonedRef);
   });
 
   const submit = async () => {
@@ -458,9 +498,12 @@ function AddProjectToMachineDialog({
                 autoComplete="off"
               />
               {pathOverride === null && defaultFolderExists ? (
-                <p className="text-muted-foreground text-xs">
-                  This folder already exists on {target?.label ?? "the other machine"}. Choose a new
-                  folder, or empty this one first.
+                <p className="flex items-start gap-1.5 text-warning-foreground text-xs">
+                  <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0" />
+                  <span>
+                    This folder already exists on {target?.label ?? "the other machine"}. The clone
+                    fails unless it is empty: choose a new folder, or empty this one first.
+                  </span>
                 </p>
               ) : null}
             </div>

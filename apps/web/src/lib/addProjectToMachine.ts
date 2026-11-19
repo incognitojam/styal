@@ -116,7 +116,7 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
 
 export interface PreparingAdd {
   readonly title: string;
-  /** Calls the add off; absent once the clone is being sent. */
+  /** Calls the add off; while the clone request is out, lets go of it. */
   readonly onCancel?: () => void;
   /** The clone request is out: the row and its holds stay until it settles, dialog or not. */
   readonly sending?: boolean;
@@ -126,6 +126,19 @@ export interface PreparingAdd {
 const usePreparingAdds = create<{ adds: Readonly<Record<string, PreparingAdd>> }>(() => ({
   adds: {},
 }));
+
+/** For an add cancelled while its request was out: stop the clone that started and remove its project. */
+export async function discardStartedClone(ref: ScopedProjectRef): Promise<void> {
+  const target = { environmentId: ref.environmentId, input: { projectId: ref.projectId } };
+  await runAtomCommand(appAtomRegistry, sourceControlEnvironment.cancelProjectClone, target, {
+    label: "Cancel clone",
+    reportFailure: false,
+  });
+  await runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
+    label: "Remove cancelled clone",
+    reportFailure: false,
+  });
+}
 
 export function readPreparingAdd(draftId: string): PreparingAdd | null {
   return usePreparingAdds.getState().adds[draftId] ?? null;
