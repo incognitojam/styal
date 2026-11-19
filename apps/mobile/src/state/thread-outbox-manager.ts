@@ -104,6 +104,9 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
   };
 
   const enqueue = (message: QueuedThreadMessage): Promise<void> => {
+    // A report version takes one answer: a double tap or a second pick while the first waits
+    // to send is dropped, not sent after it.
+    if (isRepeatReportAnswer(currentMessages(), message)) return Promise.resolve();
     bumpRevision(message.messageId);
     setMessages([
       ...currentMessages().filter((candidate) => candidate.messageId !== message.messageId),
@@ -350,4 +353,23 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     remove,
     clearEnvironment,
   };
+}
+
+function isRepeatReportAnswer(
+  queued: ReadonlyArray<QueuedThreadMessage>,
+  message: QueuedThreadMessage,
+): boolean {
+  const answer = message.reportAnswer;
+  return (
+    answer !== undefined &&
+    queued.some(
+      (candidate) =>
+        candidate.messageId !== message.messageId &&
+        candidate.environmentId === message.environmentId &&
+        candidate.threadId === message.threadId &&
+        candidate.reportAnswer?.messageId === answer.messageId &&
+        candidate.reportAnswer.key === answer.key &&
+        candidate.reportAnswer.version === answer.version,
+    )
+  );
 }

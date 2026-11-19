@@ -49,6 +49,27 @@ describe("coordinator reports", () => {
     ).toEqual([3, 3, 3]);
   });
 
+  it("shows an answer that has not reached the server as sending, until the real one arrives", () => {
+    const open = report("a", "pr:1", 1);
+    const pending = {
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, "Merge"),
+      reportAnswer: { messageId: "a", key: "pr:1", version: 1 },
+    };
+    const [sending] = coordinatorReports([open], [], [pending]);
+    expect(sending?.state).toBe("sending");
+    expect(sending?.pending).toBe(pending);
+    // An answer to another version leaves this one open.
+    expect(
+      coordinatorReports(
+        [open],
+        [],
+        [{ ...pending, reportAnswer: { ...pending.reportAnswer, version: 2 } }],
+      )[0]?.state,
+    ).toBe("open");
+    const answered = { id: "reply", role: "user", ...pending };
+    expect(coordinatorReports([open, answered], [], [pending])[0]?.state).toBe("answered");
+  });
+
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {
     const report = { title: "#1522 cleanup, ready", version: 2 };
     expect(splitReportAnswer(formatReportAnswer(report, "Wait\nfor 88"), report)).toBe(

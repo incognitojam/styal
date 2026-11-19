@@ -589,6 +589,47 @@ describe("thread outbox", () => {
     registry.dispose();
   });
 
+  it("keeps one answer per report version, however quickly a second one follows", async () => {
+    const registry = AtomRegistry.make();
+    const manager = createThreadOutboxManager({
+      registry,
+      storage: {
+        load: async () => ({ messages: [], errors: [] }),
+        write: async () => undefined,
+        remove: async () => undefined,
+      },
+    });
+    const reportAnswer = {
+      messageId: MessageId.make("report-1"),
+      key: "conflict-rule",
+      version: 1,
+    };
+    const answer = (messageId: string, text: string) => ({
+      ...queuedMessage({ messageId, createdAt: "2026-06-08T10:00:01.000Z" }),
+      text,
+      reportAnswer,
+    });
+    const first = answer("answer-1", "Keep both copies");
+
+    // A double tap, then a different answer, both before the first is sent.
+    await Promise.all([
+      manager.enqueue(first),
+      manager.enqueue(answer("answer-2", "Keep both copies")),
+      manager.enqueue(answer("answer-3", "Last write wins")),
+    ]);
+    // An answer to a newer version of the report is a new answer.
+    const nextVersion = {
+      ...answer("answer-4", "Ask each time"),
+      reportAnswer: { ...reportAnswer, version: 2 },
+    };
+    await manager.enqueue(nextVersion);
+
+    expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toEqual({
+      "environment-1:thread-1": [first, nextVersion],
+    });
+    registry.dispose();
+  });
+
   it("rolls an enqueued message back out when the durable write fails", async () => {
     const registry = AtomRegistry.make();
     const writeCause = new Error("disk full");

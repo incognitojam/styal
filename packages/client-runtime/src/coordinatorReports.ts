@@ -17,10 +17,13 @@ type Message = {
   readonly reportAnswer?: Reference | undefined;
 };
 
-export function coordinatorReports<M extends Message>(
-  messages: readonly M[],
-  dismissals: readonly Reference[],
-) {
+/** An answer this client sent that the server's messages don't include yet. */
+export type PendingReportAnswer = { readonly text: string; readonly reportAnswer: Reference };
+
+export function coordinatorReports<
+  M extends Message,
+  P extends PendingReportAnswer = PendingReportAnswer,
+>(messages: readonly M[], dismissals: readonly Reference[], pending: readonly P[] = []) {
   const latest = new Map<string, M>();
   const referenceKey = (ref: Reference) => JSON.stringify([ref.messageId, ref.key, ref.version]);
   const answers = new Map<string, M>();
@@ -42,17 +45,22 @@ export function coordinatorReports<M extends Message>(
     const current = latest.get(tag.key)!;
     const key = referenceKey({ messageId: message.id, key: tag.key, version: tag.version });
     const answer = answers.get(key);
+    const pendingAnswer = answer
+      ? undefined
+      : pending.find((entry) => referenceKey(entry.reportAnswer) === key);
     const state =
       current !== message
         ? "replaced"
         : answer
           ? "answered"
-          : dismissed.has(key)
-            ? "dismissed"
-            : tag.question
-              ? "open"
-              : "posted";
-    return [{ message, latest: current, state, answer }];
+          : pendingAnswer
+            ? "sending"
+            : dismissed.has(key)
+              ? "dismissed"
+              : tag.question
+                ? "open"
+                : "posted";
+    return [{ message, latest: current, state, answer, pending: pendingAnswer }];
   });
 }
 
