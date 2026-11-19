@@ -60,6 +60,8 @@ async function decodedImage(dataUrl: string): Promise<HTMLImageElement | null> {
 }
 
 async function drawProjectIcon(source: ProjectIconSource): Promise<string> {
+  // Never in the caller's task: callers are the thread observer and notification delivery.
+  await new Promise((resolve) => setTimeout(resolve));
   const canvas = document.createElement("canvas");
   canvas.width = ICON_SIZE;
   canvas.height = ICON_SIZE;
@@ -111,10 +113,13 @@ export function warmNotificationProjectIcon(project: EnvironmentProject): void {
   }
 }
 
-/** The project's icon as a PNG data URL, or null until it has been drawn. */
+/** The project's icon as a PNG data URL, or null until it has been drawn for its current source. */
 export function notificationProjectIcon(project: EnvironmentProject): string | null {
   try {
-    return cache.get(...sourceFor(project));
+    const source = sourceFor(project);
+    const icon = cache.get(...source);
+    if (icon === null) void cache.warm(...source);
+    return icon;
   } catch {
     return null;
   }

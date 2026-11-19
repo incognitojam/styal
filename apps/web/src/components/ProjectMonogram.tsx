@@ -21,10 +21,11 @@ export function ProjectMonogram({
       <svg
         viewBox={`0 0 ${TILE.size} ${TILE.size}`}
         className={cn(
-          "size-full overflow-hidden rounded-[25%] font-mono select-none",
+          "size-full overflow-hidden font-mono select-none",
           projectIconColorClassName(color),
         )}
         style={{
+          borderRadius: `${(TILE.cornerRadius / TILE.size) * 100}%`,
           backgroundColor: `color-mix(in srgb, currentColor ${TILE.backgroundOpacity * 100}%, transparent)`,
         }}
       >

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { deriveProjectIdentity } from "./projectIdentity";
 import {
   createProjectIconCache,
   projectIconSource,
@@ -54,10 +55,16 @@ describe("projectIconSource", () => {
     expect(projectIconSource(project, favicon)).toEqual(expected);
   });
 
-  it("takes the initials and colour from the same rule as the sidebar tile", () => {
-    const tile = (title: string) => projectIconSource({ title }, null);
-    expect(tile("Acme Web")).toEqual(tile("Acme Web"));
-    expect(tile("日本語 ツール")).toMatchObject({ kind: "monogram", text: "日ツ" });
+  it("takes the initials and colour the sidebar tile uses", () => {
+    for (const title of ["Acme Web", "日本語 ツール", "🌿 garden"]) {
+      const { monogram, color } = deriveProjectIdentity(title);
+      expect(projectIconSource({ title }, null)).toEqual({
+        kind: "monogram",
+        text: monogram,
+        color,
+      });
+    }
+    expect(projectIconSource({ title: "日本語 ツール" }, null)).toMatchObject({ text: "日ツ" });
   });
 });
 
@@ -80,7 +87,18 @@ describe("createProjectIconCache", () => {
     expect(cache.get("env:p1", tile("AB"), false)).toBe("png:AB:false");
     await cache.warm("env:p1", tile("AB"), true);
     expect(cache.get("env:p1", tile("AB"), true)).toBe("png:AB:true");
+    expect(cache.get("env:p1", tile("AB"), false)).toBeNull();
     expect(draw).toHaveBeenCalledTimes(3);
+  });
+
+  it("forgets the project that notified longest ago", async () => {
+    const cache = createProjectIconCache(async () => "png");
+    for (let index = 0; index <= 64; index += 1) {
+      await cache.warm(`env:p${index}`, tile("AW"), false);
+      if (index === 63) await cache.warm("env:p0", tile("AW"), false);
+    }
+    expect(cache.get("env:p0", tile("AW"), false)).toBe("png");
+    expect(cache.get("env:p1", tile("AW"), false)).toBeNull();
   });
 
   it("keeps the newest source when an older drawing finishes later", async () => {
@@ -96,7 +114,6 @@ describe("createProjectIconCache", () => {
     finishFirst("png:old");
     await first;
     expect(cache.get("env:p1", tile("AB"), false)).toBe("png:new");
-    expect(cache.get("env:p1", tile("AW"), false)).toBeNull();
   });
 
   it("stays without an icon, and does not retry, when drawing fails", async () => {

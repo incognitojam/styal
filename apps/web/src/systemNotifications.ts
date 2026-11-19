@@ -1,3 +1,4 @@
+import { isDesktopSystemNotificationIcon } from "@t3tools/contracts";
 import { useSyncExternalStore } from "react";
 
 import { toastManager } from "./components/ui/toast";
@@ -87,13 +88,16 @@ export function showSystemNotification({
     });
     if (onClick) clickHandlers.set(tag, onClick);
     else clickHandlers.delete(tag);
-    void bridge.showSystemNotification({ title, body, tag, ...(icon ? { icon } : {}) }).then(
-      (result) => {
-        setBlocked(result === "blocked");
-        if (result === "blocked") warnBlockedOnce();
-      },
-      () => undefined,
-    );
+    const desktopIcon = icon !== undefined && isDesktopSystemNotificationIcon(icon) ? icon : null;
+    void bridge
+      .showSystemNotification({ title, body, tag, ...(desktopIcon ? { icon: desktopIcon } : {}) })
+      .then(
+        (result) => {
+          setBlocked(result === "blocked");
+          if (result === "blocked") warnBlockedOnce();
+        },
+        () => undefined,
+      );
     return {
       close: () => {
         if (clickHandlers.get(tag) === onClick) clickHandlers.delete(tag);

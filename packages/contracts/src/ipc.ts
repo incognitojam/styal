@@ -1176,16 +1176,18 @@ export type DesktopUpdateInstallInput = typeof DesktopUpdateInstallInputSchema.T
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access", "notifications"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+const DesktopSystemNotificationIcon = Schema.String.check(
+  Schema.isMaxLength(256 * 1024),
+  Schema.isPattern(/^data:image\/png;base64,/),
+);
+/** Whether the desktop app accepts this notification icon; an icon it would refuse is left out. */
+export const isDesktopSystemNotificationIcon = Schema.is(DesktopSystemNotificationIcon);
+
 export const DesktopSystemNotificationSchema = Schema.Struct({
   title: Schema.String.check(Schema.isMaxLength(1_000)),
   body: Schema.String.check(Schema.isMaxLength(4_000)),
   tag: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
-  icon: Schema.optional(
-    Schema.String.check(
-      Schema.isMaxLength(256 * 1024),
-      Schema.isPattern(/^data:image\/png;base64,/),
-    ),
-  ),
+  icon: Schema.optional(DesktopSystemNotificationIcon),
 });
 export type DesktopSystemNotification = typeof DesktopSystemNotificationSchema.Type;
 

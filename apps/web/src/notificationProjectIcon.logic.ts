@@ -36,9 +36,12 @@ export function projectIconSource(
     : tile;
 }
 
+const MAX_CACHED_PROJECTS = 64;
+
 /**
- * One drawn icon per project, redrawn only when its source or the appearance changes. `get` never
- * waits: a notification without a drawn icon is shown without one.
+ * One drawn icon per project, redrawn only when its source or the appearance changes, for the
+ * projects that notified most recently. `get` only looks up: a notification whose icon is not
+ * drawn yet is shown without one.
  */
 export function createProjectIconCache(
   draw: (source: ProjectIconSource, dark: boolean) => Promise<string>,
@@ -50,7 +53,11 @@ export function createProjectIconCache(
   const warm = (projectKey: string, source: ProjectIconSource, dark: boolean): Promise<void> => {
     const key = JSON.stringify([source, dark]);
     const current = entries.get(projectKey);
-    if (current?.key === key) return current.drawn;
+    if (current?.key === key) {
+      entries.delete(projectKey);
+      entries.set(projectKey, current);
+      return current.drawn;
+    }
     const entry: { readonly key: string; icon: string | null; drawn: Promise<void> } = {
       key,
       icon: null,
@@ -62,14 +69,16 @@ export function createProjectIconCache(
       },
       () => {},
     );
+    entries.delete(projectKey);
     entries.set(projectKey, entry);
+    if (entries.size > MAX_CACHED_PROJECTS) entries.delete(entries.keys().next().value!);
     return entry.drawn;
   };
   return {
     warm,
     get: (projectKey: string, source: ProjectIconSource, dark: boolean): string | null => {
-      void warm(projectKey, source, dark);
-      return entries.get(projectKey)?.icon ?? null;
+      const entry = entries.get(projectKey);
+      return entry?.key === JSON.stringify([source, dark]) ? entry.icon : null;
     },
   };
 }

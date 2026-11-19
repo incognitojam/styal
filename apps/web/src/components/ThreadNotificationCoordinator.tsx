@@ -157,8 +157,9 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
-  // The sidebar's label for the project's group, as the project page names it.
-  const projectName = (environmentId: EnvironmentId, projectId: ProjectId) =>
+  // The project's sidebar group: its label names the project chat, its representative's icon is
+  // the one the sidebar shows.
+  const projectGroup = (environmentId: EnvironmentId, projectId: ProjectId) =>
     buildProjectGroups({
       projects: registry.get(environmentProjects.projectsAtom),
       settings: selectProjectGroupingSettings(getClientSettings()),
@@ -167,7 +168,10 @@ export function startThreadNotifications(
       group.memberProjectRefs.some(
         (ref) => ref.environmentId === environmentId && ref.projectId === projectId,
       ),
-    )?.label ?? null;
+    );
+  const iconProject = (environmentId: EnvironmentId, projectId: ProjectId) =>
+    projectGroup(environmentId, projectId)?.representative ??
+    registry.get(environmentProjects.projectAtom(scopeProjectRef(environmentId, projectId)));
 
   const present = (
     environmentId: EnvironmentId,
@@ -197,7 +201,7 @@ export function startThreadNotifications(
     const name = threadNotificationName(
       registry.get(environmentServerConfigsAtom).get(environmentId)?.settings,
       thread,
-      () => projectName(environmentId, thread.projectId),
+      () => projectGroup(environmentId, thread.projectId)?.label ?? null,
     );
     const title =
       kind === "completion"
@@ -271,9 +275,7 @@ export function startThreadNotifications(
     )
       return;
     const tag = threadNotificationTag(environmentId, thread.id);
-    const project = registry.get(
-      environmentProjects.projectAtom(scopeProjectRef(environmentId, thread.projectId)),
-    );
+    const project = iconProject(environmentId, thread.projectId);
     const icon = project === null ? null : notificationProjectIcon(project);
     const notification = showSystemNotification({
       title,
@@ -381,9 +383,7 @@ export function startThreadNotifications(
         prior?.status !== "preparing" &&
         prior?.status !== "working"
       ) {
-        const project = registry.get(
-          environmentProjects.projectAtom(scopeProjectRef(environmentId, rawThread.projectId)),
-        );
+        const project = iconProject(environmentId, rawThread.projectId);
         if (project !== null) warmNotificationProjectIcon(project);
       }
       const state = {
