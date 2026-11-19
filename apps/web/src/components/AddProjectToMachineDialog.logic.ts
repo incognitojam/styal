@@ -6,6 +6,8 @@ export type QuickAddDecision = "wait" | "start" | "ask";
  * could not be checked asks too.
  */
 export function quickAddDecision(input: {
+  /** The clicked machine is still one the project can be added to. */
+  readonly targetAvailable: boolean;
   /** Ignored files ticked by default, or why the count is not known. */
   readonly defaultCopies: number | "unsupported" | "loading" | "failed";
   readonly destination: "missing" | "exists" | "loading" | "failed";
@@ -13,6 +15,7 @@ export function quickAddDecision(input: {
   readonly waitedTooLong: boolean;
 }): QuickAddDecision {
   const { defaultCopies, destination } = input;
+  if (!input.targetAvailable) return "ask";
   if (defaultCopies === "failed" || destination === "failed") return "ask";
   if (typeof defaultCopies === "number" && defaultCopies > 0) return "ask";
   if (destination === "exists") return "ask";
@@ -20,4 +23,15 @@ export function quickAddDecision(input: {
     return input.waitedTooLong ? "ask" : "wait";
   }
   return "start";
+}
+
+/**
+ * A check counts only when answered after the click, so a cached answer from an earlier dialog
+ * cannot skip a question about files or a folder that has changed since.
+ */
+export function answeredSince(
+  query: { readonly data: unknown; readonly dataUpdatedAt: number; readonly isPending: boolean },
+  openedAt: number,
+): boolean {
+  return query.data !== null && !query.isPending && query.dataUpdatedAt >= openedAt;
 }

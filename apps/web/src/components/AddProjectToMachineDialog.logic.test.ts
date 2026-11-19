@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { quickAddDecision } from "./AddProjectToMachineDialog.logic";
+import { answeredSince, quickAddDecision } from "./AddProjectToMachineDialog.logic";
+
+const ready = { targetAvailable: true, waitedTooLong: false } as const;
 
 describe("quickAddDecision", () => {
   it.each([
@@ -15,15 +17,42 @@ describe("quickAddDecision", () => {
     ["loading", "missing", "wait"],
     [0, "loading", "wait"],
   ] as const)("copies %s, folder %s: %s", (defaultCopies, destination, expected) => {
-    expect(quickAddDecision({ defaultCopies, destination, waitedTooLong: false })).toBe(expected);
+    expect(quickAddDecision({ ...ready, defaultCopies, destination })).toBe(expected);
   });
 
   it("asks once the checks take too long, and never starts on a guess", () => {
     expect(
-      quickAddDecision({ defaultCopies: "loading", destination: "missing", waitedTooLong: true }),
+      quickAddDecision({
+        ...ready,
+        defaultCopies: "loading",
+        destination: "missing",
+        waitedTooLong: true,
+      }),
     ).toBe("ask");
     expect(
-      quickAddDecision({ defaultCopies: 0, destination: "missing", waitedTooLong: true }),
+      quickAddDecision({ ...ready, defaultCopies: 0, destination: "missing", waitedTooLong: true }),
     ).toBe("start");
+  });
+
+  it("asks rather than clone to another machine when the clicked one drops", () => {
+    expect(
+      quickAddDecision({
+        ...ready,
+        targetAvailable: false,
+        defaultCopies: 0,
+        destination: "missing",
+      }),
+    ).toBe("ask");
+  });
+});
+
+describe("answeredSince", () => {
+  it.each([
+    [{ data: { files: [] }, dataUpdatedAt: 900, isPending: false }, false],
+    [{ data: { files: [] }, dataUpdatedAt: 1_100, isPending: true }, false],
+    [{ data: null, dataUpdatedAt: 0, isPending: true }, false],
+    [{ data: { files: [] }, dataUpdatedAt: 1_100, isPending: false }, true],
+  ])("%o after a click at 1000: %s", (query, expected) => {
+    expect(answeredSince(query, 1_000)).toBe(expected);
   });
 });

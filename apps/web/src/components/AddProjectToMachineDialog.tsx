@@ -38,7 +38,7 @@ import { readEnvironment, useEnvironments } from "../state/environments";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
-import { quickAddDecision } from "./AddProjectToMachineDialog.logic";
+import { answeredSince, quickAddDecision } from "./AddProjectToMachineDialog.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -68,9 +68,15 @@ interface AddProjectToMachineRequest {
   readonly quick?: boolean;
 }
 
-const useRequest = create<{ request: AddProjectToMachineRequest | null; session: number }>(() => ({
+const useRequest = create<{
+  request: AddProjectToMachineRequest | null;
+  session: number;
+  /** When the request was made; one click only trusts checks answered after it. */
+  openedAt: number;
+}>(() => ({
   request: null,
   session: 0,
+  openedAt: 0,
 }));
 
 let endRequestWithProject: (() => void) | null = null;
@@ -87,12 +93,12 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   endRequestWithProject = subscribeProject(request.projectRef, (project) => {
     if (project === null) close();
   });
-  if (request.quick && request.targetEnvironmentId) {
-    setPreparingAdd(request.projectRef, {
+  if (request.quick && request.targetEnvironmentId && request.draftId) {
+    setPreparingAdd(request.draftId, {
       title: addingTitle(readEnvironment(request.targetEnvironmentId)?.label),
     });
   }
-  useRequest.setState((state) => ({ request, session: state.session + 1 }));
+  useRequest.setState((state) => ({ request, session: state.session + 1, openedAt: Date.now() }));
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
@@ -106,10 +112,19 @@ function close() {
 export function AddProjectToMachineDialogHost() {
   const request = useRequest((state) => state.request);
   const session = useRequest((state) => state.session);
-  return request ? <AddProjectToMachineDialog key={session} request={request} /> : null;
+  const openedAt = useRequest((state) => state.openedAt);
+  return request ? (
+    <AddProjectToMachineDialog key={session} request={request} openedAt={openedAt} />
+  ) : null;
 }
 
-function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRequest }) {
+function AddProjectToMachineDialog({
+  request,
+  openedAt,
+}: {
+  request: AddProjectToMachineRequest;
+  openedAt: number;
+}) {
   const id = useId();
   const project = useProject(request.projectRef);
   const handleNewThread = useNewThreadHandler();
@@ -120,7 +135,9 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     useLogicalProjectEnvironments(project, false),
   ).filter((t) => request.onlyTargets?.includes(t.environmentId) ?? true);
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
-  const target = targets.find((t) => t.environmentId === targetId) ?? targets[0] ?? null;
+  const chosenTarget = targets.find((t) => t.environmentId === targetId) ?? null;
+  // One click goes only to the machine that was clicked; if it drops, the dialog asks instead.
+  const target = request.quick ? chosenTarget : (chosenTarget ?? targets[0] ?? null);
   const source = environments.find((env) => env.environmentId === request.projectRef.environmentId);
   const sourceUrl = projectCloneSourceUrl(project);
   const [protocol, setProtocol] = useState<CloneProtocol | null>(() => cloneUrlProtocol(sourceUrl));
@@ -170,25 +187,38 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     const timer = setTimeout(() => setWaitedTooLong(true), QUICK_ADD_WAIT_MS);
     return () => clearTimeout(timer);
   }, [request.quick]);
-  const decision = request.quick
+  const refreshIgnoredFiles = ignoredFiles.refresh;
+  const refreshDefaultFolder = defaultFolder.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one click decides on the files and folder as they are now; a cached answer could skip a question
+  useEffect(() => {
+    if (!request.quick) return;
+    refreshIgnoredFiles();
+    refreshDefaultFolder();
+  }, [request.quick, refreshIgnoredFiles, refreshDefaultFolder]);
+  const quickDecision = request.quick
     ? quickAddDecision({
+        targetAvailable: target !== null,
         waitedTooLong,
         defaultCopies: !canListFiles
           ? "unsupported"
           : ignoredFiles.error
             ? "failed"
-            : ignoredFiles.data
+            : answeredSince(ignoredFiles, openedAt)
               ? defaultSelection(files).size
               : "loading",
         destination: defaultFolder.error
           ? "failed"
-          : defaultFolder.data
+          : answeredSince(defaultFolder, openedAt)
             ? defaultFolderExists
               ? "exists"
               : "missing"
             : "loading",
       })
     : "ask";
+  // Once the dialog has shown, only its Clone button starts the clone.
+  const [asked, setAsked] = useState(false);
+  if ((quickDecision === "ask" || error !== null) && !asked) setAsked(true);
+  const decision = asked ? "ask" : quickDecision;
 
   // The project or every target can vanish while the dialog is open. Submitting
   // before the file list loads would silently skip the default .env copies.
@@ -227,8 +257,11 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     void handleNewThread(targetRef);
   };
 
+  // Shared by the Clone button and one click, so one request can never start two clones.
+  const starting = useRef(false);
   const startClone = useStableCallback(async () => {
-    if (!project || !target) return;
+    if (!project || !target || starting.current) return;
+    starting.current = true;
     try {
       const projectId = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
@@ -246,6 +279,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
       close();
       openClonedProject(scopeProjectRef(target.environmentId, projectId));
     } catch (cause) {
+      starting.current = false;
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
     }
@@ -263,20 +297,19 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   };
 
   const startNow = decision === "start" && project !== null && target !== null;
-  const quickStarted = useRef(false);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the clone once the checks it waits on have loaded
   useEffect(() => {
-    if (!startNow || quickStarted.current) return;
-    quickStarted.current = true;
-    void startClone();
+    if (startNow) void startClone();
   }, [startNow, startClone]);
   const showDialog = !request.quick || decision === "ask" || error !== null;
   const preparingTitle = showDialog ? null : addingTitle(target?.label);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shows the quick add in the source composer's banner, which this hidden dialog does not render
   useEffect(() => {
-    setPreparingAdd(request.projectRef, preparingTitle === null ? null : { title: preparingTitle });
-    return () => setPreparingAdd(request.projectRef, null);
-  }, [preparingTitle, request.projectRef]);
+    const draftId = request.draftId;
+    if (!draftId) return;
+    setPreparingAdd(draftId, preparingTitle === null ? null : { title: preparingTitle });
+    return () => setPreparingAdd(draftId, null);
+  }, [preparingTitle, request.draftId]);
   if (!showDialog) return null;
 
   return (

@@ -26,7 +26,10 @@ import { Button } from "../ui/button";
  * A project still being cloned or copied into place: the composer banner with its cancel,
  * retry, and remove actions, and the reason sending waits until it is done.
  */
-export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null) {
+export function useProjectCloneBanner(
+  activeProjectRef: ScopedProjectRef | null,
+  draftId: string | null,
+) {
   const activeProjectClone = useProjectClone(activeProjectRef);
   const cancelProjectClone = useAtomCommand(sourceControlEnvironment.cancelProjectClone, {
     reportFailure: false,
@@ -53,7 +56,7 @@ export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null)
   };
   const runProjectCloneActionStable = useStableCallback(runProjectCloneAction);
   const activeProjectFileCopy = useProjectFileCopy(activeProjectRef);
-  const preparingAdd = usePreparingAdd(activeProjectRef);
+  const preparingAdd = usePreparingAdd(draftId);
   const projectCloneSendBlockReason =
     preparingAdd !== null
       ? "Adding to another machine"

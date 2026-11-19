@@ -114,22 +114,21 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
   setFileCopy(scopedProjectKey(ref), null);
 }
 
-/** One-click adds still checking whether to ask, keyed by the source's scoped project key. */
+/** One-click adds still checking whether to ask, keyed by the draft that moves with the clone. */
 const usePreparingAdds = create<{
   adds: Readonly<Record<string, { readonly title: string }>>;
 }>(() => ({ adds: {} }));
 
-/** The source composer shows the clone's row from the click, before the clone exists. */
-export function setPreparingAdd(ref: ScopedProjectRef, add: { readonly title: string } | null) {
-  const key = scopedProjectKey(ref);
+/** The draft's composer shows the clone's row from the click, before the clone exists. */
+export function setPreparingAdd(draftId: string, add: { readonly title: string } | null) {
   usePreparingAdds.setState(({ adds }) => {
-    const { [key]: _previous, ...rest } = adds;
-    return { adds: add === null ? rest : { ...rest, [key]: add } };
+    const { [draftId]: _previous, ...rest } = adds;
+    return { adds: add === null ? rest : { ...rest, [draftId]: add } };
   });
 }
 
-export function usePreparingAdd(ref: ScopedProjectRef | null): { readonly title: string } | null {
-  return usePreparingAdds((state) => (ref ? (state.adds[scopedProjectKey(ref)] ?? null) : null));
+export function usePreparingAdd(draftId: string | null): { readonly title: string } | null {
+  return usePreparingAdds((state) => (draftId ? (state.adds[draftId] ?? null) : null));
 }
 
 /**
