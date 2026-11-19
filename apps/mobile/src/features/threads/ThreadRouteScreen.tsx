@@ -42,6 +42,7 @@ import {
   ThreadId,
   type ProjectScript,
   type ServerProvider,
+  threadDisplayName,
 } from "@t3tools/contracts";
 import {
   projectScriptCwd,
@@ -63,12 +64,12 @@ import { vcsEnvironment } from "../../state/vcs";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   reportRecipientId,
   shownReportRecipientId,
 } from "@t3tools/client-runtime/state/project-coordinators";
-import { useThreadShell } from "../../state/entities";
+import { useProject, useThreadShell } from "../../state/entities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { connectionTone } from "../connection/connectionTone";
 import {
@@ -133,6 +134,8 @@ import {
   useWorkspaceBackNavigation,
 } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
+import { useOpenProjectSettings } from "../settings/settings-environment-filter";
+import { useProjectChatHeader } from "../projects/projectChats";
 import {
   InspectorContentScope,
   ThreadInspectorHeader,
@@ -571,11 +574,22 @@ function ThreadRouteContent(
       ? null
       : scopeThreadRef(selectedThread.environmentId, recipientId),
   );
+  const reportsToProject = useProject(
+    reportsToThread === null
+      ? null
+      : scopeProjectRef(reportsToThread.environmentId, reportsToThread.projectId),
+  );
   const reportsToId =
     selectedThread === null
       ? null
       : shownReportRecipientId(selectedThread, recipientId, reportsToThread?.projectId ?? null);
-  const headerSubtitle = [
+  const projectChat = useProjectChatHeader(
+    selectedThread === null
+      ? null
+      : scopeThreadRef(selectedThread.environmentId, selectedThread.id),
+  );
+  const openProjectSettings = useOpenProjectSettings();
+  const threadSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
     threadUsageText,
@@ -585,10 +599,29 @@ function ThreadRouteContent(
       : selectedThread?.linkOrigin
         ? `From ${selectedThread.linkOrigin.label}`
         : null,
-    reportsToId === null ? null : `Reports to ${reportsToThread?.title ?? "its launcher"}`,
+    reportsToId === null
+      ? null
+      : `Reports to ${
+          reportsToThread === null
+            ? "its launcher"
+            : threadDisplayName(
+                routeEnvironmentRuntime?.serverConfig?.settings,
+                reportsToThread,
+                () => reportsToProject?.title ?? null,
+              )
+        }`,
   ]
     .filter(Boolean)
     .join(" · ");
+  const headerSubtitle =
+    projectChat === null
+      ? threadSubtitle
+      : [
+          projectChat.working > 0 ? `${projectChat.working} working` : null,
+          selectedEnvironmentConnection?.environmentLabel ?? null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
       ? vcsEnvironment.status({
@@ -1041,8 +1074,29 @@ function ThreadRouteContent(
           header={
             props.inspectorPresentation ? null : (
               <ThreadHeader
-                title={selectedThread.title}
+                title={projectChat?.title ?? selectedThread.title}
                 subtitle={headerSubtitle}
+                project={
+                  projectChat === null
+                    ? undefined
+                    : {
+                        onNewThread: () =>
+                          selectDetail({
+                            name: "Thread",
+                            params: {
+                              draft: {
+                                requestId: uuidv4(),
+                                environmentId: String(selectedThread.environmentId),
+                                projectId: String(projectChat.projectId),
+                              },
+                            },
+                          }),
+                        onOpenSettings: () => {
+                          openProjectSettings(projectChat.scopeKey);
+                          openSettings(navigation, "SettingsProjectOverview");
+                        },
+                      }
+                }
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
                 inspectorMode={inspectorMode}

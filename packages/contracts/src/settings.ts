@@ -1837,7 +1837,7 @@ export const projectCoordinatorThreadId = (
     ? settings.projectCoordinators[projectId]!.threadId
     : null;
 
-export const threadNotificationName = (
+export const threadDisplayName = (
   settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators"> | undefined,
   thread: { readonly id: ThreadId; readonly projectId: ProjectId; readonly title: string },
   projectName: () => string | null,

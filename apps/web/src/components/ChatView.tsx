@@ -57,6 +57,7 @@ import { useProviderSignInBanner } from "./chat/useProviderSignInBanner";
 import { resolveDraftHeroState } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
+import { useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
@@ -1088,7 +1089,10 @@ export default function ChatView(props: ChatViewProps) {
     title: string;
   } | null>(null);
   const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
-  const reportAnswerMessages = reportAnswers(serverProjection?.messages ?? []);
+  const reportAnswerMessages = reportAnswers([
+    ...(serverProjection?.messages ?? []),
+    ...optimisticUserMessages,
+  ]);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
         (serverProjection?.messages ?? []).map((message) => ({
@@ -1330,6 +1334,16 @@ export default function ChatView(props: ChatViewProps) {
           projectChatMachines?.environmentIds.includes(environment.environmentId),
         );
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
+  const addProjectTargets = useAddProjectTargets(activeProject, projectEnvironments);
+  // Adding the project to a machine where project coordinators are off could not start the chat.
+  const projectChatAddTargets =
+    projectChatMachines === null
+      ? []
+      : addProjectTargets.filter(
+          (target) =>
+            environmentById.get(target.environmentId)?.serverConfig?.settings
+              .projectCoordinatorsEnabled === true,
+        );
   const canAutoBalanceEnvironments =
     hasMultipleEnvironments && !activeProjectIsScratch && projectChat === undefined;
   const activeEnvironmentOption =
@@ -1730,6 +1744,7 @@ export default function ChatView(props: ChatViewProps) {
         kind: "message",
         createdAt: message.createdAt,
         message,
+        pending: true,
       }) as const,
   );
   const timelineEntries = isServerThread ? serverTimelineEntries : draftTimelineEntries;
@@ -1953,9 +1968,11 @@ export default function ChatView(props: ChatViewProps) {
         );
   // The project chat stays in the project's checkout, so it offers no branch or worktree; before
   // its first message it offers only the machine.
+  const canAddProjectChatMachine =
+    projectChatAddTargets.length > 0 && !envLocked && draftId !== null && !draftThread?.promotedTo;
   const showComposerContextStrip =
     !embedded &&
-    (projectChat !== undefined ? canChangeEnvironment : true) &&
+    (projectChat !== undefined ? canChangeEnvironment || canAddProjectChatMachine : true) &&
     (projectChat !== undefined ||
       shouldShowComposerContextStrip({
         isDraftHeroState,
@@ -4181,6 +4198,13 @@ export default function ChatView(props: ChatViewProps) {
                                       : undefined
                                   }
                                   availableEnvironments={logicalProjectEnvironments}
+                                  {...(projectChat !== undefined
+                                    ? {
+                                        addTargets: canAddProjectChatMachine
+                                          ? projectChatAddTargets
+                                          : [],
+                                      }
+                                    : {})}
                                   {...(isServerThread || projectChat !== undefined
                                     ? {}
                                     : {

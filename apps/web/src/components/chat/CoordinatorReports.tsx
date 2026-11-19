@@ -32,12 +32,11 @@ export type ReportState = ReturnType<
     >
   >
 >[number];
+/** The report a user message answers, and the text typed after the report's prefix. */
+export type ReportAnswer = { messageId: MessageId; title: string; version: number; text: string };
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
-  answers: ReadonlyMap<
-    MessageId,
-    { messageId: MessageId; title: string; version: number; text: string }
-  >;
+  answers: ReadonlyMap<MessageId, ReportAnswer>;
   send: (text: string, ref: ReportReference) => Promise<void>;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;

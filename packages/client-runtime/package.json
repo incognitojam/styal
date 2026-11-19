@@ -387,6 +387,10 @@
       "types": "./src/state/threadProjectGroups.ts",
       "default": "./src/state/threadProjectGroups.ts"
     },
+    "./state/thread-list-status": {
+      "types": "./src/state/threadListStatus.ts",
+      "default": "./src/state/threadListStatus.ts"
+    },
     "./state/thread-sort": {
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
@@ -634,6 +638,10 @@
     "./coordinator-reports": {
       "types": "./src/coordinatorReports.ts",
       "default": "./src/coordinatorReports.ts"
+    },
+    "./project-page": {
+      "types": "./src/projectPage.ts",
+      "default": "./src/projectPage.ts"
     },
     "./project-since-last-visit": {
       "types": "./src/projectSinceLastVisit.ts",

@@ -35,7 +35,9 @@ describe("native background commands", () => {
   it("keeps a command visible after its turn ends and stops it through the provider", async () => {
     const { page } = app;
     await sendMessage(app, "Start the server", "Server started in the background.");
-    const running = page.getByText(/^Running .*fixture-server/);
+    // The background-work line. Until a reload has synchronized with the server, the timeline can
+    // still show the turn as live, so its tool row can read "Running fixture-server" too.
+    const running = page.locator("[data-thread-now-line]").getByText(/^Running .*fixture-server/);
     await running.waitFor();
     const originalTurn = environment.codexTurns()[0]!;
 

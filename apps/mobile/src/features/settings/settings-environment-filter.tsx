@@ -61,6 +61,8 @@ interface SettingsEnvironmentSelection {
   readonly selectProject: (projectKey: string | null) => void;
   /** The selection as of now, for async work that outlives the render it started in. */
   readonly getSelectedProjectKey: () => string | null;
+  /** Selects the project once Settings opens, for a page opened on one project from outside. */
+  readonly requestProject: (projectKey: string) => void;
 }
 
 const SettingsEnvironmentSelectionContext = createContext<SettingsEnvironmentSelection | null>(
@@ -79,6 +81,7 @@ export function SettingsEnvironmentFilterProvider(props: {
 }) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<EnvironmentId> | null>(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const [requestedProjectKey, setRequestedProjectKey] = useState<string | null>(null);
   // Written only by selectProject, so it can keep a key that the close reset below cleared.
   // Its one reader, a project removal that finishes after Settings closed, then clears an
   // already empty selection, which is harmless.
@@ -87,23 +90,40 @@ export function SettingsEnvironmentFilterProvider(props: {
     setSelectedIds(null);
     setSelectedProjectKey(null);
   }
+  if (props.open && requestedProjectKey !== null) {
+    setSelectedIds(null);
+    setSelectedProjectKey(requestedProjectKey);
+    setRequestedProjectKey(null);
+  }
   const selectProject = (projectKey: string | null) => {
     currentProjectKey.current = projectKey;
     setSelectedProjectKey(projectKey);
   };
   const getSelectedProjectKey = () => currentProjectKey.current;
+  const requestProject = (projectKey: string) => {
+    currentProjectKey.current = projectKey;
+    setRequestedProjectKey(projectKey);
+  };
   const value = {
     selectedIds,
     selectedProjectKey,
     setSelectedIds,
     selectProject,
     getSelectedProjectKey,
+    requestProject,
   };
   return (
     <SettingsEnvironmentSelectionContext value={value}>
       {props.children}
     </SettingsEnvironmentSelectionContext>
   );
+}
+
+/** Opens Settings → Projects on one project, from outside Settings. */
+export function useOpenProjectSettings() {
+  const selection = useContext(SettingsEnvironmentSelectionContext);
+  if (selection === null) throw new Error("Settings environment filter provider is missing.");
+  return selection.requestProject;
 }
 
 export function useSettingsEnvironmentFilter() {

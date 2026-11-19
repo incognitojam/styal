@@ -1,7 +1,7 @@
+import { projectPageRouteDisabled } from "@t3tools/client-runtime/project-page";
 import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { projectPageRouteDisabled } from "../components/project/projectPage.logic";
 import { environmentCatalog } from "../connection/catalog";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";

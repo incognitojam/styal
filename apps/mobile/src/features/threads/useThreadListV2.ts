@@ -249,6 +249,7 @@ export function useThreadListV2(input: {
         draftThreadKeys: input.draftThreadKeys,
         timestampMode: input.timestampMode,
         ...(projectGrouping === null ? {} : { projectHeaders: projectGrouping.headerByGroup }),
+        searching: input.searchQuery.trim() !== "",
       }),
     [
       layout,
@@ -263,6 +264,7 @@ export function useThreadListV2(input: {
       input.shelfPreferencesLoaded,
       input.draftThreadKeys,
       input.timestampMode,
+      input.searchQuery,
       projectGrouping,
     ],
   );
