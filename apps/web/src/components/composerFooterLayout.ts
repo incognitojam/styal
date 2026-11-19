@@ -129,9 +129,15 @@ export function resolveScrollToEndClearance(input: {
   mainSurfaceTop: number;
   button: { left: number; right: number };
   attachments: ReadonlyArray<{ top: number; left: number; right: number }>;
+  /** Full-width cards stacked above the composer, such as Needs you: the button never sits beside them. */
+  cards: ReadonlyArray<{ top: number }>;
 }): number {
   let contentTop = input.mainSurfaceTop;
   let top = contentTop;
+  for (const card of input.cards) {
+    contentTop = Math.min(contentTop, card.top);
+    top = Math.min(top, card.top);
+  }
   for (const attachment of input.attachments) {
     contentTop = Math.min(contentTop, attachment.top);
     if (attachment.left < input.button.right && attachment.right > input.button.left) {

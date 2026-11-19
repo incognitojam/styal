@@ -3984,7 +3984,7 @@ features:
       - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
       - A usage limit or failed run counts only until the thread is opened after that run ended; the row keeps its status but recedes like a read thread, and a later failure counts again.
       - With nothing waiting, it opens nothing and shows a "No unread threads" toast.
-      - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. It is hidden on a new draft's empty state and during thread find.
+      - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. While a card sits in the composer stack, the button is in the top card's header instead. It is hidden on a new draft's empty state and during thread find.
       - On narrow web layouts the thread sidebar stays mounted while its sheet is closed, so the button, the palette entry and the thread shortcuts keep working without opening the sidebar.
     rationale: Working through many threads means finding the next one that needs a decision. The flat inbox puts them in the list, but reaching each one takes the mouse or counting rows for a jump shortcut.
     implementation_paths:
@@ -4563,12 +4563,13 @@ features:
       - A coordinator's thread address opens its project page (so does making the open thread the coordinator); `?view=thread` and the page's Open as thread show it as a thread, with its title, menu and details panel.
       - The project page's Needs you lists the approvals, questions and report questions of the threads its status line counts as needing you, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads.
       - A thread the project's chat launched to report back (not one that only reports to it because it was created in the project) stays off the sidebar (folders and the flat list) while the chat takes reports, until it needs an approval, an answer or a guest request, fails or hits a limit, is pinned, is the open thread, or the user writes to it; search and the palette keep it, the status line counts it, and it finishes without a Done notification. The chat lists, after the reply that started them, the threads, delegated tasks and launched threads that turn started (on any machine) that still work or wait on the user, from their shells, whatever the tool-call visibility and across a restart continuation.
-      - When something happened since the user last checked, the project page shows "Since you last checked" at the end of the chat, listing failed and usage-limited threads, the chat's reports (latest version per topic; open questions and threads waiting on the user left to Needs you and the started-threads list), finished threads not opened since, and merged pull requests, folded into groups past six lines. Checking is Mark as seen on the card, which stores the newest listed time as `seenAt` on the project's coordinator setting (the settings merge applies a mark only to the current coordinator and never moves it back), or a message the user writes in the chat (`latestUserAuthoredMessageAt`); opening the page moves neither, every client of the server shares both and drops the card when they move, and the card reaches back at most 14 days. It decides whether to show once the chat's history has loaded and no machine of the project is syncing, goes away when the mark moves even if newer changes arrived, and does not appear mid-view unless a checkout of the project joins after an empty decision; the action is hidden without settings permission. It is derived on the client from shells, settings and loaded chat history, with no model call; the card says when the client left out settled threads of the project.
+      - When something happened since the user last checked, the project page shows "Since you last checked" above the chat's composer, as a card in the same stack as Needs you and with the same header (Needs you below it starts folded to its header unless it holds one item, opening either card folds the other, and replying to a report folds both; the stack has a solid backing and each card's list scrolls past min(15rem, 25% of the window)), listing failed and usage-limited threads, the chat's reports (latest version per topic; open questions and threads waiting on the user left to Needs you and the started-threads list), finished threads not opened since, and merged pull requests, folded into groups past six lines. Checking is Mark as seen on the card, which stores the newest listed time as `seenAt` on the project's coordinator setting (the settings merge applies a mark only to the current coordinator and never moves it back), or a message the user writes in the chat (`latestUserAuthoredMessageAt`); opening the page moves neither, every client of the server shares both and drops the card when they move, and the card reaches back at most 14 days. It decides whether to show once the chat's history has loaded and no machine of the project is syncing, goes away when the mark moves even if newer changes arrived, and does not appear mid-view unless a checkout of the project joins after an empty decision; the action is hidden without settings permission. It is derived on the client from shells, settings and loaded chat history, with no model call; the card says when the client left out settled threads of the project.
     rationale: Upstream's Home (one fleet-wide full-access thread) is open and stale; this scopes the same idea, a setting that holds a thread id, to one project so Home can replace it later.
     implementation_paths:
       - apps/mobile/src/features/threads/projectCoordinator.ts
       - apps/server/src/orchestration-v2/ProjectCoordinator.ts
       - apps/server/src/orchestration-v2/ThreadReports.ts
+      - apps/web/src/components/chat/ComposerStackCard.tsx
       - apps/web/src/components/chat/StartedThreadsRow.tsx
       - apps/web/src/components/project/ProjectChatHeader.tsx
       - apps/web/src/components/project/ProjectNeedsYou.tsx
@@ -4586,7 +4587,6 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/ChatHeader.tsx
-      - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/settings/LabsSettingsPanel.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/hooks/useThreadActionMenu.ts
@@ -4596,7 +4596,6 @@ features:
       - apps/server/src/orchestration-v2/ProjectCoordinator.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - apps/web/src/components/project/projectPage.logic.test.ts
       - packages/client-runtime/src/projectSinceLastVisit.test.ts
       - packages/client-runtime/src/state/projectCoordinators.test.ts

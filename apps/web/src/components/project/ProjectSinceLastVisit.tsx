@@ -33,7 +33,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import { CircleAlertIcon, CircleCheckIcon, FileTextIcon, HourglassIcon } from "lucide-react";
 import { Atom } from "effect/reactivity";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, type ReactNode, useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
@@ -53,6 +53,12 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp, formatRelativeTimeLabel } from "../../timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
+import {
+  ComposerStackCard,
+  type ComposerStackFold,
+  type ComposerStackOpen,
+} from "../chat/ComposerStackCard";
+import { NextUnreadChip } from "../chat/NextUnreadChip";
 import { InlineButton } from "../ui/button";
 
 type ReportReference = {
@@ -133,8 +139,6 @@ export interface ProjectSinceLastVisitSource {
   }>;
   /** When the page opened, read once: for the 14-day limit and time labels. */
   readonly openedAt: number;
-  /** The chat's last change when the page opened: the card sits after it in the timeline. */
-  readonly anchorAt: string;
 }
 
 interface ProjectThreadLines {
@@ -189,16 +193,28 @@ const GROUP_LABEL: Record<SinceLastVisitGroup, string> = {
 /**
  * What happened in the project since the user last marked it seen or wrote in its chat, on any
  * device. It shows when the page opens with something to list, stays while the page is open, and
- * goes away when the mark moves, here or elsewhere; it does not appear mid-view.
+ * goes away when the mark moves, here or elsewhere; it does not appear mid-view. Needs you sits
+ * below it, and at most one of the two is open: this one, until Needs you is opened.
  */
 export function ProjectSinceLastVisit({
   chatRef,
   source,
   onOpenReport,
+  open,
+  onOpenChange,
+  unreadChip,
+  renderNeedsYou,
 }: {
   chatRef: ScopedThreadRef;
   source: ProjectSinceLastVisitSource;
   onOpenReport: (messageId: MessageId) => void;
+  /** Which card of the stack is open: "initial" until the first fold or unfold, when a single Needs you item stays open too. */
+  open: ComposerStackOpen;
+  onOpenChange: (open: ComposerStackOpen) => void;
+  /** False while thread find is open. */
+  unreadChip: boolean;
+  /** `fold` is set while this card shows. */
+  renderNeedsYou: (fold: ComposerStackFold | null) => ReactNode;
 }) {
   const settings = useEnvironmentSettings(chatRef.environmentId);
   const { timestampFormat } = settings;
@@ -273,7 +289,8 @@ export function ProjectSinceLastVisit({
   if (phase.kind === "showing" && (window.since > phase.since || layout.total === 0)) {
     setPhase({ kind: "seen" });
   }
-  if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0) return null;
+  if (phase.kind !== "showing" || window.since > phase.since || layout.total === 0)
+    return renderNeedsYou(null);
 
   const sinceIso = new Date(window.since).toISOString();
   const sinceLabel = window.capped
@@ -338,50 +355,42 @@ export function ProjectSinceLastVisit({
   const expand = (group: SinceLastVisitGroup) => setExpanded(new Set(expanded).add(group));
 
   return (
-    <div className="pb-4">
-      <div
-        data-testid="project-since-last-visit"
-        className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
+    <>
+      <ComposerStackCard
+        testId="project-since-last-visit"
+        label="Since you last checked"
+        detail={`${sinceLabel} · ${layout.total} ${layout.total === 1 ? "change" : "changes"}`}
+        aside={unreadChip ? <NextUnreadChip inline /> : null}
+        action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
+        folded={open !== "summary" && open !== "initial"}
+        onFoldedChange={(folded) => onOpenChange(folded ? null : "summary")}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-muted-foreground text-xs">
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-foreground">Since you last checked</span> ·{" "}
-            {sinceLabel}
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            {layout.total}
-            {canMarkSeen ? (
-              <>
-                {" ·"}
-                <InlineButton tone="muted" onClick={markSeen}>
-                  Mark as seen
-                </InlineButton>
-              </>
-            ) : null}
-          </span>
-        </div>
-        <div className="flex flex-col divide-y divide-border/60">
-          {layout.sections.map((section) => (
-            <SinceLastVisitSectionRows
-              key={section.group}
-              section={section}
-              grouped={layout.grouped}
-              time={time}
-              timestampFormat={timestampFormat}
-              onOpen={openLine}
-              onExpand={() => expand(section.group)}
-              footer={section.group === "reports" ? loadEarlierControl : null}
-            />
-          ))}
-          {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
-            <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
-          ) : null}
-          {unloadedNote ? (
-            <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
-          ) : null}
-        </div>
-      </div>
-    </div>
+        {layout.sections.map((section) => (
+          <SinceLastVisitSectionRows
+            key={section.group}
+            section={section}
+            grouped={layout.grouped}
+            time={time}
+            timestampFormat={timestampFormat}
+            onOpen={openLine}
+            onExpand={() => expand(section.group)}
+            footer={section.group === "reports" ? loadEarlierControl : null}
+          />
+        ))}
+        {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
+          <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
+        ) : null}
+        {unloadedNote ? (
+          <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
+        ) : null}
+      </ComposerStackCard>
+      {renderNeedsYou({
+        folded: open !== "needs",
+        initial: open === "initial",
+        onFoldedChange: (folded) =>
+          onOpenChange(folded ? (open === "initial" ? "summary" : null) : "needs"),
+      })}
+    </>
   );
 }
 
@@ -404,7 +413,7 @@ function SinceLastVisitSectionRows({
 }) {
   const more =
     section.hidden > 0 || footer ? (
-      <div className="ps-8 pe-3 pb-1.5 text-muted-foreground text-xs">
+      <div className="ps-8 pe-3 pb-2 text-muted-foreground text-xs">
         {section.hidden > 0 ? (
           <>
             {section.hidden} more ·{" "}
@@ -425,7 +434,7 @@ function SinceLastVisitSectionRows({
         </div>
       ) : null}
       {section.display === "names" ? (
-        <div className="flex min-w-0 items-start gap-2 px-3 py-1 text-sm">
+        <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm">
           <LineIcon line={section.lines[0]!} />
           <span className="min-w-0 flex-1">
             {section.lines.map((line, index) => (
@@ -447,7 +456,7 @@ function SinceLastVisitSectionRows({
           <button
             key={line.id}
             type="button"
-            className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-1 text-left text-sm hover:bg-accent/40"
+            className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
             onClick={(event) => onOpen(event, line)}
           >
             <LineIcon line={line} />

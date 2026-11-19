@@ -5,7 +5,6 @@ import {
   type MessagesTimelineRowsInput,
   sameRowsInput,
   deriveMessagesTimelineRowsWithState,
-  insertTimelineRow,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
@@ -122,22 +121,4 @@ export function useStableRows(
   );
   setState({ identity, source: rows, stable });
   return stable.result;
-}
-
-type InsertedRow = Extract<MessagesTimelineRow, { kind: "inserted" }>;
-
-/** The rows with `row` placed in them, keeping their identity until either changes. */
-export function useInsertedTimelineRow(
-  rows: MessagesTimelineRow[],
-  row: InsertedRow | undefined,
-): MessagesTimelineRow[] {
-  const [state, setState] = useState<{
-    readonly rows: MessagesTimelineRow[];
-    readonly row: InsertedRow | undefined;
-    readonly result: MessagesTimelineRow[];
-  }>({ rows, row: undefined, result: rows });
-  if (state.rows === rows && state.row === row) return state.result;
-  const result = row === undefined ? rows : insertTimelineRow(rows, row);
-  setState({ rows, row, result });
-  return result;
 }

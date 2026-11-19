@@ -39,3 +39,6 @@ export function publishNextUnreadSummary(summary: NextUnreadSummary | null) {
   if (current?.count === summary?.count && current?.attention === summary?.attention) return;
   useNextUnreadSummary.setState({ summary });
 }
+
+/** How many card headers in the composer stack show the chip, which then stands in for the floating one. */
+export const useNextUnreadInlineSlots = create<{ count: number }>(() => ({ count: 0 }));

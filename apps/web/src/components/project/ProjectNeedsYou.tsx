@@ -40,7 +40,7 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
 import { ReportAnswerOptions } from "../chat/CoordinatorReports";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
   listProjectNeeds,
@@ -145,47 +145,52 @@ export function ProjectNeedRow({
   const ref = scopeThreadRef(need.thread.environmentId, need.thread.id);
   return (
     <div className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-        onClick={onToggle}
-      >
-        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "block text-sm text-foreground",
-              open ? "whitespace-pre-wrap break-words" : "truncate",
-            )}
-          >
-            {summary(need)}
+      <div className="flex min-w-0 items-start">
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 py-2 ps-3 pe-2 text-left hover:bg-accent/40"
+          onClick={onToggle}
+        >
+          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span
+              className={cn(
+                "block text-sm text-foreground",
+                open ? "whitespace-pre-wrap break-words" : "truncate",
+              )}
+            >
+              {summary(need)}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
+            </span>
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
+          <ChevronRightIcon
+            aria-hidden
+            className={cn("mt-2.5 size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+          />
+        </button>
+        {open ? (
+          <span className="mt-2.5 me-3 shrink-0 text-xs">
+            <InlineButton
+              touchTarget="padded"
+              tone="muted"
+              onClick={() =>
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(ref),
+                })
+              }
+            >
+              Open thread
+            </InlineButton>
           </span>
-        </span>
-        <ChevronRightIcon
-          aria-hidden
-          className={cn("mt-2.5 size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
-        />
-      </button>
+        ) : null}
+      </div>
       {open ? (
-        <div ref={scrollIntoViewOnMount} className="flex flex-col gap-2 px-3 pb-3 ps-6.5">
+        <div ref={scrollIntoViewOnMount} className="px-3 pb-3 ps-6.5">
           <NeedAnswer need={need} onAnswered={onAnswered} />
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            className="-ms-2 self-start"
-            onClick={() =>
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(ref),
-              })
-            }
-          >
-            Open thread
-          </Button>
         </div>
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
 import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
@@ -10,6 +10,8 @@ import {
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
+import { ComposerStackCard, type ComposerStackFold } from "./ComposerStackCard";
+import { NextUnreadChip } from "./NextUnreadChip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -224,11 +226,17 @@ export function ReportReplyStrip({
   );
 }
 
+/**
+ * Opening a report folds the card, since the report is answered in the timeline. Opening a thread's
+ * question narrows the card to it until it is answered or closed.
+ */
 export function NeedsYou({
   reports,
   scroll,
   runs,
   project = NO_PROJECT_THREADS,
+  fold,
+  unreadChip = true,
   ...reviewProps
 }: {
   reports: readonly ReportState[];
@@ -236,8 +244,14 @@ export function NeedsYou({
   runs: ReadonlyArray<ThreadWorkflowRunWatch>;
   /** On a project page: the project's threads that need you, answered here. */
   project?: ReadonlyArray<EnvironmentThreadShell>;
+  /** Set when the stack decides it: otherwise the card keeps its own. */
+  fold?: ComposerStackFold;
+  /** False while thread find is open. */
+  unreadChip?: boolean;
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
+  const [ownFolded, setOwnFolded] = useState(false);
+  const headerRef = useRef<HTMLButtonElement>(null);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
@@ -247,64 +261,98 @@ export function NeedsYou({
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
+  // A single item costs less room than the click it would take to unfold it, until the
+  // stack is folded or unfolded by hand.
+  const folded = fold ? fold.folded && !(fold.initial && rows.length === 1) : ownFolded;
+  const setFolded = fold?.onFoldedChange ?? setOwnFolded;
   if (!rows.length && !answered) return null;
-  const visible = expanded ? rows : rows.slice(0, 3);
+  const opened = rows.filter((row) => row.kind === "need" && row.need.key === openNeed);
+  const visible = opened.length ? opened : expanded ? rows : rows.slice(0, 3);
+  const collapse = () => {
+    setOpenNeed(null);
+    setExpanded(false);
+  };
   return (
-    <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-          <span>{rows.length ? `Needs you · ${rows.length}` : "Answered"}</span>
-          {rows.length > 3 ? (
-            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
-              {expanded ? "Show less" : `Show all ${rows.length}`}
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex max-h-[min(24rem,45dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
-          {visible.map((row, index) =>
-            row.kind === "run" ? (
-              <WorkflowRunReviewRow
-                key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
-                {...reviewProps}
-                run={row.run}
-                // The thread's background-work actions belong to the first run only.
-                {...(index === 0 ? {} : { watchActions: undefined })}
-              />
-            ) : row.kind === "need" ? (
-              <ProjectNeedRow
-                key={row.need.key}
-                need={row.need}
-                open={openNeed === row.need.key}
-                onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
-              />
-            ) : (
-              <button
-                key={row.report.message.id}
-                type="button"
-                className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-                onClick={() => scroll(row.report.message.id)}
-              >
-                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 text-sm text-foreground">
-                    {row.report.message.report!.question}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
-                    {formatRelativeTimeLabel(row.report.message.createdAt)}
-                  </span>
-                </span>
-              </button>
-            ),
-          )}
-        </div>
-        {answered ? (
+    <ComposerStackCard
+      label={rows.length ? "Needs you" : "Answered"}
+      count={rows.length || undefined}
+      aside={unreadChip ? <NextUnreadChip inline /> : null}
+      folded={folded}
+      onFoldedChange={(next) => {
+        collapse();
+        setFolded(next);
+      }}
+      headerRef={headerRef}
+      action={
+        folded || rows.length <= (opened.length ? 1 : 3)
+          ? null
+          : expanded
+            ? { label: "Show less", onClick: collapse }
+            : {
+                label: `Show all ${rows.length}`,
+                onClick: () => {
+                  setOpenNeed(null);
+                  setExpanded(true);
+                },
+              }
+      }
+      footer={
+        answered ? (
           <div className="border-t border-border/60">
             <AnsweredNeedRow answered={answered} />
           </div>
-        ) : null}
-      </div>
-    </div>
+        ) : null
+      }
+    >
+      {visible.map((row, index) =>
+        row.kind === "run" ? (
+          <WorkflowRunReviewRow
+            key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
+            {...reviewProps}
+            run={row.run}
+            // The thread's background-work actions belong to the first run only.
+            {...(index === 0 ? {} : { watchActions: undefined })}
+          />
+        ) : row.kind === "need" ? (
+          <ProjectNeedRow
+            key={row.need.key}
+            need={row.need}
+            open={openNeed === row.need.key}
+            onToggle={() => {
+              setExpanded(false);
+              setOpenNeed(openNeed === row.need.key ? null : row.need.key);
+            }}
+            onAnswered={(answer) => {
+              collapse();
+              setAnswered({ threadTitle: row.need.thread.title, answer });
+            }}
+          />
+        ) : (
+          <button
+            key={row.report.message.id}
+            type="button"
+            className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
+            onClick={() => {
+              collapse();
+              setFolded(true);
+              // The row goes with the body; keep keyboard focus in the card.
+              headerRef.current?.focus({ preventScroll: true });
+              scroll(row.report.message.id);
+            }}
+          >
+            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="line-clamp-2 text-sm text-foreground">
+                {row.report.message.report!.question}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
+                {formatRelativeTimeLabel(row.report.message.createdAt)}
+              </span>
+            </span>
+          </button>
+        ),
+      )}
+    </ComposerStackCard>
   );
 }

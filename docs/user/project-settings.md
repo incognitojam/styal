@@ -351,7 +351,7 @@ started them, and the page's status line counts them. A thread comes back to the
 needs an approval or an answer, fails, or when you open it, pin it or send it a message
 yourself. They finish without a Done notification, and stay in search and the command palette.
 
-When something has happened since you last checked, the end of the chat lists it: threads that
+When something has happened since you last checked, a list above the chat's composer shows it: threads that
 failed or hit a usage limit, the chat's reports, threads that finished and you haven't opened, and
 pull requests that merged. You check by choosing **Mark as seen** on the list or by writing in the
 project chat, on any of your devices; opening the page doesn't count. The list goes back at most 14
@@ -359,7 +359,9 @@ days. Questions and threads waiting on you stay in **Needs you** and the started
 lists fold into groups with **Show all**. If the chat's earlier history isn't loaded, **Load earlier**
 fetches it so older reports can be listed, and the list says when threads that settled long ago
 weren't checked. Each thread counts only its latest turn. The list appears when the page opens and
-goes away once you check, here or on another device.
+goes away once you check, here or on another device. While it shows, **Needs you** below it is
+folded to its heading unless it holds a single item; open either one to fold the other. Replying
+to a report folds both, to leave the reply room.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.

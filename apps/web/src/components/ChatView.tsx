@@ -51,6 +51,7 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
+import type { ComposerStackOpen } from "./chat/ComposerStackCard";
 import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import { useProviderSignInBanner } from "./chat/useProviderSignInBanner";
@@ -146,7 +147,15 @@ import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2T
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
-import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type SetStateAction,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -331,7 +340,7 @@ import {
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
-import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
+import type { FileActionReviewRequest } from "./chat/MessagesTimeline.logic";
 import {
   ProjectSinceLastVisit,
   type ProjectSinceLastVisitSource,
@@ -1105,33 +1114,13 @@ export default function ChatView(props: ChatViewProps) {
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
-  // Built once per capture, so the timeline row keeps its identity while the chat streams.
-  const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
-    readonly source: ProjectSinceLastVisitSource | null;
-    readonly row: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
-  }>({ source: null, row: undefined });
-  if (sinceLastVisitRow.source !== sinceLastVisit) {
-    setSinceLastVisitRow({
-      source: sinceLastVisit,
-      row:
-        sinceLastVisit === null
-          ? undefined
-          : {
-              kind: "inserted",
-              id: "project-since-last-visit",
-              // The chat's last change before the page opened, on the clock its rows carry.
-              createdAt: sinceLastVisit.anchorAt,
-              content: (
-                <ProjectSinceLastVisit
-                  chatRef={routeThreadRef}
-                  source={sinceLastVisit}
-                  onOpenReport={scrollToReport}
-                />
-              ),
-            },
-    });
-  }
-
+  // Which card of the composer stack is open, per thread; replying to a report folds both.
+  const [composerStackOpen, setComposerStackOpen] = useState<{
+    threadKey: string | null;
+    open: ComposerStackOpen;
+  }>({ threadKey: null, open: "initial" });
+  const activeComposerStackOpen =
+    composerStackOpen.threadKey === activeThreadKey ? composerStackOpen.open : "initial";
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
     if (timelineAnchorMessageId === null) return false;
@@ -2555,6 +2544,10 @@ export default function ChatView(props: ChatViewProps) {
               ),
               (element) => element.getBoundingClientRect(),
             ),
+            cards: Array.from(
+              composerOverlayElement.querySelectorAll<HTMLElement>("[data-composer-stack-card]"),
+              (element) => element.getBoundingClientRect(),
+            ),
           })
         : nextHeight;
     setScrollToEndClearance(clearance);
@@ -2731,6 +2724,21 @@ export default function ChatView(props: ChatViewProps) {
       !isWorking && activeThread ? pendingBackgroundTasks : [],
       activeThreadShell?.workflowRuns ?? [],
     );
+  const renderNeedsYou = (fold: ComponentProps<typeof NeedsYou>["fold"] | null) =>
+    activeThreadId ? (
+      <NeedsYou
+        key={activeThreadId}
+        reports={settings.coordinatorReportsEnabled ? reportStates : []}
+        scroll={scrollToReport}
+        environmentId={environmentId}
+        threadId={activeThreadId}
+        runs={activeThreadShell?.workflowRuns ?? []}
+        {...(projectChat ? { project: projectChat.needYou } : {})}
+        {...(fold ? { fold } : {})}
+        unreadChip={!isThreadFindActive}
+        watchActions={workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined}
+      />
+    ) : null;
   const activeThreadHasCompactableConversation = serverVisibleTurnItems.some(
     ({ item }) =>
       item.type === "user_message" &&
@@ -3714,6 +3722,7 @@ export default function ChatView(props: ChatViewProps) {
                           send: sendAppMessageStable,
                           reply: (ref, title) => {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
+                            setComposerStackOpen({ threadKey: activeThreadKey, open: null });
                             scheduleComposerFocus();
                           },
                           dismiss: (ref) => {
@@ -3838,7 +3847,6 @@ export default function ChatView(props: ChatViewProps) {
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
-                  insertedRow={sinceLastVisitRow.row}
                 />
               </WorkspaceMutationIdContext>
 
@@ -3882,7 +3890,7 @@ export default function ChatView(props: ChatViewProps) {
               <div ref={draftHeroTransitionGroupRef} className="chat-composer-lane w-full">
                 <div
                   data-chat-composer-stack="true"
-                  className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
+                  className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width) has-data-[composer-stack-card]:bg-background"
                 >
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
@@ -3912,20 +3920,21 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    {activeThreadId ? (
-                      <NeedsYou
-                        key={activeThreadId}
-                        reports={settings.coordinatorReportsEnabled ? reportStates : []}
-                        scroll={scrollToReport}
-                        environmentId={environmentId}
-                        threadId={activeThreadId}
-                        runs={activeThreadShell?.workflowRuns ?? []}
-                        {...(projectChat ? { project: projectChat.needYou } : {})}
-                        watchActions={
-                          workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined
+                    {sinceLastVisit === null ? (
+                      renderNeedsYou(null)
+                    ) : (
+                      <ProjectSinceLastVisit
+                        chatRef={routeThreadRef}
+                        source={sinceLastVisit}
+                        onOpenReport={scrollToReport}
+                        open={activeComposerStackOpen}
+                        onOpenChange={(open) =>
+                          setComposerStackOpen({ threadKey: activeThreadKey, open })
                         }
+                        unreadChip={!isThreadFindActive}
+                        renderNeedsYou={renderNeedsYou}
                       />
-                    ) : null}
+                    )}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <div className="relative">
                       <ComposerSurface.Shell contextRow={showComposerContextStrip}>
