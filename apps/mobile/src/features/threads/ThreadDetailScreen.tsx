@@ -4,7 +4,10 @@ import {
   type ReportAnswers,
   type ReportState,
 } from "./CoordinatorReports";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { NeedsYou } from "./NeedsYou";
+import { ProjectNeedsYou } from "../projects/ProjectNeedsYou";
+import { useProjectChatHeader } from "../projects/projectChats";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import type { ReportReply } from "@t3tools/client-runtime/coordinator-reports";
 import { CommandId } from "@t3tools/contracts";
@@ -541,6 +544,9 @@ function ThreadDetailBody(
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
   const agentsSegment = resolveSubagentPillSegment(turnSubagents);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
+  const composerDictationRef = useRef<{ readonly start: () => void }>(null);
+  const chatRef = scopeThreadRef(props.environmentId, props.selectedThread.id);
+  const projectChat = useProjectChatHeader(props.draftMode ? null : chatRef);
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
   const editingRunId = props.queuedRunEdit?.runId ?? null;
@@ -1747,22 +1753,50 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    <NeedsYou
-                      key={selectedThreadKey}
-                      environmentId={props.environmentId}
-                      threadId={props.selectedThread.id}
-                      runs={props.selectedThread.workflowRuns}
-                      stopWatching={
-                        workflowRunReviewIncludesBackgroundWork
-                          ? {
-                              disabled: !props.canOperateThread || statusPending,
-                              onPress: () => void runStatusAction("stop"),
-                            }
-                          : undefined
-                      }
-                      reports={props.reports ?? []}
-                      scroll={reportContext.scroll}
-                    />
+                    {projectChat === null ? (
+                      <NeedsYou
+                        key={selectedThreadKey}
+                        environmentId={props.environmentId}
+                        threadId={props.selectedThread.id}
+                        runs={props.selectedThread.workflowRuns}
+                        stopWatching={
+                          workflowRunReviewIncludesBackgroundWork
+                            ? {
+                                disabled: !props.canOperateThread || statusPending,
+                                onPress: () => void runStatusAction("stop"),
+                              }
+                            : undefined
+                        }
+                        reports={props.reports ?? []}
+                        scroll={reportContext.scroll}
+                      />
+                    ) : (
+                      <ProjectNeedsYou
+                        key={selectedThreadKey}
+                        chat={chatRef}
+                        environmentId={props.environmentId}
+                        threadId={props.selectedThread.id}
+                        runs={props.selectedThread.workflowRuns}
+                        stopWatching={
+                          workflowRunReviewIncludesBackgroundWork
+                            ? {
+                                disabled: !props.canOperateThread || statusPending,
+                                onPress: () => void runStatusAction("stop"),
+                              }
+                            : undefined
+                        }
+                        reports={props.reports ?? []}
+                        actions={{
+                          canOperate: reportContext.canOperate,
+                          send: reportContext.send,
+                          reply: reportContext.reply,
+                          replyByVoice: (reply) => {
+                            props.onReportReply?.(reply);
+                            composerDictationRef.current?.start();
+                          },
+                        }}
+                      />
+                    )}
                     <ProviderSignInCard
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
@@ -1993,6 +2027,7 @@ function ThreadDetailBody(
                         canOperateThread={props.canOperateThread}
                         reportedModelSelection={reportedModelSelection}
                         editorRef={composerEditorRef}
+                        dictationRef={composerDictationRef}
                         placeholder={
                           props.activePendingApproval
                             ? props.activePendingApproval.supportsFeedback

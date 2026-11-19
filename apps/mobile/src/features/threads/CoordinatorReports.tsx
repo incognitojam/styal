@@ -102,19 +102,11 @@ export function CoordinatorReportMessage({
       {report.state === "open" ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
-          {tag.answers?.map((answer, index) => (
-            <Pressable
-              key={answer}
-              accessibilityRole="button"
-              accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.send(answer, reply))}
-              className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
-            >
-              <Text className="flex-1 text-foreground">{answer}</Text>
-              {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
-            </Pressable>
-          ))}
+          <ReportAnswerOptions
+            answers={tag.answers ?? []}
+            disabled={!ctx.canOperate || sending}
+            onPick={(answer) => run(() => ctx.send(answer, reply))}
+          />
           <View className="flex-row justify-between">
             <Button
               label="Reply…"
@@ -150,6 +142,27 @@ export function CoordinatorReportMessage({
       ) : null}
     </View>
   );
+}
+
+/** A report's answers, the first one recommended; picking one sends it. */
+export function ReportAnswerOptions(props: {
+  readonly answers: readonly string[];
+  readonly disabled: boolean;
+  readonly onPick: (answer: string) => void;
+}) {
+  return props.answers.map((answer, index) => (
+    <Pressable
+      key={answer}
+      accessibilityRole="button"
+      accessibilityLabel={index === 0 ? `${answer}, recommended` : answer}
+      disabled={props.disabled}
+      onPress={() => props.onPick(answer)}
+      className={`flex-row items-start gap-2 rounded-lg border px-3 py-2 active:opacity-70 disabled:opacity-50 ${index === 0 ? "border-primary bg-primary/10" : "border-border"}`}
+    >
+      <Text className="flex-1 text-foreground">{answer}</Text>
+      {index === 0 ? <Text className="text-xs text-primary-text">Recommended</Text> : null}
+    </Pressable>
+  ));
 }
 
 function AnsweredReport(props: {

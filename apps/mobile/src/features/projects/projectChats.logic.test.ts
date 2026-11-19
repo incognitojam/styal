@@ -86,6 +86,7 @@ describe("buildProjectChats", () => {
       working: 1,
       statusLine: "1 working · 1 needs you",
     });
+    expect(chat?.needYou.map((thread) => thread.id)).toEqual(["tags"]);
     expect(chats.byScopeKey.get(scope.key)).toBe(chat);
     // A link to either checkout opens the same chat.
     expect(chats.byCheckoutKey.get(`${laptop}:${onLaptop}`)).toBe(chat);

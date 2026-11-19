@@ -23,6 +23,8 @@ export interface ProjectChat {
   readonly projectId: ProjectId;
   readonly chat: EnvironmentThreadShell;
   readonly working: number;
+  /** The project's other threads waiting on an approval, a question or a report answer. */
+  readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
   /** "2 working · 1 needs you", or null when neither. */
   readonly statusLine: string | null;
 }
@@ -119,6 +121,7 @@ export function buildProjectChats(input: {
       projectId: chat.projectId,
       chat,
       working: counts.working,
+      needYou: counts.needYou,
       statusLine: formatProjectStatusLine(counts),
     };
     byChatKey.set(chatKey, entry);

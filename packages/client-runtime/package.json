@@ -639,6 +639,10 @@
       "types": "./src/coordinatorReports.ts",
       "default": "./src/coordinatorReports.ts"
     },
+    "./project-needs": {
+      "types": "./src/projectNeeds.ts",
+      "default": "./src/projectNeeds.ts"
+    },
     "./project-page": {
       "types": "./src/projectPage.ts",
       "default": "./src/projectPage.ts"

@@ -1,12 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import {
-  seedUserInputDraftAnswers,
-  type ThreadPendingApproval,
-} from "@t3tools/client-runtime/state/thread-requests";
+import { seedUserInputDraftAnswers } from "@t3tools/client-runtime/state/thread-requests";
 import {
   buildPendingUserInputAnswers,
   isPendingUserInputOptionSelected,
@@ -24,10 +21,7 @@ import {
   CommandId,
   type ProviderApprovalDecision,
 } from "@t3tools/contracts";
-import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { useNavigate } from "@tanstack/react-router";
-import * as Option from "effect/Option";
-import { Atom } from "effect/reactivity";
 import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -43,36 +37,13 @@ import { ReportAnswerOptions } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
+  createProjectNeedsAtom,
   listProjectNeeds,
-  openReports,
+  projectNeedSummary,
   type ProjectNeed,
-  type ThreadNeeds,
-} from "./projectNeedsYou.logic";
+} from "@t3tools/client-runtime/project-needs";
 
-// Only threads that need you are subscribed; each one streams its thread detail.
-const threadNeedsAtom = Atom.family((key: string) => {
-  const ref = parseThreadKey(key);
-  let previous: readonly unknown[] = [];
-  let value: ThreadNeeds | null = null;
-  return Atom.make((get) => {
-    const requests = get(environmentThreadDetails.pendingRequestsAtom(ref));
-    const projection = Option.getOrNull(get(environmentThreadDetails.stateAtom(ref)).data);
-    if (requests === null || projection === null) return null;
-    const inputs = [requests, projection.messages, projection.thread.reportDismissals];
-    if (inputs.some((input, index) => input !== previous[index])) {
-      previous = inputs;
-      value = { requests, reports: openReports(projection) };
-    }
-    return value;
-  });
-});
-const projectNeedsAtom = Atom.family((keys: string) =>
-  Atom.make((get) => {
-    const needs = new Map<string, ThreadNeeds | null>();
-    for (const key of keys.split("\n")) if (key) needs.set(key, get(threadNeedsAtom(key)));
-    return needs;
-  }),
-);
+const projectNeedsAtom = createProjectNeedsAtom(environmentThreadDetails);
 
 /** What the threads in `threads` wait on, oldest first. */
 export function useProjectNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) {
@@ -82,14 +53,6 @@ export function useProjectNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) 
   return listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null);
 }
 
-const APPROVAL_HEADINGS = {
-  command: "Run command",
-  "file-change": "Change files",
-  "file-read": "Read file",
-  permission: "Permission",
-  "mcp-elicitation": "App access",
-} satisfies Record<ThreadPendingApproval["requestKind"], string>;
-
 const DECISION_LABELS = {
   accept: "Approved",
   acceptForSession: "Approved for this session",
@@ -97,28 +60,6 @@ const DECISION_LABELS = {
   decline: "Declined",
   cancel: "Cancelled",
 } satisfies Record<ProviderApprovalDecision, string>;
-
-function summary(need: ProjectNeed): string {
-  switch (need.kind) {
-    case "approval": {
-      const { approval } = need;
-      const heading =
-        (approval.toolName
-          ? deriveToolRowPresentation({ toolName: approval.toolName, input: approval.toolInput })
-              ?.heading
-          : undefined) ?? APPROVAL_HEADINGS[approval.requestKind];
-      return approval.detail ? `${heading}: ${approval.detail}` : heading;
-    }
-    case "question":
-      return need.userInput.questions[0]?.question ?? "A question";
-    case "report":
-      return need.report.report.question ?? need.report.report.title;
-    case "thread":
-      return need.thread.pendingSubagentRequest
-        ? "A subagent is waiting for you"
-        : "Waiting for you in its thread";
-  }
-}
 
 export interface AnsweredNeed {
   readonly threadTitle: string;
@@ -159,7 +100,7 @@ export function ProjectNeedRow({
               open ? "whitespace-pre-wrap break-words" : "truncate",
             )}
           >
-            {summary(need)}
+            {projectNeedSummary(need)}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
             {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
