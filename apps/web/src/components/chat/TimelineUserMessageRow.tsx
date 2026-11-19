@@ -116,6 +116,14 @@ import {
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
 
+/**
+ * A message the agent does not have yet has a dashed edge and no fill: one still sending,
+ * or one waiting in the queue. It takes the solid bubble once the agent has it. The edge is
+ * an overlay, so the bubble keeps its size when it fills and media-only messages show it too.
+ */
+export const UNSENT_BUBBLE_CLASS_NAME =
+  "relative text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border after:border-dashed after:border-muted-foreground/40";
+
 const BUBBLE_CHIP_CLASS_NAME =
   "[&_[data-slot=context-chip]]:[--context-chip-ink:var(--context-chip-message,var(--context-chip-accent))]";
 
@@ -1008,7 +1016,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           BUBBLE_CHIP_CLASS_NAME,
           userMessage.attribution === "guest"
             ? guestBubbleClassName(false)
-            : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+            : row.pending
+              ? UNSENT_BUBBLE_CLASS_NAME
+              : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
+          // The edge sits on the media itself here, so it needs more contrast than on the page.
+          row.pending &&
+            (mediaOnly || fileCardsOnly || audioOnly) &&
+            "after:border-2 after:border-muted-foreground",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}

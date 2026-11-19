@@ -834,6 +834,10 @@ describe("V2 session presentation", () => {
         .filter((entry) => entry.id.startsWith("feedback-"))
         .every((entry) => entry.kind === "message" && entry.projectedItem === undefined),
     ).toBe(true);
+    // Only a send the server has not confirmed yet is pending; anchored feedback is local.
+    expect(
+      entries.filter((entry) => entry.kind === "message" && entry.pending).map((entry) => entry.id),
+    ).toEqual(["optimistic-user"]);
   });
 
   it("uses projected plan status and file contents in timeline entries", () => {

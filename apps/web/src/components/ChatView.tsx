@@ -1744,6 +1744,7 @@ export default function ChatView(props: ChatViewProps) {
         kind: "message",
         createdAt: message.createdAt,
         message,
+        pending: true,
       }) as const,
   );
   const timelineEntries = isServerThread ? serverTimelineEntries : draftTimelineEntries;
