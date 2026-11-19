@@ -430,7 +430,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   the app names the version and links to its release notes.
   [Updating styal](./updating.md#desktop-app-updates). Compared with
   [T3 Code revision 1852121](https://github.com/pingdotgg/t3code/tree/1852121afac633f7b4dd85e4965f679e66de21dd),
-  checked November 19, 2026, which checks every four hours. Its Install action can download a newer release before restarting.
+  checked November 19, 2026, which checks every four hours. Its Install action can
+  download a newer release before restarting.
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices

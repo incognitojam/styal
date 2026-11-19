@@ -1243,7 +1243,7 @@ features:
     title: Check desktop updates hourly and protect running work
     status: maintained
     tier: keep
-    prs: [110, 128, 358, 390, 754, 758, 851, 1654]
+    prs: [110, 128, 358, 390, 754, 758, 851, 1654, 1673]
     invariants:
       - Hourly metadata-only update polling continues after an unexpected check failure; a check alone never starts a download.
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
