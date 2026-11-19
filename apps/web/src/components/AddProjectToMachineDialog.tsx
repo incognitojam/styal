@@ -15,6 +15,7 @@ import {
 } from "@t3tools/shared/cloneUrl";
 import { ArrowRightIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { Schema } from "effect";
 import { create } from "zustand";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
@@ -29,6 +30,7 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import {
   COPYABLE_FILE_MAX_BYTES,
   type CancelledAddOutcome,
+  NoAnswerError,
   addProjectToMachine,
   settleCancelledAdd,
   isDefaultCopiedFile,
@@ -82,13 +84,17 @@ const useRequest = create<{
   session: number;
   /** When the request was made; one click only trusts checks answered after it. */
   openedAt: number;
+  /** Kept with the request, not the dialog, which can remount while its clone is being sent. */
+  starting: boolean;
 }>(() => ({
   request: null,
   session: 0,
   openedAt: 0,
+  starting: false,
 }));
 
 let endRequestWithProject: (() => void) | null = null;
+const isNoAnswer = Schema.is(NoAnswerError);
 
 /** How long one click waits on its checks before the dialog opens to show them. */
 const QUICK_ADD_WAIT_MS = 3_000;
@@ -113,7 +119,7 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
       onCancel: () => close(session),
     });
   }
-  useRequest.setState({ request, session, openedAt: Date.now() });
+  useRequest.setState({ request, session, openedAt: Date.now(), starting: false });
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
@@ -312,13 +318,11 @@ function AddProjectToMachineDialog({
   };
 
   // Shared by the Clone button and one click, so one request can never start two clones.
-  const starting = useRef(false);
-  // While the clone request is out, cancelling lets go of it: a clone that starts anyway is
-  // stopped and its project removed.
+  // Cancelling while the clone request is out lets go of it; a clone that starts anyway goes.
   const abandon = useRef<(() => void) | null>(null);
   const startClone = useStableCallback(async () => {
-    if (!project || !target || starting.current) return;
-    starting.current = true;
+    if (!project || !target || useRequest.getState().starting) return;
+    useRequest.setState({ starting: true });
     let abandoned = false;
     abandon.current = () => {
       abandoned = true;
@@ -353,9 +357,12 @@ function AddProjectToMachineDialog({
         files: files.filter((file) => selectedFiles.has(file.path)).map((file) => file.path),
       });
     } catch (cause) {
-      starting.current = false;
+      useRequest.setState({ starting: false });
       abandon.current = null;
       if (preparing) setPreparingAdd(null);
+      if (abandoned && isNoAnswer(cause)) {
+        announceCancelledAdd("failed", project.title, target.label);
+      }
       if (abandoned) return;
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);

@@ -100,9 +100,7 @@ describe("addProjectToMachine", () => {
     vi.useFakeTimers();
     try {
       const { added, settled } = startAdd(new Promise(() => undefined));
-      const rejected = expect(added).rejects.toThrow(
-        "build-server did not answer. The clone may still start there.",
-      );
+      const rejected = expect(added).rejects.toThrow("build-server did not answer.");
       await vi.advanceTimersByTimeAsync(29_999);
       expect(settled()).toBe(false);
       await vi.advanceTimersByTimeAsync(1);

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { DraftId } from "../composerDraftStore";
-import { readPreparingAdd, usePreparingAdd } from "../lib/addProjectToMachine";
+import { NoAnswerError, readPreparingAdd, usePreparingAdd } from "../lib/addProjectToMachine";
 import { act, render } from "../../test/render";
 
 const project = vi.hoisted(() => {
@@ -280,9 +280,7 @@ describe("AddProjectToMachineDialog", () => {
 
   it("frees the Add rows and shows why when the clone cannot start", async () => {
     scene.setup({ environments: [SOURCE], query: scene.answered });
-    scene.add.mockRejectedValue(
-      new Error("machine-a did not answer. The clone may still start there."),
-    );
+    scene.add.mockRejectedValue(new Error("machine-a did not answer."));
     project.setup(PROJECT);
     targets.setup([machine("machine-a")]);
     await using screen = await render(<AddProjectToMachineDialogHost />);
@@ -296,9 +294,7 @@ describe("AddProjectToMachineDialog", () => {
       }),
     );
 
-    await expect
-      .element(screen.getByText("machine-a did not answer. The clone may still start there."))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("machine-a did not answer.")).toBeInTheDocument();
     expect(readPreparingAdd()).toBeNull();
   });
 
@@ -389,4 +385,70 @@ describe("AddProjectToMachineDialog", () => {
       );
     },
   );
+
+  it("starts one clone even when the dialog remounts while it is being sent", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.answered });
+    let failStart: (cause: unknown) => void = () => undefined;
+    scene.add.mockImplementation(
+      () =>
+        new Promise<ProjectId>((_resolve, reject) => {
+          failStart = reject;
+        }),
+    );
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+
+    await act(() =>
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId: DraftId.make("draft-10"),
+      }),
+    );
+    await vi.waitFor(() => expect(scene.add).toHaveBeenCalledOnce());
+    // As when the route changes to one that renders the host afresh.
+    await screen.rerender(<></>);
+    await screen.rerender(<AddProjectToMachineDialogHost />);
+
+    expect(readPreparingAdd()?.sending).toBe(true);
+    expect(scene.add).toHaveBeenCalledOnce();
+    await act(() => failStart(new Error("Stopped by the test.")));
+    expect(readPreparingAdd()).toBeNull();
+  });
+
+  it("says a cancelled add may still be there when its start went unanswered", async () => {
+    scene.setup({ environments: [SOURCE], query: scene.answered });
+    let failStart: (cause: unknown) => void = () => undefined;
+    scene.add.mockImplementation(
+      () =>
+        new Promise<ProjectId>((_resolve, reject) => {
+          failStart = reject;
+        }),
+    );
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using _screen = await render(<AddProjectToMachineDialogHost />);
+
+    await act(() =>
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId: DraftId.make("draft-11"),
+      }),
+    );
+    await vi.waitFor(() => expect(readPreparingAdd()?.sending).toBe(true));
+    await act(() => readPreparingAdd()?.onCancel());
+    await act(() => failStart(new NoAnswerError({ message: "machine-a did not answer." })));
+
+    expect(readPreparingAdd()).toBeNull();
+    expect(scene.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "warning",
+        title: "Could not finish cancelling on machine-a",
+      }),
+    );
+  });
 });

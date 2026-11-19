@@ -42,7 +42,7 @@ import {
   BranchToolbarEnvironmentSelector,
 } from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
-import { useOneClickAddInProgress } from "../lib/addProjectToMachine";
+import { usePreparingAddStore } from "../lib/addProjectToMachine";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
@@ -696,14 +696,15 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
-  const addBusyReason = useOneClickAddInProgress() ? "Preparing…" : null;
+  const addBusyReason = usePreparingAddStore((state) => state.add !== null) ? "Preparing…" : null;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
       projectRef: activeProjectRef,
       targetEnvironmentId,
       draftId,
       onlyTargets: addTargetsOverride?.map((target) => target.environmentId),
-      quick: targetEnvironmentId !== null,
+      // One click needs a draft: it is what moves to the clone and shows its progress.
+      quick: targetEnvironmentId !== null && draftId !== undefined,
     });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;

@@ -41,7 +41,7 @@ import {
   type ProjectGroupUpdate,
 } from "../../hooks/useProjectGroupUpdate";
 import { openAddProjectToMachine } from "../AddProjectToMachineDialog";
-import { useOneClickAddInProgress } from "../../lib/addProjectToMachine";
+import { usePreparingAddStore } from "../../lib/addProjectToMachine";
 import { useAddProjectTargets } from "../../hooks/useAddProjectTargets";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
@@ -690,7 +690,7 @@ function ProjectDetail({
     );
   const cloneSource = cloneSources[0] ?? null;
   const addTargets = useAddProjectTargets(cloneSource, allMembers);
-  const addInProgress = useOneClickAddInProgress();
+  const addInProgress = usePreparingAddStore((state) => state.add !== null);
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
       <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">

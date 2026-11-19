@@ -10,6 +10,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
 } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { create } from "zustand";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -115,9 +116,7 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
 
 export interface PreparingAdd {
   readonly title: string;
-  /** The draft whose composer shows the add and moves with the clone. */
   readonly draftId: string;
-  /** The project being added; the row shows only while the draft is still on it. */
   readonly projectRef: ScopedProjectRef;
   /** Calls the add off; while the clone request is out, lets go of it. */
   readonly onCancel: () => void;
@@ -128,15 +127,17 @@ export interface PreparingAdd {
 }
 
 /** The one-click add being decided or sent; one at a time, so every Add row waits for it. */
-const usePreparingAddStore = create<{ add: PreparingAdd | null }>(() => ({ add: null }));
+export const usePreparingAddStore = create<{ add: PreparingAdd | null }>(() => ({ add: null }));
 
-/** How long one request of an add, or of cancelling it, may go unanswered. */
-const ANSWER_WAIT_MS = 30_000;
+export class NoAnswerError extends Schema.TaggedError<NoAnswerError>()("NoAnswerError", {
+  message: Schema.String,
+}) {}
 
-function within<A>(promise: Promise<A>): Promise<A | "timeout"> {
+/** Counts a request of an add, or of cancelling it, as unanswered after 30 seconds. */
+function within<A>(promise: Promise<A>) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), ANSWER_WAIT_MS);
+    timer = setTimeout(() => resolve("timeout"), 30_000);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
@@ -199,20 +200,13 @@ export function setPreparingAdd(add: PreparingAdd | null) {
   usePreparingAddStore.setState({ add });
 }
 
-export function usePreparingAdd(
-  draftId: string | null,
-  projectRef: ScopedProjectRef | null,
-): PreparingAdd | null {
+export function usePreparingAdd(draftId: string | null, projectRef: ScopedProjectRef | null) {
   const projectKey = projectRef ? scopedProjectKey(projectRef) : null;
   return usePreparingAddStore(({ add }) =>
     add?.draftId === draftId && !add.cancelled && scopedProjectKey(add.projectRef) === projectKey
       ? add
       : null,
   );
-}
-
-export function useOneClickAddInProgress(): boolean {
-  return usePreparingAddStore(({ add }) => add !== null);
 }
 
 /**
@@ -263,11 +257,8 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
   const started = await within(starting);
   if (started === "timeout" || started._tag === "Failure") {
     setFileCopy(requestedKey, null);
-    throw new Error(
-      started === "timeout"
-        ? `${input.target.label} did not answer. The clone may still start there.`
-        : failureMessage(started),
-    );
+    if (started !== "timeout") throw new Error(failureMessage(started));
+    throw new NoAnswerError({ message: `${input.target.label} did not answer.` });
   }
   // The server clones for the existing project when one already owns the empty destination.
   const { projectId } = started.value;
