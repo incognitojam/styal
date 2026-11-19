@@ -582,6 +582,54 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* Feature explainer panel: styal's stage art, the pigments behind the sidebar artwork.
+   `--explainer-tile` is the colour of a file drawn in a scene; it reads on the card. */
+@utility explainer-stage {
+  --explainer-tile: var(--stage-art-mid);
+  background:
+    radial-gradient(
+      110% 80% at 12% -10%,
+      color-mix(in srgb, var(--stage-art-highlight) 62%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      90% 90% at 105% 110%,
+      color-mix(in srgb, var(--stage-art-bottom) 80%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(165deg, var(--stage-art-top), var(--stage-art-mid) 52%, var(--stage-art-bottom));
+
+  @variant dark {
+    --explainer-tile: var(--stage-night-highlight);
+    background:
+      radial-gradient(
+        110% 80% at 12% -10%,
+        color-mix(in srgb, var(--stage-art-highlight) 30%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(90% 90% at 105% 110%, var(--stage-night-bottom), transparent 60%),
+      linear-gradient(
+        165deg,
+        var(--stage-art-top),
+        var(--stage-art-mid) 52%,
+        var(--stage-art-bottom)
+      );
+  }
+}
+
+@utility explainer-tile {
+  background-color: var(--explainer-tile);
+}
+
+@utility explainer-tile-outline {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--explainer-tile) 55%, transparent);
+}
+
+@utility explainer-tile-soft {
+  color: var(--explainer-tile);
+  background-color: color-mix(in srgb, var(--explainer-tile) 14%, transparent);
+}
+
 @keyframes live-tool-shine {
   from {
     background-position:
