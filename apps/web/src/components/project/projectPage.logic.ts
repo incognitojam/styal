@@ -74,23 +74,30 @@ export function projectChatTakesReports(chat: {
 }
 
 /**
- * A thread the project's chat launched with reportBack stays on the project page until it needs
- * you, fails, is pinned or you write to it. A `project-coordinator` report target only says the
- * thread was created in the project. `chatThreadKeys`: chats that still take reports.
+ * A thread the project's chat launched with reportBack is the chat's to read until you pin it or
+ * write to it. A `project-coordinator` report target only says the thread was created in the
+ * project. `chatThreadKeys`: chats that still take reports.
  */
+export function managedByProjectChat(
+  thread: EnvironmentThreadShell,
+  chatThreadKeys: ReadonlySet<string>,
+): boolean {
+  return (
+    thread.reportTo != null &&
+    thread.reportTo.source === undefined &&
+    chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) &&
+    thread.source.createdBy === "agent" &&
+    thread.pinnedAt == null &&
+    thread.latestUserAuthoredMessageAt == null
+  );
+}
+
+/** A thread the project's chat manages stays on the project page until it needs you or fails. */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,
   chatThreadKeys: ReadonlySet<string>,
 ): boolean {
-  if (
-    thread.reportTo == null ||
-    thread.reportTo.source !== undefined ||
-    !chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) ||
-    thread.source.createdBy !== "agent" ||
-    thread.pinnedAt != null ||
-    thread.latestUserAuthoredMessageAt != null ||
-    thread.latestRun?.status === "failed"
-  )
+  if (!managedByProjectChat(thread, chatThreadKeys) || thread.latestRun?.status === "failed")
     return false;
   switch (resolveThreadListStatus(thread)) {
     case "approval":
