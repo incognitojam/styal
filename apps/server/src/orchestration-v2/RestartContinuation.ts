@@ -6,7 +6,6 @@ import {
   idleCompactionOf,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
-  latestProviderTurnForAttempt,
   MessageId,
   type OrchestrationV2Run,
   type RunId,
@@ -35,6 +34,7 @@ import {
   neverStarted,
   restartCancelledBackgroundWorkNote,
   restartContinuationNote,
+  restartContinuationBlocked,
 } from "./RestartBackgroundNote.ts";
 
 export const CONTINUE_PROMPT =
@@ -46,54 +46,6 @@ export const INTERRUPTED_TURN_NOTE =
 
 const MAX_CONTINUATION_CHAIN = 3;
 const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
-
-function restartContinuationBlocked(
-  projection: Pick<
-    ProjectionRuntimeRecoveryState,
-    "thread" | "runtimeRequests" | "providerTurns" | "turnItems"
-  >,
-  source: OrchestrationV2Run,
-  now: DateTime.Utc,
-  settled: boolean,
-): boolean {
-  const { thread } = projection;
-  if (
-    thread.archivedAt !== null ||
-    thread.deletedAt !== null ||
-    thread.settledOverride === "settled" ||
-    (thread.snoozedUntil != null && DateTime.isGreaterThan(thread.snoozedUntil, now))
-  )
-    return true;
-  const turn = latestProviderTurnForAttempt(projection.providerTurns, source.activeAttemptId);
-  if (
-    !settled &&
-    turn !== undefined &&
-    (turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted")
-  )
-    return true;
-  const waitingRequest = projection.runtimeRequests.some(
-    (request) =>
-      request.kind !== "dynamic_tool_call" &&
-      request.kind !== "auth_refresh" &&
-      request.responseCapability.type !== "message" &&
-      (request.status === "pending" ||
-        ((request.status === "expired" || request.status === "cancelled") &&
-          request.responseCapability.type === "not_resumable" &&
-          turn !== undefined &&
-          turn.id === request.providerTurnId)),
-  );
-  if (waitingRequest) return true;
-  return projection.turnItems.some(
-    (item) =>
-      item.type === "secret_request" &&
-      item.runId === source.id &&
-      (item.secretStatus === "pending" ||
-        (item.secretStatus === "cancelled" &&
-          item.completedAt !== null &&
-          source.completedAt !== null &&
-          DateTime.Equivalence(item.completedAt, source.completedAt))),
-  );
-}
 
 /** App-owned delegations continue in their own threads and report back. */
 function hasOpenAwaitedWork(
@@ -263,28 +215,43 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       ["messages", "runs", "providerTurns", "attempts", "runtimeRequests", "turnItems"],
       { messageIds: [messageId], turnItemTypes: ["secret_request"] },
     );
+    const source = projection.runs.find((run) => run.id === input.sourceRunId);
+    if (source === undefined) return;
+    const sourceRecords = yield* threads.getThreadRecords(
+      input.threadId,
+      ["messages", "turnItems"],
+      restartContinuationDeclineFilter(source),
+    );
+    const sourceMessage = sourceRecords.messages.find(
+      (message) => message.id === source.userMessageId,
+    );
+    const automaticCompaction =
+      sourceMessage !== undefined &&
+      idleCompactionOf(sourceMessage) === "beforeCacheExpires" &&
+      !isRestartNoteSource(source, projection.providerTurns);
     if (
+      !automaticCompaction &&
       !resolveProjectSettings(enabled, projection.thread.projectId).settings
         .continueThreadsAfterServerUpdate
     )
       return;
     if (projection.messages.some((message) => message.id === messageId)) return;
-    const source = projection.runs.find((run) => run.id === input.sourceRunId);
     if (
-      !source ||
       !(
         isRestartContinuationSource(source, projection.providerTurns) ||
         continuationFailedBeforePrompt(source, projection.providerTurns)
       ) ||
-      restartContinuationBlocked(
-        projection,
-        source,
-        yield* DateTime.now,
-        isRestartNoteSource(source, projection.providerTurns),
-      )
+      (!automaticCompaction &&
+        restartContinuationBlocked(
+          projection,
+          source,
+          yield* DateTime.now,
+          isRestartNoteSource(source, projection.providerTurns),
+        ))
     )
       return;
     if (
+      !automaticCompaction &&
       projection.runs.some(
         (run) =>
           run.id !== source.id &&
@@ -294,19 +261,15 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       )
     )
       return;
-    if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
-    if (restartContinuationChainFull(source, projection.runs)) {
+    if (!automaticCompaction && projection.thread.providerInstanceId !== source.providerInstanceId)
+      return;
+    if (!automaticCompaction && restartContinuationChainFull(source, projection.runs)) {
       yield* Effect.logWarning("Not continuing a run restarted too many times in a row", {
         threadId: input.threadId,
         sourceRunId: input.sourceRunId,
       });
       return;
     }
-    const sourceRecords = yield* threads.getThreadRecords(
-      input.threadId,
-      ["messages", "turnItems"],
-      restartContinuationDeclineFilter(source),
-    );
     if (declinesRestartContinuation(source, sourceRecords)) return;
     // A parent's Stop reaches its open delegated tasks through an effect a restart can cut short.
     const { lineage, forkedFrom } = projection.thread;
@@ -334,9 +297,6 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       )
         return;
     }
-    const sourceMessage = sourceRecords.messages.find(
-      (message) => message.id === source.userMessageId,
-    );
     // Compaction changes nothing a repeat could double, so a cut one runs again.
     const recompact =
       sourceMessage !== undefined &&
@@ -363,7 +323,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         threadId: input.threadId,
         messageId,
         text: recompact ? IDLE_COMPACTION_TEXT : text,
-        idleCompaction: recompact ? sourceMessage.idleCompaction : undefined,
+        idleCompaction: recompact ? idleCompactionOf(sourceMessage) : undefined,
         notification: recompact
           ? undefined
           : {

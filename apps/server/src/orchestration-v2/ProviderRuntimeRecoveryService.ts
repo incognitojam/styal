@@ -3,6 +3,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   type OrchestrationV2TurnItem,
   CommandId,
+  idleCompactionOf,
   isProviderNativeSubagentThread,
   type OrchestrationV2DomainEvent,
   type ProviderThreadId,
@@ -125,6 +126,9 @@ export const listContinuableThreadIds = Effect.fn(
       ["messages", "turnItems"],
       restartContinuationDeclineFilter(run),
     );
+    const message = records.messages.find((message) => message.id === run.userMessageId);
+    // Automatic compaction admission is best effort and has a shared startup budget.
+    if (message !== undefined && idleCompactionOf(message) === "beforeCacheExpires") continue;
     if (!declinesRestartContinuation(run, records)) eligible.add(threadId);
   }
   return eligible;

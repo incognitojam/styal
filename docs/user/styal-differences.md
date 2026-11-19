@@ -127,6 +127,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   model picker. T3 Code prefers Codex as of
   [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e).
 
+- **Interrupted idle compaction has a bounded retry.** A restart can retry an automatic Claude compaction, with a notice when it is skipped. Upstream still cancels it as of [revision 1cefbc4](https://github.com/pingdotgg/t3code/tree/1cefbc4051ba687035b4cca3fa4a59309a8918a9), checked November 18, 2026. [Compact long conversations](./providers-claude.md#compact-long-conversations).
+
 - **Visible Claude history cleanup rules.** Provider settings show each Claude instance's
   user-level session cleanup period and source file, with a link from Usage. Compared with
   [T3 Code revision 42da166](https://github.com/pingdotgg/t3code/tree/42da166d131017335a1158d0b379dd68b8985796).

@@ -14,6 +14,7 @@ import {
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -73,6 +74,7 @@ import {
   ProviderInteractionMode,
   isRuntimeModeAbove,
   resolveProviderInstanceEnabled,
+  resolveIdleCompaction,
   projectCoordinatorThreadId,
   resolveProjectProviderInstanceEnabled,
   type ProviderSessionId,
@@ -136,6 +138,8 @@ import {
   continuationStartRetryDelayMs,
   delegatedTaskResultRun,
   isRestartContinuationSource,
+  isRestartNoteSource,
+  restartContinuationBlocked,
   runOutcome,
 } from "./RestartBackgroundNote.ts";
 import {
@@ -1552,6 +1556,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectionStore = yield* ProjectionStoreV2;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
+  // A startup may recover many idle threads; spend at most one automatic compaction read.
+  const restartedIdleCompaction = yield* Ref.make<RunId | null>(null);
   const nextTurnItemOrdinal = (
     projection: Pick<OrchestrationV2ThreadProjection, "thread"> &
       Partial<Pick<OrchestrationV2ThreadProjection, "turnItems">>,
@@ -6985,6 +6991,100 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         });
         return;
+      }
+    }
+
+    if (
+      command.idleCompaction === "beforeCacheExpires" &&
+      command.restartContinuationOfRunId !== undefined
+    ) {
+      const source = projection.runs.find((run) => run.id === command.restartContinuationOfRunId);
+      if (source !== undefined) {
+        const currentSettings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+        const now = yield* DateTime.now;
+        const { turnItems } = yield* projectionStore
+          .getThreadRecords(command.threadId, ["turnItems"], {
+            turnItemRunIds: [source.id],
+            turnItemTypes: ["secret_request"],
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+            ),
+          );
+        let reason = !resolveProjectSettings(currentSettings, projection.thread.projectId).settings
+          .continueThreadsAfterServerUpdate
+          ? "restart continuation is turned off"
+          : projection.thread.providerInstanceId !== source.providerInstanceId
+            ? "the selected provider changed"
+            : resolveIdleCompaction(currentSettings, projection.thread.providerInstanceId) !==
+                "beforeCacheExpires"
+              ? "automatic idle compaction is no longer enabled"
+              : projection.thread.activeProviderThreadId !== source.providerThreadId ||
+                  projection.thread.settledAt !== null ||
+                  restartContinuationBlocked(
+                    { ...projection, turnItems },
+                    source,
+                    now,
+                    isRestartNoteSource(source, projection.providerTurns),
+                  )
+                ? "this thread is no longer eligible for idle compaction"
+                : source.restartContinuationOfRunId !== undefined
+                  ? "its automatic retry was already attempted"
+                  : projection.runs.some((run) => run.ordinal > source.ordinal)
+                    ? "new input arrived in this thread"
+                    : projection.runs.some((run) => run.status === "queued" || isActiveRun(run)) ||
+                        projection.runtimeRequests.some(
+                          (request) => request.status === "pending",
+                        ) ||
+                        projection.contextTransfers.some(
+                          (transfer) => transfer.status === "pending",
+                        )
+                      ? "this thread has pending work"
+                      : undefined;
+        if (reason === undefined) {
+          const admitted = yield* Ref.modify(
+            restartedIdleCompaction,
+            (admitted) =>
+              [admitted === null || admitted === source.id, admitted ?? source.id] as const,
+          );
+          if (!admitted)
+            reason = "another interrupted idle compaction was selected for this server start";
+        }
+        if (reason !== undefined) {
+          const now = yield* DateTime.now;
+          yield* emit(
+            events,
+            command,
+          )({
+            type: "turn-item.updated",
+            threadId: command.threadId,
+            runId: source.id,
+            occurredAt: now,
+            payload: {
+              id: idAllocator.derive.runSignalTurnItem({
+                runId: source.id,
+                signal: "server-recovery",
+              }),
+              type: "system_notice",
+              threadId: command.threadId,
+              runId: source.id,
+              nodeId: source.rootNodeId,
+              providerThreadId: source.providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: yield* nextTurnItemOrdinal(projection),
+              status: "completed",
+              title: "Automatic compaction not retried",
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              message: `Automatic idle compaction was not retried after the server restart: ${reason}. Run /compact to compact this thread.`,
+            },
+          });
+          return;
+        }
       }
     }
 

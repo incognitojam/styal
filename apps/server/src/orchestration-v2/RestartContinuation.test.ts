@@ -196,6 +196,21 @@ it.effect("does not list runs that delivery after the restart skips as continuab
       expected: [],
       projection: {
         ...running,
+        messages: [
+          {
+            id: userMessageId,
+            role: "user",
+            text: "/compact",
+            attachments: [],
+            idleCompaction: "beforeCacheExpires",
+          },
+        ],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...running,
         turnItems: [{ id: "turn-item:interrupt", runId, type: "run_interrupt_request" }],
       },
     },
@@ -1261,6 +1276,7 @@ it.effect("compacts again after a cut /compact turn, and does not continue a cut
       } as unknown as OrchestrationV2ThreadProjection);
       const texts = sent.map((command) => `${command.createdBy}:${command.text}`);
       assert.deepEqual(texts, [...expected], text);
+      if (creationSource === "server") assert.equal(sent[0]?.idleCompaction, "beforeCacheExpires");
     }
     const texts = yield* continuationTexts({
       ...cutMidTurn(),

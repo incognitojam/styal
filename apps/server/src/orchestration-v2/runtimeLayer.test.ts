@@ -92,6 +92,7 @@ import * as RuntimeLayer from "./runtimeLayer.ts";
 import { shellStreamItemFromThreadShell } from "./ShellStream.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import { continueRestartedRun } from "./RestartContinuation.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -346,7 +347,7 @@ const layerTest = Layer.mergeAll(
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerProjectServiceTest),
@@ -8316,6 +8317,101 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("retries only one idle compaction after restart and never overtakes newer input", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const sink = yield* EventSink.EventSinkV2;
+      yield* (yield* ServerSettings.ServerSettingsService).updateSettings({
+        idleCompaction: "beforeCacheExpires",
+        continueThreadsAfterServerUpdate: true,
+      });
+      const results = yield* Effect.forEach(
+        [
+          "newer-cancelled",
+          "newer-completed",
+          "newer-queued",
+          "idle",
+          "second-idle",
+          "failed-retry",
+        ] as const,
+        (scenario) =>
+          Effect.gen(function* () {
+            const threadId = ThreadId.make(`idle-restart:${scenario}`);
+            const fixture = yield* queueTestThread(threadId);
+            yield* fixture.send("/compact", "agent", true);
+            const source = yield* fixture.runFor("/compact");
+            yield* fixture.end(
+              "/compact",
+              "cancelled",
+              "",
+              scenario === "failed-retry"
+                ? { restartContinuationOfRunId: RunId.make("earlier-idle-retry") }
+                : {},
+            );
+            if (scenario.startsWith("newer-")) {
+              yield* fixture.send("new input", "user", true);
+              const newer = yield* fixture.runFor("new input");
+              const now = yield* DateTime.now;
+              yield* sink.write({
+                events: [
+                  {
+                    id: EventId.make(`${threadId}:newer-state`),
+                    type: "run.updated",
+                    threadId,
+                    runId: newer.id,
+                    occurredAt: now,
+                    payload: {
+                      ...newer,
+                      status:
+                        scenario === "newer-queued"
+                          ? "queued"
+                          : scenario === "newer-completed"
+                            ? "completed"
+                            : "cancelled",
+                      startedAt: null,
+                      completedAt: scenario === "newer-queued" ? null : now,
+                    },
+                  },
+                ],
+              });
+            }
+            const command = {
+              type: "message.dispatch" as const,
+              commandId: CommandId.make(`${threadId}:retry`),
+              threadId,
+              messageId: MessageId.make(`${threadId}:retry`),
+              text: "/compact",
+              attachments: [],
+              idleCompaction: "beforeCacheExpires" as const,
+              restartContinuationOfRunId: source.id,
+              createdBy: "agent" as const,
+              creationSource: "server" as const,
+              dispatchMode: { type: "start_immediately" as const },
+            };
+            yield* orchestrator.dispatch(command);
+            yield* orchestrator.dispatch(command);
+            const projection = yield* orchestrator.getThreadProjection(threadId);
+            const retried = projection.runs.some((run) => run.userMessageId === command.messageId);
+            if (scenario.startsWith("newer-") || scenario === "failed-retry")
+              assert.isFalse(retried, scenario);
+            if (!retried)
+              assert.isTrue(
+                projection.turnItems.some(
+                  (item) =>
+                    item.type === "system_notice" &&
+                    item.runId === source.id &&
+                    item.message.includes("not retried"),
+                ),
+                scenario,
+              );
+            return retried;
+          }),
+        { concurrency: "unbounded" },
+      );
+      assert.equal(results.filter(Boolean).length, 1);
+    }),
+  );
+
   it.effect("a compaction resumed after a restart releases only what that restart held", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("runtime-layer-held-queue-resumed-compaction");
@@ -12293,3 +12389,148 @@ it.layer(layerQueueResumeDisabledInstanceTest)(
     );
   },
 );
+
+it.layer(Layer.fresh(layerTest))("idle compaction shutdown recovery", (it) => {
+  it.effect(
+    "retries an automatic compaction cancelled by shutdown after startup, even on a cold cache",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* settings.updateSettings({
+          continueThreadsAfterServerUpdate: true,
+          idleCompaction: "beforeCacheExpires",
+          providerInstances: {
+            [claudeInstanceId]: { driver: claudeDriver, enabled: true, config: {} },
+          },
+        });
+        const threadId = ThreadId.make("idle-compaction-shutdown");
+        const selection = { instanceId: claudeInstanceId, model: "claude-haiku-5-5" };
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          projectId: ProjectId.make(`${threadId}:project`),
+          title: "Synthetic compaction recovery",
+          modelSelection: selection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdBy: "user",
+          creationSource: "web",
+          branch: null,
+          worktreePath: process.cwd(),
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`${threadId}:compact`),
+          threadId,
+          messageId: MessageId.make(`idle-compact:${threadId}`),
+          text: "/compact",
+          attachments: [],
+          idleCompaction: "beforeCacheExpires",
+          createdBy: "agent",
+          creationSource: "server",
+          dispatchMode: { type: "start_immediately" },
+        });
+        const initial = yield* orchestrator.getThreadProjection(threadId);
+        const source = initial.runs[0]!;
+        const providerThread = initial.providerThreads[0]!;
+        const now = yield* DateTime.now;
+        const sessionId =
+          providerThread.providerSessionId ?? ProviderSessionId.make(`${threadId}:session`);
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make(`${threadId}:running`),
+              type: "run.updated",
+              threadId,
+              runId: source.id,
+              occurredAt: now,
+              payload: { ...source, status: "running", startedAt: now },
+            },
+            {
+              id: EventId.make(`${threadId}:session`),
+              type: "provider-session.attached",
+              threadId,
+              driver: claudeDriver,
+              occurredAt: now,
+              payload: {
+                id: sessionId,
+                driver: claudeDriver,
+                providerInstanceId: claudeInstanceId,
+                status: "running",
+                cwd: process.cwd(),
+                model: selection.model,
+                capabilities: CodexProviderCapabilitiesV2,
+                createdAt: now,
+                updatedAt: now,
+                lastError: null,
+              },
+            },
+            {
+              id: EventId.make(`${threadId}:provider-thread`),
+              type: "provider-thread.updated",
+              threadId,
+              occurredAt: now,
+              payload: {
+                ...providerThread,
+                status: "active",
+                ownerNodeId: null,
+                providerSessionId: sessionId,
+                nativeThreadRef: {
+                  driver: claudeDriver,
+                  nativeId: "synthetic-session",
+                  strength: "strong",
+                },
+              },
+            },
+            {
+              id: EventId.make(`${threadId}:provider-turn`),
+              type: "provider-turn.updated",
+              threadId,
+              runId: source.id,
+              occurredAt: now,
+              payload: {
+                id: ProviderTurnId.make(`${threadId}:turn`),
+                providerThreadId: providerThread.id,
+                nodeId: source.rootNodeId!,
+                runAttemptId: source.activeAttemptId,
+                nativeTurnRef: null,
+                ordinal: 1,
+                status: "running",
+                startedAt: now,
+                completedAt: null,
+              },
+            },
+          ],
+        });
+        const recovery = yield* ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService;
+        yield* recovery.prepareForShutdown;
+        yield* recovery.reconcile("shutdown");
+        const stopped = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(stopped.runs[0]?.status, "cancelled");
+        assert.isTrue(
+          stopped.turnItems.some(
+            (item) => item.type === "system_notice" && item.title === "Server shut down",
+          ),
+        );
+        yield* TestClock.adjust("2 hours");
+        yield* recovery.recover;
+        yield* continueRestartedRun({ threadId, sourceRunId: source.id });
+        const restarted = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(
+          restarted.runs.length,
+          2,
+          JSON.stringify(restarted.turnItems.filter((item) => item.type === "system_notice")),
+        );
+        assert.equal(restarted.runs[1]?.restartContinuationOfRunId, source.id);
+        assert.equal(restarted.messages.at(-1)?.text, "/compact");
+        assert.equal(restarted.messages.at(-1)?.idleCompaction, "beforeCacheExpires");
+        const starts = yield* (yield* EffectOutbox.EffectOutboxV2).listByCommandId(
+          CommandId.make(`command:restart-continuation:${source.id}`),
+        );
+        assert.isTrue(starts.some((effect) => effect.request.type === "provider-turn.start"));
+      }),
+  );
+});
