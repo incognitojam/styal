@@ -53,7 +53,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp, formatRelativeTimeLabel } from "../../timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
-import { ComposerStackCard } from "../chat/ComposerStackCard";
+import {
+  ComposerStackCard,
+  type ComposerStackFold,
+  type ComposerStackOpen,
+} from "../chat/ComposerStackCard";
 import { NextUnreadChip } from "../chat/NextUnreadChip";
 import { InlineButton } from "../ui/button";
 
@@ -198,18 +202,19 @@ export function ProjectSinceLastVisit({
   onOpenReport,
   open,
   onOpenChange,
+  unreadChip,
   renderNeedsYou,
 }: {
   chatRef: ScopedThreadRef;
   source: ProjectSinceLastVisitSource;
   onOpenReport: (messageId: MessageId) => void;
-  /** Which card of the stack is open; the chat folds both while you reply to a report. */
-  open: "summary" | "needs" | null;
-  onOpenChange: (open: "summary" | "needs" | null) => void;
+  /** Which card of the stack is open: "initial" until the first fold or unfold, when a single Needs you item stays open too. */
+  open: ComposerStackOpen;
+  onOpenChange: (open: ComposerStackOpen) => void;
+  /** False while thread find is open. */
+  unreadChip: boolean;
   /** `fold` is set while this card shows. */
-  renderNeedsYou: (
-    fold: { readonly folded: boolean; readonly onFoldedChange: (folded: boolean) => void } | null,
-  ) => ReactNode;
+  renderNeedsYou: (fold: ComposerStackFold | null) => ReactNode;
 }) {
   const settings = useEnvironmentSettings(chatRef.environmentId);
   const { timestampFormat } = settings;
@@ -355,9 +360,9 @@ export function ProjectSinceLastVisit({
         testId="project-since-last-visit"
         label="Since you last checked"
         detail={`${sinceLabel} · ${layout.total} ${layout.total === 1 ? "change" : "changes"}`}
-        aside={<NextUnreadChip inline />}
+        aside={unreadChip ? <NextUnreadChip inline /> : null}
         action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
-        folded={open !== "summary"}
+        folded={open !== "summary" && open !== "initial"}
         onFoldedChange={(folded) => onOpenChange(folded ? null : "summary")}
       >
         {layout.sections.map((section) => (
@@ -381,7 +386,9 @@ export function ProjectSinceLastVisit({
       </ComposerStackCard>
       {renderNeedsYou({
         folded: open !== "needs",
-        onFoldedChange: (folded) => onOpenChange(folded ? null : "needs"),
+        initial: open === "initial",
+        onFoldedChange: (folded) =>
+          onOpenChange(folded ? (open === "initial" ? "summary" : null) : "needs"),
       })}
     </>
   );

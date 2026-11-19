@@ -10,7 +10,7 @@ import {
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
-import { ComposerStackCard } from "./ComposerStackCard";
+import { ComposerStackCard, type ComposerStackFold } from "./ComposerStackCard";
 import { NextUnreadChip } from "./NextUnreadChip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
@@ -236,6 +236,7 @@ export function NeedsYou({
   runs,
   project = NO_PROJECT_THREADS,
   fold,
+  unreadChip = true,
   ...reviewProps
 }: {
   reports: readonly ReportState[];
@@ -244,7 +245,9 @@ export function NeedsYou({
   /** On a project page: the project's threads that need you, answered here. */
   project?: ReadonlyArray<EnvironmentThreadShell>;
   /** Set when the stack decides it: otherwise the card keeps its own. */
-  fold?: { readonly folded: boolean; readonly onFoldedChange: (folded: boolean) => void };
+  fold?: ComposerStackFold;
+  /** False while thread find is open. */
+  unreadChip?: boolean;
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [ownFolded, setOwnFolded] = useState(false);
@@ -258,10 +261,10 @@ export function NeedsYou({
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
-  // A single item costs less room than the click it would take to unfold it.
-  const stackFold = rows.length > 1 ? fold : undefined;
-  const folded = stackFold?.folded ?? ownFolded;
-  const setFolded = stackFold?.onFoldedChange ?? setOwnFolded;
+  // A single item costs less room than the click it would take to unfold it, until the
+  // stack is folded or unfolded by hand.
+  const folded = fold ? fold.folded && !(fold.initial && rows.length === 1) : ownFolded;
+  const setFolded = fold?.onFoldedChange ?? setOwnFolded;
   if (!rows.length && !answered) return null;
   const opened = rows.filter((row) => row.kind === "need" && row.need.key === openNeed);
   const visible = opened.length ? opened : expanded ? rows : rows.slice(0, 3);
@@ -273,7 +276,7 @@ export function NeedsYou({
     <ComposerStackCard
       label={rows.length ? "Needs you" : "Answered"}
       count={rows.length || undefined}
-      aside={<NextUnreadChip inline />}
+      aside={unreadChip ? <NextUnreadChip inline /> : null}
       folded={folded}
       onFoldedChange={(next) => {
         collapse();

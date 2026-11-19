@@ -51,6 +51,7 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
+import type { ComposerStackOpen } from "./chat/ComposerStackCard";
 import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import { useProviderSignInBanner } from "./chat/useProviderSignInBanner";
@@ -1116,10 +1117,10 @@ export default function ChatView(props: ChatViewProps) {
   // Which card of the composer stack is open, per thread; replying to a report folds both.
   const [composerStackOpen, setComposerStackOpen] = useState<{
     threadKey: string | null;
-    open: "summary" | "needs" | null;
-  }>({ threadKey: null, open: "summary" });
+    open: ComposerStackOpen;
+  }>({ threadKey: null, open: "initial" });
   const activeComposerStackOpen =
-    composerStackOpen.threadKey === activeThreadKey ? composerStackOpen.open : "summary";
+    composerStackOpen.threadKey === activeThreadKey ? composerStackOpen.open : "initial";
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
     if (timelineAnchorMessageId === null) return false;
@@ -2734,6 +2735,7 @@ export default function ChatView(props: ChatViewProps) {
         runs={activeThreadShell?.workflowRuns ?? []}
         {...(projectChat ? { project: projectChat.needYou } : {})}
         {...(fold ? { fold } : {})}
+        unreadChip={!isThreadFindActive}
         watchActions={workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined}
       />
     ) : null;
@@ -3929,6 +3931,7 @@ export default function ChatView(props: ChatViewProps) {
                         onOpenChange={(open) =>
                           setComposerStackOpen({ threadKey: activeThreadKey, open })
                         }
+                        unreadChip={!isThreadFindActive}
                         renderNeedsYou={renderNeedsYou}
                       />
                     )}

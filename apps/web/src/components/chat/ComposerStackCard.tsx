@@ -5,6 +5,16 @@ import { cn } from "~/lib/utils";
 import { InlineButton } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 
+/** The project page's stack: which card is open, or "initial" before the first fold or unfold. */
+export type ComposerStackOpen = "initial" | "summary" | "needs" | null;
+
+/** How the stack folds Needs you; on "initial" a single item stays open beside the summary. */
+export interface ComposerStackFold {
+  readonly folded: boolean;
+  readonly initial: boolean;
+  readonly onFoldedChange: (folded: boolean) => void;
+}
+
 /**
  * A card in the stack above the composer, such as Needs you or the project page's "Since you last
  * checked": one width, one gap, one header (label · count · detail, then `aside` and the action at
