@@ -759,7 +759,6 @@ function viewedSourceUrlKey(url: string): string | null {
   return `${parsed.host}${withoutTrailing(parsed.pathname, "/")}${parsed.search}`;
 }
 
-/** Message text without fenced code blocks and code spans, which show URLs as text. */
 /** A line's leading fence delimiter (up to three spaces, then a backtick or tilde run) and the rest. */
 function fenceDelimiter(line: string) {
   let start = 0;
@@ -771,6 +770,7 @@ function fenceDelimiter(line: string) {
   return { char, length: end - start, rest: line.slice(end) };
 }
 
+/** Message text without fenced code blocks and code spans, which show URLs as text. */
 function withoutCode(text: string): string {
   const prose: string[] = [];
   let fence: { readonly char: string; readonly length: number } | null = null;
