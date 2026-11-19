@@ -17,6 +17,7 @@ import {
 } from "./AntigravityProtocol.ts";
 import {
   mergeToolCallState,
+  parsePermissionRequest,
   parseSessionUpdateEvent,
 } from "@t3tools/provider-acp/server/runtimeModel";
 import { acpToolCallDiffPatch } from "@t3tools/provider-acp/server/adapter";
@@ -170,6 +171,28 @@ describe("Antigravity permissions and questions", () => {
       { decision: "cancel", label: "Cancel" },
     ]);
     expect(antigravityApprovalOptions(permissionRequest)[1]).not.toHaveProperty("warning");
+  });
+
+  it("asks about the command, not the step's generic title, and keeps a long command's start", () => {
+    // Captured from agy_acp_server: the command is only in its own rawInput field.
+    const request = (CommandLine: string) =>
+      ({
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "ac1762c10a184ceeb91fc1ee9484816d",
+          kind: "execute",
+          status: "pending",
+          title: "Ran command",
+          rawInput: { CommandLine, Cwd: "/workspace", WaitMsBeforeAsync: 5000 },
+        },
+        options: permissionRequest.options,
+      }) satisfies EffectAcpSchema.RequestPermissionRequest;
+    const prompt = (command: string) =>
+      parsePermissionRequest(request(command), normalizeAntigravityToolCall).detail;
+    expect(prompt("cat probe.txt")).toBe("cat probe.txt");
+    const long = prompt(`python3 -c '${"x".repeat(9_000)}'`);
+    expect(long?.startsWith("python3 -c 'xxx")).toBe(true);
+    expect(long?.endsWith("x…")).toBe(true);
   });
 
   it("routes the captured native question to single-choice input, not approval", () => {

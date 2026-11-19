@@ -10,10 +10,13 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useEnvironmentScope } from "../../state/session";
 import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { buildThreadRouteParams } from "../../threadRoutes";
+import { Button } from "../ui/button";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
 /** `bare` leaves out the frame and heading, for a row that already names the thread. */
@@ -28,6 +31,7 @@ export function ChildApproval({
 }) {
   const canRespond = useEnvironmentScope(entry.thread.environmentId, AuthOrchestrationOperateScope);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
+  const navigate = useNavigate();
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { approval } = entry;
@@ -78,6 +82,21 @@ export function ChildApproval({
             return result;
           }}
         />
+        {bare ? null : (
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            className="ms-auto"
+            onClick={() =>
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(entry.thread),
+              })
+            }
+          >
+            Open thread
+          </Button>
+        )}
       </div>
       {error !== null ? (
         <p role="alert" className="mt-2 text-destructive">
