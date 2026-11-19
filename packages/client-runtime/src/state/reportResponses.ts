@@ -231,7 +231,7 @@ export function createReportResponses(
           );
         } else {
           const cause = squashAtomCommandFailure(result);
-          fail(cause instanceof Error ? cause.message : undefined);
+          fail(cause instanceof Error ? cause.message : "The server did not accept it.");
         }
         if (!finished) check(registry.get(threads.stateAtom(thread)));
       },
