@@ -351,7 +351,7 @@ started them, and the page's status line counts them. A thread comes back to the
 needs an approval or an answer, fails, or when you open it, pin it or send it a message
 yourself. They finish without a Done notification, and stay in search and the command palette.
 
-When something has happened since you last checked, the end of the chat lists it: threads that
+When something has happened since you last checked, a list above the chat's composer shows it: threads that
 failed or hit a usage limit, the chat's reports, threads that finished and you haven't opened, and
 pull requests that merged. You check by choosing **Mark as seen** on the list or by writing in the
 project chat, on any of your devices; opening the page doesn't count. The list goes back at most 14

@@ -331,7 +331,7 @@ import {
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
-import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
+import type { FileActionReviewRequest } from "./chat/MessagesTimeline.logic";
 import {
   ProjectSinceLastVisit,
   type ProjectSinceLastVisitSource,
@@ -1105,33 +1105,6 @@ export default function ChatView(props: ChatViewProps) {
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
-  // Built once per capture, so the timeline row keeps its identity while the chat streams.
-  const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
-    readonly source: ProjectSinceLastVisitSource | null;
-    readonly row: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
-  }>({ source: null, row: undefined });
-  if (sinceLastVisitRow.source !== sinceLastVisit) {
-    setSinceLastVisitRow({
-      source: sinceLastVisit,
-      row:
-        sinceLastVisit === null
-          ? undefined
-          : {
-              kind: "inserted",
-              id: "project-since-last-visit",
-              // The chat's last change before the page opened, on the clock its rows carry.
-              createdAt: sinceLastVisit.anchorAt,
-              content: (
-                <ProjectSinceLastVisit
-                  chatRef={routeThreadRef}
-                  source={sinceLastVisit}
-                  onOpenReport={scrollToReport}
-                />
-              ),
-            },
-    });
-  }
-
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
     if (timelineAnchorMessageId === null) return false;
@@ -3838,7 +3811,6 @@ export default function ChatView(props: ChatViewProps) {
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
-                  insertedRow={sinceLastVisitRow.row}
                 />
               </WorkspaceMutationIdContext>
 
@@ -3912,6 +3884,13 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {sinceLastVisit === null ? null : (
+                      <ProjectSinceLastVisit
+                        chatRef={routeThreadRef}
+                        source={sinceLastVisit}
+                        onOpenReport={scrollToReport}
+                      />
+                    )}
                     {activeThreadId ? (
                       <NeedsYou
                         key={activeThreadId}

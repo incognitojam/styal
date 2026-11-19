@@ -124,7 +124,6 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         projectId: checkout.id,
         members,
         openedAt,
-        anchorAt: liveChat.updatedAt,
       });
     }
   } else if (

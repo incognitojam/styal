@@ -10,6 +10,7 @@ import {
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { Button } from "../ui/button";
+import { ComposerStackCard } from "./ComposerStackCard";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -250,61 +251,62 @@ export function NeedsYou({
   if (!rows.length && !answered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
   return (
-    <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-          <span>{rows.length ? `Needs you · ${rows.length}` : "Answered"}</span>
-          {rows.length > 3 ? (
-            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
-              {expanded ? "Show less" : `Show all ${rows.length}`}
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex max-h-[min(24rem,45dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
-          {visible.map((row, index) =>
-            row.kind === "run" ? (
-              <WorkflowRunReviewRow
-                key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
-                {...reviewProps}
-                run={row.run}
-                // The thread's background-work actions belong to the first run only.
-                {...(index === 0 ? {} : { watchActions: undefined })}
-              />
-            ) : row.kind === "need" ? (
-              <ProjectNeedRow
-                key={row.need.key}
-                need={row.need}
-                open={openNeed === row.need.key}
-                onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
-              />
-            ) : (
-              <button
-                key={row.report.message.id}
-                type="button"
-                className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-                onClick={() => scroll(row.report.message.id)}
-              >
-                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 text-sm text-foreground">
-                    {row.report.message.report!.question}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
-                    {formatRelativeTimeLabel(row.report.message.createdAt)}
-                  </span>
-                </span>
-              </button>
-            ),
-          )}
-        </div>
-        {answered ? (
+    <ComposerStackCard
+      label={rows.length ? "Needs you" : "Answered"}
+      count={rows.length || undefined}
+      action={
+        rows.length > 3
+          ? {
+              label: expanded ? "Show less" : `Show all ${rows.length}`,
+              onClick: () => setExpanded(!expanded),
+            }
+          : null
+      }
+      footer={
+        answered ? (
           <div className="border-t border-border/60">
             <AnsweredNeedRow answered={answered} />
           </div>
-        ) : null}
-      </div>
-    </div>
+        ) : null
+      }
+    >
+      {visible.map((row, index) =>
+        row.kind === "run" ? (
+          <WorkflowRunReviewRow
+            key={`${row.run.host}/${row.run.repository}/${row.run.runId}`}
+            {...reviewProps}
+            run={row.run}
+            // The thread's background-work actions belong to the first run only.
+            {...(index === 0 ? {} : { watchActions: undefined })}
+          />
+        ) : row.kind === "need" ? (
+          <ProjectNeedRow
+            key={row.need.key}
+            need={row.need}
+            open={openNeed === row.need.key}
+            onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
+            onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
+          />
+        ) : (
+          <button
+            key={row.report.message.id}
+            type="button"
+            className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
+            onClick={() => scroll(row.report.message.id)}
+          >
+            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="line-clamp-2 text-sm text-foreground">
+                {row.report.message.report!.question}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
+                {formatRelativeTimeLabel(row.report.message.createdAt)}
+              </span>
+            </span>
+          </button>
+        ),
+      )}
+    </ComposerStackCard>
   );
 }

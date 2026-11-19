@@ -25,7 +25,6 @@ import { MessageId, RunId } from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
-  insertTimelineRow,
   deriveContinuedRunRoots,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
@@ -3792,54 +3791,6 @@ describe("deriveMessagesTimelineRows", () => {
       }
     },
   );
-});
-
-describe("insertTimelineRow", () => {
-  const row = (kind: string, id: string, createdAt: string | null) =>
-    ({ kind, id, createdAt }) as MessagesTimelineRow;
-  const inserted = {
-    kind: "inserted",
-    id: "since-last-visit",
-    createdAt: "2026-11-18T18:00:00.000Z",
-    content: null,
-  } as const;
-  const ids = (rows: ReadonlyArray<MessagesTimelineRow>) => rows.map((entry) => entry.id);
-
-  it("stays where the timeline ended when the page opened, before rows that came later", () => {
-    const before = [
-      row("worktree-setup", "setup", null),
-      row("message", "report", "2026-11-18T17:31:00.000Z"),
-    ];
-    expect(ids(insertTimelineRow(before, inserted))).toEqual([
-      "setup",
-      "report",
-      "since-last-visit",
-    ]);
-    expect(
-      ids(
-        insertTimelineRow(
-          [...before, row("message", "reply", "2026-11-18T18:05:00.000Z")],
-          inserted,
-        ),
-      ),
-    ).toEqual(["setup", "report", "since-last-visit", "reply"]);
-  });
-
-  it("sits above a turn still working, and waits for rows before it is placed", () => {
-    expect(
-      ids(
-        insertTimelineRow(
-          [
-            row("message", "ask", "2026-11-18T17:50:00.000Z"),
-            row("work-live", "tool", "2026-11-18T17:55:00.000Z"),
-            row("working", "working", "2026-11-18T17:50:00.000Z"),
-          ],
-          inserted,
-        ),
-      ),
-    ).toEqual(["ask", "since-last-visit", "tool", "working"]);
-    expect(insertTimelineRow([], inserted)).toEqual([]);
-  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {

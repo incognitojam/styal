@@ -53,6 +53,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp, formatRelativeTimeLabel } from "../../timestampFormat";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
+import { ComposerStackCard } from "../chat/ComposerStackCard";
 import { InlineButton } from "../ui/button";
 
 type ReportReference = {
@@ -133,8 +134,6 @@ export interface ProjectSinceLastVisitSource {
   }>;
   /** When the page opened, read once: for the 14-day limit and time labels. */
   readonly openedAt: number;
-  /** The chat's last change when the page opened: the card sits after it in the timeline. */
-  readonly anchorAt: string;
 }
 
 interface ProjectThreadLines {
@@ -338,50 +337,32 @@ export function ProjectSinceLastVisit({
   const expand = (group: SinceLastVisitGroup) => setExpanded(new Set(expanded).add(group));
 
   return (
-    <div className="pb-4">
-      <div
-        data-testid="project-since-last-visit"
-        className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs"
-      >
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-muted-foreground text-xs">
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-foreground">Since you last checked</span> ·{" "}
-            {sinceLabel}
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            {layout.total}
-            {canMarkSeen ? (
-              <>
-                {" ·"}
-                <InlineButton tone="muted" onClick={markSeen}>
-                  Mark as seen
-                </InlineButton>
-              </>
-            ) : null}
-          </span>
-        </div>
-        <div className="flex flex-col divide-y divide-border/60">
-          {layout.sections.map((section) => (
-            <SinceLastVisitSectionRows
-              key={section.group}
-              section={section}
-              grouped={layout.grouped}
-              time={time}
-              timestampFormat={timestampFormat}
-              onOpen={openLine}
-              onExpand={() => expand(section.group)}
-              footer={section.group === "reports" ? loadEarlierControl : null}
-            />
-          ))}
-          {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
-            <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
-          ) : null}
-          {unloadedNote ? (
-            <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
-          ) : null}
-        </div>
-      </div>
-    </div>
+    <ComposerStackCard
+      testId="project-since-last-visit"
+      label="Since you last checked"
+      count={layout.total}
+      detail={sinceLabel}
+      action={canMarkSeen ? { label: "Mark as seen", onClick: markSeen } : null}
+    >
+      {layout.sections.map((section) => (
+        <SinceLastVisitSectionRows
+          key={section.group}
+          section={section}
+          grouped={layout.grouped}
+          time={time}
+          timestampFormat={timestampFormat}
+          onOpen={openLine}
+          onExpand={() => expand(section.group)}
+          footer={section.group === "reports" ? loadEarlierControl : null}
+        />
+      ))}
+      {loadEarlierControl && !layout.sections.some((section) => section.group === "reports") ? (
+        <div className="px-3 py-1.5 text-muted-foreground text-xs">{loadEarlierControl}</div>
+      ) : null}
+      {unloadedNote ? (
+        <div className="px-3 py-1.5 text-muted-foreground text-xs">{unloadedNote}</div>
+      ) : null}
+    </ComposerStackCard>
   );
 }
 
@@ -425,7 +406,7 @@ function SinceLastVisitSectionRows({
         </div>
       ) : null}
       {section.display === "names" ? (
-        <div className="flex min-w-0 items-start gap-2 px-3 py-1 text-sm">
+        <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm">
           <LineIcon line={section.lines[0]!} />
           <span className="min-w-0 flex-1">
             {section.lines.map((line, index) => (
@@ -447,7 +428,7 @@ function SinceLastVisitSectionRows({
           <button
             key={line.id}
             type="button"
-            className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-1 text-left text-sm hover:bg-accent/40"
+            className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent/40"
             onClick={(event) => onOpen(event, line)}
           >
             <LineIcon line={line} />
