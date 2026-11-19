@@ -5,7 +5,11 @@ import {
   captureSinceLastVisit,
 } from "@t3tools/client-runtime/project-since-last-visit";
 import { projectCoordinatorPatch } from "@t3tools/client-runtime/state/project-coordinators";
-import { projectCoordinatorThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  projectCoordinatorThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -30,7 +34,11 @@ import ChatView from "../ChatView";
 import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
 import { SidebarInset } from "../ui/sidebar";
-import { projectChatDraftId, resolveProjectChatView } from "./projectPage.logic";
+import {
+  legacyProjectChatDraftId,
+  projectChatDraftId,
+  resolveProjectChatView,
+} from "./projectPage.logic";
 import { type ProjectPage as ProjectPageState, useProjectPages } from "./useProjectPages";
 
 /**
@@ -70,13 +78,34 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
   const { environments } = useEnvironments();
   const machines = useEnvironmentMachines();
   const saveSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
-  const { checkout, chatThreadId } = page.host;
+  const { chatThreadId, choices, off } = page.host;
+  // A draft saved per checkout, before drafts were kept per project, stays the draft while any of
+  // it remains (its session or its sent redirect), so a failed first send recovers into it.
+  const legacyDraftId = useComposerDraftStore((store) =>
+    store.getDraftSession(DraftId.make(projectChatDraftId(page.group.projectKey))) !== null
+      ? null
+      : (page.group.memberProjects
+          .map((member) => DraftId.make(legacyProjectChatDraftId(member)))
+          .find(
+            (id) =>
+              store.getDraftSession(id) !== null || store.getPromotedDraftRedirect(id) !== null,
+          ) ?? null),
+  );
+  const draftId = legacyDraftId ?? DraftId.make(projectChatDraftId(page.group.projectKey));
+  const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
+  // Until the chat exists, its first message goes to the machine chosen in the composer.
+  const checkout =
+    (chatThreadId === null
+      ? choices.find(
+          (choice) =>
+            choice.environmentId === draftSession?.environmentId &&
+            choice.id === draftSession.projectId,
+        )
+      : undefined) ?? page.host.checkout;
   const environmentId = checkout.environmentId;
-  const draftId = DraftId.make(projectChatDraftId(checkout));
   const chatRef = chatThreadId === null ? null : scopeThreadRef(environmentId, chatThreadId);
   const chatShell = useQuietThreadShell(chatRef);
   const shellLive = isThreadRouteSnapshotAuthoritative(useEnvironmentShellStatus(environmentId));
-  const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
   const draftRedirect = useComposerDraftStore((store) => store.getPromotedDraftRedirect(draftId));
   const sentRef = draftSession?.promotedTo ?? draftRedirect;
   const sentShell = useQuietThreadShell(sentRef);
@@ -132,8 +161,25 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
       : null;
   if (nextSentViewThreadId !== sentViewThreadId) setSentViewThreadId(nextSentViewThreadId);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the chat's draft in the composer draft store, which the page cannot hold in render
+  // A draft left on a machine that can no longer take the chat (project coordinators turned off
+  // there, or the checkout gone from the project) moves to the default, so the first message
+  // never starts there. A machine whose settings have not loaded yet keeps its draft.
+  const isDraftCheckout = (member: { readonly environmentId: string; readonly id: string }) =>
+    member.environmentId === draftSession?.environmentId && member.id === draftSession.projectId;
+  const draftOffChoices =
+    chatThreadId === null &&
+    draftSession !== null &&
+    draftSession.promotedTo == null &&
+    (off.some(isDraftCheckout) || !page.group.memberProjects.some(isDraftCheckout));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens or moves the chat's draft in the composer draft store, which the page cannot hold in render
   useEffect(() => {
+    if (draftOffChoices) {
+      useComposerDraftStore.getState().setDraftThreadContext(draftId, {
+        projectRef: scopeProjectRef(environmentId, checkout.id),
+        environmentSelection: "manual",
+      });
+      return;
+    }
     if (!openDraft) return;
     ensureProjectChatDraft({
       draftId,
@@ -141,16 +187,48 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
       projectRef: scopeProjectRef(environmentId, checkout.id),
       logicalProjectKey: page.group.projectKey,
     });
-  }, [checkout.id, draftId, environmentId, openDraft, page.group.projectKey]);
+  }, [checkout.id, draftId, draftOffChoices, environmentId, openDraft, page.group.projectKey]);
+  const labelOf = (machine: EnvironmentId) =>
+    environments.find((entry) => entry.environmentId === machine)?.label ?? machine;
 
+  // The draft's own checkout: a project can have two checkouts on one machine.
+  const projectOn = (machine: EnvironmentId) => {
+    const draft = useComposerDraftStore.getState().getDraftSession(draftId);
+    if (draft?.environmentId === machine) return draft.projectId;
+    return (
+      page.group.memberProjects.find((member) => member.environmentId === machine)?.id ??
+      checkout.id
+    );
+  };
   // Named before the first message is sent, so the chat's first turn is told it coordinates.
+  // One chat per project: the project's other machines stop naming theirs.
   const nameAsChat = async (threadRef: ScopedThreadRef) => {
     const result = await saveSettings({
       environmentId: threadRef.environmentId,
-      input: { patch: projectCoordinatorPatch(checkout.id, threadRef.threadId) },
+      input: {
+        patch: projectCoordinatorPatch(projectOn(threadRef.environmentId), threadRef.threadId),
+      },
     });
-    if (result._tag === "Success") setNamed(threadRef);
-    else await reportProjectCoordinatorFailure(result);
+    if (result._tag !== "Success") {
+      await reportProjectCoordinatorFailure(result);
+      return result;
+    }
+    setNamed(threadRef);
+    const configs = appAtomRegistry.get(environmentServerConfigsAtom);
+    for (const member of page.group.memberProjects) {
+      const settings = configs.get(member.environmentId)?.settings;
+      // Stored even where the switch is off: turning it on would bring that chat back.
+      if (
+        member.environmentId === threadRef.environmentId ||
+        !settings ||
+        !Object.hasOwn(settings.projectCoordinators, member.id)
+      )
+        continue;
+      void saveSettings({
+        environmentId: member.environmentId,
+        input: { patch: projectCoordinatorPatch(member.id, null) },
+      }).then(reportProjectCoordinatorFailure);
+    }
     return result;
   };
   // The thread named before sending will never exist, so the project has no chat again.
@@ -159,11 +237,11 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     const settings = appAtomRegistry
       .get(environmentServerConfigsAtom)
       .get(threadRef.environmentId)?.settings;
-    if (!settings || projectCoordinatorThreadId(settings, checkout.id) !== threadRef.threadId)
-      return;
+    const projectId = projectOn(threadRef.environmentId);
+    if (!settings || projectCoordinatorThreadId(settings, projectId) !== threadRef.threadId) return;
     void saveSettings({
       environmentId: threadRef.environmentId,
-      input: { patch: projectCoordinatorPatch(checkout.id, null) },
+      input: { patch: projectCoordinatorPatch(projectId, null) },
     }).then(reportProjectCoordinatorFailure);
   };
 
@@ -179,6 +257,13 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
       environmentLabel === undefined
         ? null
         : { label: environmentLabel, kind: machines.get(environmentId) ?? "server" },
+    newChatMachines:
+      chatThreadId === null
+        ? {
+            environmentIds: choices.map((choice) => choice.environmentId),
+            offLabels: off.map((member) => labelOf(member.environmentId)),
+          }
+        : null,
     onNewThread: () => void handleNewThread(scopeProjectRef(environmentId, checkout.id)),
     onOpenSettings: () =>
       void navigate({

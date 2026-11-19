@@ -433,6 +433,11 @@ const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 type ProjectChat = ProjectChatHeaderProps & {
   /** The project's threads that need you, listed above the composer. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** Before the chat exists: the machines it can start on, and those with the switch off. */
+  readonly newChatMachines: {
+    readonly environmentIds: ReadonlyArray<EnvironmentId>;
+    readonly offLabels: ReadonlyArray<string>;
+  } | null;
 };
 
 type ChatViewProps =
@@ -1312,12 +1317,21 @@ export default function ChatView(props: ChatViewProps) {
       activeProject,
       environmentById.get(activeProject.environmentId)?.serverConfig?.scratchWorkspaceRoot ?? null,
     );
-  const logicalProjectEnvironments = useLogicalProjectEnvironments(
+  const projectEnvironments = useLogicalProjectEnvironments(
     activeProject,
     activeProjectIsScratch && draftId !== null,
   );
+  // A project chat starts only where project coordinators are on, and never moves once started.
+  const projectChatMachines = projectChat?.newChatMachines ?? null;
+  const logicalProjectEnvironments =
+    projectChat === undefined
+      ? projectEnvironments
+      : projectEnvironments.filter((environment) =>
+          projectChatMachines?.environmentIds.includes(environment.environmentId),
+        );
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
-  const canAutoBalanceEnvironments = hasMultipleEnvironments && !activeProjectIsScratch;
+  const canAutoBalanceEnvironments =
+    hasMultipleEnvironments && !activeProjectIsScratch && projectChat === undefined;
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
       (environment) => environment.environmentId === activeThread?.environmentId,
@@ -1937,17 +1951,19 @@ export default function ChatView(props: ChatViewProps) {
           providerSubagentModels,
           reportedModelSelection,
         );
-  // The project chat stays in the project's checkout, so it offers no branch or worktree.
+  // The project chat stays in the project's checkout, so it offers no branch or worktree; before
+  // its first message it offers only the machine.
   const showComposerContextStrip =
     !embedded &&
-    projectChat === undefined &&
-    shouldShowComposerContextStrip({
-      isDraftHeroState,
-      persistInActiveThreads: settings.persistComposerContextStrip,
-      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-      isGitRepo,
-      showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    });
+    (projectChat !== undefined ? canChangeEnvironment : true) &&
+    (projectChat !== undefined ||
+      shouldShowComposerContextStrip({
+        isDraftHeroState,
+        persistInActiveThreads: settings.persistComposerContextStrip,
+        hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+        isGitRepo,
+        showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      }));
   const terminalShortcutLabelOptions = {
     context: {
       terminalFocus: true,
@@ -3866,6 +3882,7 @@ export default function ChatView(props: ChatViewProps) {
                           draftId={draftId}
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
+                          projectPage={projectChat !== undefined}
                         />
                       </div>
                     </div>
@@ -4128,7 +4145,7 @@ export default function ChatView(props: ChatViewProps) {
                                   projectId={activeThread.projectId}
                                   worktreePath={activeThread.worktreePath}
                                   isServerThread={isServerThread}
-                                  showGitControls={isGitRepo}
+                                  showGitControls={isGitRepo && projectChat === undefined}
                                   {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                   onEnvModeChange={onEnvModeChangeStable}
                                   startFromOrigin={startFromOrigin}
@@ -4164,7 +4181,7 @@ export default function ChatView(props: ChatViewProps) {
                                       : undefined
                                   }
                                   availableEnvironments={logicalProjectEnvironments}
-                                  {...(isServerThread
+                                  {...(isServerThread || projectChat !== undefined
                                     ? {}
                                     : {
                                         trailing: (
@@ -4183,6 +4200,13 @@ export default function ChatView(props: ChatViewProps) {
                                 />
                               </div>
                             )}
+                            {draftId !== null && projectChatMachines?.offLabels.length ? (
+                              <p className="px-3 pb-2 text-xs text-muted-foreground">
+                                Project coordinators are off on{" "}
+                                {projectChatMachines.offLabels.join(", ")}, so the chat cannot start
+                                there. Turn them on in Settings → Labs on that machine.
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </ComposerSurface.Shell>

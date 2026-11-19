@@ -67,12 +67,15 @@ interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
+  /** On a project's own page, which starts its chat in that project. */
+  readonly projectPage?: boolean;
 }
 
 export function DraftHeroHeadline({
   draftId,
   activeProjectRef,
   activeProjectTitle,
+  projectPage = false,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useVisibleThreadShells();
@@ -377,7 +380,11 @@ export function DraftHeroHeadline({
 
   const noProjectShortcut = shortcutLabelForCommand(keybindings, "chat.newWithoutProject");
   const orStartWithoutProject =
-    scratchWorkspaceRoot !== null && !isScratchDraft && (hasResolvedProject || canChooseProject) ? (
+    // A project's own page starts its chat in that project.
+    !projectPage &&
+    scratchWorkspaceRoot !== null &&
+    !isScratchDraft &&
+    (hasResolvedProject || canChooseProject) ? (
       <Tooltip>
         <TooltipTrigger
           render={

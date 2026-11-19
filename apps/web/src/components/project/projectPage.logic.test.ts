@@ -36,6 +36,23 @@ function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
 
 const running = { status: "running" } as EnvironmentThreadShell["runtime"];
 
+function ranking(
+  input: {
+    readonly at?: Partial<Record<string, string>>;
+    readonly chatAt?: Partial<Record<string, string>>;
+    readonly offline?: ReadonlyArray<string>;
+  } = {},
+) {
+  const time = (value: string | undefined) =>
+    value ? Date.parse(value) : Number.NEGATIVE_INFINITY;
+  return {
+    checkoutActivityAt: (checkout: { readonly environmentId: string }) =>
+      time(input.at?.[checkout.environmentId]),
+    chatActivityAt: (_environmentId: string, threadId: string) => time(input.chatAt?.[threadId]),
+    connected: (environmentId: string) => !input.offline?.includes(environmentId),
+  };
+}
+
 describe("countProjectThreads", () => {
   it("counts approvals, questions and report questions as needing you, and failures as neither", () => {
     const counts = countProjectThreads(
@@ -172,6 +189,7 @@ describe("project page availability", () => {
         () => off,
         local,
         () => null,
+        ranking(),
       ),
     ).toBeNull();
   });
@@ -188,8 +206,9 @@ describe("project page availability", () => {
         () => stored,
         local,
         () => otherProject,
+        ranking(),
       ),
-    ).toEqual({ checkout: checkouts[1], chatThreadId: null });
+    ).toMatchObject({ checkout: checkouts[1], chatThreadId: null });
     // Not created yet: still this project's chat, so its first turn is told.
     expect(
       resolveProjectChatHost(
@@ -197,25 +216,91 @@ describe("project page availability", () => {
         () => stored,
         local,
         () => null,
+        ranking(),
       ),
-    ).toEqual({
+    ).toMatchObject({
       checkout: checkouts[0],
       chatThreadId: chatId,
     });
   });
 
-  it("puts a new chat on the primary machine, and an existing one where it is stored", () => {
+  it("puts a new chat on a connected machine where the project was last active, else the primary", () => {
     expect(
       resolveProjectChatHost(
         checkouts,
         () => on,
         local,
         () => null,
+        ranking(),
       ),
     ).toEqual({
       checkout: checkouts[1],
       chatThreadId: null,
+      choices: checkouts,
+      off: [],
     });
+    const lastActive = {
+      [remote]: "2026-11-19T10:00:00.000Z",
+      [local]: "2026-11-18T10:00:00.000Z",
+    };
+    expect(
+      resolveProjectChatHost(
+        checkouts,
+        () => on,
+        local,
+        () => null,
+        ranking({ at: lastActive }),
+      ),
+    ).toMatchObject({ checkout: checkouts[0] });
+    // Activity cached from a machine that is not connected does not outrank a connected one.
+    expect(
+      resolveProjectChatHost(
+        checkouts,
+        () => on,
+        local,
+        () => null,
+        ranking({ at: lastActive, offline: [remote] }),
+      ),
+    ).toMatchObject({ checkout: checkouts[1] });
+    // A machine with project coordinators off cannot take the chat; it is listed as off.
+    expect(
+      resolveProjectChatHost(
+        checkouts,
+        (id) => (id === remote ? off : on),
+        local,
+        () => null,
+        ranking({ at: { [remote]: "2026-11-19T10:00:00.000Z" } }),
+      ),
+    ).toEqual({
+      checkout: checkouts[1],
+      chatThreadId: null,
+      choices: [checkouts[1]],
+      off: [checkouts[0]],
+    });
+  });
+
+  it("picks the most recently active chat when several machines name one", () => {
+    const named = (threadId: string) => ({
+      projectCoordinatorsEnabled: true,
+      projectCoordinators: { [project]: { threadId: ThreadId.make(threadId) } },
+    });
+    expect(
+      resolveProjectChatHost(
+        checkouts,
+        (id) => (id === remote ? named("stale-chat") : named("new-chat")),
+        local,
+        () => project,
+        ranking({
+          chatAt: {
+            "new-chat": "2026-11-19T10:00:00.000Z",
+            "stale-chat": "2026-11-01T10:00:00.000Z",
+          },
+        }),
+      ),
+    ).toEqual({ checkout: checkouts[1], chatThreadId: "new-chat", choices: [], off: [] });
+  });
+
+  it("keeps an existing chat where it is stored, with no choice left", () => {
     const stored = {
       projectCoordinatorsEnabled: true,
       projectCoordinators: { [project]: { threadId: chatId } },
@@ -226,14 +311,15 @@ describe("project page availability", () => {
         (id) => (id === remote ? stored : on),
         local,
         () => project,
+        ranking(),
       ),
-    ).toEqual({ checkout: checkouts[0], chatThreadId: chatId });
+    ).toEqual({ checkout: checkouts[0], chatThreadId: chatId, choices: [], off: [] });
   });
 });
 
 describe("projectChatDraftId", () => {
-  it("survives a reload: stored draft keys with a colon are read back as thread keys", () => {
-    const draftId = projectChatDraftId({ environmentId: EnvironmentId.make("env:a"), id: project });
+  it("is one per project, and survives a reload: draft keys with a colon read back as thread keys", () => {
+    const draftId = projectChatDraftId("env:a:~/work/orchard");
     expect(parseScopedThreadKey(draftId)).toBeNull();
     expect(isProjectChatDraftId(draftId)).toBe(true);
   });

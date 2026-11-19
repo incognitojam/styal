@@ -1,11 +1,17 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 
 import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useServerConfigs, useThreadShells } from "../../state/entities";
+import {
+  useEnvironmentShellStatuses,
+  useServerConfigs,
+  useThreadShells,
+} from "../../state/entities";
+import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
 import {
   countProjectThreads,
@@ -30,9 +36,27 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
   const serverConfigs = useServerConfigs();
   const threads = useThreadShells();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const shellStatuses = useEnvironmentShellStatuses();
   const projectByThreadKey = new Map(
     threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread.projectId] as const),
   );
+  const activityByThreadKey = new Map(
+    threads.map(
+      (thread) =>
+        [
+          `${thread.environmentId}:${thread.id}`,
+          getThreadSortTimestamp(thread, "updated_at"),
+        ] as const,
+    ),
+  );
+  const activityByCheckout = new Map<string, number>();
+  for (const thread of threads) {
+    const key = `${thread.environmentId}:${thread.projectId}`;
+    const at = getThreadSortTimestamp(thread, "updated_at");
+    if (at > (activityByCheckout.get(key) ?? Number.NEGATIVE_INFINITY)) {
+      activityByCheckout.set(key, at);
+    }
+  }
   const pages = new Map<string, ProjectPage>();
   const groupKeyByProject = new Map<string, string>();
   for (const group of groups) {
@@ -42,6 +66,15 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       (environmentId) => serverConfigs.get(environmentId)?.settings,
       primaryEnvironmentId,
       (environmentId, threadId) => projectByThreadKey.get(`${environmentId}:${threadId}`) ?? null,
+      {
+        checkoutActivityAt: (checkout) =>
+          activityByCheckout.get(`${checkout.environmentId}:${checkout.id}`) ??
+          Number.NEGATIVE_INFINITY,
+        chatActivityAt: (environmentId, threadId) =>
+          activityByThreadKey.get(`${environmentId}:${threadId}`) ?? Number.NEGATIVE_INFINITY,
+        connected: (environmentId) =>
+          isThreadRouteSnapshotAuthoritative(shellStatuses.get(environmentId)),
+      },
     );
     if (host === null) continue;
     for (const member of group.memberProjects) {
