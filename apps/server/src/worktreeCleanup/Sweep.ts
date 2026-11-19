@@ -1,4 +1,5 @@
 import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
 import * as FileSystem from "effect/FileSystem";
 import {
   OrchestrationV2AppThreadJson,
@@ -18,7 +19,11 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import { threadHoldsWorktree } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as Settings from "../serverSettings.ts";
-import { storageCleanupThreadIdle, storageCleanupActivityAt } from "../storageCleanup.ts";
+import {
+  storageCleanupThreadIdle,
+  storageCleanupActivityAt,
+  storageCleanupPathKey,
+} from "../storageCleanup.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -47,10 +52,12 @@ export const makeSweep = Effect.gen(function* () {
   const checkout = yield* makeCheckout;
   const readPatterns = yield* makeReadPatterns;
   const platform = yield* HostProcess.Platform;
+  const key = (target: string) => storageCleanupPathKey(target, platform);
   const checked = new Map<string, string>();
   return Effect.fn("WorktreeCleanup.sweep")(function* (
     hasTerminal: (root: string) => boolean,
     report: StorageCleanupReportEntry[],
+    hasCanonicalTerminal: (root: string) => Effect.Effect<boolean, PlatformError>,
   ) {
     if (platform === "win32") {
       yield* Effect.logDebug("Regenerable file cleanup is not supported on Windows");
@@ -81,7 +88,8 @@ export const makeSweep = Effect.gen(function* () {
       if ((yield* Clock.currentTimeMillis) >= deadline) break;
       const run = Effect.gen(function* () {
         const eligible = Effect.fn("WorktreeCleanup.eligible")(function* () {
-          if (!(yield* managed(root)) || hasTerminal(root)) return null;
+          if (!(yield* managed(root)) || hasTerminal(root) || (yield* hasCanonicalTerminal(root)))
+            return null;
           if (aliasedRoots.has(root)) return null;
           const allProjects = yield* projects.listShells();
           const unavailableProjects = new Set<string>();
@@ -144,12 +152,12 @@ export const makeSweep = Effect.gen(function* () {
           }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
           for (const row of sessionRows) {
             const session = yield* decodeSession(row.payload_json);
-            const cwd = path.resolve(session.cwd);
-            if (
-              (cwd === root || cwd.startsWith(`${root}${path.sep}`)) &&
-              (yield* sessions.isLive(session.id))
-            )
-              return null;
+            if (!(yield* sessions.isLive(session.id))) continue;
+            const location = key(root);
+            const declared = key(path.resolve(session.cwd));
+            if (declared === location || declared.startsWith(`${location}${path.sep}`)) return null;
+            const cwd = key(yield* fs.realPath(session.cwd));
+            if (cwd === location || cwd.startsWith(`${location}${path.sep}`)) return null;
           }
           let patterns = patternCache.get(project.id);
           if (patterns === undefined) {
