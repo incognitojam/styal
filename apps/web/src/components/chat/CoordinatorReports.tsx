@@ -18,6 +18,7 @@ import {
   type AnsweredNeed,
   AnsweredNeedRow,
   ProjectNeedRow,
+  useChildApprovalNeeds,
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
 
@@ -241,7 +242,14 @@ export function NeedsYou({
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
-  const needs = useProjectNeeds(project);
+  const projectNeeds = useProjectNeeds(project);
+  // A project page lists its chat's subagent approvals here, not on a card of their own.
+  const needs = useChildApprovalNeeds(
+    project === NO_PROJECT_THREADS
+      ? null
+      : { environmentId: reviewProps.environmentId, threadId: reviewProps.threadId },
+    projectNeeds,
+  );
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),

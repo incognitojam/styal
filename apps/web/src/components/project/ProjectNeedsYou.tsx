@@ -23,18 +23,23 @@ import {
   AuthOrchestrationOperateScope,
   CommandId,
   type ProviderApprovalDecision,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
 import { dismissCoordinatorReport } from "../../state/coordinatorReports";
 import { useEnvironmentScope } from "../../state/session";
-import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
+import {
+  childThreadApprovalsAtom,
+  environmentThreadDetails,
+  environmentThreadShells,
+  threadEnvironment,
+} from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -47,6 +52,7 @@ import {
   openReports,
   type ProjectNeed,
   type ThreadNeeds,
+  withChildApprovals,
 } from "./projectNeedsYou.logic";
 
 // Only threads that need you are subscribed; each one streams its thread detail.
@@ -82,12 +88,45 @@ export function useProjectNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) 
   return listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null);
 }
 
-const APPROVAL_HEADINGS = {
-  command: "Run command",
-  "file-change": "Change files",
-  "file-read": "Read file",
-  permission: "Permission",
-  "mcp-elicitation": "App access",
+const NO_CHILDREN = Atom.make<ReadonlyArray<EnvironmentThreadShell>>([]);
+
+/** `needs` plus the approvals `threadRef`'s subagents and delegated tasks wait on. */
+export function useChildApprovalNeeds(
+  threadRef: ScopedThreadRef | null,
+  needs: ReadonlyArray<ProjectNeed> = [],
+) {
+  const approvals = useAtomValue(childThreadApprovalsAtom(threadRef));
+  const children = useAtomValue(
+    threadRef === null ? NO_CHILDREN : environmentThreadShells.childThreadInputsAtom(threadRef),
+  );
+  return withChildApprovals(needs, approvals, children);
+}
+
+/** A thread's subagent approvals, above its composer. A project page lists them in Needs you. */
+export function ChildThreadApprovals({ threadRef }: { threadRef: ScopedThreadRef | null }) {
+  const needs = useChildApprovalNeeds(threadRef);
+  if (needs.length === 0) return null;
+  return (
+    <div className="mb-2 flex max-h-80 flex-col gap-2 overflow-auto">
+      {needs.map((need) => (
+        <section
+          key={need.key}
+          aria-label={`Approval from ${need.thread.title}`}
+          className="rounded-lg border border-border bg-background"
+        >
+          <ProjectNeedRow need={need} />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const APPROVAL_ASKS = {
+  command: "Wants to run a command",
+  "file-change": "Wants to change files",
+  "file-read": "Wants to read a file",
+  permission: "Asks for permission",
+  "mcp-elicitation": "Asks for app access",
 } satisfies Record<ThreadPendingApproval["requestKind"], string>;
 
 const DECISION_LABELS = {
@@ -98,16 +137,25 @@ const DECISION_LABELS = {
   cancel: "Cancelled",
 } satisfies Record<ProviderApprovalDecision, string>;
 
-function summary(need: ProjectNeed): string {
+function summary(need: ProjectNeed): ReactNode {
   switch (need.kind) {
     case "approval": {
       const { approval } = need;
-      const heading =
-        (approval.toolName
-          ? deriveToolRowPresentation({ toolName: approval.toolName, input: approval.toolInput })
-              ?.heading
-          : undefined) ?? APPROVAL_HEADINGS[approval.requestKind];
-      return approval.detail ? `${heading}: ${approval.detail}` : heading;
+      const ask = APPROVAL_ASKS[approval.requestKind];
+      if (!approval.detail) {
+        return approval.requestKind === "command" ? `${ask} it did not name` : ask;
+      }
+      // The detail is the provider's: a command, a path, or its own explanation.
+      return (
+        <>
+          {ask}:{" "}
+          {approval.requestKind === "mcp-elicitation" ? (
+            approval.detail
+          ) : (
+            <code className="font-mono">{approval.detail}</code>
+          )}
+        </>
+      );
     }
     case "question":
       return need.userInput.questions[0]?.question ?? "A question";
@@ -130,49 +178,62 @@ export interface AnsweredNeed {
 const scrollIntoViewOnMount = (body: HTMLElement | null) =>
   body?.scrollIntoView({ block: "nearest" });
 
+/** Without `onToggle` the row stays open, as on a thread's own subagent approval card. */
 export function ProjectNeedRow({
   need,
-  open,
+  open = true,
   onToggle,
   onAnswered,
 }: {
   need: ProjectNeed;
-  open: boolean;
-  onToggle: () => void;
-  onAnswered: (answer: string) => void;
+  open?: boolean;
+  onToggle?: () => void;
+  onAnswered?: (answer: string) => void;
 }) {
   const navigate = useNavigate();
   const ref = scopeThreadRef(need.thread.environmentId, need.thread.id);
+  const heading = (
+    <>
+      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block text-sm text-foreground",
+            open ? "whitespace-pre-wrap break-words" : "truncate",
+          )}
+        >
+          {summary(need)}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
+        </span>
+      </span>
+    </>
+  );
   return (
     <div className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-        onClick={onToggle}
-      >
-        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "block text-sm text-foreground",
-              open ? "whitespace-pre-wrap break-words" : "truncate",
-            )}
-          >
-            {summary(need)}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
-          </span>
-        </span>
-        <ChevronRightIcon
-          aria-hidden
-          className={cn("mt-2.5 size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
-        />
-      </button>
+      {onToggle ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
+          onClick={onToggle}
+        >
+          {heading}
+          <ChevronRightIcon
+            aria-hidden
+            className={cn("mt-2.5 size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+          />
+        </button>
+      ) : (
+        <div className="flex min-w-0 items-start gap-2 px-3 py-2">{heading}</div>
+      )}
       {open ? (
-        <div ref={scrollIntoViewOnMount} className="flex flex-col gap-2 px-3 pb-3 ps-6.5">
-          <NeedAnswer need={need} onAnswered={onAnswered} />
+        <div
+          ref={onToggle ? scrollIntoViewOnMount : undefined}
+          className="flex flex-col gap-2 px-3 pb-3 ps-6.5"
+        >
+          <NeedAnswer need={need} onAnswered={onAnswered ?? (() => {})} />
           <Button
             size="xs"
             variant="ghost-muted"
@@ -217,7 +278,6 @@ function NeedAnswer({
     case "approval":
       return (
         <ChildApproval
-          bare
           entry={{
             thread: scopeThreadRef(need.thread.environmentId, need.thread.id),
             title: need.thread.title,

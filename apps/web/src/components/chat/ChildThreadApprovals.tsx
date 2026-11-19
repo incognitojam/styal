@@ -1,68 +1,59 @@
-import { useAtomValue } from "@effect/atom-react";
-import {
-  AuthOrchestrationOperateScope,
-  type ProviderApprovalDecision,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ProviderApprovalDecision } from "@t3tools/contracts";
 import type { ChildThreadApproval } from "@t3tools/client-runtime/state/thread-requests";
 import { fullAccessOverrideExplanation } from "@t3tools/client-runtime/state/thread-requests";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useEnvironmentScope } from "../../state/session";
-import { childThreadApprovalsAtom, threadEnvironment } from "../../state/threads";
+import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { buildThreadRouteParams } from "../../threadRoutes";
-import { Button } from "../ui/button";
-import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import {
+  ComposerPendingApprovalActions,
+  DEFAULT_APPROVAL_OPTIONS,
+} from "./ComposerPendingApprovalActions";
 
-/** `bare` leaves out the frame and heading, for a row that already names the thread. */
+/** The answer to a subagent's approval, under the row that says what it asks and whose it is. */
 export function ChildApproval({
   entry,
-  bare = false,
   onResponded,
 }: {
   entry: ChildThreadApproval;
-  bare?: boolean;
   onResponded?: (decision: ProviderApprovalDecision) => void;
 }) {
   const canRespond = useEnvironmentScope(entry.thread.environmentId, AuthOrchestrationOperateScope);
   const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
-  const navigate = useNavigate();
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { approval } = entry;
+  // The person is looking at the parent, so a grant for "this session" names the child it covers.
+  const options = (approval.options ?? DEFAULT_APPROVAL_OPTIONS).map((option) =>
+    option.decision === "acceptForSession"
+      ? { ...option, label: `${option.label} in “${entry.title}”` }
+      : option,
+  );
   return (
-    <section
-      aria-label={`Approval from ${entry.title}`}
-      className={bare ? "text-xs" : "rounded-lg border border-border bg-background p-3 text-xs"}
-    >
-      {bare ? null : <p className="mb-2 font-medium">Approval needed from {entry.title}</p>}
-      <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono">
-        {approval.detail || approval.requestKind}
-      </pre>
-      {approval.appName ? <p className="mt-2 text-muted-foreground">{approval.appName}</p> : null}
+    <div className="flex flex-col gap-2 text-xs">
+      {approval.appName ? <p className="text-muted-foreground">{approval.appName}</p> : null}
       {approval.responseCapability !== "live" ? (
-        <p className="mt-2 text-warning">
+        <p className="text-warning">
           Provider process is gone. Interrupt or restart the child thread to respond.
         </p>
       ) : null}
-      {approval.reason ? <p className="mt-2 text-muted-foreground">{approval.reason}</p> : null}
+      {approval.reason ? <p className="text-muted-foreground">{approval.reason}</p> : null}
       {approval.fullAccessOverride ? (
-        <p className="mt-2 text-muted-foreground">
+        <p className="text-muted-foreground">
           {fullAccessOverrideExplanation(approval.fullAccessOverride)}
         </p>
       ) : null}
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         <ComposerPendingApprovalActions
           requestId={approval.requestId}
           isResponding={responding}
           canRespond={approval.responseCapability === "live"}
           disabled={!canRespond}
-          options={approval.options}
+          options={options}
           onRespondToApproval={async (requestId, decision) => {
             if (!canRespond || responding) return;
             setResponding(true);
@@ -82,46 +73,12 @@ export function ChildApproval({
             return result;
           }}
         />
-        {bare ? null : (
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            className="ms-auto"
-            onClick={() =>
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(entry.thread),
-              })
-            }
-          >
-            Open thread
-          </Button>
-        )}
       </div>
       {error !== null ? (
-        <p role="alert" className="mt-2 text-destructive">
+        <p role="alert" className="text-destructive">
           {error}
         </p>
       ) : null}
-    </section>
-  );
-}
-
-export function ChildThreadApprovals({ threadRef }: { threadRef: ScopedThreadRef | null }) {
-  const approvals = useAtomValue(childThreadApprovalsAtom(threadRef));
-  if (approvals.length === 0) return null;
-  return (
-    <div className="mb-2 flex max-h-80 flex-col gap-2 overflow-auto">
-      {approvals.map((entry) => (
-        <ChildApproval
-          key={JSON.stringify([
-            entry.thread.environmentId,
-            entry.thread.threadId,
-            entry.approval.requestId,
-          ])}
-          entry={entry}
-        />
-      ))}
     </div>
   );
 }
