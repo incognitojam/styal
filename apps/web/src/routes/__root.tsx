@@ -191,7 +191,7 @@ function RootRouteBranch() {
       ) : null}
       {isElectron ? <RunningThreadKeepAlive /> : null}
       <RelayClientInstallDialog />
-      <ConnectOnboardingDialog />
+      {isWelcome ? null : <ConnectOnboardingDialog />}
       <SshPasswordPromptDialog />
       <DiscordPresenceSync />
       <SnapShotCoordinator />

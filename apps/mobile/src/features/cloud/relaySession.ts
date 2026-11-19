@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import { ManagedRelay, managedRelayAuthLoadAtom } from "@t3tools/client-runtime/relay";
 import * as Cause from "effect/Cause";
@@ -27,6 +28,7 @@ import {
   retireLegacyClerk,
   saveStoredRelaySession,
   withRelaySessionMutation,
+  RelaySessionStoreError,
   type StoredRelaySession,
 } from "./relaySessionStore";
 
@@ -42,7 +44,10 @@ const currentThumbprint = ManagedRelay.ManagedRelayDpopSigner.pipe(
 );
 
 const restore = Effect.fn("relaySession.restore")(function* (generation: number) {
-  yield* Effect.tryPromise(() => migrateRelayKeychainAccessibility()).pipe(
+  yield* Effect.tryPromise({
+    try: () => migrateRelayKeychainAccessibility(),
+    catch: (cause) => new RelaySessionStoreError({ operation: "write", cause }),
+  }).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Could not update styal Link keychain accessibility.", { error }),
     ),
@@ -199,8 +204,10 @@ export const verifyEmailSignIn = (input: { readonly email: string; readonly code
   });
 
 /** Only an explicit rejection of the Clerk bearer establishes that it cannot be moved. */
+const isRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
+
 function isClerkCredentialRejected(error: unknown): boolean {
-  if (!(error instanceof ManagedRelay.ManagedRelayRequestFailedError)) return false;
+  if (!isRelayRequestFailedError(error)) return false;
   return (
     error.transportFailed !== true &&
     error.relayError?._tag === "RelayAuthInvalidError" &&

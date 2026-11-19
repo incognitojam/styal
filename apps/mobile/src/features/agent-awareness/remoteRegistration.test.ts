@@ -747,9 +747,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       const registrations: unknown[] = [];
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = new Request(input, init);
-        if (request.url.endsWith("/v1/client/dpop-token")) {
+        if (request.url.endsWith("/v1/auth/token")) {
           return Response.json({
             access_token: "dpop",
+            user: { id: "user-a", email: null },
             issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
             token_type: "DPoP",
             expires_in: 300,
@@ -760,7 +761,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         return Response.json({ ok: true });
       });
       Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk"), "user-a");
+      setAgentAwarenessRelayCredential(credentialFor("user-a"));
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
         expect(registrations.at(-1)).toMatchObject({
@@ -1181,5 +1182,4 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }),
     );
   });
-
 });

@@ -181,7 +181,7 @@ export function setAgentAwarenessRelayCredential(
     if (previousAccountId !== null) {
       clearAndroidAgentNotifications();
     }
-    if (provider) {
+    if (credential) {
       publishWidget({ kind: "loading" });
     }
     androidDeviceReplayedAt = null;
@@ -1010,9 +1010,8 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
   // refresh repaints it from one snapshot read. Yields undefined once the
   // account changed or a newer read started, so a stale result is never
   // shown or primed.
-  const generation = deviceRegistrationGeneration;
   const isCurrentAccount = () =>
-    relayTokenProvider !== null && deviceRegistrationGeneration === generation;
+    relayCredential !== null && deviceRegistrationGeneration === generation;
   let read = 0;
   const isNewestRead = () => isCurrentAccount() && read === widgetSnapshotReads;
   const refreshWidget = Effect.gen(function* () {

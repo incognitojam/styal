@@ -118,7 +118,10 @@ describe("background registration storage", () => {
       state.items.set(DEVICE_KEY, { value: "existing-device", accessibility: "when-unlocked" });
       vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("keychain unavailable"));
       const failure = yield* Effect.flip(
-        Effect.tryPromise(() => migrateRelayKeychainAccessibility()),
+        Effect.tryPromise({
+          try: () => migrateRelayKeychainAccessibility(),
+          catch: (cause) => ({ cause }),
+        }),
       );
       expect(failure.cause).toEqual(new Error("keychain unavailable"));
       expect(state.items.get(MARKER_KEY)?.value).toBe("1");

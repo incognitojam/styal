@@ -1,5 +1,4 @@
 import type { ManagedRelay, ManagedRelaySession } from "@t3tools/client-runtime/relay";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -57,10 +56,13 @@ const StoredRelaySessionJson = Schema.fromJsonString(StoredRelaySession);
 const decodeStoredRelaySession = Schema.decodeUnknownEffect(StoredRelaySessionJson);
 const encodeStoredRelaySession = Schema.encodeEffect(StoredRelaySessionJson);
 
-export class RelaySessionStoreError extends Data.TaggedError("RelaySessionStoreError")<{
-  readonly operation: "read" | "write" | "clear";
-  readonly cause: unknown;
-}> {}
+export class RelaySessionStoreError extends Schema.TaggedError<RelaySessionStoreError>()(
+  "RelaySessionStoreError",
+  {
+    operation: Schema.Literals(["read", "write", "clear"]),
+    cause: Schema.Defect(),
+  },
+) {}
 
 /** Reads the saved sign-in. An unreadable or malformed record reads as none. */
 export const loadStoredRelaySession = Effect.tryPromise({

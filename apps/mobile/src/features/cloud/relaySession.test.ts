@@ -26,7 +26,7 @@ import {
   signOutOfRelay,
   verifyEmailSignIn,
 } from "./relaySession";
-import { endRelaySession, relaySignInAtom } from "./relaySessionStore";
+import { endRelaySession, relaySignInAtom, RelaySessionStoreError } from "./relaySessionStore";
 
 const SESSION_KEY = "styal.cloud.relay-session";
 const RELAY_URL = "https://relay.example.test";
@@ -74,7 +74,11 @@ vi.mock("../agent-awareness/remoteRegistration", () => ({
 }));
 
 interface RuntimeRequest {
-  readonly operation: Effect.Effect<unknown, unknown, unknown>;
+  readonly operation: Effect.Effect<
+    unknown,
+    ManagedRelay.ManagedRelayClientError | RelaySessionStoreError,
+    ManagedRelay.ManagedRelayClient | ManagedRelay.ManagedRelayDpopSigner
+  >;
   readonly resolve: (exit: Exit.Exit<unknown, unknown>) => void;
 }
 const runtimeRequests = vi.hoisted(() => ({
@@ -129,14 +133,14 @@ const clerkSignOut = vi.fn(() => {
   return Promise.resolve();
 });
 
-const provideFakes = <A, E>(effect: Effect.Effect<A, E, unknown>) =>
-  (
-    effect as Effect.Effect<
-      A,
-      E,
-      ManagedRelay.ManagedRelayClient | ManagedRelay.ManagedRelayDpopSigner
-    >
-  ).pipe(
+const provideFakes = <A, E>(
+  effect: Effect.Effect<
+    A,
+    E,
+    ManagedRelay.ManagedRelayClient | ManagedRelay.ManagedRelayDpopSigner
+  >,
+) =>
+  effect.pipe(
     Effect.provideService(ManagedRelay.ManagedRelayClient, fakes.client as never),
     Effect.provideService(ManagedRelay.ManagedRelayDpopSigner, fakes.signer as never),
   );
@@ -767,9 +771,13 @@ describe("superseded session operations", () => {
         yield* startSessionRuntime;
         secureStore.set(SESSION_KEY, storedRecord());
         yield* Effect.promise(() => restoreRelaySession());
-        relayDeleteAccount.mockReturnValueOnce(Effect.fail(new Error("offline")));
+        const offline = new RelaySessionStoreError({
+          operation: "write",
+          cause: new Error("offline"),
+        });
+        relayDeleteAccount.mockReturnValueOnce(Effect.fail(offline));
         const failure = yield* Effect.flip(provideFakes(deleteRelayAccount));
-        expect(failure).toEqual(new Error("offline"));
+        expect(failure).toEqual(offline);
         expect(calls).toEqual(["stop-registration", "unregister-device"]);
         expect(setAgentAwarenessRelayCredential).toHaveBeenCalledWith(signIn.credential);
         expect(secureStore.has(SESSION_KEY)).toBe(true);

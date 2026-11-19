@@ -262,17 +262,25 @@ describe("web cloud link environment client", () => {
     Effect.gen(function* () {
       const fetchMock = vi.fn((input: RequestInfo | URL) =>
         Promise.resolve(
-          String(input).startsWith("https://relay.example.test/")
-            ? Response.json(
-                {
-                  _tag: "RelayInternalError",
-                  code: "internal_error",
-                  reason: "upstream_unavailable",
-                  traceId: "trace-unlink",
-                },
-                { status: 500 },
-              )
-            : Response.json({ ok: true, endpointRuntimeStatus: null }),
+          String(input).endsWith("/v1/auth/token")
+            ? Response.json({
+                access_token: "access-token",
+                user: { id: "account-1", email: null },
+                token_type: "DPoP",
+                expires_in: 300,
+                scope: "environment:link",
+              })
+            : String(input).startsWith("https://relay.example.test/")
+              ? Response.json(
+                  {
+                    _tag: "RelayInternalError",
+                    code: "internal_error",
+                    reason: "upstream_unavailable",
+                    traceId: "trace-unlink",
+                  },
+                  { status: 500 },
+                )
+              : Response.json({ ok: true, endpointRuntimeStatus: null }),
         ),
       );
       vi.stubGlobal("fetch", fetchMock);
@@ -286,12 +294,13 @@ describe("web cloud link environment client", () => {
       const error = yield* withServices(
         unlinkEnvironmentFromCloud({
           target: { environmentId: EnvironmentId.make(TARGET.environmentId) },
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         }),
       ).pipe(Effect.flip);
 
       expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
         "http://127.0.0.1:3000/api/connect/unlink",
+        "https://relay.example.test/v1/auth/token",
         "https://relay.example.test/v1/client/environment-links/environment-1",
       ]);
       expect(error).toMatchObject({

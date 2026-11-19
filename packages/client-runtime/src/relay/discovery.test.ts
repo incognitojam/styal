@@ -319,7 +319,10 @@ describe("RelayEnvironmentDiscovery", () => {
         yield* discovery.refresh;
         const gate = yield* Deferred.make<void>();
         yield* Ref.set(harness.listGate, gate);
-        yield* Ref.set(harness.credential, { accountId: "account-2", refreshToken: "styal_rt_account-2" });
+        yield* Ref.set(harness.credential, {
+          accountId: "account-2",
+          refreshToken: "styal_rt_account-2",
+        });
         yield* Ref.set(harness.listedEnvironments, []);
         const refresh = yield* Effect.forkChild(discovery.refresh);
         yield* Deferred.await(harness.secondListCall);
