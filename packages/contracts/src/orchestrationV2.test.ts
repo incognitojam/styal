@@ -654,4 +654,5 @@ it("accepts report dismissal only through its dedicated RPC", () => {
   };
   expect(isDismissReportInput(input)).toBe(true);
   expect(isPublicOrchestrationCommand({ ...input, type: "report.dismiss" })).toBe(false);
+  expect(isPublicOrchestrationCommand({ ...input, type: "report.resolve" })).toBe(false);
 });

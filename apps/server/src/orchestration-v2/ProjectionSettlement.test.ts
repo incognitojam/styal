@@ -506,6 +506,31 @@ it.effect(
         },
       });
       yield* checkQuestion(null, true);
+      // Two open questions; resolving the newer leaves the older one's time.
+      const openReport = (key: string, at: DateTime.Utc, resolved?: { at: string }) =>
+        store.apply({
+          id: EventId.make(`event:report:${key}:${resolved ? "resolved" : "posted"}`),
+          type: "message.updated",
+          threadId: reportThread,
+          occurredAt: at,
+          payload: {
+            ...originalReport,
+            id: MessageId.make(`report:${key}`),
+            report: {
+              ...originalReport.report!,
+              key,
+              version: 1,
+              ...(resolved ? { resolved } : {}),
+            },
+            createdAt: at,
+            updatedAt: at,
+          },
+        });
+      yield* openReport("older", now);
+      yield* openReport("newer", later);
+      assert.equal((yield* store.getThreadShell(reportThread))?.openReportQuestionCount, 2);
+      yield* openReport("newer", later, { at: DateTime.formatIso(later) });
+      yield* checkQuestion(now, true);
       assert.equal(
         DateTime.formatIso((yield* store.getThread(completed)).createdAt),
         DateTime.formatIso(old),

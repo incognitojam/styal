@@ -686,11 +686,13 @@ describe("orchestrator MCP toolkit", () => {
             },
             layerRegistry,
           ).pipe(Layer.provide(layerContinuationProbe));
+          // One instance, so the test's settings change reaches ThreadManagementService.
+          const layerSettings = ServerSettings.layerTest();
           const layerOrchestration = Layer.merge(
             layerOrchestrator,
             ThreadManagementService.layer.pipe(
               Layer.provide(layerOrchestrator),
-              Layer.provide(ServerSettings.layerTest()),
+              Layer.provide(layerSettings),
               Layer.provide(
                 CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
               ),
@@ -775,7 +777,7 @@ describe("orchestrator MCP toolkit", () => {
             Layer.provideMerge(layerOrchestration),
             Layer.provide(layerRegistry),
             Layer.provide(layerProviderRegistry),
-            Layer.provide(ServerSettings.layerTest()),
+            Layer.provideMerge(layerSettings),
             Layer.provide(layerScheduledTaskStub),
             Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
             Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
@@ -867,6 +869,54 @@ describe("orchestrator MCP toolkit", () => {
                 );
             const invoke = (name: string, args: Record<string, unknown>) =>
               invokeAs(invocation, name, args);
+
+            const report = (args: Record<string, unknown>) =>
+              invokeAs({ ...invocation, coordinatorReportsEnabled: true }, "t3_report", args);
+            const reportError = (args: Record<string, unknown>) =>
+              report(args).pipe(
+                Effect.map((result) => {
+                  expect(result.isError).toBe(true);
+                  return JSON.stringify(result.content);
+                }),
+              );
+            for (const [args, text] of [
+              [
+                { key: "pr:1", resolved: true, title: "T", answers: ["A"] },
+                "drop `title`, `answers`",
+              ],
+              [{ key: "pr:1", outcome: "Merged" }, "`outcome` goes with `resolved: true`"],
+              [{ key: "pr:1", body: "B" }, "missing `title`"],
+            ] as const) {
+              expect(yield* reportError(args)).toContain(text);
+            }
+            expect(yield* reportError({ key: "pr:1", resolved: true })).toContain(
+              "Reports are disabled.",
+            );
+            yield* (yield* ServerSettings.ServerSettingsService).updateSettings({
+              coordinatorReportsEnabled: true,
+            });
+            yield* report({ key: "pr:1", title: "Release", body: "Ready." });
+            expect(yield* reportError({ key: "pr:1", resolved: true })).toContain(
+              "asks no question.",
+            );
+            const posted = yield* report({
+              key: "pr:1",
+              title: "Release",
+              body: "Ready.",
+              question: "Merge?",
+            });
+            expect(posted.structuredContent).toMatchObject({ version: 2 });
+            const resolved = yield* report({
+              key: "pr:1",
+              resolved: true,
+              outcome: "Merged\n  as abc123",
+            });
+            expect(resolved.structuredContent).toEqual(posted.structuredContent);
+            expect(
+              (yield* orchestrator.getThreadProjection(parentThreadId)).messages.find(
+                (message) => message.report?.version === 2,
+              )?.report?.resolved?.outcome,
+            ).toBe("Merged as abc123");
 
             const deferredSettle = yield* invoke("t3_thread_organize", { action: "settle" });
             expect(deferredSettle.isError).toBe(false);

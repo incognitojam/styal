@@ -210,6 +210,32 @@ export function sinceLastVisitReportLines(
 }
 
 /**
+ * Changes when anything the card reads from the chat's reports changes. A resolve updates its
+ * report message in place, so the key includes it.
+ */
+export function sinceLastVisitReportsKey(
+  earliestLoadedAt: string | null,
+  messages: ReadonlyArray<{
+    readonly id: string;
+    readonly report?: Pick<CoordinatorReport, "version" | "resolved"> | undefined;
+    readonly reportAnswer?: { readonly messageId: string; readonly version: number } | undefined;
+  }>,
+  dismissals: ReadonlyArray<{ readonly messageId: string; readonly version: number }>,
+): string {
+  return JSON.stringify([
+    earliestLoadedAt,
+    messages.map((m) => [
+      m.id,
+      m.report?.version,
+      m.report?.resolved?.at,
+      m.reportAnswer?.messageId,
+      m.reportAnswer?.version,
+    ]),
+    dismissals.map((d) => [d.messageId, d.version]),
+  ]);
+}
+
+/**
  * Reports come from the chat's loaded history. When older history is still unloaded and the
  * loaded part starts after `since`, some reports in the window may be missing.
  */

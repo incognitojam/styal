@@ -11,6 +11,7 @@ import {
   sinceLastVisitHistoryGap,
   sinceLastVisitLayout,
   sinceLastVisitReportLines,
+  sinceLastVisitReportsKey,
   type SinceLastVisitGroup,
   type SinceLastVisitLine,
   type SinceLastVisitSection,
@@ -85,16 +86,7 @@ const chatReportsAtom = Atom.family((threadKey: string) => {
     }
     const dismissals = projection.thread.reportDismissals ?? [];
     const earliestLoadedAt = earliest === null ? null : DateTime.formatIso(earliest);
-    const key = JSON.stringify([
-      earliestLoadedAt,
-      messages.map((m) => [
-        m.id,
-        m.report?.version,
-        m.reportAnswer?.messageId,
-        m.reportAnswer?.version,
-      ]),
-      dismissals.map((d) => [d.messageId, d.version]),
-    ]);
+    const key = sinceLastVisitReportsKey(earliestLoadedAt, messages, dismissals);
     if (key !== previous.key) previous = { key, messages, dismissals, earliestLoadedAt };
     return previous;
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`project-since-last-visit-reports:${threadKey}`));

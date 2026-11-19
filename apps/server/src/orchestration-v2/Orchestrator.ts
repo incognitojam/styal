@@ -4078,6 +4078,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: "Report does not exist.",
         });
       }
+      // Its agent already closed it; Reopen and an answer is the person's way back.
+      if (report.resolved) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Version ${report.version} of report "${report.key}" is already resolved.`,
+        });
+      }
       if (thread.reportDismissals?.some((note) => note.messageId === message.id)) return;
       yield* emitEvent({
         type: "thread.metadata-updated",
@@ -4110,6 +4118,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (command.type === "report.resolve") {
       const latest = projection.messages.reduce<OrchestrationV2ConversationMessage | undefined>(
         (current, message) =>
+          message.role === "assistant" &&
           message.report?.key === command.key &&
           message.report.version > (current?.report?.version ?? 0)
             ? message

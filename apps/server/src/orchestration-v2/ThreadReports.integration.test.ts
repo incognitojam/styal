@@ -808,8 +808,34 @@ it.effect(
         ] as const) {
           assert.include(String((yield* Effect.flip(resolve(key, `resolve:${key}`))).cause), cause);
         }
+        // The agent closed it, so the person reopens and answers instead of dismissing.
+        const dismissResolved = orchestrator.dispatch({
+          type: "report.dismiss",
+          commandId: CommandId.make("dismiss:other"),
+          threadId: launcherId,
+          messageId: MessageId.make("report:other"),
+          key: "issue:9",
+          version: 1,
+        });
+        assert.include(
+          String((yield* Effect.flip(dismissResolved)).cause),
+          'Version 1 of report "issue:9" is already resolved.',
+        );
         yield* post("report:other:2", "issue:9");
         yield* count(1);
+        yield* post("report:plain", "issue:10");
+        yield* orchestrator.dispatch({
+          type: "report.resolve",
+          commandId: CommandId.make("resolve:plain"),
+          threadId: launcherId,
+          key: "issue:10",
+        });
+        yield* count(1);
+        const plain = (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+          (message) => message.id === "report:plain",
+        )?.report?.resolved;
+        assert.isDefined(plain?.at);
+        assert.isUndefined(plain?.outcome);
 
         yield* endTurn(last, "completed");
       }),

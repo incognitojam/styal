@@ -114,15 +114,21 @@ export const declarations = {
       const invalid = (message: string) =>
         new OrchestratorMcpFailure({ code: "invalid_request", message });
       if (resolved) {
-        if (title || body || question || answers)
-          return yield* invalid("Resolve with only `key`, `resolved` and `outcome`.");
+        const extra = Object.entries({ title, body, question, answers }).flatMap(([name, value]) =>
+          value === undefined ? [] : [`\`${name}\``],
+        );
+        if (extra.length > 0)
+          return yield* invalid(
+            `Resolve with only \`key\`, \`resolved\` and \`outcome\`; drop ${extra.join(", ")}.`,
+          );
         const { storedEvents } = yield* threads
           .dispatch({
             type: "report.resolve",
             commandId,
             threadId: thread.threadId,
             key,
-            ...(outcome === undefined ? {} : { outcome }),
+            // The card shows one line.
+            ...(outcome === undefined ? {} : { outcome: outcome.replace(/\s*[\r\n]+\s*/g, " ") }),
           })
           .pipe(Effect.mapError(dispatchFailure));
         const resolved = storedEvents
@@ -131,7 +137,12 @@ export const declarations = {
         return { messageId: resolved.id, version: resolved.report!.version };
       }
       if (outcome !== undefined) return yield* invalid("`outcome` goes with `resolved: true`.");
-      if (!title || !body) return yield* invalid("A report needs `title` and `body`.");
+      if (!title || !body) {
+        const missing = [title ? "" : "`title`", body ? "" : "`body`"].filter(Boolean);
+        return yield* invalid(
+          `A report needs \`title\` and \`body\`; missing ${missing.join(" and ")}.`,
+        );
+      }
       const { storedEvents } = yield* threads
         .dispatch({
           type: "report.post",

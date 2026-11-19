@@ -8,6 +8,7 @@ import {
   sinceLastVisitHistoryGap,
   sinceLastVisitLayout,
   sinceLastVisitReportLines,
+  sinceLastVisitReportsKey,
   sinceLastVisitThreadLines,
   sinceLastVisitWindow,
   type SinceLastVisitThreadShell,
@@ -283,6 +284,19 @@ describe("sinceLastVisitThreadLines", () => {
       window.since,
     );
     expect(lines.map((line) => line.title)).toEqual(["PR 214"]);
+  });
+});
+
+describe("sinceLastVisitReportsKey", () => {
+  it("changes when a report is resolved in place", () => {
+    const report = { id: "r", report: { version: 1 } };
+    const resolved = {
+      ...report,
+      report: { version: 1, resolved: { at: "2026-11-19T00:00:00Z" } },
+    };
+    expect(sinceLastVisitReportsKey(null, [report], [])).not.toBe(
+      sinceLastVisitReportsKey(null, [resolved], []),
+    );
   });
 });
 
