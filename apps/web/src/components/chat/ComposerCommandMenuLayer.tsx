@@ -37,11 +37,12 @@ export function ComposerCommandMenuLayer(props: {
       const rect = (mainSurface ?? form ?? anchor).getBoundingClientRect();
       const rootFontSizePx =
         Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
-      const drawerInsetRem = Number.parseFloat(
-        window.getComputedStyle(form ?? anchor).getPropertyValue("--chat-composer-drawer-inset"),
+      // Inset from the card's rounded corners, which a portaled menu cannot square off.
+      const menuInsetRem = Number.parseFloat(
+        window.getComputedStyle(form ?? anchor).getPropertyValue("--chat-composer-menu-inset"),
       );
-      const drawerInset = drawerInsetRem * rootFontSizePx;
-      const width = rect.width - drawerInset * 2;
+      const menuInset = menuInsetRem * rootFontSizePx;
+      const width = rect.width - menuInset * 2;
       if (width <= 0) {
         setPosition(null);
         return;
@@ -49,7 +50,7 @@ export function ComposerCommandMenuLayer(props: {
       const composerOverlap = rootFontSizePx + 1;
       const next = {
         bottom: window.innerHeight - rect.top - composerOverlap,
-        left: rect.left + drawerInset,
+        left: rect.left + menuInset,
         maxHeight: Math.max(96, rect.top - 24 + composerOverlap),
         width,
       };
