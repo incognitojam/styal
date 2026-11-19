@@ -1,10 +1,5 @@
 import { useParams } from "@tanstack/react-router";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import {
-  getAddProjectInitialQuery,
-  getCloneDestinationPath,
-  getCloneDirectoryPath,
-} from "@t3tools/client-runtime/operations/projects";
 import { resolvePastedPath } from "@t3tools/shared/path";
 import {
   type EnvironmentId,
@@ -18,12 +13,17 @@ import {
   cloneUrlProtocol,
 } from "@t3tools/shared/cloneUrl";
 import { ArrowRightIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { create } from "zustand";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
-import { useAddProjectTargets } from "../hooks/useAddProjectTargets";
+import {
+  defaultCloneDestination,
+  projectCloneSourceUrl,
+  useAddProjectTargets,
+} from "../hooks/useAddProjectTargets";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import {
   COPYABLE_FILE_MAX_BYTES,
@@ -34,8 +34,10 @@ import { formatBytes } from "../lib/formatBytes";
 import { newProjectId } from "../lib/utils";
 import { readProject, subscribeProject, useProject } from "../state/entities";
 import { useEnvironments } from "../state/environments";
+import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
+import { quickAddDecision } from "./AddProjectToMachineDialog.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -61,6 +63,8 @@ interface AddProjectToMachineRequest {
   readonly draftId?: DraftId | undefined;
   /** Limits the machines offered, such as to those where a project chat can start. */
   readonly onlyTargets?: ReadonlyArray<EnvironmentId> | undefined;
+  /** Start without the dialog when there is nothing to decide; it opens when there is. */
+  readonly quick?: boolean;
 }
 
 const useRequest = create<{ request: AddProjectToMachineRequest | null; session: number }>(() => ({
@@ -107,10 +111,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   const [targetId, setTargetId] = useState(request.targetEnvironmentId);
   const target = targets.find((t) => t.environmentId === targetId) ?? targets[0] ?? null;
   const source = environments.find((env) => env.environmentId === request.projectRef.environmentId);
-  const sourceUrl =
-    project?.repositoryIdentity?.origin?.remoteUrl ??
-    project?.repositoryIdentity?.locator.remoteUrl ??
-    "";
+  const sourceUrl = projectCloneSourceUrl(project);
   const [protocol, setProtocol] = useState<CloneProtocol | null>(() => cloneUrlProtocol(sourceUrl));
   const sshUrl = cloneUrlForProtocol(sourceUrl, "ssh");
   const httpsUrl = cloneUrlForProtocol(sourceUrl, "https");
@@ -118,18 +119,19 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     (protocol === "ssh" ? sshUrl : protocol === "https" ? httpsUrl : null) ?? sourceUrl;
 
   const targetEnvironment = environments.find((env) => env.environmentId === target?.environmentId);
-  const defaultPath = getCloneDestinationPath(
-    getAddProjectInitialQuery(
-      targetEnvironment?.serverConfig?.settings.addProjectBaseDirectory,
-      targetEnvironment?.serverConfig?.addProjectDefaultDirectory,
-    ),
-    getCloneDirectoryPath(
-      sourceUrl,
-      targetEnvironment?.serverConfig?.settings.ghqCloneLayout === true,
-    ),
-  );
+  const defaultPath = defaultCloneDestination(sourceUrl, targetEnvironment?.serverConfig);
   const [pathOverride, setPathOverride] = useState<string | null>(null);
   const destinationPath = pathOverride ?? defaultPath;
+  // Only the default folder is checked; a folder typed in is the user's own choice.
+  const defaultFolder = useEnvironmentQuery(
+    target
+      ? filesystemEnvironment.getMetadata({
+          environmentId: target.environmentId,
+          input: { paths: [defaultPath] },
+        })
+      : null,
+  );
+  const defaultFolderExists = (defaultFolder.data?.entries[0] ?? null) !== null;
 
   const canListFiles = source?.serverConfig?.environment.capabilities.ignoredFileListing === true;
   const ignoredFiles = useEnvironmentQuery(
@@ -150,6 +152,24 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const decision = request.quick
+    ? quickAddDecision({
+        defaultCopies: !canListFiles
+          ? "unsupported"
+          : ignoredFiles.error
+            ? "failed"
+            : ignoredFiles.data
+              ? defaultSelection(files).size
+              : "loading",
+        destination: defaultFolder.error
+          ? "failed"
+          : defaultFolder.data
+            ? defaultFolderExists
+              ? "exists"
+              : "missing"
+            : "loading",
+      })
+    : "ask";
 
   // The project or every target can vanish while the dialog is open. Submitting
   // before the file list loads would silently skip the default .env copies.
@@ -188,14 +208,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     void handleNewThread(targetRef);
   };
 
-  const submit = async () => {
-    if (!project || !target || submitting) return;
-    if (destinationPath.trim().length === 0) {
-      setError("Choose a folder on the other machine.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
+  const startClone = useStableCallback(async () => {
+    if (!project || !target) return;
     try {
       const projectId = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
@@ -216,7 +230,28 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
     }
+  });
+
+  const submit = async () => {
+    if (!project || !target || submitting) return;
+    if (destinationPath.trim().length === 0) {
+      setError("Choose a folder on the other machine.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    await startClone();
   };
+
+  const startNow = decision === "start" && project !== null && target !== null;
+  const quickStarted = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the clone once the checks it waits on have loaded
+  useEffect(() => {
+    if (!startNow || quickStarted.current) return;
+    quickStarted.current = true;
+    void startClone();
+  }, [startNow, startClone]);
+  if (request.quick && decision !== "ask" && error === null) return null;
 
   return (
     <Dialog
@@ -324,6 +359,12 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                 spellCheck={false}
                 autoComplete="off"
               />
+              {pathOverride === null && defaultFolderExists ? (
+                <p className="text-muted-foreground text-xs">
+                  This folder already exists on {target?.label ?? "the other machine"}. The clone
+                  needs it empty, or choose another folder.
+                </p>
+              ) : null}
             </div>
 
             {canListFiles ? (

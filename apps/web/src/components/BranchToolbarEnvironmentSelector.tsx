@@ -9,6 +9,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { PlusIcon, ScaleIcon } from "lucide-react";
 import { memo } from "react";
 
+import type { AddProjectTarget } from "../hooks/useAddProjectTargets";
 import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -28,12 +29,15 @@ interface BranchToolbarEnvironmentSelectorProps {
   environmentId: EnvironmentId;
   availableEnvironments: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
-  onAddToMachine?: (() => void) | undefined;
+  addTargets?: readonly AddProjectTarget[] | undefined;
+  /** Adds to the named machine, or opens the dialog for null. */
+  onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
 const AUTO_VALUE = "action:auto";
-const ADD_MACHINE_VALUE = "action:add-machine";
+const ADD_OPTIONS_VALUE = "action:add-options";
+const addValue = (id: EnvironmentId) => `add:${id}`;
 const environmentValue = (id: EnvironmentId) => `env:${id}`;
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
@@ -43,6 +47,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   environmentId,
   availableEnvironments,
   onEnvironmentChange,
+  addTargets = [],
   onAddToMachine,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
@@ -61,7 +66,15 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       value: environmentValue(env.environmentId),
       label: env.label,
     })),
-    ...(onAddToMachine ? [{ value: ADD_MACHINE_VALUE, label: "Add to another machine" }] : []),
+    ...(onAddToMachine
+      ? [
+          ...addTargets.map((target) => ({
+            value: addValue(target.environmentId),
+            label: `Add to ${target.label}`,
+          })),
+          { value: ADD_OPTIONS_VALUE, label: "Add to another machine" },
+        ]
+      : []),
   ];
 
   // Match the xs control's height and padding: the composer strip has no min-height,
@@ -92,8 +105,10 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       modal={false}
       value={autoEnvironmentLabel ? AUTO_VALUE : environmentValue(environmentId)}
       onValueChange={(value) => {
-        if (value === ADD_MACHINE_VALUE) {
-          onAddToMachine?.();
+        if (value === ADD_OPTIONS_VALUE) {
+          onAddToMachine?.(null);
+        } else if (value?.startsWith("add:")) {
+          onAddToMachine?.(value.slice(4) as EnvironmentId);
         } else if (value === AUTO_VALUE) {
           onAutoEnvironment?.();
         } else if (value?.startsWith("env:")) {
@@ -160,16 +175,41 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               </span>
             </SelectItem>
           ))}
-          {onAddToMachine ? (
-            <SelectItem value={ADD_MACHINE_VALUE}>
-              <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+        </SelectGroup>
+        {onAddToMachine ? (
+          <SelectGroup>
+            <SelectGroupLabel>
+              <span className="inline-flex items-center gap-1.5">
                 <PlusIcon aria-hidden="true" className="size-3" />
                 Add to another machine
               </span>
+            </SelectGroupLabel>
+            {addTargets.map((target) => (
+              <SelectItem key={target.environmentId} value={addValue(target.environmentId)}>
+                <AddTargetLabel target={target} />
+              </SelectItem>
+            ))}
+            <SelectItem value={ADD_OPTIONS_VALUE}>
+              <span className={ADD_TO_MACHINE_LABEL_CLASS}>Options…</span>
             </SelectItem>
-          ) : null}
-        </SelectGroup>
+          </SelectGroup>
+        ) : null}
       </SelectPopup>
     </Select>
   );
 });
+
+/** A machine to add the project to, with the folder the clone lands in. */
+export function AddTargetLabel({ target }: { target: AddProjectTarget }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 items-center gap-1.5">
+        <EnvironmentMachineIcon kind={target.machine} className="size-3" />
+        <span className="min-w-0 truncate">{target.label}</span>
+      </span>
+      <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
+        {target.destinationPath}
+      </span>
+    </span>
+  );
+}

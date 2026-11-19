@@ -37,7 +37,10 @@ import {
   BranchToolbarBranchSelector,
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
-import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
+import {
+  AddTargetLabel,
+  BranchToolbarEnvironmentSelector,
+} from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
@@ -169,7 +172,7 @@ interface RunContextSelectorProps {
   onUsePreviousWorktree: () => void;
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
-  onAddToMachine: (environmentId: EnvironmentId) => void;
+  onAddToMachine: (environmentId: EnvironmentId | null) => void;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -389,12 +392,11 @@ const RunContextSelector = memo(function RunContextSelector({
                         key={target.environmentId}
                         onClick={() => onAddToMachine(target.environmentId)}
                       >
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <EnvironmentMachineIcon kind={target.machine} className="size-3" />
-                          <span className="min-w-0 truncate">{target.label}</span>
-                        </span>
+                        <AddTargetLabel target={target} />
                       </MenuItem>
                     ))}
+                    <MenuSeparator />
+                    <MenuItem onClick={() => onAddToMachine(null)}>Options…</MenuItem>
                   </MenuSubPopup>
                 </MenuSub>
               ) : null}
@@ -702,6 +704,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       targetEnvironmentId,
       draftId,
       onlyTargets: addTargetsOverride?.map((target) => target.environmentId),
+      quick: targetEnvironmentId !== null,
     });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;
@@ -815,14 +818,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0
-                  ? {
-                      onAddToMachine: () =>
-                        onAddToMachine(
-                          addTargets.length === 1 ? addTargets[0]!.environmentId : null,
-                        ),
-                    }
-                  : {})}
+                {...(addTargets.length > 0 ? { addTargets, onAddToMachine } : {})}
               />
               {showGitControls ? (
                 <Separator
