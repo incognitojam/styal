@@ -1326,7 +1326,9 @@ describe("VcsStatusBroadcaster", () => {
           localInvalidationCalls: 0,
           remoteInvalidationCalls: 0,
           remoteStatusRefreshUpstreamValues: [] as Array<boolean | undefined>,
-          automaticFetchInterval: Effect.succeed(Duration.zero),
+          // HEAD uses the default fetch interval; the checkout-state case turns fetch off so
+          // every status read is a no-fetch read.
+          ...(fileName === "HEAD" ? {} : { automaticFetchInterval: Effect.succeed(Duration.zero) }),
           headPath,
         };
 
@@ -1385,9 +1387,9 @@ describe("VcsStatusBroadcaster", () => {
             ),
             new Set([null]),
           );
-          // A checkout must not trigger a network fetch.
+          // A checkout must not trigger a network fetch; the first read is the initial fetch.
           assert.deepStrictEqual(
-            new Set(state.remoteStatusRefreshUpstreamValues),
+            new Set(state.remoteStatusRefreshUpstreamValues?.slice(1)),
             new Set([false]),
           );
         }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
