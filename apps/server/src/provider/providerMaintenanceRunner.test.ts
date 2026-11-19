@@ -242,6 +242,7 @@ function makeRegistry(
         Effect.succeed(lifecycleFor(provider)),
       setProviderMaintenanceActionState,
       streamChanges: Stream.empty,
+      subscribeChanges: Effect.succeed(Stream.empty),
     };
 
     return {

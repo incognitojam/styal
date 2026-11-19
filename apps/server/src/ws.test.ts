@@ -957,6 +957,7 @@ it.effect.each([
         Layer.mock(ProviderRegistry.ProviderRegistry)({
           getProviders: Effect.succeed([]),
           streamChanges: Stream.never,
+          subscribeChanges: Effect.succeed(Stream.never),
         }),
         Layer.mock(UsageLimitSources.UsageLimitSources)({ streamChanges: Stream.make([]) }),
         Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({
@@ -1266,7 +1267,14 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       slashCommands: [{ name: `${cwd.slice(1)}-command` }],
       skills: [],
     });
-    const provider: ServerProvider = {
+    const running = {
+      status: "running",
+      startedAt: "2026-10-25T00:00:00.000Z",
+      finishedAt: null,
+      message: "Verifying the installed version",
+      output: null,
+    } as const;
+    let provider: ServerProvider = {
       instanceId,
       driver: ProviderDriverKind.make("claudeAgent"),
       enabled: true,
@@ -1275,6 +1283,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       status: "ready",
       auth: { status: "authenticated" },
       checkedAt: "2026-10-25T00:00:00.000Z",
+      updateState: running,
       models: [],
       slashCommands: [{ name: "machine-command", description: "A machine command" }],
       skills: [
@@ -1291,8 +1300,22 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       ],
     };
     let scansCwd = true;
-    const providerChanges = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
+    const providerChanges = yield* PubSub.unbounded<ReadonlyArray<ServerProvider>>();
+    const seedRead = yield* Deferred.make<void>();
+    const releaseSeedRead = yield* Deferred.make<void>();
+    const subscribed = yield* Deferred.make<void>();
     const pulled = yield* Queue.unbounded<void>();
+    let providerReads = 0;
+    let currentProviders = [provider];
+    let receivedProviders: ReadonlyArray<ServerProvider> = [];
+    const subscribeProviderChanges = PubSub.subscribe(providerChanges).pipe(
+      Effect.tap(() => Deferred.succeed(subscribed, undefined)),
+      Effect.map((subscription) =>
+        Stream.fromSubscription(subscription).pipe(
+          Stream.tap(() => Queue.offer(pulled, undefined)),
+        ),
+      ),
+    );
     const responses = yield* Queue.unbounded<unknown>();
     const configRpcServices = Layer.mergeAll(
       layerUnusedConfigRpcServices,
@@ -1301,10 +1324,16 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
         resolveFileManagerRevealKind: () => Effect.undefined,
       }),
       Layer.mock(ProviderRegistry.ProviderRegistry)({
-        getProviders: Effect.succeed([provider]),
-        streamChanges: Stream.fromQueue(providerChanges).pipe(
-          Stream.tap(() => Queue.offer(pulled, undefined)),
-        ),
+        getProviders: Effect.gen(function* () {
+          const providers = currentProviders;
+          if (++providerReads === 2) {
+            yield* Deferred.succeed(seedRead, undefined);
+            yield* Deferred.await(releaseSeedRead);
+          }
+          return providers;
+        }),
+        streamChanges: Stream.unwrap(subscribeProviderChanges),
+        subscribeChanges: subscribeProviderChanges,
         refreshWorkspaceSnapshot: () => Effect.succeed([provider]),
       }),
       Layer.mock(ProjectService.ProjectService)({
@@ -1365,9 +1394,18 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
         ...WS_RPC_SERVER_OPTIONS,
         onFromServer: (response) =>
           response._tag === "Chunk"
-            ? Effect.forEach(response.values, (value) => Queue.offer(responses, value), {
-                discard: true,
-              })
+            ? Effect.forEach(
+                response.values,
+                (value) =>
+                  Effect.gen(function* () {
+                    const event = value as ServerConfigStreamEvent;
+                    if (event.type === "snapshot") receivedProviders = event.config.providers;
+                    if (event.type === "providerStatuses")
+                      receivedProviders = event.payload.providers;
+                    yield* Queue.offer(responses, value);
+                  }),
+                { discard: true },
+              )
             : response._tag === "Exit" && response.exit._tag === "Success"
               ? Queue.offer(responses, response.exit.value)
               : Effect.void,
@@ -1406,14 +1444,40 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
     ]);
     yield* server.write(0, { _tag: "Ack", requestId: configRequest });
 
+    yield* Deferred.await(seedRead);
+    provider = {
+      ...provider,
+      updateState: {
+        ...running,
+        status: "succeeded",
+        finishedAt: "2026-10-25T00:00:01.000Z",
+        message: "Provider updated.",
+      },
+    };
+    currentProviders = [provider];
+    const subscribedBeforeCompletion = yield* Deferred.isDone(subscribed);
+    yield* PubSub.publish(providerChanges, currentProviders);
+    yield* Deferred.succeed(releaseSeedRead, undefined);
+    yield* Deferred.await(subscribed);
+    if (subscribedBeforeCompletion) yield* Queue.take(pulled);
+    yield* TestClock.adjust("1 second");
+    assert.deepEqual(
+      receivedProviders[0]?.updateState,
+      provider.updateState,
+      "a completion between the provider read and live subscription must reach the client",
+    );
+    const finished = (yield* Queue.take(responses)) as ServerConfigStreamEvent;
+    assert.equal(finished.type, "providerStatuses");
+    yield* server.write(0, { _tag: "Ack", requestId: configRequest });
+
     // A rescan that only touches a snapshot sends nothing; the next real change does.
-    yield* Queue.offer(providerChanges, [
+    yield* PubSub.publish(providerChanges, [
       { ...provider, workspaceSnapshots: [snapshotFor("/a", "2026-10-25T00:05:00.000Z")] },
     ]);
     yield* Queue.take(pulled);
     yield* TestClock.adjust("1 second");
     // Late /usage-limits discovery still reaches the client, so it refetches its cwd snapshot.
-    yield* Queue.offer(providerChanges, [
+    yield* PubSub.publish(providerChanges, [
       {
         ...provider,
         status: "warning",
@@ -1433,7 +1497,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
     yield* server.write(0, { _tag: "Ack", requestId: configRequest });
     // A replacement that cannot scan a cwd sends its full machine catalog.
     scansCwd = false;
-    yield* Queue.offer(providerChanges, [{ ...provider, status: "warning" }]);
+    yield* PubSub.publish(providerChanges, [{ ...provider, status: "warning" }]);
     yield* Queue.take(pulled);
     yield* TestClock.adjust("1 second");
     const replaced = (yield* Queue.take(responses)) as ServerConfigStreamEvent;
