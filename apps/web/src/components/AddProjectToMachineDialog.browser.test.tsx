@@ -3,6 +3,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { DraftId } from "../composerDraftStore";
+import { readPreparingAdd } from "../lib/addProjectToMachine";
 import { act, render } from "../../test/render";
 
 const project = vi.hoisted(() => {
@@ -138,5 +139,29 @@ describe("AddProjectToMachineDialog", () => {
     await expect
       .element(screen.getByRole("combobox", { name: "Machine to add the project to" }))
       .toHaveTextContent("machine-a");
+  });
+
+  it("frees the draft when a one-click add's project vanishes before the add shows", async () => {
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+    const draftId = DraftId.make("draft-2");
+    const quickAdd = () =>
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId,
+      });
+
+    await act(() => {
+      quickAdd();
+      project.set(null);
+    });
+    expect(readPreparingAdd(draftId)).toBeNull();
+
+    await act(() => project.set(PROJECT));
+    await act(quickAdd);
+    await expect.element(screen.getByText("Clone to machine-a")).toBeInTheDocument();
   });
 });

@@ -94,6 +94,7 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   if (readProject(request.projectRef) === null) return;
   // One add at a time per draft: a second pick would race the first to start a clone.
   if (request.quick && request.draftId && readPreparingAdd(request.draftId) !== null) return;
+  endPreparing();
   endRequestWithProject?.();
   // The request ends when its project goes away, so a project that comes back
   // later cannot reopen a dialog nobody asked for.
@@ -112,9 +113,16 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
 
+/** The open request's Preparing row goes with it, even if its dialog never mounted. */
+function endPreparing() {
+  const draftId = useRequest.getState().request?.draftId;
+  if (draftId) setPreparingAdd(draftId, null);
+}
+
 /** Ends the request; with `session`, only if that request is still the open one. */
 function close(session?: number) {
   if (session !== undefined && useRequest.getState().session !== session) return;
+  endPreparing();
   endRequestWithProject?.();
   endRequestWithProject = null;
   useRequest.setState({ request: null });
