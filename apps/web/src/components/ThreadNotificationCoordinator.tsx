@@ -6,7 +6,17 @@ import {
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import {
+  buildProjectGroups,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
+import {
+  type EnvironmentId,
+  type OrchestrationV2ThreadShell,
+  type ProjectId,
+  type ThreadId,
+  threadNotificationName,
+} from "@t3tools/contracts";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
@@ -22,6 +32,8 @@ import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings
 import { getDocumentActivity } from "../lib/documentActivity";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
+import { environmentProjects } from "../state/projects";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
@@ -143,6 +155,18 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
+  // The sidebar's label for the project's group, as the project page names it.
+  const projectName = (environmentId: EnvironmentId, projectId: ProjectId) =>
+    buildProjectGroups({
+      projects: registry.get(environmentProjects.projectsAtom),
+      settings: selectProjectGroupingSettings(getClientSettings()),
+      preferredEnvironmentId: registry.get(primaryEnvironmentIdAtom),
+    }).find((group) =>
+      group.memberProjectRefs.some(
+        (ref) => ref.environmentId === environmentId && ref.projectId === projectId,
+      ),
+    )?.label ?? null;
+
   const present = (
     environmentId: EnvironmentId,
     state: NotificationState,
@@ -168,6 +192,11 @@ export function startThreadNotifications(
       );
     };
     const shouldSound = () => kind !== "completion" || !isViewed();
+    const name = threadNotificationName(
+      registry.get(environmentServerConfigsAtom).get(environmentId)?.settings,
+      thread,
+      () => projectName(environmentId, thread.projectId),
+    );
     const title =
       kind === "completion"
         ? "Thread completed"
@@ -204,7 +233,7 @@ export function startThreadNotifications(
         onRemove: (): void => forgetToast(toastKey, toastId),
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
         title,
-        description: thread.title,
+        description: name,
         data: {
           hideCopyButton: true,
           leadingIcon:
@@ -242,7 +271,7 @@ export function startThreadNotifications(
     const tag = threadNotificationTag(environmentId, thread.id);
     const notification = showSystemNotification({
       title,
-      body: thread.title,
+      body: name,
       tag,
       requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
       onClick: () =>
