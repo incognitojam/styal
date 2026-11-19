@@ -3855,9 +3855,13 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             item.deferredWork === undefined,
         ),
       );
-      assert.deepEqual(yield* projectionStore.getViewedSourceSummary({ threadId }), [
-        { kind: "document", path: "/repo/spec.pdf" },
-      ]);
+      assert.deepEqual(
+        yield* projectionStore.getViewedSourceSummary({
+          threadId,
+          runId: RunId.make("run:bounded-sql-history:1"),
+        }),
+        [{ kind: "document", path: "/repo/spec.pdf" }],
+      );
       const webSearchWindow = (fetchedUrl: string | null) =>
         Effect.gen(function* () {
           yield* sql`UPDATE orchestration_v2_projection_turn_items
@@ -3902,13 +3906,19 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET payload_json = json_set(payload_json, '$.patterns', json('["menu guidelines"]'))
         WHERE thread_id = ${threadId} AND ordinal = 900`;
-      assert.deepEqual(yield* projectionStore.getViewedSourceSummary({ threadId }), [
-        {
-          kind: "search",
-          query: "menu guidelines",
-          results: [{ url: "https://docs.example.com/menus" }],
-        },
-      ]);
+      assert.deepEqual(
+        yield* projectionStore.getViewedSourceSummary({
+          threadId,
+          runId: RunId.make("run:bounded-sql-history:1"),
+        }),
+        [
+          {
+            kind: "search",
+            query: "menu guidelines",
+            results: [{ url: "https://docs.example.com/menus" }],
+          },
+        ],
+      );
       yield* sql`UPDATE orchestration_v2_projection_turn_items
         SET payload_json = json_remove(payload_json, '$.results', '$.patterns')
         WHERE thread_id = ${threadId} AND ordinal = 900`;

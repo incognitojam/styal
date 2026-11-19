@@ -2077,7 +2077,9 @@ export function deriveThreadFeedPresentation(
   const sourcesByRunId = new Map<string | null, Array<readonly ViewedSource[]>>();
   for (const row of rows) {
     if (row.type !== "viewed-images") continue;
-    sourcesByRunId.set(row.runId, [...(sourcesByRunId.get(row.runId) ?? []), row.sources]);
+    const lists = sourcesByRunId.get(row.runId) ?? [];
+    lists.push(row.sources);
+    sourcesByRunId.set(row.runId, lists);
   }
   const documentPagesByRunId = new Map(
     [...sourcesByRunId].map(([runId, lists]) => [runId, runDocumentPages(lists)] as const),

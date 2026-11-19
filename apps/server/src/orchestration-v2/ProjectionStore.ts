@@ -554,7 +554,7 @@ export interface ProjectionStoreV2Shape {
   /** The capped summary of what a subagent's thread read, fetched and searched. */
   readonly getViewedSourceSummary: (input: {
     readonly threadId: ThreadId;
-    /** Only this run's items; a native subagent's thread is all its own. */
+    /** Only this run's items; without one, the thread's runless items, a native subagent's own. */
     readonly runId?: RunId;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2ViewedSource>, ProjectionStoreV2Error>;
   readonly getMessagesById: (
@@ -6448,7 +6448,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       );
 
     // Only the fields a source needs, so page text and tool output stay out of the read.
-    const readViewedSourceItems = (threadId: ThreadId, runId: RunId | undefined) =>
+    // `runIds` null means the thread's runless items: a native subagent's own work there.
+    const runScope = (column: string, runIds: ReadonlyArray<RunId> | null) =>
+      runIds === null
+        ? sql`AND ${sql.literal(column)} IS NULL`
+        : sql`AND ${sql.literal(column)} IN ${sql.in(runIds)}`;
+
+    const readViewedSourceItems = (threadId: ThreadId, runIds: ReadonlyArray<RunId> | null) =>
       sql<{ source_json: string }>`SELECT json_object(
           'type', item.type,
           'status', item.status,
@@ -6464,7 +6470,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         ) AS source_json
         FROM orchestration_v2_projection_turn_items AS item
         WHERE item.thread_id = ${threadId}
-          ${runId === undefined ? sql`` : sql`AND item.run_id = ${runId}`}
+          ${runScope("item.run_id", runIds)}
           AND (item.type = 'web_search'
             OR (item.type = 'dynamic_tool' AND item.payload_json LIKE '%"viewedDocument"%'))
         ORDER BY item.ordinal`.pipe(
@@ -6476,15 +6482,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       );
 
     // Child threads come from subagent records, not the parent's subagent rows: workflow members
-    // have no row, and a child's row may not hold its summary yet when its parent finishes.
-    const readSubagentChildThreadIds = (threadId: ThreadId, runId: RunId | undefined) =>
-      sql<{ child_thread_id: ThreadId }>`SELECT child_thread_id
-        FROM orchestration_v2_projection_subagents
-        WHERE thread_id = ${threadId}
-          ${runId === undefined ? sql`` : sql`AND run_id = ${runId}`}
-          AND child_thread_id IS NOT NULL
-        ORDER BY started_at, subagent_id`.pipe(
-        Effect.map((rows) => rows.map((row) => row.child_thread_id)),
+    // have no row, and a child's row may not hold its summary yet when its parent finishes. A
+    // record is followed only into a thread whose lineage names this thread as its parent.
+    const readSubagentChildren = (threadId: ThreadId, runIds: ReadonlyArray<RunId> | null) =>
+      sql<{
+        child_thread_id: ThreadId;
+        subagent_id: NodeId;
+        origin: string;
+      }>`SELECT task.child_thread_id, task.subagent_id, task.origin
+        FROM orchestration_v2_projection_subagents AS task
+        JOIN orchestration_v2_projection_threads AS child
+          ON child.thread_id = task.child_thread_id
+        WHERE task.thread_id = ${threadId}
+          ${runScope("task.run_id", runIds)}
+          AND json_extract(child.payload_json, '$.lineage.parentThreadId') = task.thread_id
+        ORDER BY task.started_at, task.subagent_id`;
+
+    // A delegated task's child thread can hold earlier tasks' runs; only this task's count.
+    const readDelegatedTaskRunIds = (childThreadId: ThreadId, taskId: NodeId) =>
+      sql<{ run_id: RunId }>`SELECT run_id FROM orchestration_v2_projection_runs
+        WHERE thread_id = ${childThreadId}
+          AND json_extract(payload_json, '$.delegatedTaskId') = ${taskId}`.pipe(
+        Effect.map((rows) => rows.map((row) => row.run_id)),
       );
 
     const getViewedSourceSummary: ProjectionStoreV2Shape["getViewedSourceSummary"] = (input) =>
@@ -6497,16 +6516,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       function* (input: { readonly threadId: ThreadId; readonly runId?: RunId }) {
         const items: ViewedSourceItem[] = [];
         const visited = new Set<ThreadId>();
-        let pending: Array<{ readonly threadId: ThreadId; readonly runId?: RunId }> = [input];
+        let pending: Array<{
+          readonly threadId: ThreadId;
+          readonly runIds: ReadonlyArray<RunId> | null;
+        }> = [
+          { threadId: input.threadId, runIds: input.runId === undefined ? null : [input.runId] },
+        ];
         // A subagent tree is a few levels deep; the bounds stop a cycle or a runaway tree.
         for (let depth = 0; depth < VIEWED_SOURCE_THREAD_DEPTH && pending.length > 0; depth += 1) {
           const next: typeof pending = [];
-          for (const { threadId, runId } of pending) {
+          for (const { threadId, runIds } of pending) {
             if (visited.has(threadId) || visited.size >= VIEWED_SOURCE_THREAD_LIMIT) continue;
             visited.add(threadId);
-            items.push(...(yield* readViewedSourceItems(threadId, runId)));
-            for (const childThreadId of yield* readSubagentChildThreadIds(threadId, runId)) {
-              next.push({ threadId: childThreadId });
+            if (runIds !== null && runIds.length === 0) continue;
+            for (const item of yield* readViewedSourceItems(threadId, runIds)) items.push(item);
+            for (const child of yield* readSubagentChildren(threadId, runIds)) {
+              next.push({
+                threadId: child.child_thread_id,
+                runIds:
+                  child.origin === "app_owned"
+                    ? yield* readDelegatedTaskRunIds(child.child_thread_id, child.subagent_id)
+                    : null,
+              });
             }
           }
           pending = next;

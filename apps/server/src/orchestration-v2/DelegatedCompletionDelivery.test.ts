@@ -4303,7 +4303,16 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
 
       // The child started native subagents; only their records exist, as for workflow members,
       // and one was stopped after it had fetched a page.
-      const grandchild = (name: string, status: "completed" | "cancelled", url: string) => {
+      const grandchild = (
+        name: string,
+        status: "completed" | "cancelled",
+        url: string,
+        options: {
+          readonly origin?: "provider_native" | "app_owned";
+          readonly lineageParent?: ThreadId;
+          readonly extraItems?: ReadonlyArray<{ readonly url: string; readonly runId: RunId }>;
+        } = {},
+      ) => {
         const grandchildThreadId = ThreadId.make(`thread:sources-grandchild:${name}`);
         const taskNodeId = NodeId.make(`node:sources-grandchild:${name}`);
         return [
@@ -4326,7 +4335,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
               worktreePath: null,
               activeProviderThreadId: null,
               lineage: {
-                parentThreadId: child.childThreadId,
+                parentThreadId: options.lineageParent ?? child.childThreadId,
                 relationshipToParent: "subagent" as const,
                 rootThreadId: threadId,
               },
@@ -4354,7 +4363,15 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
               threadId: child.childThreadId,
               runId: child.childRunId,
               parentNodeId: rootNodeId,
-              origin: "provider_native" as const,
+              origin: options.origin ?? ("provider_native" as const),
+              ...(options.origin === "app_owned"
+                ? {
+                    completionDelivery: {
+                      state: "disposed" as const,
+                      observedByRunId: null,
+                    },
+                  }
+                : {}),
               createdBy: "agent" as const,
               driver,
               providerInstanceId: modelSelection.instanceId,
@@ -4371,18 +4388,77 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
               updatedAt: now,
             },
           },
+          ...(options.origin === "app_owned"
+            ? [
+                {
+                  ...runEvent({
+                    threadId: grandchildThreadId,
+                    runId: RunId.make(`run:sources-grandchild:${name}:task`),
+                    ordinal: 2,
+                    status: "completed",
+                    now,
+                  }),
+                  payload: {
+                    ...runEvent({
+                      threadId: grandchildThreadId,
+                      runId: RunId.make(`run:sources-grandchild:${name}:task`),
+                      ordinal: 2,
+                      status: "completed",
+                      now,
+                    }).payload,
+                    delegatedTaskId: taskNodeId,
+                  },
+                },
+              ]
+            : []),
           item({
-            ...base(`turn-item:sources-grandchild:${name}:fetch`, grandchildThreadId, null, 1),
+            ...base(
+              `turn-item:sources-grandchild:${name}:fetch`,
+              grandchildThreadId,
+              options.origin === "app_owned"
+                ? RunId.make(`run:sources-grandchild:${name}:task`)
+                : null,
+              1,
+            ),
             type: "web_search",
             patterns: [url],
             fetchedUrl: url,
           }),
+          ...(options.extraItems ?? []).map((extra, index) =>
+            item({
+              ...base(
+                `turn-item:sources-grandchild:${name}:extra:${index}`,
+                grandchildThreadId,
+                extra.runId,
+                10 + index,
+              ),
+              type: "web_search",
+              patterns: [extra.url],
+              fetchedUrl: extra.url,
+            }),
+          ),
         ];
       };
       yield* eventSink.write({
         events: [
-          ...grandchild("finished", "completed", "https://help.example.io/export"),
+          // A run in a native subagent's thread is the user's own, not the subagent's.
+          ...grandchild("finished", "completed", "https://help.example.io/export", {
+            extraItems: [
+              { url: "https://legal.example.net/user-run", runId: RunId.make("run:user") },
+            ],
+          }),
           ...grandchild("stopped", "cancelled", "https://status.example.org/uptime"),
+          // A nested delegated task's thread also holds an earlier task's run.
+          ...grandchild("nested-task", "completed", "https://docs.example.com/nested", {
+            origin: "app_owned",
+            extraItems: [
+              { url: "https://legal.example.net/earlier-task", runId: RunId.make("run:earlier") },
+            ],
+          }),
+          // A record naming a thread whose lineage points at another parent is not followed.
+          ...grandchild("foreign", "completed", "https://legal.example.net/foreign", {
+            lineageParent: threadId,
+          }),
         ],
       });
 
@@ -4397,6 +4473,8 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
       assert.deepEqual(row?.type === "subagent" ? row.viewedSources : undefined, [
         { kind: "page", url: "https://docs.example.com/retention" },
         { kind: "page", url: "https://help.example.io/export" },
+        // Records that started together follow in id order.
+        { kind: "page", url: "https://docs.example.com/nested" },
         { kind: "page", url: "https://status.example.org/uptime" },
       ]);
       assert.notInclude(JSON.stringify(row), "PAGE_TEXT");
