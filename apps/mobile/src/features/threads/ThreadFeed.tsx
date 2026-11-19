@@ -1954,6 +1954,8 @@ function renderFeedEntry(
       <View>
         {images}
         <ViewedSourceChips
+          key={entry.id}
+          folded={entry.folded}
           sources={entry.sources}
           iconColor={iconSubtleColor}
           onOpenLink={props.markdownLinkHandlers.onLinkPress}

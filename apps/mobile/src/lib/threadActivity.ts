@@ -312,6 +312,8 @@ type ThreadFeedEntryContent =
       readonly sources: ReadonlyArray<ViewedSource>;
       /** The tool group a search chip with no results opens; null when it is open or has no toggle. */
       readonly collapsedGroupId: string | null;
+      /** A subagent's sources rest as one summary line; the chips open on press. */
+      readonly folded?: true;
     }
   | {
       readonly type: "run-fold";
@@ -2130,6 +2132,7 @@ function subagentViewedSourcesRows(row: ThreadFeedEntry): ThreadFeedEntry[] {
           paths: [],
           sources,
           collapsedGroupId: null,
+          folded: true,
         },
       ];
 }

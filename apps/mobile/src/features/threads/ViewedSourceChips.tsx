@@ -3,6 +3,7 @@ import {
   viewedDocumentPagesLabel,
   viewedSearchResultSite,
   viewedSourceLabel,
+  viewedSourcesSummary,
   type ViewedSource,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { viewedSearchKey } from "@t3tools/shared/viewedSources";
@@ -24,13 +25,43 @@ function sourceSymbol(source: ViewedSource): AppSymbolName {
       : "magnifyingglass";
 }
 
-export function ViewedSourceChips(props: {
+type ViewedSourceChipsProps = {
   readonly sources: ReadonlyArray<ViewedSource>;
   readonly iconColor: string | ColorValue;
   readonly onOpenLink: (href: string) => void;
   /** Opens the collapsed tool group, for a search chip whose search reported no results. */
   readonly onOpenGroup: (() => void) | undefined;
-}) {
+};
+
+/** With `folded`, rests as one summary line, such as "2 pages · 1 search", that opens the chips. */
+export function ViewedSourceChips(props: ViewedSourceChipsProps & { readonly folded?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!props.folded) return <SourceChips {...props} />;
+  return (
+    // Indented to the subagent row's title, so the line reads as part of that row.
+    <View className="items-start pl-9">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        className="flex-row items-center gap-1 py-1 pb-2 active:opacity-70"
+        onPress={() => setOpen(!open)}
+      >
+        <Text className="text-[13px] text-foreground-muted">
+          {viewedSourcesSummary(props.sources)}
+        </Text>
+        <SymbolView
+          name={open ? "chevron.down" : "chevron.right"}
+          size={11}
+          tintColor={props.iconColor}
+          type="monochrome"
+        />
+      </Pressable>
+      {open ? <SourceChips {...props} /> : null}
+    </View>
+  );
+}
+
+function SourceChips(props: ViewedSourceChipsProps) {
   const [expanded, setExpanded] = useState(false);
   const [openSearchKey, setOpenSearchKey] = useState<string | null>(null);
   const { visible, hiddenCount } = foldViewedSources(props.sources, FOLD_LIMIT, expanded);

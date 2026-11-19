@@ -312,6 +312,7 @@ export function ViewedImagesTimelineRow({
         rowId={row.id}
         sources={row.sources}
         collapsedGroupId={row.collapsedGroupId}
+        folded={row.folded}
       />
     </div>
   );

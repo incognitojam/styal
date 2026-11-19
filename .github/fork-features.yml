@@ -7481,7 +7481,7 @@ features:
       - Web search result snippets stay off the wire until the row is expanded.
       - The chip row lists documents, then pages, each once, folds after 4 on web and 3 on mobile, and leaves out the user's attachments and pages the same run's reply links.
       - Web searches follow as one chip per query, after documents and pages and inside the same fold; repeated queries in a run show once. A chip with results lists them (title and site, opening as chat links); a chip without results opens its collapsed tool group.
-      - When a native subagent or a delegated task ends, its row in the parent carries a capped summary of the documents, pages and searches its thread used, including those of the subagents it started, without page text; the parent shows them as chips under that row, each source once per run.
+      - When a native subagent or a delegated task ends, its row in the parent carries a capped summary of the documents, pages and searches its thread used, including those of the subagents it started, without page text; the parent shows them under that row as one summary line, such as "2 pages · 1 search", that opens the chips, each source once per run.
     rationale: Agents read PDFs and web pages the user may want to open; the image strip showed only images.
     implementation_paths:
       - apps/mobile/src/features/threads/ViewedSourceChips.tsx

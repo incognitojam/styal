@@ -839,6 +839,22 @@ export function foldViewedSources<Source>(
     : { visible: sources.slice(0, limit), hiddenCount: sources.length - limit };
 }
 
+/** "1 document · 2 pages · 1 search", the line a folded set of sources shows. */
+export function viewedSourcesSummary(sources: ReadonlyArray<ViewedSource>): string {
+  const count = (kind: ViewedSource["kind"]) =>
+    sources.filter((source) => source.kind === kind).length;
+  return (
+    [
+      [count("document"), "document", "documents"],
+      [count("page"), "page", "pages"],
+      [count("search"), "search", "searches"],
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+    .join(" · ");
+}
+
 /** "settings-spec.pdf"; "docs.example.com/guides/menus", middle-shortened past 48 characters. */
 export function viewedSourceLabel(source: ViewedSource): string {
   if (source.kind === "search") return source.query;

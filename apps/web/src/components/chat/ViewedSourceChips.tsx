@@ -3,17 +3,19 @@ import {
   viewedDocumentPagesLabel,
   viewedSearchResultSite,
   viewedSourceLabel,
+  viewedSourcesSummary,
   type ViewedSource,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { viewedSearchKey } from "@t3tools/shared/viewedSources";
 import { workspaceRelativeFilePath } from "@t3tools/shared/path";
-import { SearchIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon } from "lucide-react";
 import { use, useState, type ReactNode } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { cn } from "~/lib/utils";
 import { MarkdownLinkFavicon } from "./MarkdownExternalLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
@@ -23,6 +25,35 @@ const FOLD_LIMIT = 4;
 type SearchSource = Extract<ViewedSource, { kind: "search" }>;
 
 export function ViewedSourceChips(props: {
+  readonly rowId: string;
+  readonly sources: ReadonlyArray<ViewedSource>;
+  readonly collapsedGroupId: string | null;
+  /** Rest as one summary line, such as "2 pages · 1 search", that opens the chips. */
+  readonly folded?: boolean | undefined;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const openKey = `viewed-sources:${props.rowId}`;
+  const [open, setOpen] = useState(() => ctx.workGroupViewState.expandedEntries.has(openKey));
+  if (!props.folded) return <SourceChips {...props} />;
+  const toggle = () => {
+    ctx.onToggleWorkEntry(props.rowId, open);
+    if (open) ctx.workGroupViewState.expandedEntries.delete(openKey);
+    else ctx.workGroupViewState.expandedEntries.add(openKey);
+    setOpen(!open);
+  };
+  return (
+    // Indented to the subagent row's title, so the line reads as part of that row.
+    <div className="flex flex-col items-start gap-1 ps-8.5">
+      <Button variant="ghost-muted" size="xs" aria-expanded={open} onClick={toggle}>
+        {viewedSourcesSummary(props.sources)}
+        <ChevronRightIcon className={cn("transition-transform", open && "rotate-90")} />
+      </Button>
+      {open ? <SourceChips {...props} /> : null}
+    </div>
+  );
+}
+
+function SourceChips(props: {
   readonly rowId: string;
   readonly sources: ReadonlyArray<ViewedSource>;
   readonly collapsedGroupId: string | null;

@@ -632,6 +632,8 @@ type MessagesTimelineRowContent =
       sources: ReadonlyArray<ViewedSource>;
       /** The tool group a search chip with no results opens; null when it is open or has no toggle. */
       collapsedGroupId: string | null;
+      /** A subagent's sources rest as one summary line; the chips open on click. */
+      folded?: true;
     }
   | {
       kind: "turn-fold";
@@ -772,6 +774,7 @@ function subagentViewedSourcesRows(
           paths: [],
           sources,
           collapsedGroupId: null,
+          folded: true,
         },
       ];
 }
@@ -3198,6 +3201,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.paths.every((path, index) => path === bv.paths[index]) &&
         a.sources.length === bv.sources.length &&
         a.collapsedGroupId === bv.collapsedGroupId &&
+        a.folded === bv.folded &&
         a.sources.every((source, index) => {
           const other = bv.sources[index]!;
           if (source.kind === "document") {
