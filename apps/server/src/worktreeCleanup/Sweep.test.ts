@@ -229,8 +229,9 @@ it.effect.each([
   "unpushed-worktree",
 ] as const)("keeps files for %s", (mode) =>
   Effect.gen(function* () {
+    const platform = yield* HostProcess.Platform;
     const f = yield* setup.pipe(
-      Effect.provideService(HostProcess.Platform, mode.endsWith("-case") ? "darwin" : "linux"),
+      Effect.provideService(HostProcess.Platform, mode.endsWith("-case") ? "darwin" : platform),
     );
     yield* f.write("dist/output");
     const initial = f.threads()[0]!;
@@ -393,7 +394,7 @@ it.effect.each([
       ),
       Effect.provideService(
         HostProcess.Platform,
-        mode === "windows" ? "win32" : mode.endsWith("-case") ? "darwin" : "linux",
+        mode === "windows" ? "win32" : mode.endsWith("-case") ? "darwin" : platform,
       ),
       Effect.provideService(FileSystem.FileSystem, {
         ...f.fs,
