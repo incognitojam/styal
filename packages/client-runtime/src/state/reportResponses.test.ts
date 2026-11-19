@@ -49,3 +49,51 @@ it("fails an answer accepted without a commit number once a full sync of the thr
   expect(reportResponsePending(pending(), answer)).toBe(false);
   expect(reportResponseFailure(pending(), ref)?.message).toBe(REPORT_ANSWER_FAILED);
 });
+
+it("refuses a response to a report the thread already shows answered", async () => {
+  const registry = AtomRegistry.make();
+  const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
+  const projection = {
+    messages: [
+      {
+        id: ref.messageId,
+        role: "assistant",
+        text: "Report",
+        report: {
+          key: "shed",
+          title: "Shed",
+          version: 1,
+          question: "Start?",
+          answers: ["Start it"],
+        },
+      },
+      { id: MessageId.make("first"), role: "user", text: "Start it", reportAnswer: ref },
+    ],
+    thread: {},
+  } as unknown as Option.Option.Value<ReportResponseThreadState["data"]>;
+  const state = Atom.make<ReportResponseThreadState>({
+    data: Option.some(projection),
+    status: "live",
+    sequence: 5,
+  });
+  const { respond } = createReportResponses(registry, { stateAtom: () => state });
+  let sent = 0;
+  const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
+  // A screen that has fallen behind can still offer the buttons; the store knows better.
+  const accepted = await respond(
+    thread,
+    {
+      ref,
+      kind: "answer",
+      messageId: MessageId.make("second"),
+      text: "[Shed, version 1] Start it",
+      createdAt: "2026-11-19T10:00:00.000Z",
+    },
+    async () => {
+      sent += 1;
+      return AsyncResult.success({ sequence: 6 });
+    },
+  );
+  expect(accepted).toBe(false);
+  expect(sent).toBe(0);
+});

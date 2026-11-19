@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom, type AtomRegistry } from "effect/reactivity";
+import { coordinatorReports } from "../coordinatorReports.ts";
 import {
   acknowledgeReportResponse,
   claimReportResponse,
@@ -108,11 +109,26 @@ export function createReportResponses(
       return copy;
     });
 
-  /** Shows `response` at once; null when its report already has a response pending. */
+  /**
+   * Shows `response` at once; null when its report already has a response pending, or the
+   * thread already shows one (a screen that has fallen behind may still offer the buttons).
+   */
   const begin = (
     thread: ScopedThreadRef,
     response: ReportResponse,
   ): ReportResponseHandle | null => {
+    const known = Option.getOrNull(registry.get(threads.stateAtom(thread)).data);
+    if (
+      known !== null &&
+      coordinatorReports(known.messages, known.thread.reportDismissals ?? []).some(
+        ({ message, state }) =>
+          message.id === response.ref.messageId &&
+          message.report?.key === response.ref.key &&
+          message.report.version === response.ref.version &&
+          (state === "answered" || state === "dismissed"),
+      )
+    )
+      return null;
     const key = threadKey(thread);
     let claimed = false;
     update(key, (current) => {

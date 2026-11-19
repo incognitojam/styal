@@ -196,6 +196,16 @@ export interface AnsweredNeed {
   readonly report?: AnsweredReport;
 }
 
+function respondingLabel(responding: NeedResponding): string {
+  return responding.status === "dismissing"
+    ? "Dismissing"
+    : responding.status === "queued"
+      ? "Queued until the current turn ends"
+      : responding.chosen === null
+        ? "Sending your reply"
+        : "Sending your answer";
+}
+
 /** A report response on its way: the row keeps its answering shape and says how far it got. */
 export interface NeedResponding {
   readonly status: "sending" | "queued" | "dismissing";
@@ -243,7 +253,8 @@ export function ProjectNeedRow({
             {summary(need)}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
-            {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
+            {need.thread.title} ·{" "}
+            {responding ? respondingLabel(responding) : formatRelativeTimeLabel(need.createdAt)}
           </span>
         </span>
         <ChevronRightIcon
@@ -536,13 +547,7 @@ function ReportAnswer({
       <div className="flex h-7 items-center justify-end gap-2 sm:h-6">
         {responding ? (
           <span role="status" className="me-auto truncate text-xs text-muted-foreground">
-            {responding.status === "dismissing"
-              ? "Dismissing"
-              : responding.status === "queued"
-                ? "Queued until the current turn ends"
-                : responding.chosen === null
-                  ? "Sending your reply"
-                  : "Sending your answer"}
+            {respondingLabel(responding)}
           </span>
         ) : (
           <>
