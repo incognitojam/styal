@@ -153,6 +153,8 @@ jobs:
           POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
           POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
         run: node apps/server/scripts/cli.ts build-exe --verbose
+      - name: Verify packaged cleanup helper
+        run: node scripts/verify-worktree-cleanup.mjs apps/server/dist-exe/styal${{ matrix.platform == 'win' && '.exe' || '' }}
       - name: Build resource monitor
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
         run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target ${{ matrix.rust_target }}

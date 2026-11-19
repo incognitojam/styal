@@ -15,6 +15,7 @@ on:
       - "scripts/prepare-server-compile-cache.cjs"
       - "scripts/linux-after-pack.ts"
       - "scripts/verify-desktop-startup.mjs"
+      - "scripts/verify-worktree-cleanup.mjs"
       - "scripts/smoke-desktop-app.ts"
       - "scripts/fixtures/desktop-launch/**"
       - ".github/workflows/fork-desktop-build*.yml"
