@@ -1,5 +1,5 @@
 import { ChevronRightIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { cn } from "~/lib/utils";
 import { InlineButton } from "../ui/button";
@@ -18,6 +18,7 @@ export function ComposerStackCard({
   footer,
   folded,
   onFoldedChange,
+  headerRef,
   testId,
   children,
 }: {
@@ -28,6 +29,8 @@ export function ComposerStackCard({
   footer?: ReactNode;
   folded: boolean;
   onFoldedChange: (folded: boolean) => void;
+  /** The header's fold button, which stays when the body goes. */
+  headerRef?: Ref<HTMLButtonElement>;
   testId?: string;
   children: ReactNode;
 }) {
@@ -45,6 +48,7 @@ export function ComposerStackCard({
           )}
         >
           <button
+            ref={headerRef}
             type="button"
             aria-expanded={!folded}
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch ps-2 text-left"

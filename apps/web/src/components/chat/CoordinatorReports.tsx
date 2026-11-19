@@ -1,7 +1,7 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
 import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
-import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, use, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
@@ -247,6 +247,7 @@ export function NeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [ownFolded, setOwnFolded] = useState(false);
+  const headerRef = useRef<HTMLButtonElement>(null);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
@@ -274,6 +275,7 @@ export function NeedsYou({
         collapse();
         setFolded(next);
       }}
+      headerRef={headerRef}
       action={
         folded || rows.length <= (opened.length ? 1 : 3)
           ? null
@@ -326,6 +328,8 @@ export function NeedsYou({
             onClick={() => {
               collapse();
               setFolded(true);
+              // The row goes with the body; keep keyboard focus in the card.
+              headerRef.current?.focus({ preventScroll: true });
               scroll(row.report.message.id);
             }}
           >
