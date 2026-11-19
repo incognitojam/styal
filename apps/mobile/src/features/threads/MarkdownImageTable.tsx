@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -26,6 +26,20 @@ export function MarkdownImageTable(props: {
   const [sizes, setSizes] = useState<
     ReadonlyMap<string, { readonly width: number; readonly height: number }>
   >(new Map());
+  const reportSize = useCallback(
+    (key: string, size: { readonly width: number; readonly height: number }) =>
+      setSizes((current) =>
+        current.get(key)?.width === size.width && current.get(key)?.height === size.height
+          ? current
+          : new Map(current).set(key, size),
+      ),
+    [],
+  );
+  // Keyed by the image as well as its place, so a cell that changes image is measured again.
+  const sizeKey = (cell: {
+    readonly key: string;
+    readonly image: { readonly href: string } | null;
+  }) => (cell.image ? `${cell.key}|${cell.image.href}` : null);
   const columns = Math.max(...props.rows.map((cells) => cells.length));
   const perLine = columns > 3 ? 2 : columns;
   const cellWidth =
@@ -45,52 +59,56 @@ export function MarkdownImageTable(props: {
     .map((line) => ({
       ...line,
       height: resolveMarkdownImageRowHeight(
-        line.cells.flatMap((cell) => sizes.get(cell.key) ?? []),
+        line.cells.flatMap((cell) => {
+          const key = sizeKey(cell);
+          return (key && sizes.get(key)) || [];
+        }),
         cellWidth,
       ),
     }));
+  const headerStyle = {
+    color: props.textStyle.strongColor,
+    fontFamily: props.textStyle.boldFontFamily,
+    fontSize: props.textStyle.fontSize * 0.875,
+  };
   return (
     <View style={{ gap: 14, marginTop: 8, marginBottom: 12 }}>
       {lines.map((line) => (
-        <View key={line.key} style={{ flexDirection: "row", gap: GAP }}>
-          {line.cells.map((cell) => (
-            <View
-              key={cell.key}
-              style={{ width: cellWidth || undefined, flex: cellWidth ? 0 : 1, gap: 6 }}
-            >
-              {line.headers && cell.header ? (
+        // Headers get their own band, so a header that wraps does not push its image down.
+        <View key={line.key} style={{ gap: 6 }}>
+          {line.headers && line.cells.some((cell) => cell.header) ? (
+            <View style={{ flexDirection: "row", gap: GAP }}>
+              {line.cells.map((cell) => (
                 <Text
+                  key={cell.key}
                   selectable
                   numberOfLines={2}
-                  style={{
-                    color: props.textStyle.strongColor,
-                    fontFamily: props.textStyle.boldFontFamily,
-                    fontSize: props.textStyle.fontSize * 0.875,
-                  }}
+                  style={[headerStyle, { width: cellWidth || undefined, flex: cellWidth ? 0 : 1 }]}
                 >
                   {cell.header}
                 </Text>
-              ) : null}
-              <View style={{ flexGrow: 1 }}>
-                <MarkdownImageAvailableWidthContext value={cellWidth}>
-                  <MarkdownImageRowContext
-                    value={{
-                      height: line.height,
-                      reportSize: (size) =>
-                        setSizes((current) =>
-                          current.get(cell.key)?.width === size.width &&
-                          current.get(cell.key)?.height === size.height
-                            ? current
-                            : new Map(current).set(cell.key, size),
-                        ),
-                    }}
-                  >
-                    {cell.image ? props.renderImage(cell.image) : null}
-                  </MarkdownImageRowContext>
-                </MarkdownImageAvailableWidthContext>
-              </View>
+              ))}
             </View>
-          ))}
+          ) : null}
+          <View style={{ flexDirection: "row", gap: GAP }}>
+            {line.cells.map((cell) => {
+              const key = sizeKey(cell);
+              return (
+                <View
+                  key={cell.key}
+                  style={{ width: cellWidth || undefined, flex: cellWidth ? 0 : 1 }}
+                >
+                  <MarkdownImageAvailableWidthContext value={cellWidth}>
+                    <MarkdownImageRowContext
+                      value={key ? { height: line.height, sizeKey: key, reportSize } : null}
+                    >
+                      {cell.image ? props.renderImage(cell.image) : null}
+                    </MarkdownImageRowContext>
+                  </MarkdownImageAvailableWidthContext>
+                </View>
+              );
+            })}
+          </View>
         </View>
       ))}
     </View>

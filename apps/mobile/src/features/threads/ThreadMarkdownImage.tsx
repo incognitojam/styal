@@ -37,7 +37,11 @@ export const MarkdownImageAvailableWidthContext = createContext(0);
  */
 export const MarkdownImageRowContext = createContext<{
   readonly height: number | null;
-  readonly reportSize: (size: { readonly width: number; readonly height: number }) => void;
+  readonly sizeKey: string;
+  readonly reportSize: (
+    key: string,
+    size: { readonly width: number; readonly height: number },
+  ) => void;
 } | null>(null);
 
 type ImageSize = { readonly width: number; readonly height: number };
@@ -119,6 +123,8 @@ export function ThreadMarkdownImageView(props: {
   const contextWidth = useContext(MarkdownImageAvailableWidthContext);
   const row = useContext(MarkdownImageRowContext);
   const fill = row !== null;
+  // Until the line's height is known, frames stretch to the tallest on their line.
+  const grow = row !== null && row.height === null;
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const availableWidth =
     measuredWidth > 0 && contextWidth > 0
@@ -175,34 +181,36 @@ export function ThreadMarkdownImageView(props: {
       }
     : (displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 });
   const frameStyle: ViewStyle = row
-    ? {
-        width: "100%",
-        flexGrow: 1,
-        minHeight:
-          row.height ?? displaySize?.height ?? (availableWidth > 0 ? (availableWidth * 9) / 16 : 0),
-      }
+    ? row.height !== null
+      ? { width: "100%", height: row.height }
+      : {
+          width: "100%",
+          flexGrow: 1,
+          minHeight: displaySize?.height ?? (availableWidth > 0 ? (availableWidth * 9) / 16 : 0),
+        }
     : naturalFrameStyle;
   const rowImageSize =
     row && displaySize && row.height !== null && displaySize.height > row.height
       ? { width: (displaySize.width * row.height) / displaySize.height, height: row.height }
       : displaySize;
   const reportRowSize = row?.reportSize;
+  const rowSizeKey = row?.sizeKey;
   const sourceWidth = sourceSize?.width;
   const sourceHeight = sourceSize?.height;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the thumbnail row this image's size, which sets every tile's height on its line
   useEffect(() => {
-    if (reportRowSize && sourceWidth && sourceHeight) {
-      reportRowSize({ width: sourceWidth, height: sourceHeight });
+    if (reportRowSize && rowSizeKey && sourceWidth && sourceHeight) {
+      reportRowSize(rowSizeKey, { width: sourceWidth, height: sourceHeight });
     }
-  }, [reportRowSize, sourceWidth, sourceHeight]);
+  }, [reportRowSize, rowSizeKey, sourceWidth, sourceHeight]);
 
   return (
     <View
       onLayout={(event) => setMeasuredWidth(event.nativeEvent.layout.width)}
-      style={{ alignSelf: "stretch", gap: 6, flexGrow: fill ? 1 : 0 }}
+      style={{ alignSelf: "stretch", gap: 6, flexGrow: grow ? 1 : 0 }}
     >
       {props.uri === null || failed ? (
-        <MediaActionsMenu media={mediaActions} style={fill ? { flexGrow: 1 } : undefined}>
+        <MediaActionsMenu media={mediaActions} style={grow ? { flexGrow: 1 } : undefined}>
           <Pressable
             accessibilityRole="imagebutton"
             onPress={failed ? props.onViewOriginal : undefined}
@@ -242,9 +250,9 @@ export function ThreadMarkdownImageView(props: {
       ) : (
         <PresentationSource
           identifier={sourceIdentifier}
-          style={fill ? { flexGrow: 1 } : { alignSelf: "flex-start" }}
+          style={grow ? { flexGrow: 1 } : fill ? undefined : { alignSelf: "flex-start" }}
         >
-          <MediaActionsMenu media={mediaActions} style={fill ? { flexGrow: 1 } : undefined}>
+          <MediaActionsMenu media={mediaActions} style={grow ? { flexGrow: 1 } : undefined}>
             <Pressable
               accessibilityRole="imagebutton"
               accessibilityLabel={props.alt ?? "Markdown image"}
@@ -262,7 +270,7 @@ export function ThreadMarkdownImageView(props: {
                   }),
                 )
               }
-              style={fill ? { flexGrow: 1 } : { alignSelf: "flex-start" }}
+              style={grow ? { flexGrow: 1 } : fill ? undefined : { alignSelf: "flex-start" }}
             >
               <View
                 className="items-center justify-center overflow-hidden rounded-[10px] bg-md-code-bg"
