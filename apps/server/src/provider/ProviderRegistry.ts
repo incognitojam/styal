@@ -118,6 +118,11 @@ export class ProviderRegistry extends Context.Service<
     }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
     readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
+    readonly subscribeChanges: Effect.Effect<
+      Stream.Stream<ReadonlyArray<ServerProvider>>,
+      never,
+      Scope.Scope
+    >;
   }
 >()("@styal/cli/provider/ProviderRegistry") {}
 
@@ -1221,6 +1226,9 @@ export const layer = Layer.effect(
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },
+      subscribeChanges: PubSub.subscribe(changesPubSub).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      ),
     } satisfies ProviderRegistry["Service"];
   }),
 );
