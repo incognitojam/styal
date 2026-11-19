@@ -353,9 +353,9 @@ yourself. They finish without a Done notification, and stay in search and the co
 
 When you open the page after at least half an hour away, the end of the chat lists what happened
 since you last looked at it on any of your devices: threads that failed or hit a usage limit, the
-chat's reports, pull requests opened or merged, and threads that ended a turn without one, when they
-don't report to the chat and you haven't opened them. A report about a pull request takes that pull
-request's place. "Last looked" is when you last opened the page, or the chat's last change while you
+chat's reports, pull requests opened or merged, and threads that ended a turn you haven't seen,
+except an agent's turn in a thread that reports to the chat, whose result the chat reports. A report
+about a pull request takes that pull request's place. "Last looked" is when you last opened the page, or the chat's last change while you
 had it open. Open questions stay in **Needs you**. Up to six changes are one list, newest first;
 longer lists are grouped, newest first in each group, and fold with **Show all**. If the chat's
 earlier history isn't loaded, **Load earlier** fetches it so older reports can be listed, and the

@@ -331,8 +331,8 @@ function SinceLastVisitSectionRows({
               {lineText(line, timestampFormat)}
               {line.kind === "report" ? (
                 <span className="ms-1.5 inline-flex rounded-sm border border-border/70 px-1 text-muted-foreground text-xs">
-                  {line.pullRequest
-                    ? `#${line.pullRequest.number} ${line.pullRequest.state}`
+                  {line.pullRequests
+                    ? line.pullRequests.map((pr) => `#${pr.number} ${pr.state}`).join(", ")
                     : `${line.reportKey} · v${line.version}`}
                 </span>
               ) : null}

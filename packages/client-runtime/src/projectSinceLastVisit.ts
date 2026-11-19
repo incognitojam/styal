@@ -41,6 +41,7 @@ export type SinceLastVisitThreadShell = Pick<
   | "lastVisitedAt"
   | "pullRequests"
   | "reportTo"
+  | "source"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "openReportQuestionCount"
@@ -92,12 +93,12 @@ export interface SinceLastVisitReportLine {
   readonly reportKey: string;
   readonly version: number;
   readonly at: number;
-  /** The pull request the report is about, when the summary would otherwise list it too. */
-  readonly pullRequest?: {
+  /** The pull requests the report is about, when the summary would otherwise list them too. */
+  readonly pullRequests?: ReadonlyArray<{
     readonly number: number;
     readonly state: "merged" | "opened";
     readonly url: string;
-  };
+  }>;
 }
 
 export type SinceLastVisitLine = SinceLastVisitThreadLine | SinceLastVisitReportLine;
@@ -122,8 +123,8 @@ export function sinceLastVisitWindow(chat: MarkerShell, now: number): SinceLastV
 
 /**
  * What changed in the project's threads after `since`, newest first; a shell carries only its
- * latest run. A turn that opened or merged a pull request is that pull request's line, and a turn
- * end in a thread that reports to the chat is left to the chat's report.
+ * latest run. A turn that opened a pull request is that pull request's line, and a turn an agent
+ * started in a thread that reports to the chat is left to the report the chat receives.
  */
 export function sinceLastVisitThreadLines(
   threads: ReadonlyArray<SinceLastVisitThreadShell>,
@@ -137,18 +138,26 @@ export function sinceLastVisitThreadLines(
     if (!isListedThreadLineage(thread.lineage)) continue;
     if (thread.environmentId === chat.environmentId && thread.id === chat.threadId) continue;
     const ref = { environmentId: thread.environmentId, threadId: thread.id };
-    let producedPullRequest = false;
+    const run = thread.latestRun;
+    const completedAt = parse(run?.completedAt);
+    let openedInRun = false;
     for (const pullRequest of thread.pullRequests) {
       const mergedAt = parse(pullRequest.snapshot?.mergedAt);
-      const linkedAt = parse(pullRequest.linkedAt);
+      // Linking a pull request that already existed is not opening it.
+      const openedAt = pullRequest.source === "created" ? parse(pullRequest.linkedAt) : Number.NaN;
       const kind =
         mergedAt > since
           ? "merged"
-          : pullRequest.snapshot?.state === "open" && linkedAt > since
+          : pullRequest.snapshot?.state === "open" && openedAt > since
             ? "opened"
             : null;
       if (kind === null) continue;
-      producedPullRequest = true;
+      if (
+        kind === "opened" &&
+        openedAt >= parse(run?.startedAt ?? run?.completedAt) &&
+        openedAt <= completedAt
+      )
+        openedInRun = true;
       const key = `${pullRequest.host}/${pullRequest.repository}#${pullRequest.number}`;
       if (pullRequests.has(key)) continue;
       pullRequests.add(key);
@@ -157,13 +166,11 @@ export function sinceLastVisitThreadLines(
         kind,
         id: `pr:${key}`,
         title: pullRequest.snapshot?.title ?? `#${pullRequest.number}`,
-        at: kind === "merged" ? mergedAt : linkedAt,
+        at: kind === "merged" ? mergedAt : openedAt,
         number: pullRequest.number,
         url: pullRequest.url,
       });
     }
-    const run = thread.latestRun;
-    const completedAt = parse(run?.completedAt);
     // Opening the thread after it ended is seeing it; archiving it is putting it away.
     const seen = parse(thread.lastVisitedAt) >= completedAt || thread.archivedAt !== null;
     if (!run || !(completedAt > since) || seen || needsYou(thread)) continue;
@@ -185,8 +192,13 @@ export function sinceLastVisitThreadLines(
       );
     } else if (
       run.status === "completed" &&
-      !producedPullRequest &&
-      !(thread.environmentId === chat.environmentId && thread.reportTo?.threadId === chat.threadId)
+      !openedInRun &&
+      // The server reports an agent's turn to the chat; a turn you started is not reported.
+      !(
+        thread.source?.latestRunStartedByAgent === true &&
+        thread.environmentId === chat.environmentId &&
+        thread.reportTo?.threadId === chat.threadId
+      )
     ) {
       lines.push({ ...line, kind: "ended" });
     }
@@ -405,16 +417,26 @@ export function sinceLastVisitGroups(
   const pullRequestLines = threadLines.filter(
     (line): line is PullRequestLine => line.kind === "merged" || line.kind === "opened",
   );
+  // A number shared by pull requests in two repositories does not say which one a report means.
+  const byNumber = new Map<number, PullRequestLine | null>();
+  for (const line of pullRequestLines)
+    byNumber.set(line.number, byNumber.has(line.number) ? null : line);
   const absorbed = new Set<string>();
   const reports = reportLines.map((report) => {
-    const match = namedPullRequests(report)
-      .map((number) =>
-        pullRequestLines.find((line) => line.number === number && !absorbed.has(line.id)),
-      )
-      .find((line) => line !== undefined);
-    if (!match) return report;
-    absorbed.add(match.id);
-    return { ...report, pullRequest: { number: match.number, state: match.kind, url: match.url } };
+    const matches = [...new Set(namedPullRequests(report))].flatMap((number) => {
+      const line = byNumber.get(number);
+      return line && !absorbed.has(line.id) ? [line] : [];
+    });
+    if (matches.length === 0) return report;
+    for (const line of matches) absorbed.add(line.id);
+    return {
+      ...report,
+      pullRequests: matches.map((line) => ({
+        number: line.number,
+        state: line.kind,
+        url: line.url,
+      })),
+    };
   });
   return {
     failed: threadLines.filter((line) => line.kind === "failed" || line.kind === "limited"),

@@ -47,8 +47,9 @@ function thread(
   } as SinceLastVisitThreadShell;
 }
 
-const run = (status: string, completedAt: string | null) =>
-  ({ status, completedAt }) as SinceLastVisitThreadShell["latestRun"];
+const run = (status: string, completedAt: string | null, startedAt: string | null = null) =>
+  ({ status, completedAt, startedAt }) as SinceLastVisitThreadShell["latestRun"];
+const byAgent = { latestRunStartedByAgent: true } as SinceLastVisitThreadShell["source"];
 
 const merged = (number: number, mergedAt: string | null) =>
   ({
@@ -59,12 +60,18 @@ const merged = (number: number, mergedAt: string | null) =>
     snapshot: { title: `PR ${number}`, state: mergedAt ? "merged" : "open", mergedAt },
   }) as unknown as SinceLastVisitThreadShell["pullRequests"][number];
 
-const opened = (number: number, linkedAt: string) =>
+const opened = (
+  number: number,
+  linkedAt: string,
+  source = "created",
+  repository = "example/harbor",
+) =>
   ({
     host: "github.com",
-    repository: "example/harbor",
+    repository,
     number,
-    url: `https://github.com/example/harbor/pull/${number}`,
+    url: `https://github.com/${repository}/pull/${number}`,
+    source,
     linkedAt,
     snapshot: { title: `PR ${number}`, state: "open", mergedAt: null },
   }) as unknown as SinceLastVisitThreadShell["pullRequests"][number];
@@ -168,8 +175,11 @@ describe("captureSinceLastVisit", () => {
         olderSettled: null,
       },
     );
-    // The turn that merged the pull request is the pull request's line.
-    expect(both.threadLines.map((line) => line.title)).toEqual(["PR 230", "on-remote"]);
+    expect(both.threadLines.map((line) => line.title)).toEqual([
+      "PR 230",
+      "on-remote",
+      "fix-upload-test",
+    ]);
     expect([...both.environments]).toEqual([env, remote]);
   });
 
@@ -287,24 +297,32 @@ describe("sinceLastVisitThreadLines", () => {
     expect(lines).toEqual([]);
   });
 
-  it("says what a turn produced: a pull request it opened or merged, or nothing when the chat hears its report", () => {
+  it("says what a turn produced: a pull request it opened, or nothing when its report reaches the chat", () => {
     const lines = sinceLastVisitThreadLines(
       [
         thread("opens-a-pr", {
-          latestRun: run("completed", at(2)),
+          latestRun: run("completed", at(2), at(2.5)),
           pullRequests: [opened(230, at(2.1))],
         }),
+        // A merge is its own event: the turn that ended after it is still listed.
         thread("merges-a-pr", {
           latestRun: run("completed", at(1.5)),
           pullRequests: [merged(231, at(1))],
         }),
-        thread("reports-to-chat", {
+        thread("agent-turn-reports", {
           latestRun: run("completed", at(3)),
           reportTo: { threadId: chat.threadId },
+          source: byAgent,
         } as Partial<SinceLastVisitThreadShell>),
-        thread("pr-opened-before", {
-          latestRun: run("completed", at(2)),
-          pullRequests: [opened(232, at(8))],
+        // A turn you started does not report to the chat, so the summary says it ended.
+        thread("your-turn-in-a-reporting-thread", {
+          latestRun: run("completed", at(3.5)),
+          reportTo: { threadId: chat.threadId },
+        } as Partial<SinceLastVisitThreadShell>),
+        // Linking a pull request that already existed is not opening it.
+        thread("links-an-existing-pr", {
+          latestRun: run("completed", at(4)),
+          pullRequests: [opened(232, at(4.1), "agent")],
         }),
       ],
       chat,
@@ -312,8 +330,10 @@ describe("sinceLastVisitThreadLines", () => {
     );
     expect(lines.map((line) => [line.kind, line.title])).toEqual([
       ["merged", "PR 231"],
-      ["ended", "pr-opened-before"],
+      ["ended", "merges-a-pr"],
       ["opened", "PR 230"],
+      ["ended", "your-turn-in-a-reporting-thread"],
+      ["ended", "links-an-existing-pr"],
     ]);
     expect(lines[2]).toMatchObject({ number: 230, threadId: "opens-a-pr" });
   });
@@ -388,15 +408,18 @@ describe("sinceLastVisitHistoryGap", () => {
 });
 
 describe("sinceLastVisitGroups", () => {
-  it("shows a report and the pull request it names as one row, the report's", () => {
+  it("shows a report and the pull requests it names as one row, the report's", () => {
     const threadLines = sinceLastVisitThreadLines(
       [
-        thread("chip-fix", { pullRequests: [merged(1645, at(1))] }),
+        thread("chip-fix", { pullRequests: [merged(1645, at(1)), merged(1646, at(1.1))] }),
         thread("outline-fix", { pullRequests: [merged(1648, at(0.8))] }),
         thread("hover-cards", {
-          latestRun: run("completed", at(2)),
-          pullRequests: [opened(1650, at(2))],
+          latestRun: run("completed", at(2), at(2.5)),
+          pullRequests: [opened(1650, at(2.2))],
         }),
+        // The same number in two repositories: a report cannot say which, so neither is folded.
+        thread("upstream", { pullRequests: [opened(42, at(1), "created", "example/upstream")] }),
+        thread("fork", { pullRequests: [opened(42, at(1.5))] }),
       ],
       chat,
       window.since,
@@ -411,19 +434,17 @@ describe("sinceLastVisitGroups", () => {
       at: open - 1.2 * HOUR,
     });
     const groups = sinceLastVisitGroups(threadLines, [
-      reportLine("by-key", "pr:1645", "A report answer shows its chip while sending: merged"),
+      reportLine("by-key", "pr:1645", "Report chips while sending: merged, with #1646"),
       reportLine("by-text", "hover-cards", "Hover cards are in review as #1650"),
+      reportLine("ambiguous", "release", "Release waits on #42"),
     ]);
-    expect(groups.pullRequests.map((line) => line.title)).toEqual(["PR 1648"]);
-    expect(groups.reports).toEqual([
-      expect.objectContaining({
-        messageId: "by-key",
-        pullRequest: expect.objectContaining({ number: 1645, state: "merged" }),
-      }),
-      expect.objectContaining({
-        messageId: "by-text",
-        pullRequest: expect.objectContaining({ number: 1650, state: "opened" }),
-      }),
+    expect(groups.pullRequests.map((line) => line.title)).toEqual(["PR 1648", "PR 42", "PR 42"]);
+    expect(
+      groups.reports.map((line) => [line.messageId, line.pullRequests?.map((pr) => pr.number)]),
+    ).toEqual([
+      ["by-key", [1645, 1646]],
+      ["by-text", [1650]],
+      ["ambiguous", undefined],
     ]);
   });
 });
