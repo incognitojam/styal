@@ -131,7 +131,11 @@ import {
   taskPrompt,
 } from "./delegatedTaskModes.ts";
 import { isLiveCallerShell, reportTargetFor, threadNotFound } from "./threadAccess.ts";
-import { launcherTakesReports, sentReport } from "../orchestration-v2/ThreadReports.ts";
+import {
+  launcherTakesReports,
+  pendingThreadReportNext,
+  sentReport,
+} from "../orchestration-v2/ThreadReports.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -3211,6 +3215,11 @@ const make = Effect.gen(function* () {
         );
       }
 
+      const next = pendingThreadReportNext(
+        input.threadId,
+        scope.environmentId,
+        (yield* loadThreadRecords(input.threadId, ["runtimeRequests"])).runtimeRequests,
+      );
       const key = yield* requestKey(input.clientRequestId);
       const messageId = stableOperationMessageId({
         scope,
@@ -3242,6 +3251,8 @@ const make = Effect.gen(function* () {
                   thread: parent.thread,
                   source: parent.thread.reportTo?.source,
                   message: input.message,
+                  pendingRequests: (yield* loadThreadRecords(parent.thread.id, ["runtimeRequests"]))
+                    .runtimeRequests,
                 }),
                 mode: "queue" as const,
                 creationSource: "server" as const,
@@ -3290,6 +3301,7 @@ const make = Effect.gen(function* () {
         }
       }
       return {
+        ...(next === undefined ? {} : { next }),
         threadId: input.threadId,
         link: threadLinkFor(scope, input.threadId, target.thread.title),
         messageId,

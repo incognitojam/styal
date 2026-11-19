@@ -183,6 +183,7 @@ const makeHelpers = (input: {
       turn: ProviderAdapter.ProviderAdapterV2TurnInput,
       id: string,
       status: "pending" | "resolved",
+      messageMode = false,
     ) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
@@ -208,10 +209,12 @@ const makeHelpers = (input: {
             nativeRequestRef: null,
             kind: "user_input",
             status,
-            responseCapability: {
-              type: "live",
-              providerSessionId: turn.providerThread.providerSessionId!,
-            },
+            responseCapability: messageMode
+              ? { type: "message" }
+              : {
+                  type: "live",
+                  providerSessionId: turn.providerThread.providerSessionId!,
+                },
             createdAt: now,
             resolvedAt: status === "pending" ? null : now,
           },
@@ -450,6 +453,22 @@ it.effect("a question stays between the thread and a person for two minutes", ()
       assert.equal(delivered.length, 1);
       assert.include(delivered[0]?.text ?? "", "request:stuck");
       assert.include(delivered[0]?.text ?? "", "t3_pending_request");
+    }),
+  ),
+);
+
+it.effect("a completed turn with an unanswered question tells its launcher how to answer", () =>
+  harness("report-ended-question", ({ send, askQuestion, endTurn, reports }) =>
+    Effect.gen(function* () {
+      const turn = yield* send(launchedId, "Ship it");
+      yield* askQuestion(turn, "request:ended", "pending", true);
+      yield* endTurn(turn, "completed");
+      const delivered = yield* reports();
+      assert.equal(delivered.length, 1);
+      assert.include(delivered[0]!.text, "request:ended");
+      assert.include(delivered[0]!.text, "action respond");
+      assert.include(delivered[0]!.text, "t3_thread_send will not answer");
+      assert.notInclude(delivered[0]!.text, "nothing else pending");
     }),
   ),
 );

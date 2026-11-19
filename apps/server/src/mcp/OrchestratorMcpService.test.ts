@@ -21,6 +21,7 @@ import {
   ProviderThreadId,
   ProviderTurnId,
   RunId,
+  RuntimeRequestId,
   ThreadId,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2StoredEvent,
@@ -3847,6 +3848,8 @@ describe("OrchestratorMcpService thread lookup", () => {
             getThreadShell: (threadId) =>
               Effect.succeed(shells.find((shell) => shell.id === threadId) ?? null),
             reportRecipient: (thread) => Effect.succeed(thread.reportTo?.threadId ?? null),
+            getThreadRecords: (threadId) =>
+              Effect.succeed(idleThreadProjection(shells.find((shell) => shell.id === threadId)!)),
             sendToThread: () => Ref.update(sent, (count) => count + 1).pipe(Effect.as({} as never)),
             ...overrides,
           }),
@@ -3967,6 +3970,44 @@ describe("OrchestratorMcpService thread lookup", () => {
       assert.equal(read.message, `Thread ${bareId} is no longer available.`);
       assert.equal(send.message, `Thread ${bareId} was not found.`);
       assert.equal(wait.message, send.message);
+    }),
+  );
+
+  it.effect("a message sent to a question returns the answer route", () =>
+    Effect.gen(function* () {
+      const target = liveThreadShell(ThreadId.make("thread:question"));
+      const sent = yield* Ref.make(0);
+      const request = {
+        id: RuntimeRequestId.make("request:question"),
+        nodeId: NodeId.make("node:question"),
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "user_input" as const,
+        status: "pending" as const,
+        responseCapability: { type: "message" as const },
+        createdAt: DateTime.makeUnsafe("2026-11-18T00:00:00Z"),
+        resolvedAt: null,
+      };
+      yield* Effect.gen(function* () {
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const result = yield* mcp.sendToThread(client, { threadId: target.id, message: "Yes" });
+        assert.include(result.next!, "action respond");
+        assert.include(result.next!, request.id);
+        assert.include(result.next!, "t3_thread_send will not answer");
+      }).pipe(
+        Effect.provide(
+          service([target], sent, {
+            getProjectThreadRecords: () => Effect.succeed(idleThreadProjection(target)),
+            getThreadRecords: () =>
+              Effect.succeed({ ...idleThreadProjection(target), runtimeRequests: [request] }),
+            sendToThread: () =>
+              Effect.succeed({
+                run: { id: RunId.make("run:queued"), status: "queued" },
+                delivery: "queued",
+              } as never),
+          }),
+        ),
+      );
     }),
   );
 

@@ -12,7 +12,9 @@ import * as Schema from "effect/Schema";
 
 export const isApprovalRequestKind = Schema.is(ProviderRequestKind);
 
-export function pendingRequestNeedsAttention(request: OrchestrationV2RuntimeRequest) {
+export function pendingRequestNeedsAttention(
+  request: Pick<OrchestrationV2RuntimeRequest, "kind" | "status" | "responseCapability">,
+) {
   if (request.status !== "pending") return false;
   const capability = request.responseCapability;
   return request.kind === "user_input"
