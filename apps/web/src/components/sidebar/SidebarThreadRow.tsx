@@ -869,7 +869,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     <SidebarThreadTooltip
       thread={checkoutThread}
       project={props.project}
-      projectDisplayName={props.projectDisplayName}
+      // Only flat slim rows leave the project unnamed: cards name it, folders and the filter head it.
+      projectDisplayName={variant === "slim" && !props.grouped ? props.projectDisplayName : null}
       environmentLabel={props.environmentLabel}
       environmentMachine={props.environmentMachine}
       providerEntry={providerEntry}
