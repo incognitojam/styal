@@ -144,10 +144,9 @@ export function createDismissCoordinatorReportCommand<R, E>(
 }
 
 /**
- * How far a report response sent from a "Needs you" list has got: still sending or
- * dismissing, waiting in the thread's queue behind a running turn, with the agent ("delivered"),
- * failed, or withdrawn (cancelled in the queue, which leaves the message without its report
- * reference). While it is on its way, the row keeps its answering shape with the answer marked.
+ * How far a response sent from a "Needs you" list has got. Sending, dismissing and queued keep
+ * the row's answering shape; "withdrawn" is an answer cancelled in the queue (its message stays
+ * without the report reference), and "unknown" means the thread has not loaded yet.
  */
 export function answeredReportStatus(
   answered: {
@@ -164,7 +163,8 @@ export function answeredReportStatus(
     }
   | "delivered"
   | "failed"
-  | "withdrawn" {
+  | "withdrawn"
+  | "unknown" {
   const { report, response } = answered;
   const text =
     response.kind === "answer" ? (splitReportAnswer(response.text, report) ?? response.text) : null;
@@ -173,13 +173,13 @@ export function answeredReportStatus(
   if (reportResponsePending(responses, response))
     return { status: response.kind === "dismiss" ? "dismissing" : "sending", ...shape };
   if (reportResponseFailure(responses, response.ref) !== undefined) return "failed";
+  if (projection === null) return "unknown";
   if (
     response.kind === "answer" &&
-    projection !== null &&
     getUserQueuedThreadRuns(projection).some((run) => run.userMessageId === response.messageId)
   )
     return { status: "queued", ...shape };
-  if (response.kind === "answer" && projection !== null) {
+  if (response.kind === "answer") {
     const ref = projection.messages.find(
       (message) => message.id === response.messageId,
     )?.reportAnswer;

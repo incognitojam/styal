@@ -43,11 +43,18 @@ it("fails an answer accepted without a commit number once a full sync of the thr
   registry.set(state, { data: Option.some(projection), status: "live", sequence: 6 });
   expect(reportResponsePending(pending(), answer)).toBe(true);
 
+  // Another report's answer, acknowledged with a commit the sync below has not reached yet.
+  const otherRef = { messageId: MessageId.make("other-report"), key: "fence", version: 1 };
+  const other = { ...answer, ref: otherRef, messageId: MessageId.make("other-answer") };
+  await respond(thread, other, async () => AsyncResult.success({ sequence: 9 }));
+
   // A full sync is the server's whole view; one without the answer means it will not arrive.
   registry.set(state, { data: Option.some(projection), status: "synchronizing", sequence: 6 });
   registry.set(state, { data: Option.some(projection), status: "live", sequence: 7 });
   expect(reportResponsePending(pending(), answer)).toBe(false);
   expect(reportResponseFailure(pending(), ref)?.message).toBe(REPORT_ANSWER_FAILED);
+  // The fallback is only for the answer that had no commit number to wait for.
+  expect(reportResponsePending(pending(), other)).toBe(true);
 });
 
 it("refuses a response to a report the thread already shows answered", async () => {

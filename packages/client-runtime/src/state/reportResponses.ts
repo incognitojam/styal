@@ -154,13 +154,22 @@ export function createReportResponses(
       const projection = Option.getOrNull(state.data);
       if (state.status === "deleted") update(key, () => NO_RESPONSES);
       else if (projection !== null)
-        update(key, (current) =>
-          settleReportResponses(current, {
+        update(key, (current) => {
+          const settled = settleReportResponses(current, {
             messageIds: projection.messages.map((message) => message.id),
             dismissals: projection.thread.reportDismissals ?? [],
-            sequence: fullySynced ? Number.POSITIVE_INFINITY : state.sequence,
-          }),
-        );
+            sequence: state.sequence,
+          });
+          // Only this response lacks a commit to wait for; a full sync without it is final.
+          return fullySynced && reportResponsePending(settled, response)
+            ? failReportResponse(
+                settled,
+                response.ref,
+                response.kind === "answer" ? REPORT_ANSWER_FAILED : REPORT_DISMISS_FAILED,
+                "The thread does not show it.",
+              )
+            : settled;
+        });
       if (!reportResponsePending(registry.get(pendingReportResponsesAtom).get(key) ?? [], response))
         finish();
     };

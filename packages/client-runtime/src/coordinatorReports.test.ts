@@ -221,6 +221,8 @@ describe("answeredReportStatus", () => {
       status: "queued",
     });
     expect(answeredReportStatus(answered, [], projection(false))).toBe("delivered");
+    // Before the thread loads, a response no longer pending may still be queued.
+    expect(answeredReportStatus(answered, [], null)).toBe("unknown");
     // Cancelled in the queue: the message stays without its report reference.
     expect(answeredReportStatus(answered, [], projection(false, null))).toBe("withdrawn");
     expect(answeredReportStatus(answered, [{ ...response, failed: "Offline" }], null)).toBe(

@@ -331,7 +331,10 @@ export function NeedsYou({
     ? (statuses[sent.indexOf(answered.report)] ?? null)
     : null;
   const outstanding = sent.filter(
-    (entry, index) => typeof statuses[index] === "object" || entry === answered?.report,
+    (entry, index) =>
+      typeof statuses[index] === "object" ||
+      statuses[index] === "unknown" ||
+      entry === answered?.report,
   );
   const settled = outstanding.length !== sent.length;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops settled responses from the shared store so their threads stop streaming
