@@ -10,6 +10,7 @@ import {
   reportResponseFailure,
   reportResponsePending,
 } from "../reportResponses.ts";
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { threadKey } from "./entities.ts";
 import {
   createReportResponses,
@@ -51,6 +52,22 @@ it("waits for a full sync to judge an interrupted send, and fails only that answ
   ).toBe(false);
   registry.set(state, { data: Option.some(projection), status: "live", sequence: 6 });
   expect(reportResponsePending(pending(), answer)).toBe(true);
+
+  // So is a send whose connection dropped before the reply came back.
+  const lostRef = { messageId: MessageId.make("lost-report"), key: "gate", version: 1 };
+  const lost = { ...answer, ref: lostRef, messageId: MessageId.make("lost-answer") };
+  await respond(thread, lost, async () =>
+    AsyncResult.failure(
+      Cause.fail(
+        new EnvironmentRpcUnavailableError({
+          environmentId: "env",
+          message: "The connection was lost.",
+          outcomeUnknown: true,
+        }),
+      ),
+    ),
+  );
+  expect(reportResponsePending(pending(), lost)).toBe(true);
 
   // Another report's answer, acknowledged with a commit the sync below has not reached yet.
   const otherRef = { messageId: MessageId.make("other-report"), key: "fence", version: 1 };

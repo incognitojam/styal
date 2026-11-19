@@ -5,6 +5,7 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 import {
   acknowledgeReportResponse,
@@ -17,6 +18,7 @@ import {
   settleReportResponses,
   type PendingReportResponse,
 } from "../reportResponses.ts";
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { threadKey } from "./entities.ts";
 import {
   isAtomCommandInterrupted,
@@ -91,6 +93,15 @@ export interface ReportResponseHandle {
 }
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
+
+const isRpcUnavailable = Schema.is(EnvironmentRpcUnavailableError);
+
+/** The send was cut off, so the server may or may not have it. */
+const outcomeUnknown = (result: AtomCommandResult<unknown, unknown>) => {
+  if (isAtomCommandInterrupted(result)) return true;
+  const cause = squashAtomCommandFailure(result as Extract<typeof result, { _tag: "Failure" }>);
+  return isRpcUnavailable(cause) && cause.outcomeUnknown === true;
+};
 
 const sameRef = (a: Reference, b: Reference) =>
   a.messageId === b.messageId && a.key === b.key && a.version === b.version;
@@ -213,7 +224,7 @@ export function createReportResponses(
         if (result._tag === "Success" && result.value.sequence !== undefined) {
           const sequence = result.value.sequence;
           update(key, (current) => acknowledgeReportResponse(current, response, sequence));
-        } else if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
+        } else if (result._tag === "Success" || outcomeUnknown(result)) {
           unconfirmed = true;
           update(key, (current) =>
             acknowledgeReportResponse(current, response, Number.POSITIVE_INFINITY),

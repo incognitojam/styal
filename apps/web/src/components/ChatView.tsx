@@ -1127,11 +1127,16 @@ export default function ChatView(props: ChatViewProps) {
       )
     : [];
   // A reply to a report that has since been answered or dismissed is no longer a reply.
+  // Kept while this client's reply may still be on its way, so a resend is refused, not sent plainly.
   const activeReportReply =
     reportReply?.threadKey === activeThreadKey &&
-    reportStates.some(
+    (reportStates.some(
       (report) => report.state === "open" && report.message.id === reportReply.ref.messageId,
-    )
+    ) ||
+      reportResponses.some(
+        (response) =>
+          response.failed === undefined && response.ref.messageId === reportReply.ref.messageId,
+      ))
       ? reportReply
       : null;
   const dismissReport = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });

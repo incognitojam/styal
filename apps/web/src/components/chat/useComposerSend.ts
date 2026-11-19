@@ -1272,8 +1272,6 @@ export function useComposerSend(input: ComposerSendInput) {
     );
 
     let failure: AtomCommandResult<unknown, unknown> | null = null;
-    // An interrupted reply may have reached the server, so it stays sent instead of returning as a draft.
-    let replyMayBeSent = false;
 
     if (failure === null && isServerThread) {
       const settingsResult = await persistThreadSettingsForNextTurn({
@@ -1428,7 +1426,6 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       const startResult = await startPromise;
       reportReply?.settle(startResult);
-      replyMayBeSent = reportReply !== undefined && isAtomCommandInterrupted(startResult);
       if (startResult._tag === "Failure") {
         failure = startResult;
         // Only a server-decided failure may have created and rolled back a
@@ -1497,7 +1494,7 @@ export function useComposerSend(input: ComposerSendInput) {
       }
     }
 
-    if (failure !== null && !replyMayBeSent) {
+    if (failure !== null) {
       const failureCause = squashAtomCommandFailure(failure);
       reportReply?.fail(failureCause instanceof Error ? failureCause.message : undefined);
       if (isLocalDraftThread && draftId && draftThread) {
