@@ -533,6 +533,7 @@ export const make = Effect.gen(function* () {
       yield* writeSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET, refreshed);
       return Option.some({ accessToken: body.value.access_token, encoded: refreshed });
     },
+    Effect.uninterruptible,
   );
 
   /**

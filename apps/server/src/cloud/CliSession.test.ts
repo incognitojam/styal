@@ -207,6 +207,54 @@ const legacyCredential = (expiresAtEpochMs = 0, refreshToken = "clerk-rt-1") =>
   JSON.stringify({ accessToken: "clerk-at-1", refreshToken, expiresAtEpochMs });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CliSession", (it) => {
+  it.effect("persists a rotated Clerk grant before cancellation completes", () =>
+    Effect.gen(function* () {
+      const writing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const relay = makeFakeRelay({
+        [CLERK_TOKEN_URL]: [
+          {
+            status: 200,
+            body: {
+              access_token: "clerk-at-2",
+              refresh_token: "clerk-rt-2",
+              expires_in: 3600,
+              token_type: "Bearer",
+            },
+          },
+        ],
+      });
+      const memory = makeMemorySecretStore({
+        [CliSession.LEGACY_CLERK_CLI_TOKEN_SECRET]: legacyCredential(),
+      });
+      const store = {
+        ...memory.store,
+        set: (name: string, bytes: Uint8Array) =>
+          name === CliSession.LEGACY_CLERK_CLI_TOKEN_SECRET
+            ? Deferred.succeed(writing, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(memory.store.set(name, bytes)),
+              )
+            : memory.store.set(name, bytes),
+      };
+      yield* withSession(relay, store, (session) =>
+        Effect.gen(function* () {
+          const adopting = yield* Effect.forkChild(session.currentIdentity);
+          yield* Deferred.await(writing);
+          const interrupting = yield* Effect.forkChild(Fiber.interrupt(adopting), {
+            startImmediately: true,
+          });
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(interrupting);
+          assert.include(
+            memory.read(CliSession.LEGACY_CLERK_CLI_TOKEN_SECRET)!,
+            '"refreshToken":"clerk-rt-2"',
+          );
+        }),
+      );
+    }),
+  );
+
   it.effect("concurrent first sign-ins use the same persisted proof key", () => {
     const relay = makeFakeRelay();
     const secrets = makeMemorySecretStore();

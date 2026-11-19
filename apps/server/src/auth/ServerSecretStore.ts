@@ -263,22 +263,7 @@ export const make = Effect.gen(function* () {
         yield* file.sync;
         // Prefer publishing complete contents. Hard links fail if another
         // process won, unlike rename, without exposing an empty final file.
-        yield* fileSystem.link(tempPath, secretPath).pipe(
-          Effect.catchIf(
-            (cause) => cause.reason._tag !== "AlreadyExists",
-            () =>
-              Effect.gen(function* () {
-                // Some writable filesystems do not support hard links. Keep
-                // exclusive creation there too; never replace another winner.
-                const published = yield* fileSystem.open(secretPath, {
-                  flag: "wx",
-                  mode: 0o600,
-                });
-                yield* published.writeAll(value);
-                yield* published.sync;
-              }),
-          ),
-        );
+        yield* fileSystem.link(tempPath, secretPath);
         yield* fileSystem.chmod(secretPath, 0o600);
       }),
     ).pipe(

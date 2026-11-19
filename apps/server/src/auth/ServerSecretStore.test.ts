@@ -173,12 +173,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerSecretStor
   );
 
   it.effect.each(["EPERM", "ENOTSUP", "EXDEV", "EOPNOTSUPP", "ENOSYS"])(
-    "falls back to exclusive creation when hard links fail with %s",
+    "leaves no secret when atomic publication fails with %s",
     (code) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const chmodCalls: Array<string> = [];
         const store = yield* ServerSecretStore.make.pipe(
           Effect.provideService(FileSystem.FileSystem, {
             ...fs,
@@ -192,47 +190,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerSecretStor
                   cause: Object.assign(new Error("Hard links unavailable"), { code }),
                 }),
               ),
-            chmod: (file, mode) =>
-              fs.chmod(file, mode).pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    if (mode === 0o600) chmodCalls.push(file);
-                  }),
-                ),
-              ),
           }),
         );
-        const winner = yield* store.getOrCreateRandom("fallback-key", 32);
-        assert.lengthOf(winner, 32);
-        assert.deepEqual(Option.getOrThrow(yield* store.get("fallback-key")), winner);
-        const loser = yield* Effect.flip(store.create("fallback-key", Uint8Array.of(9)));
-        assert.isTrue(ServerSecretStore.isSecretAlreadyExistsError(loser));
-        assert.deepEqual(Option.getOrThrow(yield* store.get("fallback-key")), winner);
-        const published = path.join(store.directory!, "fallback-key.bin");
-        assert.include(chmodCalls, published);
-        assert.equal((yield* fs.stat(published)).mode & 0o777, 0o600);
-        assert.deepEqual(yield* fs.readDirectory(store.directory!), ["fallback-key.bin"]);
-        const contenders = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
-        const outcomes = yield* Effect.forEach(
-          contenders,
-          (bytes) => Effect.result(store.create("raced-key", bytes)),
-          { concurrency: "unbounded" },
-        );
-        assert.equal(outcomes.filter((outcome) => outcome._tag === "Success").length, 1);
-        const winningIndex = outcomes.findIndex((outcome) => outcome._tag === "Success");
-        assert.deepEqual(
-          Option.getOrThrow(yield* store.get("raced-key")),
-          contenders[winningIndex],
-        );
-        for (const outcome of outcomes) {
-          if (outcome._tag === "Failure") {
-            assert.isTrue(ServerSecretStore.isSecretAlreadyExistsError(outcome.failure));
-          }
-        }
+        const error = yield* store.create("proof-key", Uint8Array.of(1, 2, 3)).pipe(Effect.flip);
+        assert.isFalse(ServerSecretStore.isSecretAlreadyExistsError(error));
+        assert.isTrue(Option.isNone(yield* store.get("proof-key")));
+        assert.deepEqual(yield* fs.readDirectory(store.directory!), []);
       }).pipe(Effect.provide(layerServerConfig())),
   );
 
-  it.effect("an existing hard-link winner never enters the fallback write path", () =>
+  it.effect("does not reopen an existing secret after losing atomic publication", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       let directOpens = 0;
