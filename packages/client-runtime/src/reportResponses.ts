@@ -3,7 +3,8 @@ import type { CoordinatorReport } from "@t3tools/contracts";
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 
 export const REPORT_ANSWER_FAILED = "Could not send your answer. Try again.";
-export const REPORT_DISMISS_FAILED = "Could not dismiss the report. Try again.";
+export const REPORT_REPLY_FAILED = "Could not send your reply. Try again.";
+const REPORT_DISMISS_FAILED = "Could not dismiss the report. Try again.";
 
 /**
  * A response this client sent that the server does not show yet; one per report, so further
@@ -17,6 +18,8 @@ export type PendingReportResponse<R extends Reference = Reference> = (
       readonly messageId: R["messageId"];
       readonly text: string;
       readonly createdAt: string;
+      /** Typed rather than one of the offered answers. */
+      readonly reply?: boolean;
     }
   | { readonly ref: R; readonly kind: "dismiss" }
 ) & {
@@ -29,12 +32,21 @@ const sameReport = (a: Reference, b: Reference) =>
   a.messageId === b.messageId && a.key === b.key && a.version === b.version;
 
 /** The same response: same report, and for an answer the same message. */
-function sameReportResponse(a: PendingReportResponse, b: PendingReportResponse): boolean {
+export function sameReportResponse(a: PendingReportResponse, b: PendingReportResponse): boolean {
   return (
     sameReport(a.ref, b.ref) &&
     a.kind === b.kind &&
     (a.kind === "dismiss" || (b.kind === "answer" && a.messageId === b.messageId))
   );
+}
+
+/** What a failed `response` says. */
+export function reportResponseFailedMessage(response: PendingReportResponse): string {
+  return response.kind === "dismiss"
+    ? REPORT_DISMISS_FAILED
+    : response.reply
+      ? REPORT_REPLY_FAILED
+      : REPORT_ANSWER_FAILED;
 }
 
 /** Whether `response` is still pending in `pending`: neither settled nor failed. */
@@ -147,7 +159,7 @@ export function settleReportResponses<R extends Reference>(
         ? [
             {
               ...entry,
-              failed: entry.kind === "answer" ? REPORT_ANSWER_FAILED : REPORT_DISMISS_FAILED,
+              failed: reportResponseFailedMessage(entry),
               failedDetail: "The thread does not show it.",
             },
           ]

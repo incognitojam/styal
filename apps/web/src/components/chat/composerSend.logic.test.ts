@@ -6,7 +6,6 @@ import { threadContextReference } from "../../lib/composerContextRecords";
 import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
 import {
   approvalRedirectNotice,
-  claimComposerReportReply,
   loadBalancingSendWarning,
   multipleModelSendBlock,
   referencedThreadContexts,
@@ -123,38 +122,5 @@ describe("approvalRedirectNotice", () => {
   it("stays quiet when the decline failed or the user left the thread", () => {
     expect(approvalRedirectNotice({ ...settled, declined: false })).toBeNull();
     expect(approvalRedirectNotice(settled)).toBeNull();
-  });
-});
-
-describe("claimComposerReportReply", () => {
-  it("claims a report reply once, refuses one already on its way, and skips multi-model sends", () => {
-    let claims = 0;
-    const claim = (free: boolean) => () => {
-      claims += 1;
-      return free ? "handle" : null;
-    };
-    expect(
-      claimComposerReportReply({ hasReportReply: true, multipleModels: false, claim: claim(true) }),
-    ).toEqual({ kind: "claimed", handle: "handle" });
-    expect(
-      claimComposerReportReply({
-        hasReportReply: true,
-        multipleModels: false,
-        claim: claim(false),
-      }),
-    ).toEqual({ kind: "refused" });
-    expect(claims).toBe(2);
-    // Several models answer with their own messages, so nothing is claimed for them.
-    expect(
-      claimComposerReportReply({ hasReportReply: true, multipleModels: true, claim: claim(true) }),
-    ).toEqual({ kind: "none" });
-    expect(
-      claimComposerReportReply({
-        hasReportReply: false,
-        multipleModels: false,
-        claim: claim(true),
-      }),
-    ).toEqual({ kind: "none" });
-    expect(claims).toBe(2);
   });
 });

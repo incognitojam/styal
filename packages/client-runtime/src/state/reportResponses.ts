@@ -11,9 +11,9 @@ import {
   claimReportResponse,
   failReportResponse,
   pendingReportResponseCount,
-  REPORT_ANSWER_FAILED,
-  REPORT_DISMISS_FAILED,
+  reportResponseFailedMessage,
   reportResponsePending,
+  sameReportResponse,
   settleReportResponses,
   type PendingReportResponse,
 } from "../reportResponses.ts";
@@ -56,7 +56,8 @@ export function withPendingReportResponses(
   pending: ReadonlyMap<string, readonly ReportResponse[]>,
   snapshotSequence?: number,
 ): ReadonlyArray<OrchestrationV2ThreadShell> {
-  if (pending.size === 0) return threads;
+  // Failed responses stay for their message but no longer count.
+  if (![...pending.values()].some((list) => pendingReportResponseCount(list) > 0)) return threads;
   let changed = false;
   const next = threads.map((thread) => {
     const open = thread.openReportQuestionCount ?? 0;
@@ -77,16 +78,41 @@ export function withPendingReportResponses(
 }
 
 export interface ReportResponseHandle {
-  /** The send went through; the server committed it at `sequence`, when its reply says. */
-  readonly acknowledge: (sequence: number | undefined) => void;
-  /** The send failed; the report is open again with `message`, and `detail` behind it. */
-  readonly fail: (message: string, detail?: string) => void;
+  /**
+   * Settles the response with its send's result. A refusal fails it; a success waits for the
+   * thread to reach its commit. An interrupted send, or a success without a commit number, may or
+   * may not have reached the server, so it waits for the thread's next full sync instead.
+   */
+  readonly settle: (
+    result: AtomCommandResult<{ readonly sequence?: number | undefined }, unknown>,
+  ) => void;
+  /** Nothing was sent; the report is open again. Ignored once the send has settled. */
+  readonly fail: (detail?: string) => void;
+}
+
+type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
+
+const sameRef = (a: Reference, b: Reference) =>
+  a.messageId === b.messageId && a.key === b.key && a.version === b.version;
+
+/** The thread shows the report answered, dismissed or replaced by a newer version. */
+function reportClosed(
+  projection: NonNullable<Option.Option.Value<ReportResponseThreadState["data"]>>,
+  ref: Reference,
+) {
+  return (
+    projection.messages.some(
+      (message) =>
+        (message.reportAnswer !== undefined && sameRef(message.reportAnswer, ref)) ||
+        (message.report?.key === ref.key && message.report.version > ref.version),
+    ) || (projection.thread.reportDismissals ?? []).some((dismissal) => sameRef(dismissal, ref))
+  );
 }
 
 /**
- * Keeps this client's report responses in `pendingReportResponsesAtom` and clears each one
- * when the thread shows it, when the thread is deleted, when its send fails, or when the
- * thread's data has caught up with the send's commit without showing it.
+ * Keeps this client's report responses in `pendingReportResponsesAtom`. A pending one clears when
+ * the thread shows it or its thread is deleted, and fails when its send is refused or the thread
+ * has caught up without it. A failed one is forgotten once its report is no longer open.
  */
 export function createReportResponses(
   registry: AtomRegistry.AtomRegistry,
@@ -117,14 +143,12 @@ export function createReportResponses(
     response: ReportResponse,
   ): ReportResponseHandle | null => {
     const known = Option.getOrNull(registry.get(threads.stateAtom(thread)).data);
-    const same = (ref: { messageId: string; key: string; version: number }) =>
-      ref.messageId === response.ref.messageId &&
-      ref.key === response.ref.key &&
-      ref.version === response.ref.version;
     if (
       known !== null &&
-      (known.messages.some((message) => message.reportAnswer && same(message.reportAnswer)) ||
-        (known.thread.reportDismissals ?? []).some(same))
+      (known.messages.some(
+        (message) => message.reportAnswer && sameRef(message.reportAnswer, response.ref),
+      ) ||
+        (known.thread.reportDismissals ?? []).some((ref) => sameRef(ref, response.ref)))
     )
       return null;
     const key = threadKey(thread);
@@ -137,8 +161,8 @@ export function createReportResponses(
     if (!claimed) return null;
     let stop: (() => void) | undefined;
     let finished = false;
-    // A success reply without a commit number leaves only a full sync of the thread to compare with.
-    let acknowledgedWithoutSequence = false;
+    let settled = false;
+    let unconfirmed = false;
     let resyncing = false;
     // The first check runs inside `subscribe`, before `stop` is assigned.
     const finish = () => {
@@ -147,55 +171,64 @@ export function createReportResponses(
       queueMicrotask(() => stop?.());
     };
     const check = (state: ReportResponseThreadState) => {
-      if (acknowledgedWithoutSequence && state.status !== "live") resyncing = true;
-      const fullySynced = acknowledgedWithoutSequence && resyncing && state.status === "live";
+      if (unconfirmed && state.status !== "live") resyncing = true;
+      const fullySynced = unconfirmed && resyncing && state.status === "live";
       const projection = Option.getOrNull(state.data);
       if (state.status === "deleted") update(key, () => NO_RESPONSES);
       else if (projection !== null)
         update(key, (current) => {
-          const settled = settleReportResponses(current, {
+          const next = settleReportResponses(current, {
             messageIds: projection.messages.map((message) => message.id),
             dismissals: projection.thread.reportDismissals ?? [],
             sequence: state.sequence,
           });
-          // Only this response lacks a commit to wait for; a full sync without it is final.
-          return fullySynced && reportResponsePending(settled, response)
-            ? failReportResponse(
-                settled,
-                response.ref,
-                response.kind === "answer" ? REPORT_ANSWER_FAILED : REPORT_DISMISS_FAILED,
-                "The thread does not show it.",
+          if (fullySynced && reportResponsePending(next, response))
+            return failReportResponse(
+              next,
+              response.ref,
+              reportResponseFailedMessage(response),
+              "The thread does not show it.",
+            );
+          return reportClosed(projection, response.ref)
+            ? next.filter(
+                (entry) => entry.failed === undefined || !sameReportResponse(entry, response),
               )
-            : settled;
+            : next;
         });
-      if (!reportResponsePending(registry.get(pendingReportResponsesAtom).get(key) ?? [], response))
-        finish();
+      const current = registry.get(pendingReportResponsesAtom).get(key) ?? NO_RESPONSES;
+      if (!current.some((entry) => sameReportResponse(entry, response))) finish();
     };
     stop = registry.subscribe(threads.stateAtom(thread), check, { immediate: true });
+    const fail = (detail?: string) =>
+      update(key, (current) =>
+        reportResponsePending(current, response)
+          ? failReportResponse(current, response.ref, reportResponseFailedMessage(response), detail)
+          : current,
+      );
     return {
-      acknowledge: (sequence) => {
-        if (sequence === undefined) acknowledgedWithoutSequence = true;
-        update(key, (current) =>
-          acknowledgeReportResponse(current, response, sequence ?? Number.POSITIVE_INFINITY),
-        );
+      settle: (result) => {
+        settled = true;
+        if (result._tag === "Success" && result.value.sequence !== undefined) {
+          const sequence = result.value.sequence;
+          update(key, (current) => acknowledgeReportResponse(current, response, sequence));
+        } else if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
+          unconfirmed = true;
+          update(key, (current) =>
+            acknowledgeReportResponse(current, response, Number.POSITIVE_INFINITY),
+          );
+        } else {
+          const cause = squashAtomCommandFailure(result);
+          fail(cause instanceof Error ? cause.message : undefined);
+        }
         if (!finished) check(registry.get(threads.stateAtom(thread)));
       },
-      fail: (message, detail) => {
-        update(key, (current) =>
-          reportResponsePending(current, response)
-            ? failReportResponse(current, response.ref, message, detail)
-            : current,
-        );
-        finish();
+      fail: (detail) => {
+        if (!settled) fail(detail);
       },
     };
   };
 
-  /**
-   * Sends one response to a report and shows it at once. Returns false without sending when the
-   * report already has a response pending; a failed send leaves the report open with one clear
-   * message and the server's reason, when it gave one, as detail.
-   */
+  /** Sends one response to a report and shows it at once; false when it was not sent. */
   const respond = async (
     thread: ScopedThreadRef,
     response: ReportResponse,
@@ -207,16 +240,8 @@ export function createReportResponses(
     if (handle === null) return false;
     onClaimed?.();
     const result = await send();
-    if (result._tag === "Success") {
-      handle.acknowledge(result.value.sequence);
-      return true;
-    }
-    const cause = isAtomCommandInterrupted(result) ? null : squashAtomCommandFailure(result);
-    handle.fail(
-      response.kind === "answer" ? REPORT_ANSWER_FAILED : REPORT_DISMISS_FAILED,
-      cause instanceof Error ? cause.message : undefined,
-    );
-    return false;
+    handle.settle(result);
+    return result._tag === "Success";
   };
 
   return { begin, respond };

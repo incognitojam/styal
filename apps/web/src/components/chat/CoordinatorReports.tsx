@@ -28,6 +28,7 @@ import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
+  type AnsweredNeed,
   AnsweredNeedRow,
   ProjectNeedRow,
   projectNeedResponsesAtom,
@@ -160,22 +161,16 @@ export function ReportAnswerBar({
         chosen={chosen}
         onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
       />
-      <div className="flex h-7 items-center justify-between gap-2 sm:h-6">
+      <div className="flex h-7 items-center gap-2 sm:h-6">
         {responding !== null ? (
-          <span
-            role="status"
-            className="inline-flex min-w-0 items-center gap-1.5 px-2 text-xs text-muted-foreground [&_svg]:size-3.5"
-          >
-            <MessageSquareIcon className="shrink-0" />
-            <span className="truncate">
-              {responding === "dismissing"
-                ? "Dismissing"
-                : responding === "queued"
-                  ? "Queued until the current turn ends"
-                  : chosen !== null && answers.includes(chosen)
-                    ? "Sending your answer"
-                    : "Sending your reply"}
-            </span>
+          <span role="status" className="truncate px-2 text-xs text-muted-foreground">
+            {responding === "dismissing"
+              ? "Dismissing"
+              : responding === "queued"
+                ? "Queued until the current turn ends"
+                : chosen !== null && answers.includes(chosen)
+                  ? "Sending your answer"
+                  : "Sending your reply"}
           </span>
         ) : (
           <>
@@ -190,6 +185,7 @@ export function ReportAnswerBar({
             </Button>
             {failure ? <ReportFailure failure={failure} /> : null}
             <Button
+              className="ms-auto"
               size="xs"
               variant="ghost-muted"
               disabled={disabled}
@@ -312,14 +308,18 @@ export function NeedsYou({
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
-  // Kept in a shared store so leaving the page and coming back keeps each response's row.
-  const [{ sent, latest: answered }, setResponses] = useAtom(
+  // In a shared store, so leaving the page and coming back keeps each in-flight row.
+  const [sent, setSent] = useAtom(
     projectNeedResponsesAtom(
       threadKey(scopeThreadRef(reviewProps.environmentId, reviewProps.threadId)),
     ),
   );
+  // The latest answer from this visit, shown once the agent has it.
+  const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
+  const summary = answered?.report;
+  const tracked = summary && !sent.includes(summary) ? [...sent, summary] : sent;
+  const statuses = useAnsweredReportStatuses(tracked);
   const needs = useProjectNeeds(project);
-  const statuses = useAnsweredReportStatuses(sent);
   const needRows = needRowsWithResponses(
     needs,
     sent.flatMap((entry, index) => {
@@ -327,19 +327,13 @@ export function NeedsYou({
       return typeof status === "object" ? [{ need: entry.need, responding: status }] : [];
     }),
   );
-  const answeredStatus = answered?.report
-    ? (statuses[sent.indexOf(answered.report)] ?? null)
-    : null;
   const outstanding = sent.filter(
-    (entry, index) =>
-      typeof statuses[index] === "object" ||
-      statuses[index] === "unknown" ||
-      entry === answered?.report,
+    (_, index) => typeof statuses[index] === "object" || statuses[index] === "unknown",
   );
   const settled = outstanding.length !== sent.length;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops settled responses from the shared store so their threads stop streaming
   useEffect(() => {
-    if (settled) setResponses((current) => ({ ...current, sent: outstanding }));
+    if (settled) setSent(outstanding);
   });
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
@@ -347,22 +341,24 @@ export function NeedsYou({
     ...needRows.map((row) => ({ kind: "need" as const, ...row })),
   ];
   const waiting = rows.filter((row) => row.kind !== "need" || !row.responding).length;
-  const inFlight = waiting < rows.length;
-  const shownAnswered = answeredStatus === null || answeredStatus === "delivered" ? answered : null;
+  const shownAnswered =
+    !summary || statuses[tracked.indexOf(summary)] === "delivered" ? answered : null;
   if (!rows.length && !shownAnswered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
       <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
-          {/* "Answered" only once the server has every response sent from here. */}
-          <span>{waiting ? `Needs you · ${waiting}` : inFlight ? "Needs you" : "Answered"}</span>
-          {rows.length > 3 ? (
-            <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
-              {expanded ? "Show less" : `Show all ${rows.length}`}
-            </Button>
-          ) : null}
-        </div>
+        {rows.length ? (
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+            {/* Rows still on their way are not counted. */}
+            <span>{waiting ? `Needs you · ${waiting}` : "Needs you"}</span>
+            {rows.length > 3 ? (
+              <Button size="xs" variant="ghost" onClick={() => setExpanded(!expanded)}>
+                {expanded ? "Show less" : `Show all ${rows.length}`}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex max-h-[min(24rem,45dvh)] flex-col divide-y divide-border/60 overflow-y-auto">
           {visible.map((row, index) =>
             row.kind === "run" ? (
@@ -379,21 +375,18 @@ export function NeedsYou({
                 need={row.need}
                 open={openNeed === row.need.key}
                 onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer, report) =>
-                  setResponses((current) => ({
-                    latest: {
-                      threadTitle: row.need.thread.title,
-                      answer,
-                      ...(report ? { report } : {}),
-                    },
-                    sent: report
-                      ? [
-                          ...current.sent.filter((entry) => entry.need.key !== report.need.key),
-                          report,
-                        ]
-                      : current.sent,
-                  }))
-                }
+                onAnswered={(answer, report) => {
+                  setAnswered({
+                    threadTitle: row.need.thread.title,
+                    answer,
+                    ...(report ? { report } : {}),
+                  });
+                  if (report)
+                    setSent((current) => [
+                      ...current.filter((entry) => entry.need.key !== report.need.key),
+                      report,
+                    ]);
+                }}
                 {...(row.responding ? { responding: row.responding } : {})}
               />
             ) : (

@@ -110,15 +110,9 @@ const answeredThreadsAtom = Atom.family((keys: string) =>
   }),
 );
 
-/**
- * What each project chat's "Needs you" has sent, by the chat's thread key: the responses still on
- * their way, and the latest answer for its summary. Kept across visits to the page.
- */
+/** The responses each project chat's "Needs you" has sent and the agent does not have yet. */
 export const projectNeedResponsesAtom = Atom.family((_chatKey: string) =>
-  Atom.make<{
-    readonly sent: ReadonlyArray<AnsweredReport>;
-    readonly latest: AnsweredNeed | null;
-  }>({ sent: [], latest: null }).pipe(Atom.keepAlive),
+  Atom.make<ReadonlyArray<AnsweredReport>>([]).pipe(Atom.keepAlive),
 );
 
 /** How far each response sent from "Needs you" has got, in the order given. */
@@ -253,8 +247,10 @@ export function ProjectNeedRow({
             {summary(need)}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
-            {need.thread.title} ·{" "}
-            {responding ? respondingLabel(responding) : formatRelativeTimeLabel(need.createdAt)}
+            {need.thread.title} · {/* Open, the status line below says it. */}
+            {responding && !open
+              ? respondingLabel(responding)
+              : formatRelativeTimeLabel(need.createdAt)}
           </span>
         </span>
         <ChevronRightIcon
@@ -500,6 +496,7 @@ function ReportAnswer({
     const response: ReportResponse = {
       ref,
       kind: "answer",
+      ...(report.answers?.includes(text) ? {} : { reply: true }),
       messageId: answerId,
       text: answer,
       createdAt: new Date().toISOString(),
