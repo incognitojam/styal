@@ -6,6 +6,7 @@ import {
   type ReportState,
 } from "./CoordinatorReports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { openedReportFinished, openedReportView, type OpenedReport } from "./openedReport.logic";
 import { NeedsYou } from "./NeedsYou";
 import { ProjectNeedsYou } from "../projects/ProjectNeedsYou";
 import { useProjectChatHeader } from "../projects/projectChats";
@@ -271,8 +272,9 @@ export interface ThreadDetailScreenProps {
   readonly onReportReply?: (reply: ReportReply | null) => void;
   /** A report opened from a project's Needs you, pinned above the composer while it is read. */
   readonly openedReportId?: MessageId | null;
-  /** Runs once the opened report is answered, instead of reopening this screen's own list. */
-  readonly onOpenedReportDone?: (() => void) | undefined;
+  /** The project chat route that opened it; once it is answered, the app goes back there. */
+  readonly openedReportReturnTo?: string | null;
+  readonly onReturnToNeedsList?: ((routeKey: string) => void) | undefined;
   /** Changes when the project chat's Needs you list should open. */
   readonly needsListRequest?: string | null;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
@@ -554,11 +556,12 @@ function ThreadDetailBody(
   const composerDictationRef = useRef<{ readonly start: () => boolean }>(null);
   const chatRef = scopeThreadRef(props.environmentId, props.selectedThread.id);
   const projectChat = useProjectChatHeader(props.draftMode ? null : chatRef);
-  const [pinned, setPinned] = useState<{ threadKey: string; id: MessageId } | null>(() =>
+  const [opened, setOpened] = useState<OpenedReport | null>(() =>
     props.openedReportId
       ? {
           threadKey: scopedThreadKey(props.environmentId, props.selectedThread.id),
           id: props.openedReportId,
+          returnTo: props.openedReportReturnTo ?? null,
         }
       : null,
   );
@@ -1511,11 +1514,29 @@ function ThreadDetailBody(
     const id = await props.onSendMessage(undefined, undefined, undefined, { text, reply });
     if (!id) throw new Error("Could not send answer");
   });
-  const pinnedReportId = pinned?.threadKey === selectedThreadKey ? pinned.id : null;
-  const openReport = (id: MessageId) => {
-    setPinned({ threadKey: selectedThreadKey, id });
+  const openedView = openedReportView(
+    opened,
+    selectedThreadKey,
+    props.reports ?? [],
+    props.reportReply?.ref.messageId ?? null,
+  );
+  const pinnedReportId = openedView?.visible ? opened!.id : null;
+  const openReport = (id: MessageId, returnTo: string | null) => {
+    setOpened({ threadKey: selectedThreadKey, id, returnTo });
     requestThreadMessageJump(selectedThreadKey, id);
   };
+  // Once the answer or dismissal is on record, wherever it came from: back to the list.
+  const [returning, setReturning] = useState<string | null>(null);
+  if (opened !== null && openedView !== null && openedReportFinished(openedView.report)) {
+    setOpened(null);
+    if (opened.returnTo === null) setOwnNeedsListRequest(uuidv4());
+    else setReturning(opened.returnTo);
+  }
+  const { onReturnToNeedsList } = props;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates back to the project chat after the answer is recorded; navigation is outside React
+  useEffect(() => {
+    if (returning !== null) onReturnToNeedsList?.(returning);
+  }, [returning, onReturnToNeedsList]);
   const reportContext = {
     reports: props.reports ?? [],
     answers: props.reportAnswers ?? new Map(),
@@ -1786,18 +1807,11 @@ function ThreadDetailBody(
                       <CoordinatorReportsContext value={reportContext}>
                         <PinnedReport
                           id={pinnedReportId}
-                          onClose={() => setPinned(null)}
-                          onShowLatest={(id) => openReport(id)}
+                          onClose={() => setOpened(null)}
+                          onShowLatest={(id) => openReport(id, opened?.returnTo ?? null)}
                           onReplyByVoice={(reply) => {
                             // A recording already under way keeps its own reply target.
-                            if (!composerDictationRef.current?.start()) return;
-                            props.onReportReply?.(reply);
-                            setPinned(null);
-                          }}
-                          onDone={() => {
-                            setPinned(null);
-                            if (props.onOpenedReportDone) props.onOpenedReportDone();
-                            else setOwnNeedsListRequest(uuidv4());
+                            if (composerDictationRef.current?.start()) props.onReportReply?.(reply);
                           }}
                         />
                       </CoordinatorReportsContext>
@@ -1838,7 +1852,7 @@ function ThreadDetailBody(
                         }
                         reports={props.reports ?? []}
                         openRequest={`${props.needsListRequest ?? ""}:${ownNeedsListRequest}`}
-                        onOpenChatReport={openReport}
+                        onOpenChatReport={(id) => openReport(id, null)}
                         barHidden={pinnedReportId !== null}
                       />
                     )}

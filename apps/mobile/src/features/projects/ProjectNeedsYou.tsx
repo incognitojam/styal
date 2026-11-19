@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { StackActions, useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation, useRoute } from "@react-navigation/native";
 import { waitingCoordinatorReports } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -58,6 +58,7 @@ export function ProjectNeedsYou({
   readonly barHidden: boolean;
 } & Omit<ComponentProps<typeof WorkflowRunReviewCard>, "run">) {
   const navigation = useNavigation();
+  const route = useRoute();
   const [open, setOpen] = useState(false);
   const [seenRequest, setSeenRequest] = useState(openRequest);
   const threads = useProjectChatNeedYou(chat);
@@ -90,7 +91,7 @@ export function ProjectNeedsYou({
         environmentId: String(thread.environmentId),
         threadId: String(thread.threadId),
         ...(reportId === null ? {} : { report: String(reportId) }),
-        fromProject: "1",
+        fromProject: route.key,
       }),
     );
   };

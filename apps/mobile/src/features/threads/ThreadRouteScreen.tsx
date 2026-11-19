@@ -135,6 +135,7 @@ import {
 } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { openSettings } from "../settings/settings-navigation";
 import { useOpenProjectSettings } from "../settings/settings-environment-filter";
+import { needsListRoute } from "./openedReport.logic";
 import { useProjectChatHeader } from "../projects/projectChats";
 import {
   InspectorContentScope,
@@ -189,7 +190,7 @@ type ThreadRouteScreenRouteProps = StaticScreenProps<{
   readonly prompt?: string | string[];
   /** A report opened from a project's Needs you list, pinned while it is read. */
   readonly report?: string | string[];
-  /** Set when a project's Needs you list pushed this screen; done goes back to the list. */
+  /** The route key of the project chat whose Needs you list pushed this screen. */
   readonly fromProject?: string | string[];
   /** Changes when the project chat's Needs you list should open. */
   readonly needs?: string | string[];
@@ -525,13 +526,11 @@ function ThreadRouteContent(
   const threadId = firstRouteParam(params.threadId);
   const openedReportParam = firstRouteParam(params.report);
   const openedReportId = openedReportParam === null ? null : MessageId.make(openedReportParam);
-  // Back to the project chat beneath, with its Needs you list open again.
-  const returnToNeedsList = () => {
+  // Back to the project chat that opened the report, with its Needs you list open again.
+  const returnToNeedsList = (routeKey: string) => {
     const state = navigation.getState();
-    const below = state?.routes[state.index - 1];
-    if (below?.name === "Thread") {
-      navigation.dispatch({ ...CommonActions.setParams({ needs: uuidv4() }), source: below.key });
-    }
+    if (!state || needsListRoute(state, routeKey) === null) return;
+    navigation.dispatch({ ...CommonActions.setParams({ needs: uuidv4() }), source: routeKey });
     navigation.goBack();
   };
   const routeThreadIdentity =
@@ -1121,9 +1120,8 @@ function ThreadRouteContent(
           reportReply={composer.reportReply}
           onReportReply={composer.onReportReply}
           openedReportId={openedReportId}
-          onOpenedReportDone={
-            firstRouteParam(params.fromProject) === null ? undefined : returnToNeedsList
-          }
+          openedReportReturnTo={firstRouteParam(params.fromProject)}
+          onReturnToNeedsList={returnToNeedsList}
           needsListRequest={firstRouteParam(params.needs)}
           selectedThreadFeed={composer.selectedThreadFeed}
           turnUsageByTurnId={turnSummaries}

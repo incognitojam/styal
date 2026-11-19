@@ -121,13 +121,12 @@ function replyTo(report: ReportState): ReportReply {
 
 /**
  * An open report's question and answers, with Reply… and Dismiss: inside its card, or pinned
- * above the composer. `onDone` runs once an answer or a dismissal is saved.
+ * above the composer.
  */
 export function ReportAnswerBlock(props: {
   readonly report: ReportState;
   readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
   readonly onReply?: (() => void) | undefined;
-  readonly onDone?: (() => void) | undefined;
   /** Under the pinned panel's own header line. */
   readonly pinned?: boolean;
 }) {
@@ -141,7 +140,6 @@ export function ReportAnswerBlock(props: {
     setSending(true);
     setError(null);
     void action()
-      .then(() => props.onDone?.())
       .catch(() => setError("Could not save your response. Try again."))
       .finally(() => setSending(false));
   };
@@ -202,7 +200,6 @@ export function PinnedReport(props: {
   readonly onClose: () => void;
   readonly onShowLatest: (id: MessageId) => void;
   readonly onReplyByVoice?: ((reply: ReportReply) => void) | undefined;
-  readonly onDone: () => void;
 }) {
   const ctx = use(CoordinatorReportsContext);
   const voice = useGlobalVoiceInput();
@@ -222,10 +219,8 @@ export function PinnedReport(props: {
         <ReportAnswerBlock
           pinned
           report={report}
-          onReply={props.onClose}
           // Hidden where dictation can't start, and while a recording is under way.
           onReplyByVoice={voice.isAvailable && !voice.isBusy ? props.onReplyByVoice : undefined}
-          onDone={props.onDone}
         />
       ) : (
         <View className="flex-row items-center gap-2 p-3 pt-0">
