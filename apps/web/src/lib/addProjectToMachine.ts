@@ -15,7 +15,6 @@ import { create } from "zustand";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { suggestAppAccessForRemote } from "../components/sourceControlAppAccessToast";
 import { environmentProjectClonesAtom, silenceProjectCloneToasts } from "../state/projectClones";
-import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { sourceControlEnvironment } from "../state/sourceControl";
 
@@ -172,17 +171,7 @@ export async function settleCancelledAdd(
     label: "Remove cancelled clone",
     reportFailure: false,
   });
-  if (removed._tag === "Failure") return "failed";
-  // The server shrugs off a checkout it cannot delete, so look for what it left behind.
-  const leftover = await executeAtomQuery(
-    appAtomRegistry,
-    filesystemEnvironment.getMetadata({
-      environmentId: ref.environmentId,
-      input: { paths: [settled.destinationPath] },
-    }),
-    { label: "Check cancelled clone folder", reportFailure: false, refresh: true },
-  );
-  return leftover._tag === "Success" && leftover.value.entries[0] === null ? "removed" : "failed";
+  return removed._tag === "Success" ? "removed" : "failed";
 }
 
 export function readPreparingAdd(draftId: string): PreparingAdd | null {
