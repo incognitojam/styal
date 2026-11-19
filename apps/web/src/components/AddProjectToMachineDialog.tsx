@@ -374,13 +374,16 @@ function AddProjectToMachineDialog({
     starting.current = true;
     let key = useRequest.getState().key;
     const clicked = key ? readPreparingAdd(key) : null;
-    // The dialog cloned to another machine than the one clicked: the row moves to that add,
-    // unless an add waiting its turn already has it.
-    if (key && clicked && key !== preparingAddKey(request.projectRef, target.environmentId)) {
+    const targetKey = preparingAddKey(request.projectRef, target.environmentId);
+    // The dialog cloned to another machine than the one clicked: the row moves to that add, and
+    // an add to that machine still waiting its turn is this one now.
+    if (key && clicked && key !== targetKey) {
       setPreparingAdd(key, null);
-      key = preparingAddKey(request.projectRef, target.environmentId);
-      if (readPreparingAdd(key)) key = null;
-      useRequest.setState({ key });
+      key = targetKey;
+      useRequest.setState(({ queue }) => ({
+        key: targetKey,
+        queue: queue.filter((queued) => quickAddKey(queued) !== targetKey),
+      }));
     }
     let abandoned = false;
     abandon.current = () => {
@@ -442,7 +445,7 @@ function AddProjectToMachineDialog({
       return;
     }
     // A one-click add moves the draft that shows it, which a later pick there may have taken.
-    const shownIn = key ? readPreparingAdd(key)?.draftId : clicked?.draftId;
+    const shownIn = key ? readPreparingAdd(key)?.draftId : undefined;
     if (key) setPreparingAdd(key, null);
     close(session);
     if (shownIn === null && request.draftId) {
