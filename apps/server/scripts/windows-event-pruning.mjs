@@ -66,6 +66,7 @@ function start(home, port) {
         T3CODE_EVENT_PRUNING: "1",
         T3CODE_TELEMETRY_ENABLED: "false",
         T3CODE_DISABLE_AUTO_UPDATE: "true",
+        T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -78,7 +79,7 @@ function start(home, port) {
       const text = String(data);
       output += text;
       for (const line of text.split("\n"))
-        if (/Safety copy|Compacted orchestration|prun|Error|error/.test(line))
+        if (/Making a safety copy|Safety copy|Compacted orchestration|prun|Error|error/.test(line))
           lines.push({ ms: performance.now() - started, text: line });
     });
   p.on("exit", () => children.delete(p));

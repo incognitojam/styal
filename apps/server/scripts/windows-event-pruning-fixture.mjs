@@ -83,6 +83,9 @@ if (mode === "seed") {
         JSON.stringify(payload),
       );
     }
+  db.exec(
+    "CREATE TABLE experiment_fixture_threads AS SELECT thread_id FROM orchestration_v2_projection_threads",
+  );
   const insert = db.prepare(`INSERT INTO orchestration_events
     (event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version)
     VALUES (?, 'thread', ?, ?, 'thread.updated', '2020-01-01T00:00:00.000Z', 'server', ?, '{}', ?)`);
@@ -136,8 +139,7 @@ if (mode === "seed") {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* ProjectionStore.ProjectionStoreV2;
-      const rows =
-        yield* sql`SELECT thread_id FROM orchestration_v2_projection_threads ORDER BY thread_id`;
+      const rows = yield* sql`SELECT thread_id FROM experiment_fixture_threads ORDER BY thread_id`;
       const projections = [];
       for (const row of rows)
         projections.push(yield* store.getThreadSnapshot(ThreadId.make(String(row.thread_id))));

@@ -27,9 +27,9 @@ jobs:
       - name: Runner and disk
         shell: pwsh
         run: |
-          Get-Volume | Select-Object DriveLetter, FileSystem, Size, SizeRemaining
-          Get-PhysicalDisk | Select-Object FriendlyName, MediaType, Size
-          Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled
+          Get-Volume | Select-Object DriveLetter, FileSystem, Size, SizeRemaining | ConvertTo-Json -Compress
+          Get-PhysicalDisk | Select-Object FriendlyName, MediaType, Size | ConvertTo-Json -Compress
+          Get-MpComputerStatus | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json -Compress
       - name: Real server experiment
         shell: pwsh
         env:
