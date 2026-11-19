@@ -11,9 +11,10 @@ import { SymbolView } from "./ui/AppSymbol";
 import { AppText } from "./ui/AppText";
 import { Button } from "./ui/Button";
 
+// Same words as the web notice and the setting it comes from ("Free source files in settled worktrees").
 const CONTEXT_HINT = {
-  files: "Tracked files open after checkout.",
-  skills: "Project skills load after checkout.",
+  files: "Check out to see every file.",
+  skills: "Check out to use project skills.",
 } as const;
 
 export function SourceCheckoutNotice(props: {
@@ -32,28 +33,39 @@ export function SourceCheckoutNotice(props: {
   return (
     <View className="gap-1 px-4 py-1" accessibilityLiveRegion="polite">
       <View className="min-h-10 flex-row items-center gap-2.5">
-        {action.pending ? (
-          <AppActivityIndicator size="small" colorClassName="accent-foreground-muted" />
-        ) : (
-          <SymbolView name="tray.and.arrow.down" size={16} tintColorClassName="accent-icon-muted" />
-        )}
+        {/* Beside the first line rather than centred on the whole block. */}
+        <View className="self-start pt-0.5">
+          {action.pending ? (
+            <AppActivityIndicator size="small" colorClassName="accent-foreground-muted" />
+          ) : (
+            <SymbolView
+              name="tray.and.arrow.down"
+              size={16}
+              tintColorClassName="accent-icon-muted"
+            />
+          )}
+        </View>
         <View className="min-w-0 flex-1">
           <AppText textRole="footnote" className="text-foreground-secondary">
             {action.pending
               ? "Checking out source files…"
               : state === "released"
-                ? "Source files released"
+                ? "Source files freed"
                 : "Source checkout interrupted"}
           </AppText>
-          {props.context && !action.pending ? (
+          {action.pending ? null : (
             <AppText textRole="caption" className="text-foreground-muted">
-              {CONTEXT_HINT[props.context]}
+              {props.context
+                ? CONTEXT_HINT[props.context]
+                : state === "released"
+                  ? "Unchanged files removed to save disk space. Your changes are kept."
+                  : "Check out to finish putting them back."}
             </AppText>
-          ) : null}
+          )}
         </View>
         {action.pending ? null : (
           <Button
-            label="Check out again"
+            label="Check out"
             size="compact"
             tone="text"
             disabled={!allowed}

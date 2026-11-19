@@ -1122,6 +1122,17 @@ export default function FilePreviewPanel({
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
+  // Matches the body branch that renders the empty state, so the explorer line hides only then.
+  const showsFreedSource =
+    !isFolder &&
+    relativePath !== null &&
+    file.error !== null &&
+    file.data === null &&
+    !file.isFile &&
+    !file.isNotFile &&
+    !attachment &&
+    !isHostFile &&
+    sourceStatus.data?.sourceCheckout !== undefined;
   const showExplorer = shouldShowFileExplorer({
     relativePath: previewPath,
     explorerOpen,
@@ -1434,14 +1445,6 @@ export default function FilePreviewPanel({
           ) : null}
         </div>
       ) : null}
-      {!attachment && !isHostFile ? (
-        <SourceCheckoutNotice
-          environmentId={environmentId}
-          cwd={cwd}
-          context="files"
-          className="shrink-0 border-b py-1.5"
-        />
-      ) : null}
       {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
         <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">
           Read-only connection. Unsaved edits are kept until write access returns.
@@ -1484,6 +1487,13 @@ export default function FilePreviewPanel({
               asset={{ environmentId, attachmentId: attachment.id }}
               htmlRender={attachment.htmlRender === true}
               threadRef={threadRef}
+            />
+          ) : showsFreedSource ? (
+            <SourceCheckoutNotice
+              layout="empty"
+              environmentId={environmentId}
+              cwd={cwd}
+              projectId={projectId}
             />
           ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
@@ -1571,13 +1581,6 @@ export default function FilePreviewPanel({
               }}
               origin="File"
             />
-          ) : relativePath &&
-            file.error &&
-            file.data === null &&
-            !attachment &&
-            !isHostFile &&
-            sourceStatus.data?.sourceCheckout ? (
-            <div className="min-h-0 flex-1" />
           ) : relativePath && file.error && file.data === null ? (
             <div
               role="alert"
@@ -1686,6 +1689,15 @@ export default function FilePreviewPanel({
                 selectedPathRevealId={revealRequestId}
                 onOpenFile={onOpenFile}
                 answersPanelFind={!previewPath}
+                notice={
+                  hostFolderPath === null && !showsFreedSource ? (
+                    <SourceCheckoutNotice
+                      environmentId={environmentId}
+                      cwd={cwd}
+                      projectId={projectId}
+                    />
+                  ) : null
+                }
                 workspaceMutationId={workspaceMutationId}
                 {...(previewPath && !isMedia && !isPdf
                   ? {
