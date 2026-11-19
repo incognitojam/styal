@@ -4,6 +4,7 @@ import {
   ModelSelection,
   OrchestrationV2AppThread,
   ProjectId,
+  projectCoordinatorThreadId,
   ProviderInstanceId,
   RuntimeMode,
   ThreadId,
@@ -17,6 +18,7 @@ import * as Schema from "effect/Schema";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { projectCoordinatorInstructions } from "./ProjectCoordinator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { WorkspacePortAllocator } from "../workspace/WorkspacePortAllocator.ts";
 
@@ -151,7 +153,8 @@ export const layerFromProjectStore: Layer.Layer<
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const portAllocator = yield* Effect.serviceOption(WorkspacePortAllocator);
     // The same ceiling the orchestrator enforces, fixed for the server's life.
-    const { managedPolicy } = yield* ServerSettings.ServerSettingsService;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const { managedPolicy } = serverSettings;
     const maxRuntimeMode = managedPolicy?.limits?.maxRuntimeMode;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
@@ -179,7 +182,17 @@ export const layerFromProjectStore: Layer.Layer<
             cause: "Project not found.",
           });
         }
-        const additionalInstructions = Option.getOrNull(project)?.additionalInstructions;
+        const settings = yield* serverSettings.getSettings.pipe(Effect.orElseSucceed(() => null));
+        const additionalInstructions =
+          [
+            Option.getOrNull(project)?.additionalInstructions,
+            settings !== null &&
+            projectCoordinatorThreadId(settings, input.thread.projectId) === input.thread.id
+              ? projectCoordinatorInstructions(settings.coordinatorReportsEnabled)
+              : null,
+          ]
+            .filter((part) => part != null && part !== "")
+            .join("\n\n") || null;
         const workspaceEnvironment = Option.isNone(portAllocator)
           ? undefined
           : yield* portAllocator.value.environmentFor(cwd);

@@ -302,7 +302,9 @@ Turn on **Project coordinators** in **Settings → Labs** to let one thread coor
 Choose it from **Coordinator** in the project's settings, or with **Make project coordinator** in
 the thread's menu on web, desktop or mobile. **Stop being coordinator** or **None** clears it.
 
-The coordinator is told to hand work to other threads instead of doing it itself. Threads started in
+With every session, the coordinator gets instructions to hand changes to other threads instead of
+making them itself, unless you ask it to. Claude, Codex, Cursor, Grok and OpenCode receive them, as
+they do the project's Additional instructions. Threads started in
 the project on the same machine report to it, including threads you start: it hears when one fails,
 stays stuck on an approval or question, or finishes its first turn with nothing else pending. A
 thread the coordinator launched with reports on reports once, and threads you keep talking to stay
