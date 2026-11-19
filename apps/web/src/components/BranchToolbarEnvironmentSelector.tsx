@@ -33,8 +33,8 @@ interface BranchToolbarEnvironmentSelectorProps {
   addTargets?: readonly AddProjectTarget[] | undefined;
   /** Adds to the named machine, or opens the dialog for null. */
   onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
-  /** An add from this draft is already preparing. */
-  addDisabled?: boolean | undefined;
+  /** Why the Add rows are unavailable, while an add from this draft prepares. */
+  addBusyReason?: string | null | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
@@ -52,7 +52,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onEnvironmentChange,
   addTargets = [],
   onAddToMachine,
-  addDisabled = false,
+  addBusyReason = null,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -188,12 +188,12 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
                 <SelectItem
                   key={target.environmentId}
                   value={addValue(target.environmentId)}
-                  disabled={addDisabled}
+                  disabled={addBusyReason !== null}
                 >
-                  <AddTargetLabel target={target} />
+                  <AddTargetLabel target={target} busyReason={addBusyReason} />
                 </SelectItem>
               ))}
-              <SelectItem value={ADD_OPTIONS_VALUE} disabled={addDisabled}>
+              <SelectItem value={ADD_OPTIONS_VALUE} disabled={addBusyReason !== null}>
                 <AddWithOptionsLabel />
               </SelectItem>
             </SelectGroup>
@@ -204,17 +204,27 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   );
 });
 
-/** Adding the project to one machine, with the folder the clone lands in. */
-export function AddTargetLabel({ target }: { target: AddProjectTarget }) {
+/** Adding the project to one machine, with the folder the clone lands in or why it cannot start yet. */
+export function AddTargetLabel({
+  target,
+  busyReason = null,
+}: {
+  target: AddProjectTarget;
+  busyReason?: string | null;
+}) {
   return (
     <span className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
         <PlusIcon aria-hidden="true" className="size-3 shrink-0" />
         <span className="min-w-0 truncate">Add to {target.label}</span>
       </span>
-      <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
-        {target.destinationPath}
-      </span>
+      {busyReason === null ? (
+        <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
+          {target.destinationPath}
+        </span>
+      ) : (
+        <span className="truncate ps-4.5 text-muted-foreground text-xs">{busyReason}</span>
+      )}
     </span>
   );
 }

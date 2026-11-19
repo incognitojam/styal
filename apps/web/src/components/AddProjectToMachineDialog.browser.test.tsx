@@ -90,7 +90,7 @@ vi.mock(import("../state/query"), async (original) => ({
 vi.mock(import("../lib/addProjectToMachine"), async (original) => ({
   ...(await original()),
   addProjectToMachine: scene.add as never,
-  discardStartedClone: scene.discard as never,
+  settleCancelledAdd: scene.discard as never,
 }));
 vi.mock(import("./ui/toast"), async (original) => {
   const actual = await original();
@@ -288,15 +288,21 @@ describe("AddProjectToMachineDialog", () => {
     );
 
     expect(readPreparingAdd(preparing)).not.toBeNull();
-    expect(scene.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Another add is still preparing" }),
-    );
     await expect.element(screen.getByText("Add to another machine")).not.toBeInTheDocument();
-    await act(() => readPreparingAdd(preparing)?.onCancel?.());
+    // The notice names the add it protects and can cancel it from here.
+    const notice = scene.toast.mock.calls[0]?.[0] as {
+      title: string;
+      actionProps?: { children: string; onClick: () => void };
+    };
+    expect(notice.title).toBe("Already adding Repo to another machine");
+    expect(notice.actionProps?.children).toBe("Cancel that add");
+    await act(() => notice.actionProps?.onClick());
+    expect(readPreparingAdd(preparing)).toBeNull();
   });
 
-  it("lets go of an add cancelled while its clone request is out, and removes that clone", async () => {
+  it("lets go of an add cancelled while its clone request is out, and settles its clone", async () => {
     scene.setup({ environments: [SOURCE], query: scene.answered });
+    scene.discard.mockResolvedValue("existing");
     let finishAdd: (projectId: ProjectId) => void = () => undefined;
     scene.add.mockImplementation(
       () =>
@@ -321,7 +327,7 @@ describe("AddProjectToMachineDialog", () => {
     await act(() => readPreparingAdd(draftId)?.onCancel?.());
     expect(readPreparingAdd(draftId)).toBeNull();
 
-    // The server answered with a project it already had, so only the clone is stopped.
+    // The server answered with a project it already had, so it is not this add's to remove.
     await act(() => finishAdd(ProjectId.make("existing-1")));
     await vi.waitFor(() =>
       expect(scene.discard).toHaveBeenCalledWith(

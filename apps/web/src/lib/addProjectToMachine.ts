@@ -49,14 +49,14 @@ function failureMessage(result: Parameters<typeof squashAtomCommandFailure>[0]):
 }
 
 /**
- * Resolves when the clone is listed or, with "done", finishes; null once it is removed or after
- * `timeoutMs`. A failed or cancelled clone keeps waiting for "done", since the composer offers a
- * retry.
+ * Resolves when the clone is listed, with "done" when it finishes, or with "settled" when it stops
+ * running; null once it is removed or after `timeoutMs`. A failed or cancelled clone keeps waiting
+ * for "done", since the composer offers a retry.
  */
 function waitForClone(
   environmentId: EnvironmentId,
   projectId: ProjectId,
-  until: "listed" | "done",
+  until: "listed" | "done" | "settled",
   timeoutMs?: number,
 ) {
   return new Promise<ProjectCloneSnapshot | null>((resolve) => {
@@ -75,12 +75,11 @@ function waitForClone(
       if (settled) return;
       const clone = clones.find((candidate) => candidate.projectId === projectId);
       if (clone) seen = true;
-      const result =
-        clone && (until === "listed" || clone.phase === "done")
-          ? clone
-          : !clone && seen
-            ? null
-            : undefined;
+      const reached =
+        until === "listed" ||
+        (until === "done" && clone?.phase === "done") ||
+        (until === "settled" && clone?.phase !== "running");
+      const result = clone && reached ? clone : !clone && seen ? null : undefined;
       if (result !== undefined) settle(result);
     };
     unsubscribe = appAtomRegistry.subscribe(atom, check);
@@ -127,24 +126,52 @@ const usePreparingAdds = create<{ adds: Readonly<Record<string, PreparingAdd>> }
   adds: {},
 }));
 
+const CANCEL_SETTLE_WAIT_MS = 10_000;
+
 /**
- * For an add cancelled while its request was out: stop the clone that started, and remove its
- * project when the add created it rather than reusing one the machine already had.
+ * What became of an add cancelled while its clone request was out: its partial clone and project
+ * were removed, it finished anyway and was kept, the machine already had the project so nothing
+ * was touched, or a step failed and the project may still be there.
  */
-export async function discardStartedClone(
+export type CancelledAddOutcome = "removed" | "completed" | "existing" | "failed";
+
+/**
+ * Only a clone this add started and that is still running is stopped; the server deletes its
+ * partial checkout, and then the project record this add created goes too. A clone that finishes
+ * first is kept, so no folder is left on the other machine without a project pointing to it.
+ */
+export async function settleCancelledAdd(
   ref: ScopedProjectRef,
   createdByThisAdd: boolean,
-): Promise<void> {
+): Promise<CancelledAddOutcome> {
+  if (!createdByThisAdd) return "existing";
+  const clone = appAtomRegistry
+    .get(environmentProjectClonesAtom(ref.environmentId))
+    .find((candidate) => candidate.projectId === ref.projectId);
+  if (clone?.phase === "done") return "completed";
+  if (clone?.phase !== "running") return "failed";
   const target = { environmentId: ref.environmentId, input: { projectId: ref.projectId } };
-  await runAtomCommand(appAtomRegistry, sourceControlEnvironment.cancelProjectClone, target, {
-    label: "Cancel clone",
-    reportFailure: false,
-  });
-  if (!createdByThisAdd) return;
-  await runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
+  const cancelled = await runAtomCommand(
+    appAtomRegistry,
+    sourceControlEnvironment.cancelProjectClone,
+    target,
+    { label: "Cancel clone", reportFailure: false },
+  );
+  if (cancelled._tag === "Failure") return "failed";
+  // `applied` is also true when the clone finished while being cancelled; its phase says which.
+  const settled = await waitForClone(
+    ref.environmentId,
+    ref.projectId,
+    "settled",
+    CANCEL_SETTLE_WAIT_MS,
+  );
+  if (settled?.phase === "done") return "completed";
+  if (settled?.phase !== "cancelled") return "failed";
+  const removed = await runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
     label: "Remove cancelled clone",
     reportFailure: false,
   });
+  return removed._tag === "Success" ? "removed" : "failed";
 }
 
 export function readPreparingAdd(draftId: string): PreparingAdd | null {

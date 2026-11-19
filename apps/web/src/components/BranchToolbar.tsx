@@ -171,8 +171,8 @@ interface RunContextSelectorProps {
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId | null) => void;
-  /** An add from this draft is already preparing. */
-  addDisabled: boolean;
+  /** Why the Add rows are unavailable, while an add from this draft prepares. */
+  addBusyReason: string | null;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -197,7 +197,7 @@ const RunContextSelector = memo(function RunContextSelector({
   worktreeUnavailableReason,
   addTargets,
   onAddToMachine,
-  addDisabled,
+  addBusyReason,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -387,13 +387,13 @@ const RunContextSelector = memo(function RunContextSelector({
                   {addTargets.map((target) => (
                     <MenuItem
                       key={target.environmentId}
-                      disabled={addDisabled}
+                      disabled={addBusyReason !== null}
                       onClick={() => onAddToMachine(target.environmentId)}
                     >
-                      <AddTargetLabel target={target} />
+                      <AddTargetLabel target={target} busyReason={addBusyReason} />
                     </MenuItem>
                   ))}
-                  <MenuItem disabled={addDisabled} onClick={() => onAddToMachine(null)}>
+                  <MenuItem disabled={addBusyReason !== null} onClick={() => onAddToMachine(null)}>
                     <AddWithOptionsLabel />
                   </MenuItem>
                 </MenuGroup>
@@ -697,7 +697,8 @@ export const BranchToolbar = memo(function BranchToolbar({
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
   // One add at a time per draft: a second pick while the first prepares could start two clones.
-  const addDisabled = usePreparingAdd(draftId ?? null) !== null;
+  const preparingAdd = usePreparingAdd(draftId ?? null);
+  const addBusyReason = preparingAdd ? `${preparingAdd.title}…` : null;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
       projectRef: activeProjectRef,
@@ -747,7 +748,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addDisabled={addDisabled}
+            addBusyReason={addBusyReason}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -799,7 +800,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
-            addDisabled={addDisabled}
+            addBusyReason={addBusyReason}
           />
         </div>
       ) : null}
@@ -820,7 +821,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addDisabled } : {})}
+                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addBusyReason } : {})}
               />
               {showGitControls ? (
                 <Separator

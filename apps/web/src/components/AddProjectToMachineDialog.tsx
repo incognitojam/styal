@@ -28,9 +28,10 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import {
   COPYABLE_FILE_MAX_BYTES,
+  type CancelledAddOutcome,
   type PreparingAdd,
   addProjectToMachine,
-  discardStartedClone,
+  settleCancelledAdd,
   isDefaultCopiedFile,
   readPreparingAdd,
   setPreparingAdd,
@@ -101,11 +102,17 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   // A new request would replace one still preparing elsewhere; say so rather than drop it.
   const current = useRequest.getState().request;
   const preparing = current?.draftId ? readPreparingAdd(current.draftId) : null;
-  if (preparing && !preparing.sending && current?.draftId !== request.draftId) {
+  if (current && preparing && !preparing.sending && current.draftId !== request.draftId) {
+    const onCancel = preparing.onCancel;
+    const projectTitle = readProject(current.projectRef)?.title ?? "A project";
+    const machine = current.targetEnvironmentId
+      ? (readEnvironment(current.targetEnvironmentId)?.label ?? "another machine")
+      : "another machine";
     toastManager.add({
       type: "warning",
-      title: "Another add is still preparing",
-      description: `${preparing.title}. Cancel it, or wait until its clone starts.`,
+      title: `Already adding ${projectTitle} to ${machine}`,
+      description: "Cancel that add, or wait until its clone starts, then try again.",
+      ...(onCancel ? { actionProps: { children: "Cancel that add", onClick: onCancel } } : {}),
     });
     return;
   }
@@ -127,6 +134,34 @@ export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
+
+/** Says what became of an add cancelled after its clone request was sent, unless it was removed. */
+function announceCancelledAdd(outcome: CancelledAddOutcome, projectTitle: string, machine: string) {
+  switch (outcome) {
+    case "removed":
+      return;
+    case "completed":
+      toastManager.add({
+        type: "success",
+        title: `Added ${projectTitle} to ${machine}`,
+        description: "It finished before the cancel reached it, so it was kept.",
+      });
+      return;
+    case "existing":
+      toastManager.add({
+        type: "info",
+        title: `${projectTitle} stays on ${machine}`,
+        description: `${machine} already had this project, so it was not removed.`,
+      });
+      return;
+    case "failed":
+      toastManager.add({
+        type: "warning",
+        title: `Could not finish cancelling on ${machine}`,
+        description: `${projectTitle} may still be there. Check it in Settings → Projects.`,
+      });
+  }
+}
 
 /** The open request's Preparing row goes with it, even if its dialog never mounted. */
 function endPreparing() {
@@ -354,7 +389,11 @@ function AddProjectToMachineDialog({
     endSendingRow();
     const clonedRef = scopeProjectRef(target.environmentId, projectId);
     if (abandoned) {
-      void discardStartedClone(clonedRef, projectId === requestedProjectId);
+      const projectTitle = project.title;
+      const machine = target.label;
+      void settleCancelledAdd(clonedRef, projectId === requestedProjectId).then((outcome) =>
+        announceCancelledAdd(outcome, projectTitle, machine),
+      );
       return;
     }
     close(session);
