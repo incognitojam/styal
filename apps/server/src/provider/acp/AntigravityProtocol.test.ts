@@ -193,6 +193,10 @@ describe("Antigravity permissions and questions", () => {
     const long = prompt(`python3 -c '${"x".repeat(9_000)}'`);
     expect(long?.startsWith("python3 -c 'xxx")).toBe(true);
     expect(long?.endsWith("x…")).toBe(true);
+    const marked = prompt(`cat <<'EOF'\n[Earlier output truncated]\n\n${"y".repeat(9_000)}\nEOF`);
+    expect(marked?.length).toBe(8_001);
+    // An emoji across the cut is dropped whole, not split into half a surrogate pair.
+    expect(prompt(`${"z".repeat(7_999)}😀 tail`)).toBe(`${"z".repeat(7_999)}…`);
   });
 
   it("routes the captured native question to single-choice input, not approval", () => {

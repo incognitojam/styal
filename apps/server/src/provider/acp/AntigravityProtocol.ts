@@ -178,9 +178,10 @@ export const isCutAntigravityToolText = (text: string) => text.includes(TOOL_TEX
 
 /** Keeps the start of a long command, the program it runs, unless the payload was already cut. */
 function boundCommand(command: string): string {
-  return command.length <= TOOL_TEXT_LIMIT || isCutAntigravityToolText(command)
-    ? command
-    : copyBoundedText(`${command.slice(0, TOOL_TEXT_LIMIT)}…`);
+  const cut = isCutAntigravityToolText(command) ? TOOL_TEXT_TRUNCATED.length : 0;
+  if (command.length <= TOOL_TEXT_LIMIT + cut) return command;
+  const highSurrogate = /[\uD800-\uDBFF]/u.test(command[TOOL_TEXT_LIMIT - 1]!);
+  return copyBoundedText(`${command.slice(0, TOOL_TEXT_LIMIT - (highSurrogate ? 1 : 0))}…`);
 }
 
 interface ToolPayloadBudget {
