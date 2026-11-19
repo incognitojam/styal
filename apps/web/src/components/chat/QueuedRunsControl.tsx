@@ -44,7 +44,11 @@ import {
 } from "./CoordinatorReports";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
-import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
+import {
+  FoldedMessageHeader,
+  UNSENT_BUBBLE_CLASS_NAME,
+  useScheduledTaskTitle,
+} from "./TimelineUserMessageRow";
 
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
@@ -474,15 +478,13 @@ function QueuedMessage(props: {
       {presentation?.guestName === undefined ? null : (
         <GuestMessageName name={presentation.guestName} />
       )}
-      {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(
-          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
+          "flex min-w-0 max-w-[80%] flex-col rounded-2xl text-sm",
+          UNSENT_BUBBLE_CLASS_NAME,
           props.isEditing
-            ? "border-primary/60 text-foreground"
-            : attribution === "guest"
-              ? "border-guest/50 text-muted-foreground"
-              : "border-muted-foreground/40 text-muted-foreground",
+            ? "text-foreground after:border-primary/60"
+            : attribution === "guest" && "after:border-guest/50",
           fold === null && "px-3 py-2",
           fold !== null && expanded && "w-full",
         )}

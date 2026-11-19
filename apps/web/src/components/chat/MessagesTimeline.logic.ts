@@ -672,6 +672,7 @@ type MessagesTimelineRowContent =
       createdAt: string;
       message: ChatMessage;
       projectedItem?: OrchestrationV2ProjectedTurnItem;
+      pending?: true;
       showAssistantMeta: boolean;
       suppressEmptyResponse?: boolean;
       showAssistantCopyButton: boolean;
@@ -2614,6 +2615,7 @@ export function deriveMessagesTimelineRows(input: {
       ...(timelineEntry.projectedItem === undefined
         ? {}
         : { projectedItem: timelineEntry.projectedItem }),
+      ...(timelineEntry.pending ? { pending: true as const } : {}),
       showAssistantMeta,
       suppressEmptyResponse:
         timelineEntry.message.role === "assistant" &&
