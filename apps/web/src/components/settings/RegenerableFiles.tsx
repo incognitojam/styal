@@ -33,6 +33,7 @@ export function RegenerableFilesSection() {
         member={member}
         environmentId={target.environmentId}
         label={targets.length > 1 ? environment.label : null}
+        windows={environment.serverConfig.environment.platform.os === "windows"}
         overrides={environment.serverConfig.settings.projectSettingsOverrides[member.id] ?? {}}
         migrationComplete={environment.serverConfig.settings.regenerableFileCleanupMigrated}
       />
@@ -44,12 +45,14 @@ function CheckoutCleanup({
   member,
   environmentId,
   label,
+  windows,
   overrides,
   migrationComplete,
 }: {
   member: SidebarProjectGroupMember;
   environmentId: EnvironmentId;
   label: string | null;
+  windows: boolean;
   overrides: ProjectSettingsOverrides;
   migrationComplete: boolean;
 }) {
@@ -77,16 +80,19 @@ function CheckoutCleanup({
     setBusy(false);
     reportHardwareResult(result, "Could not save cleanup setting");
   };
+  // The server skips both cleanups on Windows, so the switches show off and cannot change there.
+  const unsupported = windows ? "Not available on Windows." : undefined;
   return (
     <SettingsSection title={label ? `Regenerable files on ${label}` : "Regenerable files"}>
       <SettingsRow
         {...searchableSetting("worktree-clean-regenerable-files")}
         forkFeature="worktree-declared-cleanup"
+        unsupported={unsupported}
         description="Delete matching git-ignored paths in settled worktrees on this machine, at least 24 hours after the last thread activity, settlement or archival. The next turn reruns setup."
         control={
           <Switch
             aria-label="Clean up regenerable files"
-            checked={migrationComplete && overrides.cleanRegenerableFiles !== false}
+            checked={!windows && migrationComplete && overrides.cleanRegenerableFiles !== false}
             disabled={busy || !canSave || !migrationComplete}
             onCheckedChange={(checked) => void update("cleanRegenerableFiles", checked)}
           />
@@ -95,11 +101,12 @@ function CheckoutCleanup({
       <SettingsRow
         {...searchableSetting("worktree-release-sources")}
         forkFeature="worktree-source-checkout"
-        description="Free unchanged sources after 7 settled days on this machine. Keep local and ignored files; restore before use. Enables per-worktree Git configuration."
+        unsupported={unsupported}
+        description="Free unchanged sources after 7 settled days on this machine. Keep local and ignored files; restore before use."
         control={
           <Switch
             aria-label="Free source files in settled worktrees"
-            checked={overrides.releaseWorktreeSources === true}
+            checked={!windows && overrides.releaseWorktreeSources === true}
             disabled={busy || !canSave}
             onCheckedChange={(checked) => void update("releaseWorktreeSources", checked)}
           />
