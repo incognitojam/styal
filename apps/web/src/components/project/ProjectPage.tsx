@@ -20,23 +20,33 @@ import { useEnvironmentShellStatus } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
 import ChatView from "../ChatView";
+import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
 import { SidebarInset } from "../ui/sidebar";
 import { projectChatDraftId, resolveProjectChatView } from "./projectPage.logic";
 import { type ProjectPage as ProjectPageState, useProjectPages } from "./useProjectPages";
 
-/** `/projects/<key>` with project coordinators on: the project's chat under its header. */
-export function ProjectPage({ projectKey }: { projectKey: string }) {
+/**
+ * `/projects/<key>` with project coordinators on: the project's chat under its header.
+ * `background` keeps it mounted, inert and in place under Settings or Usage.
+ */
+export function ProjectPage({
+  projectKey,
+  background = false,
+}: {
+  projectKey: string;
+  background?: boolean;
+}) {
   const page = useProjectPages().get(projectKey) ?? null;
   const group = useSettingsProjectGroups().find((entry) => entry.projectKey === projectKey);
   const projectsReady = useAllEnvironmentProjectSnapshotsReady();
   const serverConfigs = useServerConfigs();
-  if (page !== null) return <ProjectChat key={projectKey} page={page} />;
+  if (page !== null) return <ProjectChat key={projectKey} page={page} background={background} />;
   const settled =
     projectsReady &&
     (group === undefined ||
       group.memberProjects.every((member) => serverConfigs.has(member.environmentId)));
-  return settled ? (
+  return settled && !background ? (
     <Navigate
       to="/settings/projects"
       search={{ project: projectKey, machine: undefined }}
@@ -47,7 +57,7 @@ export function ProjectPage({ projectKey }: { projectKey: string }) {
   );
 }
 
-function ProjectChat({ page }: { page: ProjectPageState }) {
+function ProjectChat({ page, background }: { page: ProjectPageState; background: boolean }) {
   const navigate = useNavigate();
   const handleNewThread = useNewThreadHandler();
   const { environments } = useEnvironments();
@@ -163,8 +173,11 @@ function ProjectChat({ page }: { page: ProjectPageState }) {
       />
     ) : null;
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {view}
+    <SidebarInset
+      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      inert={background}
+    >
+      <BackgroundThreadContext value={background}>{view}</BackgroundThreadContext>
     </SidebarInset>
   );
 }
