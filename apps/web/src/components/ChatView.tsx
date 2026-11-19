@@ -1,6 +1,6 @@
 import { resolveCacheLossBaseline } from "./chat/compaction.logic";
 import { randomUUID } from "../lib/utils";
-import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
+import { reportReplyBannerItem, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
 import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { dismissCoordinatorReport } from "../state/coordinatorReports";
 import { CommandId } from "@t3tools/contracts";
@@ -2866,7 +2866,7 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  const composerBannerItems = (() => {
+  const otherComposerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
       draftDefaultModelSelection ??
@@ -2961,6 +2961,21 @@ export default function ChatView(props: ChatViewProps) {
       }),
     ];
   })() as ComposerBannerStackItem[];
+  // Last, so nothing comes between the reply and the input it belongs to.
+  const composerBannerItems =
+    settings.coordinatorReportsEnabled && activeReportReply
+      ? [
+          ...otherComposerBannerItems,
+          reportReplyBannerItem({
+            title: activeReportReply.title,
+            version: activeReportReply.ref.version,
+            question: reportStates.find(
+              (report) => report.message.id === activeReportReply.ref.messageId,
+            )?.message.report?.question,
+            onCancel: () => setReportReply(null),
+          }),
+        ]
+      : otherComposerBannerItems;
 
   if (
     terminalUiLaunchContext !== null &&
@@ -3935,19 +3950,6 @@ export default function ChatView(props: ChatViewProps) {
                           aria-busy={queuedRunEdit.isSaving}
                         >
                           <div className="relative z-10">
-                            {settings.coordinatorReportsEnabled && activeReportReply ? (
-                              <ReportReplyStrip
-                                title={activeReportReply.title}
-                                version={activeReportReply.ref.version}
-                                question={
-                                  reportStates.find(
-                                    (report) =>
-                                      report.message.id === activeReportReply.ref.messageId,
-                                  )?.message.report?.question
-                                }
-                                onCancel={() => setReportReply(null)}
-                              />
-                            ) : null}
                             {showProviderSubagentBar ? (
                               <ProviderSubagentBar
                                 provider={selectedProviderEntry ?? null}
