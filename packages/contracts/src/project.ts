@@ -336,6 +336,8 @@ export type ProjectIgnoredFile = typeof ProjectIgnoredFile.Type;
 export const ProjectListIgnoredFilesResult = Schema.Struct({
   files: Schema.Array(ProjectIgnoredFile),
   truncated: Schema.Boolean,
+  /** Git could not list them, so an empty `files` is not known to be empty. Older servers omit it. */
+  failed: Schema.optionalKey(Schema.Boolean),
 });
 export type ProjectListIgnoredFilesResult = typeof ProjectListIgnoredFilesResult.Type;
 

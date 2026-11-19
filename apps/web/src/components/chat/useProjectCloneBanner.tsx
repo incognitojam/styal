@@ -75,6 +75,15 @@ export function useProjectCloneBanner(
         icon: <DownloadIcon />,
         title: preparingAdd.title,
         description: "Preparing…",
+        ...(preparingAdd.onCancel
+          ? {
+              actions: (
+                <Button size="xs" variant="ghost" onClick={preparingAdd.onCancel}>
+                  Cancel
+                </Button>
+              ),
+            }
+          : {}),
       };
     }
     if (activeProjectFileCopy?.phase === "failed" && activeProjectRef) {

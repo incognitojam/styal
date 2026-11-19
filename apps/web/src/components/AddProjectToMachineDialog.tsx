@@ -29,6 +29,7 @@ import {
   COPYABLE_FILE_MAX_BYTES,
   addProjectToMachine,
   isDefaultCopiedFile,
+  readPreparingAdd,
   setPreparingAdd,
 } from "../lib/addProjectToMachine";
 import { formatBytes } from "../lib/formatBytes";
@@ -38,7 +39,11 @@ import { readEnvironment, useEnvironments } from "../state/environments";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
-import { answeredSince, quickAddDecision } from "./AddProjectToMachineDialog.logic";
+import {
+  answeredSince,
+  defaultCopiesState,
+  quickAddDecision,
+} from "./AddProjectToMachineDialog.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -87,23 +92,29 @@ const QUICK_ADD_WAIT_MS = 3_000;
 /** Opens the dialog that clones a project onto another connected machine. */
 export function openAddProjectToMachine(request: AddProjectToMachineRequest) {
   if (readProject(request.projectRef) === null) return;
+  // One add at a time per draft: a second pick would race the first to start a clone.
+  if (request.quick && request.draftId && readPreparingAdd(request.draftId) !== null) return;
   endRequestWithProject?.();
   // The request ends when its project goes away, so a project that comes back
   // later cannot reopen a dialog nobody asked for.
   endRequestWithProject = subscribeProject(request.projectRef, (project) => {
     if (project === null) close();
   });
+  const session = useRequest.getState().session + 1;
   if (request.quick && request.targetEnvironmentId && request.draftId) {
     setPreparingAdd(request.draftId, {
       title: addingTitle(readEnvironment(request.targetEnvironmentId)?.label),
+      onCancel: () => close(session),
     });
   }
-  useRequest.setState((state) => ({ request, session: state.session + 1, openedAt: Date.now() }));
+  useRequest.setState({ request, session, openedAt: Date.now() });
 }
 
 const addingTitle = (label: string | undefined) => `Adding to ${label ?? "another machine"}`;
 
-function close() {
+/** Ends the request; with `session`, only if that request is still the open one. */
+function close(session?: number) {
+  if (session !== undefined && useRequest.getState().session !== session) return;
   endRequestWithProject?.();
   endRequestWithProject = null;
   useRequest.setState({ request: null });
@@ -114,14 +125,21 @@ export function AddProjectToMachineDialogHost() {
   const session = useRequest((state) => state.session);
   const openedAt = useRequest((state) => state.openedAt);
   return request ? (
-    <AddProjectToMachineDialog key={session} request={request} openedAt={openedAt} />
+    <AddProjectToMachineDialog
+      key={session}
+      session={session}
+      request={request}
+      openedAt={openedAt}
+    />
   ) : null;
 }
 
 function AddProjectToMachineDialog({
+  session,
   request,
   openedAt,
 }: {
+  session: number;
   request: AddProjectToMachineRequest;
   openedAt: number;
 }) {
@@ -202,13 +220,13 @@ function AddProjectToMachineDialog({
     ? quickAddDecision({
         targetAvailable: target !== null,
         waitedTooLong,
-        defaultCopies: !canListFiles
-          ? "unsupported"
-          : ignoredFiles.error
-            ? "failed"
-            : answeredSince(ignoredFiles, openedAt)
-              ? defaultSelection(files).size
-              : "loading",
+        defaultCopies: defaultCopiesState({
+          canListFiles,
+          error: ignoredFiles.error,
+          data: ignoredFiles.data,
+          answered: answeredSince(ignoredFiles, openedAt),
+          defaultCount: defaultSelection(files).size,
+        }),
         destination: defaultFolder.error
           ? "failed"
           : answeredSince(defaultFolder, openedAt)
@@ -263,6 +281,10 @@ function AddProjectToMachineDialog({
   const startClone = useStableCallback(async () => {
     if (!project || !target || starting.current) return;
     starting.current = true;
+    // Once the clone is being sent it can no longer be called off from the row.
+    if (request.draftId && readPreparingAdd(request.draftId) !== null) {
+      setPreparingAdd(request.draftId, { title: addingTitle(target.label) });
+    }
     try {
       const projectId = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
@@ -277,7 +299,7 @@ function AddProjectToMachineDialog({
         destinationPath: destinationPath.trim(),
         files: files.filter((file) => selectedFiles.has(file.path)).map((file) => file.path),
       });
-      close();
+      close(session);
       openClonedProject(scopeProjectRef(target.environmentId, projectId));
     } catch (cause) {
       starting.current = false;
@@ -308,9 +330,16 @@ function AddProjectToMachineDialog({
   useEffect(() => {
     const draftId = request.draftId;
     if (!draftId) return;
-    setPreparingAdd(draftId, preparingTitle === null ? null : { title: preparingTitle });
+    setPreparingAdd(
+      draftId,
+      preparingTitle === null
+        ? null
+        : starting.current
+          ? { title: preparingTitle }
+          : { title: preparingTitle, onCancel: () => close(session) },
+    );
     return () => setPreparingAdd(draftId, null);
-  }, [preparingTitle, request.draftId]);
+  }, [preparingTitle, request.draftId, session]);
   if (!showDialog) return null;
 
   return (
@@ -421,12 +450,17 @@ function AddProjectToMachineDialog({
               />
               {pathOverride === null && defaultFolderExists ? (
                 <p className="text-muted-foreground text-xs">
-                  This folder already exists on {target?.label ?? "the other machine"}. The clone
-                  needs it empty, or choose another folder.
+                  This folder already exists on {target?.label ?? "the other machine"}. Choose a new
+                  folder, or empty this one first.
                 </p>
               ) : null}
             </div>
 
+            {!canListFiles && source ? (
+              <p className="text-muted-foreground text-xs">
+                {source.label} cannot list the files git ignores, so none will be copied.
+              </p>
+            ) : null}
             {canListFiles ? (
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
@@ -454,8 +488,19 @@ function AddProjectToMachineDialog({
                     </>
                   ) : null}
                 </div>
+                {request.quick && selectedFiles.size > 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    The ticked files will be copied to {target?.label ?? "the other machine"}.
+                    Untick any it should not have.
+                  </p>
+                ) : null}
                 {ignoredFiles.error ? (
                   <p className="text-destructive-foreground text-xs">{ignoredFiles.error}</p>
+                ) : ignoredFiles.data?.failed ? (
+                  <p className="text-muted-foreground text-xs">
+                    Could not list the files git ignores on {source?.label ?? "this machine"}, so
+                    none will be copied.
+                  </p>
                 ) : files.length === 0 ? (
                   <p className="text-muted-foreground text-xs">
                     {ignoredFiles.isSuccess
@@ -489,7 +534,7 @@ function AddProjectToMachineDialog({
             {error ? <p className="text-destructive-foreground text-sm">{error}</p> : null}
           </DialogPanel>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={close}>
+            <Button type="button" variant="outline" onClick={() => close()}>
               Cancel
             </Button>
             <Button type="submit" disabled={unavailable || submitting}>

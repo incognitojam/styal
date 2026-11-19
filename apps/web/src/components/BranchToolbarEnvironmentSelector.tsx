@@ -10,7 +10,7 @@ import { PlusIcon, ScaleIcon, SlidersHorizontalIcon } from "lucide-react";
 import { memo } from "react";
 
 import type { AddProjectTarget } from "../hooks/useAddProjectTargets";
-import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
+import type { EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
@@ -19,6 +19,7 @@ import {
   SelectGroupLabel,
   SelectItem,
   SelectPopup,
+  SelectSeparator,
   SelectValue,
 } from "./ui/select";
 
@@ -32,6 +33,8 @@ interface BranchToolbarEnvironmentSelectorProps {
   addTargets?: readonly AddProjectTarget[] | undefined;
   /** Adds to the named machine, or opens the dialog for null. */
   onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
+  /** An add from this draft is already preparing. */
+  addDisabled?: boolean | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
@@ -49,6 +52,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onEnvironmentChange,
   addTargets = [],
   onAddToMachine,
+  addDisabled = false,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -72,7 +76,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             value: addValue(target.environmentId),
             label: `Add to ${target.label}`,
           })),
-          { value: ADD_OPTIONS_VALUE, label: "Add to another machine" },
+          { value: ADD_OPTIONS_VALUE, label: "Add with options…" },
         ]
       : []),
   ];
@@ -177,16 +181,23 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           ))}
         </SelectGroup>
         {onAddToMachine ? (
-          <SelectGroup>
-            {addTargets.map((target) => (
-              <SelectItem key={target.environmentId} value={addValue(target.environmentId)}>
-                <AddTargetLabel target={target} />
+          <>
+            <SelectSeparator />
+            <SelectGroup>
+              {addTargets.map((target) => (
+                <SelectItem
+                  key={target.environmentId}
+                  value={addValue(target.environmentId)}
+                  disabled={addDisabled}
+                >
+                  <AddTargetLabel target={target} />
+                </SelectItem>
+              ))}
+              <SelectItem value={ADD_OPTIONS_VALUE} disabled={addDisabled}>
+                <AddWithOptionsLabel />
               </SelectItem>
-            ))}
-            <SelectItem value={ADD_OPTIONS_VALUE}>
-              <AddWithOptionsLabel />
-            </SelectItem>
-          </SelectGroup>
+            </SelectGroup>
+          </>
         ) : null}
       </SelectPopup>
     </Select>
@@ -197,7 +208,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
 export function AddTargetLabel({ target }: { target: AddProjectTarget }) {
   return (
     <span className="flex min-w-0 flex-col">
-      <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+      <span className="flex min-w-0 items-center gap-1.5">
         <PlusIcon aria-hidden="true" className="size-3 shrink-0" />
         <span className="min-w-0 truncate">Add to {target.label}</span>
       </span>
@@ -211,7 +222,7 @@ export function AddTargetLabel({ target }: { target: AddProjectTarget }) {
 /** Opens the dialog to pick the machine, folder, protocol and files to copy. */
 export function AddWithOptionsLabel() {
   return (
-    <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+    <span className="flex min-w-0 items-center gap-1.5">
       <SlidersHorizontalIcon aria-hidden="true" className="size-3 shrink-0" />
       <span className="min-w-0 truncate">Add with options…</span>
     </span>

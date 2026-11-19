@@ -16,7 +16,10 @@ export function quickAddDecision(input: {
 }): QuickAddDecision {
   const { defaultCopies, destination } = input;
   if (!input.targetAvailable) return "ask";
-  if (defaultCopies === "failed" || destination === "failed") return "ask";
+  // Without a list, files such as .env could be left behind unnoticed.
+  if (defaultCopies === "failed" || defaultCopies === "unsupported" || destination === "failed") {
+    return "ask";
+  }
   if (typeof defaultCopies === "number" && defaultCopies > 0) return "ask";
   if (destination === "exists") return "ask";
   if (defaultCopies === "loading" || destination === "loading") {
@@ -34,4 +37,20 @@ export function answeredSince(
   openedAt: number,
 ): boolean {
   return query.data !== null && !query.isPending && query.dataUpdatedAt >= openedAt;
+}
+
+/**
+ * What the source's ignored files say about copying: how many are ticked by default, or why that
+ * is not known. A listing the server could not make reports `failed`, so it is not "no files".
+ */
+export function defaultCopiesState(input: {
+  readonly canListFiles: boolean;
+  readonly error: string | null;
+  readonly data: { readonly failed?: boolean } | null;
+  readonly answered: boolean;
+  readonly defaultCount: number;
+}): number | "unsupported" | "loading" | "failed" {
+  if (!input.canListFiles) return "unsupported";
+  if (input.error !== null || input.data?.failed === true) return "failed";
+  return input.answered ? input.defaultCount : "loading";
 }

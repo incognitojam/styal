@@ -2,6 +2,7 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { DraftId } from "../composerDraftStore";
 import { act, render } from "../../test/render";
 
 const project = vi.hoisted(() => {
@@ -43,9 +44,19 @@ vi.mock(import("../hooks/useHandleNewThread"), async (original) => ({
   ...(await original()),
   useNewThreadHandler: (() => () => undefined) as never,
 }));
+const targets = vi.hoisted(() => {
+  let value: unknown[] = [];
+  return {
+    setup: (initial: unknown[]) => {
+      value = initial;
+    },
+    get: () => value,
+  };
+});
+
 vi.mock(import("../hooks/useAddProjectTargets"), async (original) => ({
   ...(await original()),
-  useAddProjectTargets: (() => []) as never,
+  useAddProjectTargets: (() => targets.get()) as never,
 }));
 vi.mock(import("../hooks/useLogicalProjectEnvironments"), async (original) => ({
   ...(await original()),
@@ -67,9 +78,17 @@ const PROJECT = {
   repositoryIdentity: null,
 };
 
+const machine = (name: string) => ({
+  environmentId: EnvironmentId.make(name),
+  label: name,
+  machine: "server",
+  destinationPath: "~/Repo",
+});
+
 describe("AddProjectToMachineDialog", () => {
   it("closes when its project goes away", async () => {
     project.setup(PROJECT);
+    targets.setup([]);
     await using screen = await render(<AddProjectToMachineDialogHost />);
 
     await act(() => openAddProjectToMachine({ projectRef, targetEnvironmentId: null }));
@@ -82,6 +101,7 @@ describe("AddProjectToMachineDialog", () => {
 
   it("does not reopen for a project that vanished before the dialog showed", async () => {
     project.setup(PROJECT);
+    targets.setup([]);
     await using screen = await render(<AddProjectToMachineDialogHost />);
 
     await act(() => {
@@ -91,5 +111,32 @@ describe("AddProjectToMachineDialog", () => {
     await act(() => project.set(PROJECT));
 
     await expect.element(screen.getByText("Add to another machine")).not.toBeInTheDocument();
+  });
+
+  it("ignores a second machine picked while the first one-click add is preparing", async () => {
+    project.setup(PROJECT);
+    targets.setup([machine("machine-a"), machine("machine-b")]);
+    await using screen = await render(<AddProjectToMachineDialogHost />);
+    const draftId = DraftId.make("draft-1");
+
+    await act(() => {
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-a"),
+        quick: true,
+        draftId,
+      });
+      openAddProjectToMachine({
+        projectRef,
+        targetEnvironmentId: EnvironmentId.make("machine-b"),
+        quick: true,
+        draftId,
+      });
+    });
+
+    // The source cannot list ignored files here, so the add asks: about the first machine.
+    await expect
+      .element(screen.getByRole("combobox", { name: "Machine to add the project to" }))
+      .toHaveTextContent("machine-a");
   });
 });

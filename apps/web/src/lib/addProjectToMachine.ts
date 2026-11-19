@@ -114,20 +114,30 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
   setFileCopy(scopedProjectKey(ref), null);
 }
 
+export interface PreparingAdd {
+  readonly title: string;
+  /** Calls the add off; absent once the clone is being sent. */
+  readonly onCancel?: () => void;
+}
+
 /** One-click adds still checking whether to ask, keyed by the draft that moves with the clone. */
-const usePreparingAdds = create<{
-  adds: Readonly<Record<string, { readonly title: string }>>;
-}>(() => ({ adds: {} }));
+const usePreparingAdds = create<{ adds: Readonly<Record<string, PreparingAdd>> }>(() => ({
+  adds: {},
+}));
+
+export function readPreparingAdd(draftId: string): PreparingAdd | null {
+  return usePreparingAdds.getState().adds[draftId] ?? null;
+}
 
 /** The draft's composer shows the clone's row from the click, before the clone exists. */
-export function setPreparingAdd(draftId: string, add: { readonly title: string } | null) {
+export function setPreparingAdd(draftId: string, add: PreparingAdd | null) {
   usePreparingAdds.setState(({ adds }) => {
     const { [draftId]: _previous, ...rest } = adds;
     return { adds: add === null ? rest : { ...rest, [draftId]: add } };
   });
 }
 
-export function usePreparingAdd(draftId: string | null): { readonly title: string } | null {
+export function usePreparingAdd(draftId: string | null): PreparingAdd | null {
   return usePreparingAdds((state) => (draftId ? (state.adds[draftId] ?? null) : null));
 }
 
