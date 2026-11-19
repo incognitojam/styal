@@ -4308,47 +4308,52 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
         status: "completed" | "cancelled",
         url: string,
         options: {
+          /** Reuse another record's thread, as a follow-up task does. */
+          readonly reuseThreadOf?: string;
           readonly origin?: "provider_native" | "app_owned";
           readonly lineageParent?: ThreadId;
           readonly extraItems?: ReadonlyArray<{ readonly url: string; readonly runId: RunId }>;
         } = {},
       ) => {
-        const grandchildThreadId = ThreadId.make(`thread:sources-grandchild:${name}`);
+        const grandchildThreadId = ThreadId.make(
+          `thread:sources-grandchild:${options.reuseThreadOf ?? name}`,
+        );
         const taskNodeId = NodeId.make(`node:sources-grandchild:${name}`);
-        return [
-          {
-            id: EventId.make(`event:sources-grandchild:${name}:thread`),
-            type: "thread.created" as const,
-            threadId: grandchildThreadId,
-            occurredAt: now,
-            payload: {
-              createdBy: "agent" as const,
-              creationSource: "provider" as const,
-              id: grandchildThreadId,
-              projectId,
-              title: name,
-              providerInstanceId: modelSelection.instanceId,
-              modelSelection,
-              runtimeMode: "full-access" as const,
-              interactionMode: "default" as const,
-              branch: null,
-              worktreePath: null,
-              activeProviderThreadId: null,
-              lineage: {
-                parentThreadId: options.lineageParent ?? child.childThreadId,
-                relationshipToParent: "subagent" as const,
-                rootThreadId: threadId,
-              },
-              forkedFrom: { type: "node" as const, nodeId: taskNodeId },
-              createdAt: now,
-              updatedAt: now,
-              archivedAt: null,
-              settledOverride: null,
-              settledAt: null,
-              lastVisitedAt: null,
-              deletedAt: null,
+        const threadCreated = {
+          id: EventId.make(`event:sources-grandchild:${name}:thread`),
+          type: "thread.created" as const,
+          threadId: grandchildThreadId,
+          occurredAt: now,
+          payload: {
+            createdBy: "agent" as const,
+            creationSource: "provider" as const,
+            id: grandchildThreadId,
+            projectId,
+            title: name,
+            providerInstanceId: modelSelection.instanceId,
+            modelSelection,
+            runtimeMode: "full-access" as const,
+            interactionMode: "default" as const,
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: null,
+            lineage: {
+              parentThreadId: options.lineageParent ?? child.childThreadId,
+              relationshipToParent: "subagent" as const,
+              rootThreadId: threadId,
             },
+            forkedFrom: { type: "node" as const, nodeId: taskNodeId },
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
           },
+        };
+        return [
+          ...(options.reuseThreadOf === undefined ? [threadCreated] : []),
           {
             id: EventId.make(`event:sources-grandchild:${name}:task`),
             type: "subagent.updated" as const,
@@ -4394,7 +4399,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
                   ...runEvent({
                     threadId: grandchildThreadId,
                     runId: RunId.make(`run:sources-grandchild:${name}:task`),
-                    ordinal: 2,
+                    ordinal: options.reuseThreadOf === undefined ? 2 : 3,
                     status: "completed",
                     now,
                   }),
@@ -4402,7 +4407,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
                     ...runEvent({
                       threadId: grandchildThreadId,
                       runId: RunId.make(`run:sources-grandchild:${name}:task`),
-                      ordinal: 2,
+                      ordinal: options.reuseThreadOf === undefined ? 2 : 3,
                       status: "completed",
                       now,
                     }).payload,
@@ -4455,6 +4460,11 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
               { url: "https://legal.example.net/earlier-task", runId: RunId.make("run:earlier") },
             ],
           }),
+          // A follow-up task in the same parent run reuses the nested task's thread.
+          ...grandchild("nested-followup", "completed", "https://docs.example.com/followup", {
+            origin: "app_owned",
+            reuseThreadOf: "nested-task",
+          }),
           // A record naming a thread whose lineage points at another parent is not followed.
           ...grandchild("foreign", "completed", "https://legal.example.net/foreign", {
             lineageParent: threadId,
@@ -4474,6 +4484,7 @@ it.layer(layerTest)("delegated tasks across a server restart", (it) => {
         { kind: "page", url: "https://docs.example.com/retention" },
         { kind: "page", url: "https://help.example.io/export" },
         // Records that started together follow in id order.
+        { kind: "page", url: "https://docs.example.com/followup" },
         { kind: "page", url: "https://docs.example.com/nested" },
         { kind: "page", url: "https://status.example.org/uptime" },
       ]);

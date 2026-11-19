@@ -6515,7 +6515,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     const collectViewedSourceItems = Effect.fn("ProjectionStore.collectViewedSourceItems")(
       function* (input: { readonly threadId: ThreadId; readonly runId?: RunId }) {
         const items: ViewedSourceItem[] = [];
-        const visited = new Set<ThreadId>();
+        // A thread and its run scope: a follow-up task reuses its first task's thread.
+        const visited = new Set<string>();
         let pending: Array<{
           readonly threadId: ThreadId;
           readonly runIds: ReadonlyArray<RunId> | null;
@@ -6526,8 +6527,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         for (let depth = 0; depth < VIEWED_SOURCE_THREAD_DEPTH && pending.length > 0; depth += 1) {
           const next: typeof pending = [];
           for (const { threadId, runIds } of pending) {
-            if (visited.has(threadId) || visited.size >= VIEWED_SOURCE_THREAD_LIMIT) continue;
-            visited.add(threadId);
+            const key = `${threadId}\n${runIds === null ? "runless" : runIds.toSorted().join(",")}`;
+            if (visited.has(key) || visited.size >= VIEWED_SOURCE_THREAD_LIMIT) continue;
+            visited.add(key);
             if (runIds !== null && runIds.length === 0) continue;
             for (const item of yield* readViewedSourceItems(threadId, runIds)) items.push(item);
             for (const child of yield* readSubagentChildren(threadId, runIds)) {
