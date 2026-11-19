@@ -79,7 +79,13 @@ export const importDpopProofKey = Effect.fn("dpopProof.importDpopProofKey")(func
   };
   const privateKey = yield* Effect.tryPromise({
     try: () =>
-      globalThis.crypto.subtle.importKey("jwk", privateJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]),
+      globalThis.crypto.subtle.importKey(
+        "jwk",
+        privateJwk,
+        { name: "ECDSA", namedCurve: "P-256" },
+        false,
+        ["sign"],
+      ),
     catch: (cause) => new DpopProofError({ operation: "import", cause }),
   });
   return { privateKey, publicJwk, thumbprint: computeDpopJwkThumbprint(publicJwk) };
@@ -107,15 +113,24 @@ export const signDpopProof = Effect.fn("dpopProof.signDpopProof")(function* (inp
     .uuidV4()
     .pipe(Effect.mapError((cause) => new DpopProofError({ operation: "sign", cause })));
   const issuedAt = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
-  const encode = (value: unknown) => Base64Url.encode(new TextEncoder().encode(JSON.stringify(value)));
+  const encode = (value: unknown) =>
+    Base64Url.encode(new TextEncoder().encode(JSON.stringify(value)));
   const header = encode({ typ: "dpop+jwt", alg: "ES256", jwk: input.key.publicJwk });
   const payload = encode({
-    htm: input.method.toUpperCase(), htu, jti, iat: issuedAt,
+    htm: input.method.toUpperCase(),
+    htu,
+    jti,
+    iat: issuedAt,
     ...(input.accessToken ? { ath: computeDpopAccessTokenHash(input.accessToken) } : {}),
   });
   const signingInput = `${header}.${payload}`;
   const signature = yield* Effect.tryPromise({
-    try: () => globalThis.crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, input.key.privateKey, new TextEncoder().encode(signingInput)),
+    try: () =>
+      globalThis.crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        input.key.privateKey,
+        new TextEncoder().encode(signingInput),
+      ),
     catch: (cause) => new DpopProofError({ operation: "sign", cause }),
   });
   return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;

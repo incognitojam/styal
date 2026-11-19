@@ -287,7 +287,7 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
       }),
       Layer.mock(ConnectReachability.ConnectReachability)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
-      Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
+      Layer.mock(CliSession.CloudCliSession)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
       }),
