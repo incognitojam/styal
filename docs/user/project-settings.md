@@ -185,10 +185,12 @@ Source control edit environment defaults or project overrides depending on the p
 To override browser or device access for a project, select it in **Settings → Projects** and use
 **Agent access**; its simulator memory mode is under **Devices**. Reset an override to follow the environment again. Existing overrides keep their values.
 
-The Projects category, under Code, holds the project's name, icon,
-additional instructions, actions, checkouts and removal. Actions belong to a project: editing them
-creates the project's own list on each selected environment, and reset returns to the
-environment's shared list. A project's `t3.json` actions can be reviewed and imported there.
+The Projects category, under Code, holds the project's name, icon, additional instructions,
+actions, checkouts and removal. **Add to another machine**, under Checkouts, clones the project
+onto a connected machine that does not have it yet and copies the `.env` files you choose. Actions
+belong to a project: editing them creates the project's own list on each selected environment, and
+reset returns to the environment's shared list. A project's `t3.json` actions can be reviewed and
+imported there.
 
 Settings a repository can also declare in its project file, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then the project file, then
