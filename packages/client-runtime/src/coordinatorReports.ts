@@ -6,6 +6,7 @@ import {
   type CoordinatorReport,
   type CoordinatorReportReference,
 } from "@t3tools/contracts";
+import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
@@ -14,7 +15,7 @@ type Message = {
   readonly role: string;
   readonly text: string;
   readonly report?: CoordinatorReport | undefined;
-  readonly reportAnswer?: Reference | undefined;
+  readonly reportAnswer?: (Reference & { readonly comment?: true | undefined }) | undefined;
 };
 
 export function coordinatorReports<M extends Message>(
@@ -26,9 +27,8 @@ export function coordinatorReports<M extends Message>(
   const answers = new Map<string, M>();
   const dismissed = new Set(dismissals.map(referenceKey));
   for (const message of messages) {
-    if (message.role === "user" && message.reportAnswer) {
-      const key = referenceKey(message.reportAnswer);
-      if (!answers.has(key)) answers.set(key, message);
+    if (message.role === "user" && message.reportAnswer && !message.reportAnswer.comment) {
+      answers.set(referenceKey(message.reportAnswer), message);
     }
     if (
       message.report &&
@@ -54,6 +54,19 @@ export function coordinatorReports<M extends Message>(
               : "posted";
     return [{ message, latest: current, state, answer }];
   });
+}
+
+/**
+ * The reference a reply to a report carries. Quotes with comments and nothing typed besides
+ * discuss the report rather than answer it, so its question stays open.
+ */
+export function reportReplyReference<R extends Reference>(ref: R, text: string) {
+  const citations = collectAssistantCitations(text);
+  const rest = citations.reduceRight(
+    (remaining, citation) => remaining.slice(0, citation.start) + remaining.slice(citation.end),
+    text,
+  );
+  return citations.length > 0 && rest.trim() === "" ? { ...ref, comment: true as const } : ref;
 }
 
 export function formatReportAnswer(

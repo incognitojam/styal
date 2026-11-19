@@ -1753,7 +1753,9 @@ function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
   }) => JSON.stringify([ref.messageId, ref.key, ref.version]);
   const answered = new Set(
     projection.messages.flatMap((message) =>
-      message.role === "user" && message.reportAnswer ? [referenceKey(message.reportAnswer)] : [],
+      message.role === "user" && message.reportAnswer && !message.reportAnswer.comment
+        ? [referenceKey(message.reportAnswer)]
+        : [],
     ),
   );
   const dismissed = new Set((projection.thread.reportDismissals ?? []).map(referenceKey));
@@ -7055,6 +7057,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_extract(answer.payload_json, '$.reportAnswer.messageId') = report.message_id
             AND json_extract(answer.payload_json, '$.reportAnswer.key') = json_extract(report.payload_json, '$.report.key')
             AND json_extract(answer.payload_json, '$.reportAnswer.version') = json_extract(report.payload_json, '$.report.version')
+            AND json_extract(answer.payload_json, '$.reportAnswer.comment') IS NULL
         )
         AND NOT EXISTS (
           SELECT 1 FROM json_each(t.payload_json, '$.reportDismissals') dismissal

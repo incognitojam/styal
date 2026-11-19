@@ -33,6 +33,7 @@ import {
   wasBootstrapThreadDeleted,
 } from "@t3tools/client-runtime/errors";
 import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachments";
+import { reportReplyReference } from "@t3tools/client-runtime/coordinator-reports";
 import {
   declinePendingApprovals,
   sendApprovalFeedback,
@@ -1359,7 +1360,9 @@ export function useComposerSend(input: ComposerSendInput) {
         input: {
           threadId: threadIdForSend,
           message: {
-            ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
+            ...(input.reportReply
+              ? { reportAnswer: reportReplyReference(input.reportReply.ref, messageTextForSend) }
+              : {}),
             messageId: messageIdForSend,
             role: "user",
             attachments: turnAttachmentsResult.value,

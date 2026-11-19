@@ -634,6 +634,20 @@ it.effect(
           key: "issue:9",
           version: 1,
         };
+        // A reply that only comments on quotes from the report leaves its question open.
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("report:comment"),
+          threadId: launcherId,
+          messageId: MessageId.make("comment:other"),
+          text: "[Release, version 1] [Assistant quote](t3-citation://v1/quote)",
+          reportAnswer: { ...reportAnswer, comment: true },
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* count(1);
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("report:answer"),

@@ -1,6 +1,6 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import { FileTextIcon, MessageSquareIcon, PencilIcon, ReplyIcon, XIcon } from "lucide-react";
 import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
@@ -57,6 +57,8 @@ export function ReportAnswerBar({
   const ctx = use(CoordinatorReportsContext);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // The answer being changed; the card asks again until a newer answer replaces it.
+  const [changing, setChanging] = useState<MessageId | null>(null);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "dismissed") {
@@ -69,32 +71,45 @@ export function ReportAnswerBar({
       </div>
     );
   }
-  if (report.state === "answered" && report.answer) {
-    const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
-    if (compact) {
-      return (
-        <div className={panelClassName}>
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-            <MessageSquareIcon />
-            You answered: <span className="text-foreground">{text}</span>
-          </span>
-        </div>
-      );
-    }
-    return (
-      <div className={panelClassName}>
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-          <MessageSquareIcon />
-          You answered
-        </span>
-        {renderAnswer(report.answer, text)}
-      </div>
-    );
-  }
-  if (report.state !== "open") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
   const disabled = !ctx.canOperate || sending;
+  if (report.state === "answered" && report.answer && changing !== report.answer.id) {
+    const answerId = report.answer.id;
+    const { text, compact } = reportAnswerDisplay(report.answer, tag);
+    const label = (
+      <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">
+        <MessageSquareIcon />
+        {compact ? (
+          <span className="min-w-0">
+            You answered: <span className="text-foreground">{text}</span>
+          </span>
+        ) : (
+          "You answered"
+        )}
+      </span>
+    );
+    return (
+      <div className={panelClassName}>
+        <div className="flex items-center justify-between gap-2">
+          {label}
+          {tag.question ? (
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              disabled={disabled}
+              onClick={() => setChanging(answerId)}
+            >
+              <PencilIcon />
+              Change answer
+            </Button>
+          ) : null}
+        </div>
+        {compact ? null : renderAnswer(report.answer, text)}
+      </div>
+    );
+  }
+  if (report.state !== "open" && report.state !== "answered") return null;
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
@@ -125,15 +140,26 @@ export function ReportAnswerBar({
           <ReplyIcon />
           Reply…
         </Button>
-        <Button
-          size="xs"
-          variant="ghost-muted"
-          disabled={disabled}
-          onClick={() => ctx.dismiss(ref)}
-        >
-          <XIcon />
-          Dismiss
-        </Button>
+        {report.state === "answered" ? (
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            disabled={sending}
+            onClick={() => setChanging(null)}
+          >
+            Keep answer
+          </Button>
+        ) : (
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            disabled={disabled}
+            onClick={() => ctx.dismiss(ref)}
+          >
+            <XIcon />
+            Dismiss
+          </Button>
+        )}
       </div>
     </div>
   );

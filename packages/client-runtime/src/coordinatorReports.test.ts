@@ -1,9 +1,13 @@
+import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorReports,
   formatReportAnswer,
   reportAnswerDisplay,
+  reportReplyReference,
   splitReportAnswer,
+  waitingCoordinatorReports,
 } from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
   id,
@@ -47,6 +51,42 @@ describe("coordinator reports", () => {
         [],
       ).map((x) => x.latest.report?.version),
     ).toEqual([3, 3, 3]);
+  });
+
+  it("keeps the question open after a comment and shows the latest answer", () => {
+    const ref = { messageId: "a", key: "pr:1", version: 1 };
+    const quote = serializeAssistantCitation({
+      version: 1,
+      environmentId: EnvironmentId.make("env"),
+      threadId: ThreadId.make("thread"),
+      messageId: MessageId.make("a"),
+      text: "Tests passed",
+      start: 0,
+      end: 12,
+      prefix: "",
+      suffix: "",
+      comment: "Which tests?",
+    });
+    const reply = (id: string, text: string) => ({
+      id,
+      role: "user",
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, text),
+      createdAt: id,
+      reportAnswer: reportReplyReference(ref, text),
+    });
+    const states = (...replies: ReturnType<typeof reply>[]) =>
+      coordinatorReports([{ ...report("a", "pr:1", 1), createdAt: "0" }, ...replies], []);
+
+    const commented = states(reply("1", ` ${quote} `));
+    expect(commented[0]?.state).toBe("open");
+    expect(waitingCoordinatorReports(commented)).toHaveLength(1);
+    expect(reportReplyReference(ref, `${quote} Merge it`)).toEqual(ref);
+
+    const answered = states(reply("1", quote), reply("2", "Hold"), reply("3", "Merge it"));
+    expect(answered[0]?.state).toBe("answered");
+    expect(answered[0]?.answer?.id).toBe("3");
+    expect(waitingCoordinatorReports(answered)).toHaveLength(0);
+    expect(states(reply("2", "Hold"), reply("3", quote))[0]?.answer?.id).toBe("2");
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {

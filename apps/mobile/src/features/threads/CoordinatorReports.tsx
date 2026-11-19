@@ -4,7 +4,7 @@ import { Pressable, View } from "react-native";
 import type {
   ChatAttachment,
   CoordinatorReport,
-  CoordinatorReportReference,
+  CoordinatorReportReply,
   MessageId,
   OrchestrationMessageContext,
 } from "@t3tools/contracts";
@@ -22,7 +22,7 @@ type ReportMessage = {
   text: string;
   createdAt: string;
   report?: CoordinatorReport;
-  reportAnswer?: typeof CoordinatorReportReference.Type;
+  reportAnswer?: typeof CoordinatorReportReply.Type;
   context?: OrchestrationMessageContext;
   attachments?: readonly ChatAttachment[];
 };
@@ -65,6 +65,8 @@ export function CoordinatorReportMessage({
   if (!expanded && (ctx?.target === id || ctx?.opened.has(id))) setExpanded(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The answer being changed; the card asks again until a newer answer replaces it.
+  const [changing, setChanging] = useState<MessageId | null>(null);
   const content = <Animated.View {...props}>{children}</Animated.View>;
   if (!ctx || !report) return content;
   const tag = report.message.report!;
@@ -76,6 +78,9 @@ export function CoordinatorReportMessage({
       .catch(() => setError("Could not save your response. Try again."))
       .finally(() => setSending(false));
   };
+  const asking =
+    report.state === "open" ||
+    (report.state === "answered" && report.answer !== undefined && changing === report.answer.id);
   if (report.state === "replaced" && !expanded)
     return (
       <View className="mb-2 mt-3 flex-row items-center gap-2 border-l-2 border-border pl-3">
@@ -99,7 +104,7 @@ export function CoordinatorReportMessage({
         <Text className="text-warning-foreground">A newer version is below</Text>
       ) : null}
       {content}
-      {report.state === "open" ? (
+      {asking ? (
         <View className="gap-2 rounded-xl bg-secondary p-3">
           <Text className="font-t3-medium text-foreground">{tag.question}</Text>
           {tag.answers?.map((answer, index) => (
@@ -123,13 +128,23 @@ export function CoordinatorReportMessage({
               disabled={!ctx.canOperate || sending}
               onPress={() => ctx.reply(reply)}
             />
-            <Button
-              label="Dismiss"
-              size="compact"
-              tone="text"
-              disabled={!ctx.canOperate || sending}
-              onPress={() => run(() => ctx.dismiss(reply))}
-            />
+            {report.state === "answered" ? (
+              <Button
+                label="Keep answer"
+                size="compact"
+                tone="text"
+                disabled={sending}
+                onPress={() => setChanging(null)}
+              />
+            ) : (
+              <Button
+                label="Dismiss"
+                size="compact"
+                tone="text"
+                disabled={!ctx.canOperate || sending}
+                onPress={() => run(() => ctx.dismiss(reply))}
+              />
+            )}
           </View>
           {error ? (
             <Text accessibilityRole="alert" className="text-danger">
@@ -142,6 +157,14 @@ export function CoordinatorReportMessage({
           answer={report.answer}
           display={reportAnswerDisplay(report.answer, tag)}
           renderAnswer={renderAnswer}
+          {...(tag.question
+            ? {
+                change: {
+                  disabled: !ctx.canOperate || sending,
+                  onPress: () => setChanging(report.answer!.id),
+                },
+              }
+            : {})}
         />
       ) : report.state === "dismissed" ? (
         <Text className="text-foreground-secondary">
@@ -156,12 +179,30 @@ function AnsweredReport(props: {
   answer: ReportMessage;
   display: { text: string; compact: boolean };
   renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
+  change?: { disabled: boolean; onPress: () => void };
 }) {
+  const change = props.change ? (
+    <Button
+      label="Change answer"
+      size="compact"
+      tone="text"
+      disabled={props.change.disabled}
+      onPress={props.change.onPress}
+    />
+  ) : null;
   if (props.display.compact)
-    return <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>;
+    return (
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="shrink text-foreground-secondary">You answered: {props.display.text}</Text>
+        {change}
+      </View>
+    );
   return (
     <View className="gap-1 rounded-xl bg-secondary p-3">
-      <Text className="text-foreground-secondary">You answered</Text>
+      <View className="flex-row items-center justify-between gap-2">
+        <Text className="text-foreground-secondary">You answered</Text>
+        {change}
+      </View>
       {props.renderAnswer(props.answer, props.display.text)}
     </View>
   );
