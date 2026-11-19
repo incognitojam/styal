@@ -6,7 +6,12 @@ import {
   type ReportState,
 } from "./CoordinatorReports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { openedReportFinished, openedReportView, type OpenedReport } from "./openedReport.logic";
+import {
+  openedReportFinished,
+  openedReportGone,
+  openedReportView,
+  type OpenedReport,
+} from "./openedReport.logic";
 import { NeedsYou } from "./NeedsYou";
 import { ProjectNeedsYou } from "../projects/ProjectNeedsYou";
 import { useProjectChatHeader } from "../projects/projectChats";
@@ -1527,7 +1532,16 @@ function ThreadDetailBody(
   };
   // Once the answer or dismissal is on record, wherever it came from: back to the list.
   const [returning, setReturning] = useState<string | null>(null);
-  if (opened !== null && openedView !== null && openedReportFinished(openedView.report)) {
+  if (
+    openedReportGone(
+      opened,
+      selectedThreadKey,
+      props.reports ?? [],
+      props.contentPresentation.kind === "ready",
+    )
+  ) {
+    setOpened(null);
+  } else if (opened !== null && openedView !== null && openedReportFinished(openedView.report)) {
     setOpened(null);
     if (opened.returnTo === null) setOwnNeedsListRequest(uuidv4());
     else setReturning(opened.returnTo);

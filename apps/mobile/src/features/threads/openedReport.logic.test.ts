@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   needsListRoute,
   openedReportFinished,
+  openedReportGone,
   openedReportView,
   type OpenedReport,
 } from "./openedReport.logic";
@@ -39,6 +40,23 @@ describe("openedReportFinished", () => {
     expect(openedReportFinished(report("r", "dismissed"))).toBe(true);
     expect(openedReportFinished(report("r", "open"))).toBe(false);
     expect(openedReportFinished(report("r", "replaced"))).toBe(false);
+    // A typed reply to version 1 lands after version 2 replaced it.
+    expect(openedReportFinished({ ...report("r", "replaced"), answer: { id: "reply" } })).toBe(
+      true,
+    );
+  });
+});
+
+describe("openedReportGone", () => {
+  it("forgets a report the loaded thread no longer lists, but waits while it loads", () => {
+    const reports = [report("report-1", "open")];
+    expect(openedReportGone(opened, "env:chat", reports, true)).toBe(false);
+    // Coordinator reports switched off, or the report removed: forget it, so switching them
+    // back on brings neither the pin nor a late return back.
+    expect(openedReportGone(opened, "env:chat", [], true)).toBe(true);
+    expect(openedReportGone(opened, "env:chat", [], false)).toBe(false);
+    expect(openedReportGone(opened, "env:other", reports, true)).toBe(true);
+    expect(openedReportGone(null, "env:chat", [], true)).toBe(false);
   });
 });
 
