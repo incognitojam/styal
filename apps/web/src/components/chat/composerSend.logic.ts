@@ -79,3 +79,20 @@ export function approvalRedirectNotice(input: {
   }
   return null;
 }
+
+/**
+ * Whether a send claims its report reply. A send to several models uses its own messages, so it
+ * makes no claim; a report that already has an answer on its way refuses a second one.
+ */
+export function claimComposerReportReply<Handle>(input: {
+  readonly hasReportReply: boolean;
+  readonly multipleModels: boolean;
+  readonly claim: () => Handle | null;
+}):
+  | { readonly kind: "none" }
+  | { readonly kind: "refused" }
+  | { readonly kind: "claimed"; readonly handle: Handle } {
+  if (!input.hasReportReply || input.multipleModels) return { kind: "none" };
+  const handle = input.claim();
+  return handle === null ? { kind: "refused" } : { kind: "claimed", handle };
+}

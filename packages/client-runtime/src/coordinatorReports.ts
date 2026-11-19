@@ -8,6 +8,8 @@ import {
 } from "@t3tools/contracts";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
+export * from "./reportResponses.ts";
+
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 type Message = {
   readonly id: string;
@@ -116,105 +118,6 @@ export function reportAnswers<M extends Message>(messages: readonly M[]) {
 }
 
 export type ReportReply = { ref: typeof CoordinatorReportReference.Type; title: string };
-
-/**
- * An answer or dismissal this client sent that the server has not shown yet. A report has at
- * most one: while it is pending, further responses are refused, so a double click or a second
- * choice sends nothing. One that failed carries `failed` and no longer counts.
- */
-export type PendingReportResponse<R extends Reference = Reference> = (
-  | {
-      readonly ref: R;
-      readonly kind: "answer";
-      readonly messageId: R["messageId"];
-      readonly text: string;
-      readonly createdAt: string;
-    }
-  | { readonly ref: R; readonly kind: "dismiss" }
-) & { readonly failed?: string };
-
-const sameReport = (a: Reference, b: Reference) =>
-  a.messageId === b.messageId && a.key === b.key && a.version === b.version;
-
-/** `pending` with `response` added, or null when its report already has a response pending. */
-export function claimReportResponse<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-  response: PendingReportResponse<R>,
-): readonly PendingReportResponse<R>[] | null {
-  if (pending.some((entry) => entry.failed === undefined && sameReport(entry.ref, response.ref)))
-    return null;
-  return [...pending.filter((entry) => !sameReport(entry.ref, response.ref)), response];
-}
-
-/** Marks the report's pending response as failed, which leaves the report open again. */
-export function failReportResponse<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-  ref: Reference,
-  error: string,
-): readonly PendingReportResponse<R>[] {
-  return pending.map((entry) => (sameReport(entry.ref, ref) ? { ...entry, failed: error } : entry));
-}
-
-/** Why the report's last response failed, while nothing newer is pending for it. */
-export function reportResponseFailure(
-  pending: readonly PendingReportResponse[],
-  ref: Reference,
-): string | undefined {
-  return pending.find((entry) => sameReport(entry.ref, ref))?.failed;
-}
-
-/** Drops the responses the server already shows; returns `pending` when there are none. */
-export function settleReportResponses<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-  server: { readonly messageIds: readonly string[]; readonly dismissals: readonly Reference[] },
-): readonly PendingReportResponse<R>[] {
-  const settled = (entry: PendingReportResponse<R>) =>
-    entry.kind === "answer"
-      ? server.messageIds.includes(entry.messageId)
-      : server.dismissals.some((ref) => sameReport(ref, entry.ref));
-  return pending.some(settled) ? pending.filter((entry) => !settled(entry)) : pending;
-}
-
-/** Pending answers as user messages, for `coordinatorReports` to read like confirmed ones. */
-export function pendingReportAnswers<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-) {
-  return pending.flatMap((entry) =>
-    entry.kind === "answer" && entry.failed === undefined
-      ? [
-          {
-            id: entry.messageId,
-            role: "user" as const,
-            text: entry.text,
-            report: undefined as CoordinatorReport | undefined,
-            reportAnswer: entry.ref,
-            createdAt: entry.createdAt,
-          },
-        ]
-      : [],
-  );
-}
-
-/** Pending dismissals, for `coordinatorReports` to read like confirmed ones. */
-export function pendingReportDismissals<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-): R[] {
-  return pending.flatMap((entry) =>
-    entry.kind === "dismiss" && entry.failed === undefined ? [entry.ref] : [],
-  );
-}
-
-/**
- * How far an answer has got: still sending (`sending` holds the ids of messages this client has
- * not had confirmed), waiting in the thread's queue behind a running turn, or with the agent.
- */
-export function reportAnswerDelivery(
-  answerMessageId: string,
-  ids: { readonly sending: readonly string[]; readonly queued: readonly string[] },
-): "sending" | "queued" | "delivered" {
-  if (ids.sending.includes(answerMessageId)) return "sending";
-  return ids.queued.includes(answerMessageId) ? "queued" : "delivered";
-}
 
 export function waitingCoordinatorReports<M extends Message & { readonly createdAt: string }>(
   reports: Readonly<ReturnType<typeof coordinatorReports<M>>>,

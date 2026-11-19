@@ -106,8 +106,10 @@ import { Atom } from "effect/reactivity";
 import { runMobileComposerTransition } from "./draftHeroTransition";
 import { useClientSettingsHydrated } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
+import { REPORT_ANSWER_FAILED } from "@t3tools/client-runtime/coordinator-reports";
 import {
   approvalRedirectNotice,
+  claimComposerReportReply,
   loadBalancingSendWarning,
   multipleModelSendBlock,
   referencedThreadContexts,
@@ -1148,21 +1150,26 @@ export function useComposerSend(input: ComposerSendInput) {
     }
     // Every surface that shows the report counts this reply as given until the server has it;
     // one answered elsewhere while this send waited is not answered twice.
-    const failReportReply =
-      input.reportReply && multipleModelSelections === null
-        ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
-            ref: input.reportReply.ref,
-            kind: "answer",
-            messageId: messageIdForSend,
-            text: outgoingMessageText,
-            createdAt: messageCreatedAt,
-          })
-        : null;
-    if (input.reportReply && multipleModelSelections === null && failReportReply === null) {
+    const reportReplyClaim = claimComposerReportReply({
+      hasReportReply: input.reportReply != null,
+      multipleModels: multipleModelSelections !== null,
+      claim: () =>
+        input.reportReply
+          ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
+              ref: input.reportReply.ref,
+              kind: "answer",
+              messageId: messageIdForSend,
+              text: outgoingMessageText,
+              createdAt: messageCreatedAt,
+            })
+          : null,
+    });
+    if (reportReplyClaim.kind === "refused") {
       sendInFlightRef.current = false;
       setThreadError(threadIdForSend, "This report already has an answer on its way.");
       return;
     }
+    const reportReply = reportReplyClaim.kind === "claimed" ? reportReplyClaim.handle : null;
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else {
@@ -1423,6 +1430,7 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       }
       const startResult = await startPromise;
+      if (startResult._tag === "Success") reportReply?.acknowledge(startResult.value.sequence);
       if (startResult._tag === "Failure") {
         failure = startResult;
         // Only a server-decided failure may have created and rolled back a
@@ -1492,7 +1500,11 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure !== null) {
-      failReportReply?.("Could not send your answer. Try again.");
+      const failureCause = squashAtomCommandFailure(failure);
+      reportReply?.fail(
+        REPORT_ANSWER_FAILED,
+        failureCause instanceof Error ? failureCause.message : undefined,
+      );
       if (isLocalDraftThread && draftId && draftThread) {
         restoreFailedDraftThread(
           draftId,

@@ -8,9 +8,13 @@ import {
   coordinatorReports,
   pendingReportAnswers,
   pendingReportDismissals,
+  reportResponseFailure,
+  reportResponsePending,
+  splitReportAnswer,
   waitingCoordinatorReports,
   type PendingReportResponse,
 } from "@t3tools/client-runtime/coordinator-reports";
+import { getUserQueuedThreadRuns } from "@t3tools/client-runtime/state/thread-workflows";
 import type {
   CoordinatorReport,
   CoordinatorReportReference,
@@ -120,4 +124,41 @@ export function listProjectNeeds(
     );
   }
   return needs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));
+}
+
+/**
+ * How far a report response sent from the "Needs you" card has got: still sending or
+ * dismissing, waiting in the thread's queue behind a running turn, with the agent ("delivered"),
+ * or failed. While it is on its way, the row keeps its answering shape with the answer marked.
+ */
+export function answeredReportStatus(
+  answered: {
+    readonly report: CoordinatorReport;
+    readonly response: PendingReportResponse<typeof CoordinatorReportReference.Type>;
+  },
+  responses: ReadonlyArray<PendingReportResponse<typeof CoordinatorReportReference.Type>>,
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages"> | null,
+):
+  | {
+      readonly status: "sending" | "queued" | "dismissing";
+      readonly chosen: string | null;
+      readonly reply: string | null;
+    }
+  | "delivered"
+  | "failed" {
+  const { report, response } = answered;
+  const text =
+    response.kind === "answer" ? (splitReportAnswer(response.text, report) ?? response.text) : null;
+  const offered = text !== null && (report.answers?.includes(text) ?? false);
+  const shape = { chosen: offered ? text : null, reply: offered ? null : text };
+  if (reportResponsePending(responses, response))
+    return { status: response.kind === "dismiss" ? "dismissing" : "sending", ...shape };
+  if (reportResponseFailure(responses, response.ref) !== undefined) return "failed";
+  if (
+    response.kind === "answer" &&
+    projection !== null &&
+    getUserQueuedThreadRuns(projection).some((run) => run.userMessageId === response.messageId)
+  )
+    return { status: "queued", ...shape };
+  return "delivered";
 }

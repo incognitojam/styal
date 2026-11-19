@@ -39,6 +39,7 @@ import {
   dismissCoordinatorReport,
   respondToReport,
   threadReportResponsesAtom,
+  type ReportResponse,
 } from "../../state/coordinatorReports";
 import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
@@ -46,7 +47,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
-import { ReportAnswerOptions } from "../chat/CoordinatorReports";
+import { ReportAnswerOptions, ReportFailure } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
@@ -132,9 +133,24 @@ function summary(need: ProjectNeed): string {
   }
 }
 
+/** A report response sent from the card, kept so its row can show it until delivered. */
+export interface AnsweredReport {
+  readonly need: Extract<ProjectNeed, { kind: "report" }>;
+  readonly response: ReportResponse;
+}
+
 export interface AnsweredNeed {
   readonly threadTitle: string;
   readonly answer: string;
+  readonly report?: AnsweredReport;
+}
+
+/** A report response on its way: the row keeps its answering shape and says how far it got. */
+export interface NeedResponding {
+  readonly status: "sending" | "queued" | "dismissing";
+  /** The offered answer picked, or null for a typed reply or a dismissal. */
+  readonly chosen: string | null;
+  readonly reply: string | null;
 }
 
 // The card scrolls; an opened row near its bottom brings its answers into view. Stable, so
@@ -147,11 +163,13 @@ export function ProjectNeedRow({
   open,
   onToggle,
   onAnswered,
+  responding,
 }: {
   need: ProjectNeed;
   open: boolean;
   onToggle: () => void;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report?: AnsweredReport) => void;
+  responding?: NeedResponding;
 }) {
   const navigate = useNavigate();
   const ref = scopeThreadRef(need.thread.environmentId, need.thread.id);
@@ -184,7 +202,7 @@ export function ProjectNeedRow({
       </button>
       {open ? (
         <div ref={scrollIntoViewOnMount} className="flex flex-col gap-2 px-3 pb-3 ps-6.5">
-          <NeedAnswer need={need} onAnswered={onAnswered} />
+          <NeedAnswer need={need} onAnswered={onAnswered} {...(responding ? { responding } : {})} />
           <Button
             size="xs"
             variant="ghost-muted"
@@ -205,14 +223,18 @@ export function ProjectNeedRow({
 }
 
 export function AnsweredNeedRow({ answered }: { answered: AnsweredNeed }) {
+  const dismissed = answered.report?.response.kind === "dismiss";
   return (
     <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm [&_svg]:size-3.5">
       <MessageSquareIcon className="mt-1 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-muted-foreground">
-          Answered · sent to <span className="text-foreground">{answered.threadTitle}</span>
+          {dismissed ? "Dismissed · " : "Answered · sent to "}
+          <span className="text-foreground">{answered.threadTitle}</span>
         </span>
-        <span className="line-clamp-2 whitespace-pre-wrap">{answered.answer}</span>
+        {dismissed ? null : (
+          <span className="line-clamp-2 whitespace-pre-wrap">{answered.answer}</span>
+        )}
       </span>
     </div>
   );
@@ -221,9 +243,11 @@ export function AnsweredNeedRow({ answered }: { answered: AnsweredNeed }) {
 function NeedAnswer({
   need,
   onAnswered,
+  responding,
 }: {
   need: ProjectNeed;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report?: AnsweredReport) => void;
+  responding?: NeedResponding;
 }) {
   switch (need.kind) {
     case "approval":
@@ -241,7 +265,9 @@ function NeedAnswer({
     case "question":
       return <QuestionAnswer need={need} onAnswered={onAnswered} />;
     case "report":
-      return <ReportAnswer need={need} onAnswered={onAnswered} />;
+      return (
+        <ReportAnswer need={need} onAnswered={onAnswered} {...(responding ? { responding } : {})} />
+      );
     case "thread":
       return null;
   }
@@ -388,9 +414,11 @@ function QuestionAnswer({
 function ReportAnswer({
   need,
   onAnswered,
+  responding,
 }: {
   need: Extract<ProjectNeed, { kind: "report" }>;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report: AnsweredReport) => void;
+  responding?: NeedResponding;
 }) {
   const { environmentId, id: threadId, runtimeMode, interactionMode } = need.thread;
   const thread = scopeThreadRef(environmentId, threadId);
@@ -401,21 +429,22 @@ function ReportAnswer({
   const [reply, setReply] = useState("");
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
-  const failure = reportResponseFailure(responses, ref);
-  const disabled = !canOperate;
+  const failure = responding ? undefined : reportResponseFailure(responses, ref);
+  const disabled = !canOperate || responding !== undefined;
   // The answer is the asking thread's next message, so it reaches that thread's agent.
-  const send = async (text: string) => {
+  const send = (text: string) => {
     const answerId = newMessageId();
     const answer = formatReportAnswer(report, text);
-    const sent = await respondToReport(
+    const response: ReportResponse = {
+      ref,
+      kind: "answer",
+      messageId: answerId,
+      text: answer,
+      createdAt: new Date().toISOString(),
+    };
+    void respondToReport(
       thread,
-      {
-        ref,
-        kind: "answer",
-        messageId: answerId,
-        text: answer,
-        createdAt: new Date().toISOString(),
-      },
+      response,
       () =>
         startTurn({
           environmentId,
@@ -433,16 +462,16 @@ function ReportAnswer({
             dispatchMode: "queue",
           },
         }),
-      "Could not send your answer. Try again.",
+      () => onAnswered(text, { need, response }),
     );
-    if (sent) onAnswered(text);
   };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <ReportAnswerOptions
         answers={report.answers ?? []}
         disabled={disabled}
-        onPick={(answer) => void send(answer)}
+        chosen={responding?.chosen ?? null}
+        onPick={send}
       />
       <Textarea
         size="sm"
@@ -450,41 +479,52 @@ function ReportAnswer({
         aria-label={`Reply to ${report.title}`}
         placeholder="Or reply"
         disabled={disabled}
-        value={reply}
+        value={responding ? (responding.reply ?? "") : reply}
         onChange={(event) => setReply(event.target.value)}
       />
-      {failure ? (
-        <p role="alert" className="text-xs text-destructive">
-          {failure}
-        </p>
-      ) : null}
-      <div className="flex justify-end gap-2">
-        <Button
-          size="xs"
-          variant="ghost-muted"
-          disabled={disabled}
-          onClick={() =>
-            void respondToReport(
-              thread,
-              { ref, kind: "dismiss" },
-              () =>
-                dismiss({
-                  environmentId,
-                  input: { commandId: CommandId.make(randomUUID()), threadId, ...ref },
-                }),
-              "Could not dismiss the report. Try again.",
-            )
-          }
-        >
-          Dismiss
-        </Button>
-        <Button
-          size="xs"
-          disabled={disabled || reply.trim() === ""}
-          onClick={() => void send(reply.trim())}
-        >
-          Send
-        </Button>
+      <div className="flex h-7 items-center justify-end gap-2 sm:h-6">
+        {responding ? (
+          <span role="status" className="me-auto truncate text-xs text-muted-foreground">
+            {responding.status === "dismissing"
+              ? "Dismissing"
+              : responding.status === "queued"
+                ? "Queued until the current turn ends"
+                : responding.chosen === null
+                  ? "Sending your reply"
+                  : "Sending your answer"}
+          </span>
+        ) : (
+          <>
+            {failure ? <ReportFailure failure={failure} className="me-auto" /> : null}
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              disabled={disabled}
+              onClick={() => {
+                const response: ReportResponse = { ref, kind: "dismiss" };
+                void respondToReport(
+                  thread,
+                  response,
+                  () =>
+                    dismiss({
+                      environmentId,
+                      input: { commandId: CommandId.make(randomUUID()), threadId, ...ref },
+                    }),
+                  () => onAnswered("Dismissed", { need, response }),
+                );
+              }}
+            >
+              Dismiss
+            </Button>
+            <Button
+              size="xs"
+              disabled={disabled || reply.trim() === ""}
+              onClick={() => send(reply.trim())}
+            >
+              Send
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

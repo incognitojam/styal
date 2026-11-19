@@ -1106,13 +1106,10 @@ export default function ChatView(props: ChatViewProps) {
     threadReportResponsesAtom(activeThreadRef ? entityThreadKey(activeThreadRef) : ""),
   );
   // Answers this client has sent and the server does not show yet read as given.
-  const sendingReportAnswers = [
-    ...optimisticUserMessages,
-    ...pendingReportAnswers(reportResponses),
-  ];
+  const sendingReportAnswers = pendingReportAnswers(reportResponses);
   const reportAnswerMessages = reportAnswers([
     ...(serverProjection?.messages ?? []),
-    ...sendingReportAnswers,
+    ...optimisticUserMessages,
   ]);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
@@ -3796,7 +3793,6 @@ export default function ChatView(props: ChatViewProps) {
                                     dispatchMode: "queue",
                                   },
                                 }),
-                              "Could not send your answer. Try again.",
                             );
                           },
                           reply: (ref, title) => {
@@ -3805,19 +3801,15 @@ export default function ChatView(props: ChatViewProps) {
                           },
                           dismiss: (ref) => {
                             if (activeThreadRef === null || activeThreadId === null) return;
-                            void respondToReport(
-                              activeThreadRef,
-                              { ref, kind: "dismiss" },
-                              () =>
-                                dismissReport({
-                                  environmentId,
-                                  input: {
-                                    commandId: CommandId.make(randomUUID()),
-                                    threadId: activeThreadId,
-                                    ...ref,
-                                  },
-                                }),
-                              "Could not dismiss the report. Try again.",
+                            void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
+                              dismissReport({
+                                environmentId,
+                                input: {
+                                  commandId: CommandId.make(randomUUID()),
+                                  threadId: activeThreadId,
+                                  ...ref,
+                                },
+                              }),
                             );
                           },
                           scroll: scrollToReport,

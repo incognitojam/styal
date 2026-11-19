@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  acknowledgeReportResponse,
   claimReportResponse,
   coordinatorReports,
   failReportResponse,
@@ -8,7 +9,9 @@ import {
   pendingReportDismissals,
   reportAnswerDelivery,
   reportAnswerDisplay,
+  REPORT_ANSWER_FAILED,
   reportResponseFailure,
+  reportResponsePending,
   settleReportResponses,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
@@ -120,7 +123,7 @@ describe("coordinator reports", () => {
     // A failed send leaves the report open and free to answer again.
     const failed = failReportResponse(first!, ref, "Could not send your answer.");
     expect(pendingReportAnswers(failed)).toEqual([]);
-    expect(reportResponseFailure(failed, ref)).toBe("Could not send your answer.");
+    expect(reportResponseFailure(failed, ref)).toEqual({ message: "Could not send your answer." });
     expect(reportResponseFailure(first!, ref)).toBeUndefined();
     expect(coordinatorReports([...messages, ...pendingReportAnswers(failed)], [])[0]?.state).toBe(
       "open",
@@ -135,5 +138,36 @@ describe("coordinator reports", () => {
     const dismissed = claimReportResponse([], { ref, kind: "dismiss" })!;
     expect(pendingReportDismissals(dismissed)).toEqual([ref]);
     expect(settleReportResponses(dismissed, { messageIds: [], dismissals: [ref] })).toEqual([]);
+  });
+
+  it("frees a report whose answer was cancelled in the queue or never arrived", () => {
+    const ref = { messageId: "a", key: "pr:1", version: 1 };
+    const answer = {
+      ref,
+      kind: "answer" as const,
+      messageId: "m1",
+      text: "[pr:1, version 1] Merge it",
+      createdAt: "2026-11-19T00:00:00.000Z",
+    };
+    const sent = acknowledgeReportResponse(claimReportResponse([], answer)!, answer, 10);
+    expect(reportResponsePending(sent, answer)).toBe(true);
+
+    // Cancelling a queued answer keeps its message but drops its report reference.
+    const cancelled = settleReportResponses(sent, { messageIds: ["m1"], dismissals: [] });
+    expect(cancelled).toEqual([]);
+    expect(
+      coordinatorReports(
+        [report("a", "pr:1", 1), { id: "m1", role: "user", text: answer.text }],
+        [],
+      )[0]?.state,
+    ).toBe("open");
+
+    // A view older than the acknowledgement may simply not have it yet.
+    expect(settleReportResponses(sent, { messageIds: [], dismissals: [], sequence: 9 })).toBe(sent);
+    // One that has reached it without showing the answer never will.
+    const lost = settleReportResponses(sent, { messageIds: [], dismissals: [], sequence: 10 });
+    expect(reportResponsePending(lost, answer)).toBe(false);
+    expect(reportResponseFailure(lost, ref)?.message).toBe(REPORT_ANSWER_FAILED);
+    expect(claimReportResponse(lost, { ...answer, messageId: "m2" })).not.toBeNull();
   });
 });
