@@ -182,7 +182,9 @@ installs that version without another update check or download. After restarting
 a newer release is offered through **Download**.
 
 Quitting does not start an installation. Changing the track cancels a pending
-download from the previous track.
+download from the previous track. On macOS,
+work is checked again after preparing an installation. Cancelling then keeps the app
+open; choose Download again to retry, reusing a valid cached file.
 
 An older build may have left a native macOS installer behind. styal clears it on startup
 when safe. A finished installer does not block updates. If an installer is still

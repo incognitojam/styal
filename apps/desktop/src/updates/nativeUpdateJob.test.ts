@@ -20,6 +20,15 @@ describe("native job liveness", () => {
     [{ code: 3, stderr: 'Could not find service "other.ShipIt" in domain system' }, false],
     [{ code: 1, stderr: "Permission denied" }, false],
     [{ code: 113 }, false],
+    [{ code: 5, stdout: 'Could not find service "synthetic.ShipIt" in domain system' }, true],
+    [
+      {
+        code: 5,
+        stdout: 'Could not find service "synthetic.ShipIt" in domain system',
+        stderr: "Operation not permitted",
+      },
+      false,
+    ],
   ])("requires a service-specific not-found diagnostic: %o", (error, absent) => {
     expect(isNativeUpdateJobMissing(error, "synthetic.ShipIt")).toBe(absent);
   });

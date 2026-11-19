@@ -86,6 +86,72 @@ describe("native updater lifecycle", () => {
       }),
   );
 
+  it.effect("does not restart after quit is accepted while native staging finishes", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        quitUpdateResponse: 1,
+        nativeStageWait: Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+          const install = yield* updates.installPrepared("1.2.4").pipe(Effect.forkScoped);
+          yield* Deferred.await(started);
+          assert.isTrue(yield* updates.prepareForQuit());
+          yield* Deferred.succeed(release, undefined);
+          assert.isFalse((yield* Fiber.join(install)).accepted);
+          assert.deepEqual(harness.installSteps, []);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+  it.effect("does not hand off an install while a cancellable quit confirmation is open", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const quitStarted = yield* Deferred.make<void>();
+      const quitRelease = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        quitUpdateResponse: 1,
+        nativeStageWait: Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+          const install = yield* updates.installPrepared("1.2.4").pipe(Effect.forkScoped);
+          yield* Deferred.await(started);
+          const quit = yield* updates
+            .prepareForQuit(
+              Deferred.succeed(quitStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(quitRelease)),
+                Effect.as(false),
+              ),
+            )
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(quitStarted);
+          yield* Deferred.succeed(release, undefined);
+          assert.isFalse((yield* Fiber.join(install)).accepted);
+          assert.deepEqual(harness.installSteps, []);
+          assert.isFalse(harness.squirrel.job);
+          assert.isNull((yield* updates.getState).downloadedVersion);
+          yield* Deferred.succeed(quitRelease, undefined);
+          assert.isFalse(yield* Fiber.join(quit));
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
   it.effect.each([false, true])(
     "cleans inherited user jobs even when policy disables updates: %s",
     (disabled) => {

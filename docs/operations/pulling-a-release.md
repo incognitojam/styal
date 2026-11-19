@@ -147,8 +147,8 @@ app as usual, and run `styal update` on background services once the fix is publ
   pass that recorded itself as done. Fixing those needs code in the next release that finds and
   repairs them, for example a versioned done marker so a corrected pass runs again where the
   earlier one ran.
-- It does not stop a desktop app that already downloaded the release from installing it on quit.
-  Only a newer release replaces that download.
+- It does not invalidate a release the desktop app already downloaded. The user can still
+  choose to install it. Older desktop builds can also install it on quit.
 - It does not change mobile, the web app, or the relay.
 - It does not fix a protocol change. If the bad release changed `ORCHESTRATION_PROTOCOL_VERSION`,
   machines on it cannot connect to machines on the previous release until the fix-forward ships.

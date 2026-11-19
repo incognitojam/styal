@@ -7,11 +7,13 @@ export function isPendingNativeUpdateJob(output: string): boolean {
 }
 
 export function isNativeUpdateJobMissing(error: unknown, label: string): boolean {
-  if (typeof error !== "object" || error === null || !("stderr" in error)) return false;
-  if (typeof error.stderr !== "string") return false;
-  if (/permission denied|operation not permitted|not privileged/i.test(error.stderr)) return false;
+  if (typeof error !== "object" || error === null) return false;
+  const output = ["stdout" in error ? error.stdout : "", "stderr" in error ? error.stderr : ""]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n");
+  if (/permission denied|operation not permitted|not privileged/i.test(output)) return false;
   // launchctl uses different exit codes across macOS releases; permission failures are not absence.
-  return error.stderr
+  return output
     .split("\n")
     .some((line) => line.trim().startsWith(`Could not find service "${label}" in domain `));
 }

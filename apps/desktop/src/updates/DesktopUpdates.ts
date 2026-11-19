@@ -974,26 +974,6 @@ export const make = Effect.gen(function* () {
               yield* Deferred.make<
                 Exit.Exit<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>
               >();
-            yield* Ref.set(nativeStagePendingRef, true);
-            yield* nativeUpdater.stage.pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
-                    channel: null,
-                    isSilent: true,
-                    isForceRunAfter: true,
-                    cause,
-                  }),
-              ),
-              Effect.exit,
-              Effect.flatMap((exit) =>
-                Ref.set(nativeStagePendingRef, false).pipe(
-                  Effect.andThen(Ref.set(nativeStagedRef, true)),
-                  Effect.andThen(Deferred.succeed(completed, exit)),
-                ),
-              ),
-              Effect.forkIn(scope),
-            );
             const abandon = Ref.set(
               activeUpdateActionRef,
               Option.some<UpdateAction>("install-recovery"),
@@ -1006,21 +986,49 @@ export const make = Effect.gen(function* () {
                 ),
               ),
             );
-            const staged = yield* Deferred.await(completed).pipe(
-              Effect.timeoutOption("90 seconds"),
-              Effect.onInterrupt(() => abandon),
+            const staged = yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                yield* Ref.set(nativeStagePendingRef, true);
+                yield* restore(nativeUpdater.stage).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+                        channel: null,
+                        isSilent: true,
+                        isForceRunAfter: true,
+                        cause,
+                      }),
+                  ),
+                  Effect.exit,
+                  Effect.flatMap((exit) =>
+                    Ref.set(nativeStagePendingRef, false).pipe(
+                      Effect.andThen(Ref.set(nativeStagedRef, true)),
+                      Effect.andThen(Deferred.succeed(completed, exit)),
+                    ),
+                  ),
+                  Effect.forkIn(scope),
+                );
+                return yield* restore(
+                  Deferred.await(completed).pipe(Effect.timeoutOption("90 seconds")),
+                ).pipe(Effect.onInterrupt(() => abandon));
+              }),
             );
             if (Option.isNone(staged)) {
               yield* abandon;
               yield* updateState((current) =>
                 reduceDesktopUpdateStateOnInstallFailure(
                   current,
-                  "Preparing the update is taking longer than expected. Keep styal open for a few minutes, then download the update again.",
+                  "Preparing the update is taking longer than expected. Keep styal open until preparation finishes, then download again to retry. If it does not finish, restart styal and try again.",
                 ),
               );
               return { accepted: true, completed: false, failed: true };
             }
             if (Exit.isFailure(staged.value)) return yield* Effect.failCause(staged.value.cause);
+          }
+          if ((yield* Ref.get(quitRequestedRef)) || (yield* Ref.get(desktopState.quitting))) {
+            if (!(yield* Ref.get(desktopState.quitting))) yield* discardOwnNativeUpdate;
+            yield* finishUpdateAction("install");
+            return { accepted: false, completed: false, failed: false };
           }
           if (
             environment.platform === "darwin" &&
@@ -1377,10 +1385,14 @@ export const make = Effect.gen(function* () {
                 Effect.as(undefined),
                 Effect.catch((error) => Effect.succeed(error.message)),
               );
-            if (failure !== undefined)
-              warning =
-                "An update prepared by an earlier version of styal is still scheduled, and styal can't safely remove it. If you quit now, macOS may install that update, which can be older than the version you're using. Choose Cancel to keep styal open.\n\n" +
-                failure;
+            if (failure !== undefined) {
+              preparing = yield* Ref.get(nativeStagedRef);
+              warning = preparing
+                ? "styal could not set aside the update you chose to install. If you quit now, macOS may install it. Choose Cancel to keep styal open.\n\n" +
+                  failure
+                : "An update prepared by an earlier version of styal is still scheduled, and styal can't safely remove it. If you quit now, macOS may install that update, which can be older than the version you're using. Choose Cancel to keep styal open.\n\n" +
+                  failure;
+            }
           }
           if (warning !== undefined) {
             const result = yield* dialog
