@@ -330,7 +330,9 @@ import {
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
-import type { FileActionReviewRequest } from "./chat/MessagesTimeline.logic";
+import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
+import type { CapturedSinceLastVisit } from "@t3tools/client-runtime/project-since-last-visit";
+import { ProjectSinceLastVisit } from "./project/ProjectSinceLastVisit";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -443,6 +445,10 @@ type ChatViewProps =
       /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
       embedded?: SideChatParentPanel;
       projectChat?: ProjectChat;
+      /** What happened since the user last looked, taken when the project page opened. */
+      sinceLastVisit?: CapturedSinceLastVisit | null;
+      /** Leave the visit unrecorded until the project page has read the last one. */
+      holdVisit?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -477,6 +483,8 @@ export default function ChatView(props: ChatViewProps) {
     embedded: parentPanel,
     projectChat,
   } = props;
+  const sinceLastVisit = routeKind === "server" ? (props.sinceLastVisit ?? null) : null;
+  const holdVisit = routeKind === "server" && props.holdVisit === true;
   const embedded = parentPanel !== undefined;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1089,6 +1097,32 @@ export default function ChatView(props: ChatViewProps) {
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
+  // Built once per capture, so the timeline row keeps its identity while the chat streams.
+  const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
+    readonly source: CapturedSinceLastVisit | null;
+    readonly row: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
+  }>({ source: null, row: undefined });
+  if (sinceLastVisitRow.source !== sinceLastVisit) {
+    setSinceLastVisitRow({
+      source: sinceLastVisit,
+      row:
+        sinceLastVisit === null
+          ? undefined
+          : {
+              kind: "inserted",
+              id: "project-since-last-visit",
+              // The chat's last change before the page opened, on the clock its rows carry.
+              createdAt: new Date(sinceLastVisit.window.reportsUntil).toISOString(),
+              content: (
+                <ProjectSinceLastVisit
+                  chatRef={routeThreadRef}
+                  captured={sinceLastVisit}
+                  onOpenReport={scrollToReport}
+                />
+              ),
+            },
+    });
+  }
 
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
@@ -3772,6 +3806,7 @@ export default function ChatView(props: ChatViewProps) {
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
+                  insertedRow={sinceLastVisitRow.row}
                 />
               </WorkspaceMutationIdContext>
 
@@ -4377,7 +4412,7 @@ export default function ChatView(props: ChatViewProps) {
         onConfirm={onConfirmRevertStable}
       />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      <ThreadVisitWatermark threadRef={routeThreadRef} />
+      {holdVisit ? null : <ThreadVisitWatermark threadRef={routeThreadRef} />}
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

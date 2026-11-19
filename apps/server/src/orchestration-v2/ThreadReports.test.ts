@@ -1,5 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
-import { RunId, ThreadId, type OrchestrationV2Run } from "@t3tools/contracts";
+import {
+  ProviderSessionId,
+  RunId,
+  RuntimeRequestId,
+  ThreadId,
+  type OrchestrationV2Run,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 
@@ -96,7 +102,7 @@ it.each([
 });
 
 describe("requestReportKind", () => {
-  const live = { type: "live", providerSessionId: "session" } as never;
+  const live = { type: "live", providerSessionId: ProviderSessionId.make("session") } as never;
   const message = { type: "message" } as const;
   it.each([
     ["a live question", "user_input", "pending", live, false, "blocked"],
@@ -197,4 +203,25 @@ it("a client cannot name a report target when it creates a thread", () => {
     { createdBy: "user", creationSource: "web" },
   );
   assert.notProperty(command, "reportTo");
+});
+
+it.each(["user_input", "command"] as const)("a sent report routes pending %s input", (kind) => {
+  const { text } = sentReport({
+    environmentId: undefined,
+    thread: { id: ThreadId.make("thread:a"), title: "Fix" },
+    source: undefined,
+    message: "May I proceed?",
+    pendingRequests: [
+      {
+        id: RuntimeRequestId.make("request:a"),
+        kind,
+        status: "pending",
+        responseCapability: { type: "live", providerSessionId: ProviderSessionId.make("session") },
+      },
+    ],
+  });
+  assert.include(text, "request:a");
+  assert.include(text, "t3_thread_send will not answer");
+  assert.include(text, kind === "user_input" ? "action respond" : "only the user can");
+  if (kind === "command") assert.notInclude(text, "action respond");
 });

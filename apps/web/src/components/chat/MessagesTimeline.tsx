@@ -158,6 +158,7 @@ import {
   useStableHandoffRuns,
   useIncrementalTimelineRows,
   useStableRestartRuns,
+  useInsertedTimelineRow,
   useStableRows,
 } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -353,6 +354,8 @@ interface MessagesTimelineProps {
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
+  /** A row from outside the thread; see insertTimelineRow. */
+  insertedRow?: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
   findExpanded?: boolean;
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
@@ -452,6 +455,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
+  insertedRow,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
@@ -795,7 +799,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     revealedMessageId,
     startedThreadsList,
   });
-  const rows = useStableRows(rawRows, listIdentityKey);
+  const rows = useInsertedTimelineRow(useStableRows(rawRows, listIdentityKey), insertedRow);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1707,6 +1711,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
       {row.kind === "started-threads" ? <StartedThreadsTimelineRow row={row} /> : null}
+      {row.kind === "inserted" ? row.content : null}
     </div>
   );
 });
