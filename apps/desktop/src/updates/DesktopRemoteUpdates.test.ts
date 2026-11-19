@@ -871,15 +871,15 @@ describe("DesktopRemoteUpdates", () => {
     );
   });
 
-  it.effect("waits for a background check before installing a prepared update", () => {
-    const backgroundCheckStarted = Deferred.makeUnsafe<void>();
-    const releaseBackgroundCheck = Deferred.makeUnsafe<void>();
+  it.effect("waits for a explicit check before installing a prepared update", () => {
+    const checkStarted = Deferred.makeUnsafe<void>();
+    const releaseCheck = Deferred.makeUnsafe<void>();
     let blockCheck = false;
     const harness = makeHarness({
       checkForUpdates: Effect.suspend(() => {
         return blockCheck
-          ? Deferred.succeed(backgroundCheckStarted, undefined).pipe(
-              Effect.andThen(Deferred.await(releaseBackgroundCheck)),
+          ? Deferred.succeed(checkStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseCheck)),
             )
           : Effect.void;
       }),
@@ -888,7 +888,7 @@ describe("DesktopRemoteUpdates", () => {
     return runRemoteUpdatesTest(harness, ({ requests, commits }) =>
       Effect.gen(function* () {
         const updates = yield* DesktopUpdates.DesktopUpdates;
-        yield* Queue.offer(requests, request("req-background-check"));
+        yield* Queue.offer(requests, request("req-explicit-check"));
         yield* settle;
         harness.emit("update-available", { version: "1.2.4" });
         yield* settle;
@@ -896,21 +896,21 @@ describe("DesktopRemoteUpdates", () => {
         yield* settle;
 
         blockCheck = true;
-        const backgroundCheck = yield* updates.check("poll").pipe(Effect.forkChild);
-        yield* Deferred.await(backgroundCheckStarted);
+        const explicitCheck = yield* updates.check("manual").pipe(Effect.forkChild);
+        yield* Deferred.await(checkStarted);
         assert.equal((yield* updates.getState).status, "checking");
 
         yield* Queue.offer(commits, {
           version: 1,
           type: "commitDesktopUpdate",
-          requestId: "req-background-check",
+          requestId: "req-explicit-check",
         });
         yield* settle;
         assert.equal(harness.quitAndInstalls(), 0);
 
         harness.emit("update-downloaded", { version: "1.2.4" });
-        yield* Deferred.succeed(releaseBackgroundCheck, undefined);
-        yield* Fiber.join(backgroundCheck);
+        yield* Deferred.succeed(releaseCheck, undefined);
+        yield* Fiber.join(explicitCheck);
         yield* settle;
         assert.equal(harness.quitAndInstalls(), 1);
       }),

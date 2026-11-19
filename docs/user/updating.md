@@ -17,8 +17,8 @@ it will update.
 While it runs, the button widens to show progress. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
 it to see every machine. The desktop app restarts once each server has started
-its own restart. A manually requested update adds no restart countdown. A server
-still restarting finishes on its own, and the button keeps showing it after the desktop app
+its own restart. A manually requested update adds no restart countdown. A server still restarting
+finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
 Each server checks that it can install the release before it restarts. If the
@@ -69,8 +69,8 @@ Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain. Before
 updating, styal checks the server for active agents, threads waiting for input,
 running terminal commands, and provider updates being installed, including work
-started from other devices. If work would be interrupted or the check fails,
-styal lists it and asks you to confirm.
+started from other devices. If
+work would be interrupted or the check fails, styal lists it and asks you to confirm.
 If the check takes longer than two seconds, the confirmation opens while it continues:
 choose **Update anyway** to update without waiting, or wait for the result to appear.
 Resumable agent turns do not need confirmation. Running terminal commands, waiting
@@ -177,13 +177,14 @@ refreshing does not update or restart your connected servers. This also works in
 The desktop app checks for updates automatically. Choose **Download** in the
 sidebar or **Settings → About** when you are ready; it checks the latest release
 again before downloading. Progress and retries appear in the same places.
-A finished download stays ready while later checks run. **Restart to Install**
-installs that version without another update check or download. After restarting,
-a newer release is offered through **Download**.
+A finished download stays ready; automatic checks pause while it waits.
+**Restart to Install** installs that version without another update check or
+download. After restarting, a newer release is offered through **Download**.
 
 Downloaded updates also install when you quit, ready for your next launch.
-On macOS, closing the last window leaves the app running; choose **Quit** to
-install. Changing the track cancels a pending update from the previous track.
+On macOS, styal prepares the installer after downloading when permissions allow.
+Closing the last window leaves the app running; choose **Quit** to install.
+Changing the track cancels a pending update from the previous track.
 After an update to a newer release on the same track, the desktop app names the
 version the next time you look at its window, with a link to its release notes.
 First launches, track changes, downgrades, PR previews, and development builds

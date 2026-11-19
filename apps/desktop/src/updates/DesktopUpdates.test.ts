@@ -339,7 +339,7 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("checks for newer releases after an update has been downloaded", () => {
+  it.effect("pauses automatic checks while a downloaded update waits for installation", () => {
     const harness = makeHarness();
 
     return Effect.scoped(
@@ -355,8 +355,13 @@ describe("DesktopUpdates", () => {
         harness.emit("update-downloaded", { version: "1.2.4" });
         yield* flushCallbacks;
 
+        const statesBefore = harness.sentStates.length;
         const result = yield* updates.check("poll");
-        assert.isTrue(result.checked);
+        assert.isFalse(result.checked);
+        assert.isFalse((yield* updates.check("startup")).checked);
+        yield* TestClock.adjust("1 hour");
+        assert.equal(harness.checkCount(), 0);
+        assert.equal(harness.sentStates.length, statesBefore);
 
         harness.emit("update-available", { version: "1.2.4" });
         yield* flushCallbacks;
@@ -370,8 +375,9 @@ describe("DesktopUpdates", () => {
         assert.equal(harness.sentStates.at(-1)?.status, "downloaded");
         assert.equal(unchangedState.omittedReleaseCount, 0);
 
-        const nextResult = yield* updates.check("poll");
+        const nextResult = yield* updates.check("manual");
         assert.isTrue(nextResult.checked);
+        assert.equal(harness.checkCount(), 1);
 
         harness.emit("update-available", { version: "1.2.5" });
         yield* flushCallbacks;

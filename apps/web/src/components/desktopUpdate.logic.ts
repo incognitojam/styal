@@ -155,7 +155,7 @@ export function getDesktopUpdateSettingsDescription(state: DesktopUpdateState): 
     return available ? `Downloading version ${available}.` : "Downloading an update.";
   }
   if (state.status === "checking" && downloaded) {
-    return `Version ${downloaded} is ready to install. Checking for a newer one…`;
+    return `Version ${downloaded} is ready to install.`;
   }
   if (action === "install" && downloaded) return `Version ${downloaded} is ready to install.`;
   if (action === "download" && available) return `Version ${available} is available.`;
@@ -181,7 +181,7 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   const detail = state.message?.trim() ? `\n${state.message.trim()}` : "";
   if (state.status === "checking" && state.downloadedVersion !== null) {
-    return `Version ${state.downloadedVersion} is ready to install. Checking for a newer one…`;
+    return `Version ${state.downloadedVersion} is ready to install.`;
   }
   if (
     (state.status === "available" || state.status === "error") &&

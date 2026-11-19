@@ -150,12 +150,8 @@ describe("desktop update button state", () => {
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
-    expect(getDesktopUpdateButtonTooltip(state)).toBe(
-      "Version 1.1.0 is ready to install. Checking for a newer one…",
-    );
-    expect(getDesktopUpdateSettingsDescription(state)).toBe(
-      "Version 1.1.0 is ready to install. Checking for a newer one…",
-    );
+    expect(getDesktopUpdateButtonTooltip(state)).toBe("Version 1.1.0 is ready to install.");
+    expect(getDesktopUpdateSettingsDescription(state)).toBe("Version 1.1.0 is ready to install.");
     expect(canCheckForUpdate(state)).toBe(false);
     expect(shouldShowDesktopUpdateButton({ ...state, enabled: false })).toBe(false);
   });

@@ -589,7 +589,10 @@ export const make = Effect.gen(function* () {
     const state = yield* Ref.get(updateStateRef);
     // A configured updater is disabled only by a channel the managed policy blocks.
     if (state.status === "disabled") return false;
-    if (state.status === "downloading") {
+    if (
+      state.status === "downloading" ||
+      ((reason === "startup" || reason === "poll") && state.downloadedVersion !== null)
+    ) {
       yield* logUpdaterInfo("skipping update check while update is active", {
         reason,
         status: state.status,
