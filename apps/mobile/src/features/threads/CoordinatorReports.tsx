@@ -206,34 +206,37 @@ export function PinnedReport(props: {
   const tag = report.message.report!;
 
   return (
-    <View className="mx-3 mb-2 overflow-hidden rounded-xl bg-secondary">
-      <View className="flex-row items-center gap-2 pl-3">
-        <Text className="flex-1 text-xs text-foreground-secondary" numberOfLines={1}>
-          Report · {tag.title} · version {tag.version}
-        </Text>
-        <Button label="Close" size="compact" tone="text" onPress={props.onClose} />
-      </View>
-      {report.state === "open" ? (
-        <ReportAnswerBlock pinned report={report} onReplyByVoice={props.onReplyByVoice} />
-      ) : (
-        <View className="flex-row items-center gap-2 p-3 pt-0">
-          <Text className="flex-1 text-foreground">
-            {report.state === "replaced"
-              ? "A newer version of this report arrived."
-              : report.state === "dismissed"
-                ? "Dismissed."
-                : "Answered."}
+    // Opaque down to the composer, so the report scrolling behind doesn't show through.
+    <View className="bg-thread-canvas px-3 pb-2">
+      <View className="overflow-hidden rounded-xl bg-secondary">
+        <View className="flex-row items-center gap-2 pl-3">
+          <Text className="flex-1 text-xs text-foreground-secondary" numberOfLines={1}>
+            Report · {tag.title} · version {tag.version}
           </Text>
-          {report.state === "replaced" ? (
-            <Button
-              label="Show latest"
-              size="compact"
-              tone="text"
-              onPress={() => props.onShowLatest(report.latest.id)}
-            />
-          ) : null}
+          <Button label="Close" size="compact" tone="text" onPress={props.onClose} />
         </View>
-      )}
+        {report.state === "open" ? (
+          <ReportAnswerBlock pinned report={report} onReplyByVoice={props.onReplyByVoice} />
+        ) : (
+          <View className="flex-row items-center gap-2 p-3 pt-0">
+            <Text className="flex-1 text-foreground">
+              {report.state === "replaced"
+                ? "A newer version of this report arrived."
+                : report.state === "dismissed"
+                  ? "Dismissed."
+                  : "Answered."}
+            </Text>
+            {report.state === "replaced" ? (
+              <Button
+                label="Show latest"
+                size="compact"
+                tone="text"
+                onPress={() => props.onShowLatest(report.latest.id)}
+              />
+            ) : null}
+          </View>
+        )}
+      </View>
     </View>
   );
 }

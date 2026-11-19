@@ -1781,7 +1781,8 @@ function ThreadDetailBody(
                         ? { count: browserTabs.tabs.length, onPress: () => openBrowserPreview() }
                         : null
                     }
-                    showScrollToEnd={showScrollToEndButton}
+                    // It would sit on the report being read.
+                    showScrollToEnd={showScrollToEndButton && pinnedReportId === null}
                     onScrollToEnd={handleScrollToEnd}
                     agents={agentsSegment}
                     onOpenAgents={() => {
