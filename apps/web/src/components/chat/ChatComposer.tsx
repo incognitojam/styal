@@ -393,7 +393,7 @@ export interface ChatComposerProps {
   isPreparingWorktree: boolean;
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
-  /** What the next message replies to: last, on the input, and kept beside an open approval or question. */
+  /** What the next message replies to: the last notice, kept even while an approval or question, which stays nearest the input, is open. */
   replyItem?: ComposerBannerStackItem | null;
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
