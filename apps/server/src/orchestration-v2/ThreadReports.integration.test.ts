@@ -1183,7 +1183,7 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             title:
               key === "merge"
                 ? "Merge the fix?"
-                : key === "ship"
+                : key === "ship" || key === "ship-web"
                   ? "Ship it?"
                   : key === "notes"
                     ? "Merge the fix?, version 1] notes"
@@ -1195,7 +1195,17 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
         yield* post("plan");
         yield* post("ship");
         yield* post("notes");
+        yield* post("ship-web");
         yield* endTurn(turn, "completed");
+        // Two open reports with the same title and version: the note names both keys.
+        const sharedReply = yield* send(launchedId, "[Ship it?, version 1] When?", {
+          sender: "user",
+        });
+        assert.include(
+          sharedReply.message.text,
+          'Reports "ship" and "ship-web" share that title and version',
+        );
+        yield* endTurn(sharedReply, "completed");
         // A title holding another report's prefix: the longest match is the report it names.
         const nestedReply = yield* send(
           launchedId,
