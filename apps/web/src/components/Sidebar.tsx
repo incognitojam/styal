@@ -186,7 +186,8 @@ import {
   useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { environmentIdsKey } from "../state/environmentAtomList";
+import { primaryServerKeybindingsAtom, scheduledTaskThreadKeysAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 
 import { threadEnvironment } from "../state/threads";
@@ -1276,12 +1277,33 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
   const projectChatKeys =
     projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
-  // Threads a project chat started are on its page until they need you, or while open.
+  // Threads a project chat started, and scheduled tasks' threads, are on the project page until
+  // they need you, or while open.
   const onProjectPageOnly = (thread: EnvironmentThreadShell) =>
-    staysOnProjectPage(thread, reportingChatKeys) && threadShellKey(thread) !== routeRowThreadKey;
+    staysOnProjectPage(thread, reportingChatKeys, jobThreadKeys) &&
+    threadShellKey(thread) !== routeRowThreadKey;
   const reportingChatKeys = new Set(
     listedThreads.flatMap((thread) =>
       projectChatKeys.has(threadShellKey(thread)) && projectChatTakesReports(thread)
+        ? [threadShellKey(thread)]
+        : [],
+    ),
+  );
+  const pageCheckouts = [...projectPages.values()].flatMap((page) => page.group.memberProjects);
+  const pageCheckoutKeys = new Set(
+    pageCheckouts.map((member) => `${member.environmentId}:${member.id}`),
+  );
+  const pageEnvironmentIds = [...new Set(pageCheckouts.map((member) => member.environmentId))];
+  const scheduledThreadKeys = new Set(
+    useAtomValue(
+      scheduledTaskThreadKeysAtom(environmentIdsKey(pageEnvironmentIds.toSorted())),
+    ).flatMap((keys) => (keys === "" ? [] : keys.split("\n"))),
+  );
+  const jobThreadKeys = new Set(
+    listedThreads.flatMap((thread) =>
+      scheduledThreadKeys.has(threadShellKey(thread)) &&
+      !projectChatKeys.has(threadShellKey(thread)) &&
+      pageCheckoutKeys.has(`${thread.environmentId}:${thread.projectId}`)
         ? [threadShellKey(thread)]
         : [],
     ),

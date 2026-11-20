@@ -50,7 +50,17 @@ describe("staysOnProjectPage", () => {
     expect(staysOnProjectPage(started("done"), chats)).toBe(true);
   });
 
-  it("brings it back when it needs you, fails, is pinned or you write to it", () => {
+  it("keeps a scheduled task's thread off the sidebar, whoever made the task", () => {
+    const job = started("job", {
+      reportTo: null,
+      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
+      runtime: running,
+    });
+    expect(staysOnProjectPage(job, new Set(), new Set([`${local}:job`]))).toBe(true);
+    expect(staysOnProjectPage(job, new Set(), new Set([`${remote}:job`]))).toBe(false);
+  });
+
+  it("brings it, or a scheduled task's thread, back when it needs you, fails, is pinned or you write to it", () => {
     for (const thread of [
       started("approval", { hasPendingApprovals: true }),
       started("question", { hasPendingUserInput: true }),
@@ -64,6 +74,9 @@ describe("staysOnProjectPage", () => {
       started("written", { latestUserAuthoredMessageAt: "2026-11-18T10:00:00.000Z" }),
     ]) {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
+      const job = { ...thread, reportTo: null };
+      const jobs = new Set([`${local}:${thread.id}`]);
+      expect([thread.id, staysOnProjectPage(job, new Set(), jobs)]).toEqual([thread.id, false]);
     }
   });
 
