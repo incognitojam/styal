@@ -114,6 +114,7 @@ import {
 } from "./TimelineUserMessageRow.logic";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
+// Elements with it carry `data-media-edge`, so an unsent message can redraw the edge.
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
 
@@ -123,10 +124,14 @@ const UNSENT_EDGE_DELAY_MS = 500;
 /**
  * A message the agent does not have yet has a dashed edge and no fill: one still sending,
  * or one waiting in the queue. It takes the solid bubble once the agent has it. The edge is
- * an overlay, so the bubble keeps its size when it fills and media-only messages show it too.
+ * an overlay, so the bubble keeps its size when it fills.
  */
 export const UNSENT_BUBBLE_CLASS_NAME =
   "relative text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:border after:border-dashed after:border-muted-foreground/40";
+
+/** Unsent images and videos dim under the same dashed edge, in place of their hairline. */
+const UNSENT_MEDIA_CLASS_NAME =
+  "[&_[data-media-edge]]:after:border [&_[data-media-edge]]:after:border-dashed [&_[data-media-edge]]:after:border-muted-foreground/40 [&_[data-media-edge]]:after:ring-0 [&_[data-media-edge]_:is(img,video)]:opacity-65";
 
 const BUBBLE_CHIP_CLASS_NAME =
   "[&_[data-slot=context-chip]]:[--context-chip-ink:var(--context-chip-message,var(--context-chip-accent))]";
@@ -233,6 +238,7 @@ function UserVideoAttachment({
   if (asset === null && src === null) {
     return (
       <div
+        data-media-edge={standalone || undefined}
         className={cn(
           "flex aspect-[4/3] w-full items-center justify-center bg-black px-2 py-3 text-center text-2xs text-white/70",
           standalone
@@ -271,7 +277,10 @@ function UserVideoAttachment({
     />
   );
   return standalone ? (
-    <div className={cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl", cornerClassName)}>
+    <div
+      data-media-edge
+      className={cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl", cornerClassName)}
+    >
       {player}
     </div>
   ) : (
@@ -816,6 +825,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const mediaBlock =
     regularImages.length > 0 || userVideos.length > 0 ? (
       <div
+        data-media-edge={collage || undefined}
         className={cn(
           "grid",
           !standaloneMedia
@@ -841,6 +851,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {regularImages.map((image, index) => (
           <div
             key={image.id}
+            data-media-edge={(standaloneMedia && !collage) || undefined}
             className={cn(
               "bg-background/70",
               image.source?.kind === "snap-shot" && image.previewUrl
@@ -1009,7 +1020,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       ) : null}
       {mediaAboveText ? (
-        <div className="flex max-w-[80%] justify-end">
+        <div className={cn("flex max-w-[80%] justify-end", unsent && UNSENT_MEDIA_CLASS_NAME)}>
           {/* The heading leads the media so screen readers reach it before the images. */}
           <MessageAuthorHeading>You</MessageAuthorHeading>
           {mediaBlock}
@@ -1024,11 +1035,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           userMessage.attribution === "guest"
             ? guestBubbleClassName(false)
             : unsent
-              ? UNSENT_BUBBLE_CLASS_NAME
+              ? mediaOnly
+                ? UNSENT_MEDIA_CLASS_NAME
+                : UNSENT_BUBBLE_CLASS_NAME
               : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
-          // The edge sits on the media itself here, so it is drawn in two tones to show on any image.
+          // The edge sits on the cards or player itself here, so it is drawn in two tones.
           unsent &&
-            (mediaOnly || fileCardsOnly || audioOnly) &&
+            (fileCardsOnly || audioOnly) &&
             "after:border-2 after:border-foreground/80 after:ring-2 after:ring-inset after:ring-background/70",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
