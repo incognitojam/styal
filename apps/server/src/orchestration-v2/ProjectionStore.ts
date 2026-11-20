@@ -1140,8 +1140,13 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
     | "hasActionableProposedPlan"
   >;
 
+const decodeReportQuestionIds = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(MessageId)),
+);
+
 type ShellThreadRow = {
   readonly open_report_question_count: number;
+  readonly open_report_question_ids: string;
   readonly latest_open_report_question_at: string | null;
   readonly thread_id: string;
   readonly payload_json: string;
@@ -1933,6 +1938,7 @@ export function threadShellFromProjection(
     pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(projection.thread.guestShare),
     openReportQuestionCount: questions.length,
+    openReportQuestionIds: questions.map((question) => question.id),
     latestOpenReportQuestionAt: latestQuestion?.createdAt ?? null,
     // Thread detail owns message bodies. Keeping them out of shell rows makes
     // initial hydration and streaming updates independent of transcript size.
@@ -2062,6 +2068,7 @@ function isActivityRunForShell(
 
 type ShellThreadState = {
   readonly openReportQuestionCount: number;
+  readonly openReportQuestionIds: readonly MessageId[];
   readonly latestOpenReportQuestionAt: DateTime.Utc | null;
   readonly thread: OrchestrationV2ThreadProjection["thread"];
   readonly tokenUsage: OrchestrationV2ThreadShell["tokenUsage"];
@@ -2265,6 +2272,7 @@ function shellFromState(input: {
     pendingRuntimeRequest: input.state.pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(input.state.thread.guestShare),
     openReportQuestionCount: input.state.openReportQuestionCount,
+    openReportQuestionIds: input.state.openReportQuestionIds,
     latestOpenReportQuestionAt: input.state.latestOpenReportQuestionAt,
     latestVisibleMessage: null,
     latestUserMessageAt: input.state.latestUserMessageAt,
@@ -7180,12 +7188,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly includeReportQuestions?: boolean;
       } = {},
     ) {
-      const countReportQuestions = includeReportQuestions && (yield* reportsEnabled);
+      const readReportQuestionIds = yield* reportsEnabled;
+      const countReportQuestions = includeReportQuestions && readReportQuestionIds;
       return yield* sql<ShellThreadRow>`
             SELECT
               t.thread_id,
               t.payload_json,
               ${countReportQuestions ? sql`(SELECT count(*) FROM (${openReportQuestions}))` : sql`0`} AS open_report_question_count,
+              ${readReportQuestionIds ? sql`(SELECT json_group_array(message_id) FROM (${openReportQuestions}))` : sql`'[]'`} AS open_report_question_ids,
               ${countReportQuestions ? sql`(SELECT MAX(created_at) FROM (${openReportQuestions}))` : sql`NULL`} AS latest_open_report_question_at,
               CASE
                 WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
@@ -8187,6 +8197,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
           pendingRuntimeRequest,
           openReportQuestionCount: row.open_report_question_count,
+          openReportQuestionIds: yield* decodeReportQuestionIds(row.open_report_question_ids),
           latestOpenReportQuestionAt:
             row.latest_open_report_question_at === null
               ? null
@@ -8446,6 +8457,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               reportTo: state.thread.reportTo,
               delegatedFrom: state.thread.delegatedFrom,
               latestRunBackgroundWake: state.latestRunBackgroundWake,
+              openReportQuestionCount: state.openReportQuestionIds.length,
+              openReportQuestionIds: state.openReportQuestionIds,
+              latestOpenReportQuestionAt: state.latestOpenReportQuestionAt,
               pendingRuntimeRequest: state.pendingRuntimeRequest,
               pendingBackgroundTasks: state.pendingBackgroundTasks,
               workflowRuns: state.thread.workflowRuns,

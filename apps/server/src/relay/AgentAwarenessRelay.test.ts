@@ -428,6 +428,14 @@ describe("AgentAwarenessRelay", () => {
     ] as const) {
       assert.isFalse(AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({ type }));
     }
+    for (const payload of [
+      { report: { question: "Proceed?" } },
+      { reportAnswer: { messageId: "report-v1" } },
+    ]) {
+      assert.isTrue(
+        AgentAwarenessRelay.shouldPublishAgentAwarenessEvent({ type: "message.updated", payload }),
+      );
+    }
     for (const type of [
       "run.created",
       "run.updated",
@@ -469,6 +477,24 @@ describe("AgentAwarenessRelay", () => {
       assert.equal(publications.length, 2);
       assert.isTrue(publications[1]?.url.includes(`/threads/${THREAD_ID}/`) ?? false);
       assert.equal(publications[1]?.state?.phase, "waiting_for_approval");
+      const second = waitingChild({
+        id: ThreadId.make("second-child"),
+        pendingRuntimeRequest: {
+          ...waitingChild().pendingRuntimeRequest!,
+          id: RuntimeRequestId.make("approval-b"),
+        },
+      });
+      yield* setShell(second);
+      yield* relay.publishThread(second.id);
+      assert.deepEqual(
+        publications.at(-1)?.state?.attentionIds,
+        [second.pendingRuntimeRequest!.id, waitingChild().pendingRuntimeRequest!.id].sort(),
+      );
+      yield* setShell({ ...second, pendingRuntimeRequest: null });
+      yield* relay.publishThread(second.id);
+      assert.deepEqual(publications.at(-1)?.state?.attentionIds, [
+        waitingChild().pendingRuntimeRequest!.id,
+      ]);
 
       // A rename keeps the same request's alert time, so the phone doesn't re-alert.
       yield* setShell(
@@ -479,16 +505,16 @@ describe("AgentAwarenessRelay", () => {
         }),
       );
       yield* relay.publishThread(THREAD_ID);
-      assert.equal(publications.length, 3);
-      assert.equal(publications[2]?.state?.threadTitle, "Renamed thread");
-      assert.equal(publications[2]?.state?.updatedAt, publications[1]?.state?.updatedAt);
+      assert.equal(publications.length, 5);
+      assert.equal(publications[4]?.state?.threadTitle, "Renamed thread");
+      assert.equal(publications[4]?.state?.updatedAt, publications[1]?.state?.updatedAt);
 
       yield* setShell(waitingChild({ pendingRuntimeRequest: null }));
       yield* relay.publishThread(CHILD_THREAD_ID);
       yield* TestClock.adjust("5 seconds");
       yield* relay.drain;
-      assert.equal(publications.length, 4);
-      assert.equal(publications[3]?.state?.phase, "completed");
+      assert.equal(publications.length, 6);
+      assert.equal(publications[5]?.state?.phase, "completed");
     }),
   );
 

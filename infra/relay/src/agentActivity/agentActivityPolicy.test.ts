@@ -75,6 +75,23 @@ describe("shared agent activity policy", () => {
     );
   });
 
+  it("alerts once per pending item even while the thread stays in Input", () => {
+    const waiting = { ...state, phase: "waiting_for_input" as const, attentionIds: ["report-v1"] };
+    const input = { previousAggregate: aggregate([waiting]), preferences };
+    expect(
+      attentionTransitionRows({
+        ...input,
+        nextAggregate: aggregate([{ ...waiting, updatedAt: "1970-01-01T00:01:00.000Z" }]),
+      }),
+    ).toEqual([]);
+    expect(
+      attentionTransitionRows({
+        ...input,
+        nextAggregate: aggregate([{ ...waiting, attentionIds: ["report-v2"] }]),
+      }),
+    ).toMatchObject([{ attentionIds: ["report-v2"] }]);
+  });
+
   it("distinguishes equal thread IDs across environments", () => {
     const waiting = { ...state, phase: "waiting_for_input" as const };
     const other = { ...waiting, environmentId: EnvironmentId.make("other") };
@@ -127,6 +144,37 @@ describe("shared agent activity policy", () => {
     it("queues a delayed alert when a thread enters an alert phase, not on republishes", () => {
       expect(delayedAlertTrigger(state, waiting)).toBe(waiting);
       expect(delayedAlertTrigger(null, waiting)).toBe(waiting);
+      const addition = delayedAlertTrigger(
+        { ...waiting, attentionIds: ["a"] },
+        { ...waiting, attentionIds: ["a", "b"] },
+      )!;
+      expect(addition.attentionIds).toEqual(["b"]);
+      expect(
+        delayedAlertTrigger(
+          { ...waiting, phase: "waiting_for_approval", attentionIds: ["a", "b"] },
+          { ...waiting, attentionIds: ["a"] },
+        ),
+      ).toBeNull();
+      expect(
+        delayedAlertIsDue({
+          raised: addition,
+          current: { ...waiting, attentionIds: ["a"] },
+          preferences: delayed,
+          nowMs: 0,
+        }),
+      ).toBe(false);
+      expect(
+        delayedAlertTrigger(
+          { ...waiting, attentionIds: ["a"] },
+          { ...waiting, attentionIds: ["a", "b"] },
+        ),
+      ).toMatchObject({ attentionIds: ["b"] });
+      expect(
+        delayedAlertTrigger(
+          { ...waiting, attentionIds: ["a", "b"] },
+          { ...waiting, attentionIds: ["a"] },
+        ),
+      ).toBeNull();
       expect(delayedAlertTrigger(waiting, { ...waiting, threadTitle: "Renamed" })).toBeNull();
       expect(delayedAlertTrigger(state, { ...waiting, attended: false })).toBeNull();
       expect(delayedAlertTrigger(null, { ...state, attended: true })).toBeNull();
@@ -143,6 +191,14 @@ describe("shared agent activity policy", () => {
           nowMs: Date.parse("2026-10-29T10:10:00.000Z"),
         });
       expect(due({})).toBe(true);
+      expect(
+        delayedAlertIsDue({
+          raised: { ...raised, attentionIds: ["a"] },
+          current: { ...current, attentionIds: ["b"] },
+          preferences: delayed,
+          nowMs: Date.parse("2026-10-29T10:10:00.000Z"),
+        }),
+      ).toBe(false);
       expect(due({ lastVisitedAt: "2026-10-29T09:00:00.000Z" })).toBe(true);
       // Metadata changes move updatedAt without resolving anything.
       expect(due({ updatedAt: "2026-10-29T10:05:00.000Z" })).toBe(true);

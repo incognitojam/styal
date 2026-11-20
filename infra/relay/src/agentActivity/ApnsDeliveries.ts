@@ -943,7 +943,13 @@ const make = Effect.gen(function* () {
         notification.phase !== undefined &&
         notification.updatedAt !== undefined &&
         delayedAlertIsDue({
-          raised: { phase: notification.phase, updatedAt: notification.updatedAt },
+          raised: {
+            phase: notification.phase,
+            updatedAt: notification.updatedAt,
+            ...(notification.attentionIds === undefined
+              ? {}
+              : { attentionIds: notification.attentionIds }),
+          },
           current: yield* activityRows
             .getForUserThread({
               userId: input.target.user_id,

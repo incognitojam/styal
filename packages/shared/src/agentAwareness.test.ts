@@ -7,10 +7,14 @@ import type {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
-import { ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
+import { MessageId, ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { projectThreadAwarenessV2 } from "./agentAwareness.ts";
+import {
+  projectThreadAwarenessV2,
+  threadAttentionSubjects,
+  hasNewThreadAttention,
+} from "./agentAwareness.ts";
 
 const NOW = "2026-05-22T12:00:00.000Z";
 
@@ -398,5 +402,62 @@ describe("projectThreadAwarenessV2", () => {
         },
       })?.threadTitle,
     ).toBe(threadTitle);
+  });
+});
+
+describe("threadAttentionSubjects", () => {
+  it("keeps the same report question across turns and distinguishes the next version", () => {
+    const thread = {
+      pendingRuntimeRequest: null,
+      openReportQuestionCount: 1,
+      openReportQuestionIds: [MessageId.make("report-v1")],
+      latestOpenReportQuestionAt: DateTime.makeUnsafe(NOW),
+    };
+    const first = threadAttentionSubjects(thread);
+    expect(first).toEqual(["report-v1"]);
+    expect(hasNewThreadAttention(first, first)).toBe(false);
+    expect(hasNewThreadAttention(first, ["report-v1", "report-v2"])).toBe(true);
+    expect(hasNewThreadAttention(["report-v1", "report-v2"], first)).toBe(false);
+    expect(threadAttentionSubjects({ ...thread })).toEqual(first);
+    expect(
+      threadAttentionSubjects({
+        ...thread,
+        openReportQuestionIds: [MessageId.make("report-v2")],
+      }),
+    ).not.toEqual(first);
+    expect(
+      threadAttentionSubjects({ ...thread, openReportQuestionCount: 0, openReportQuestionIds: [] }),
+    ).toEqual([]);
+    const awareness = (status: "running" | "completed", report = thread) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: {
+          ...report,
+          id: "report-thread" as ThreadId,
+          projectId: "project-1" as ProjectId,
+          lineage: {
+            rootThreadId: "report-thread" as ThreadId,
+            parentThreadId: null,
+            relationshipToParent: null,
+          },
+          title: "Report",
+          settledOverride: null,
+          modelSelection: { instanceId: ProviderInstanceId.make("devReplay"), model: "showcase" },
+          updatedAt: DateTime.add(report.latestOpenReportQuestionAt, { hours: 1 }),
+          status,
+        },
+      });
+    expect(awareness("running")).toMatchObject({ phase: "waiting_for_input", attentionIds: first });
+    expect(awareness("completed")).toMatchObject({
+      phase: "waiting_for_input",
+      attentionIds: first,
+    });
+    expect(
+      awareness("completed", {
+        ...thread,
+        openReportQuestionIds: [MessageId.make("report-v2")],
+      }),
+    ).toMatchObject({ attentionIds: ["report-v2"] });
   });
 });

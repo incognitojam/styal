@@ -216,6 +216,34 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(parent)?.pendingSubagentRequest).toBe("approval");
     expect(childThreadInputsTitle(registry.get(inputs))).toBe("Side chat needs approval");
 
+    const askingSideChat = {
+      ...sideChat,
+      pendingRuntimeRequest: { ...request, kind: "user_input" as const },
+    };
+    const approvingSideChat = {
+      ...sideChat,
+      id: ThreadId.make("another-side-chat"),
+      pendingRuntimeRequest: {
+        ...request,
+        id: RuntimeRequestId.make("approval-b"),
+        kind: "command" as const,
+      },
+    };
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, askingSideChat, approvingSideChat],
+    });
+    expect(
+      registry.get(threads.pendingSubagentAttentionAtom(environmentId)).get(root.id)?.ids,
+    ).toEqual(["approval-b", "ask"]);
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, askingSideChat],
+    });
+    expect(
+      registry.get(threads.pendingSubagentAttentionAtom(environmentId)).get(root.id)?.ids,
+    ).toEqual(["ask"]);
+
     const helper = {
       ...sideChat,
       id: ThreadId.make("side-chat-helper"),
@@ -297,6 +325,18 @@ describe("v2 thread shell lists", () => {
       threads: [root, child, { ...grandchild, pendingRuntimeRequest: approval }],
     });
     expect(registry.get(parent)?.pendingSubagentRequest).toBe("approval");
+    expect(
+      registry.get(threads.pendingSubagentAttentionAtom(environmentId)).get(root.id)?.ids,
+    ).toEqual([approval.id]);
+    const nextApproval = { ...approval, id: RuntimeRequestId.make("next-child-approval") };
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, child, { ...grandchild, pendingRuntimeRequest: nextApproval }],
+    });
+    expect(
+      registry.get(threads.pendingSubagentAttentionAtom(environmentId)).get(root.id)?.ids,
+    ).toEqual([nextApproval.id]);
+
     expect(isThreadWorking(registry.get(parent)!)).toBe(false);
     const asking = registry.get(inputs);
     expect(asking.map((thread) => thread.id)).toEqual([grandchild.id]);
