@@ -12,12 +12,12 @@ export type ProjectIconSource =
   /** `fallback` is drawn instead when the image cannot be decoded. */
   | { readonly kind: "image"; readonly dataUrl: string; readonly fallback: MonogramSource }
   | MonogramSource
+  | Extract<ProjectIconOverride, { kind: "lucide" }>
   | { readonly kind: "emoji"; readonly emoji: string };
 
 /**
  * What a notification shows for its project, as the sidebar picks it: an override, else the
  * cached favicon, else the initials tile. Only a cached data URL counts, so nothing is fetched.
- * A lucide override has no bitmap yet and shows the initials tile.
  */
 export function projectIconSource(
   project: {
@@ -29,9 +29,10 @@ export function projectIconSource(
   const icon = project.projectIcon;
   if (icon?.kind === "monogram") return { kind: "monogram", text: icon.text, color: icon.color };
   if (icon?.kind === "emoji") return { kind: "emoji", emoji: icon.emoji };
+  if (icon?.kind === "lucide") return icon;
   const identity = deriveProjectIdentity(project.title);
   const tile: MonogramSource = { kind: "monogram", text: identity.monogram, color: identity.color };
-  return icon?.kind !== "lucide" && cachedFavicon?.startsWith("data:image/")
+  return cachedFavicon?.startsWith("data:image/")
     ? { kind: "image", dataUrl: cachedFavicon, fallback: tile }
     : tile;
 }

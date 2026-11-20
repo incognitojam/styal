@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { FolderCodeIcon } from "lucide-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 
 import { projectFaviconCache } from "./assets/projectFaviconCache";
@@ -75,8 +77,25 @@ async function drawProjectIcon(source: ProjectIconSource): Promise<string> {
   } else if (source.kind === "monogram") {
     drawTile(context, source);
   } else {
-    const image = await decodedImage(source.dataUrl);
+    let dataUrl: string;
+    if (source.kind === "lucide") {
+      const [{ lucideIconByName }, { renderToStaticMarkup }] = await Promise.all([
+        import("./lib/lucideIconByName"),
+        import("react-dom/server"),
+      ]);
+      const svg = renderToStaticMarkup(
+        createElement(lucideIconByName(source.name) ?? FolderCodeIcon, {
+          size: ICON_SIZE,
+          color: tileStyle(source.color).color,
+        }),
+      );
+      dataUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    } else {
+      dataUrl = source.dataUrl;
+    }
+    const image = await decodedImage(dataUrl);
     if (image === null) {
+      if (source.kind === "lucide") throw new Error("Project icon could not be decoded.");
       drawTile(context, source.fallback);
     } else {
       const fit = Math.min(ICON_SIZE / image.naturalWidth, ICON_SIZE / image.naturalHeight);

@@ -46,10 +46,10 @@ describe("projectIconSource", () => {
       { kind: "emoji", emoji: "🌿" },
     ],
     [
-      "the initials tile for a lucide override",
-      { title: "Acme Web", projectIcon: { kind: "lucide", name: "rocket", color: "red" } },
+      "a named calendar override over the favicon",
+      { title: "Acme Web", projectIcon: { kind: "lucide", name: "calendar", color: "red" } },
       FAVICON,
-      { kind: "monogram", text: "AW", color: expect.any(String) },
+      { kind: "lucide", name: "calendar", color: "red" },
     ],
   ] as const)("uses %s", (_label, project, favicon, expected) => {
     expect(projectIconSource(project, favicon)).toEqual(expected);
