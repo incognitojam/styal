@@ -7928,7 +7928,7 @@ features:
       - Cleanup requires at least 24 hours since the last thread activity, settlement or archival, no holding thread, terminal or live session, and the shared workspace lease. Project roots and unmanaged paths are never stripped.
       - Tracked or unignored descendants, nested repositories, mounts, links at the selected position and unverifiable or oversized paths keep a match whole. Internal links are unlinked without following them.
       - Fork migration 15 records worktree_stripped before deletion. The next turn reruns setup, including after partial deletion, and clears the row only after completion. Async setup does not block the turn. Interruption retains the row for retry; a completed failure clears it.
-      - Sweeps cap stripping work at ten minutes. Windows skips stripping. Preview, terminal setup rerun and port holding are deferred.
+      - Sweeps cap stripping work at ten minutes on every platform. Preview, terminal setup rerun and port holding are deferred.
       - Selection verifies Git's worktree root and never searches unlisted ignored folders. Incomplete inspections leave the whole worktree for retry without recording stripping.
     rationale: Retaining an idle worktree's files makes dependency copies accumulate; keeping the checkout and recreating only disposable output saves space without losing history.
     implementation_paths:

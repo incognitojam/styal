@@ -20,7 +20,9 @@ const setup = Effect.gen(function* () {
   const clean = Effect.fn("fixture.clean")(function* (patterns: readonly string[]) {
     const selected = yield* deletion.inspect(f.worktree, patterns);
     for (const target of selected) yield* deletion.remove(f.worktree, target);
-    return selected.map((target) => target.slice(f.worktree.length + 1));
+    return selected.map((target) =>
+      f.path.relative(f.worktree, target).split(f.path.sep).join("/"),
+    );
   });
   return { ...f, deletion, clean };
 });
@@ -62,9 +64,9 @@ describe("regenerable path deletion", () => {
           yield* f.write("dist/keep.ts");
           yield* f.command(f.worktree, ["add", "-f", "dist/keep.ts"]);
           yield* f.write("unignored/output.js");
-          yield* f.fs.symlink(`${f.worktree}/packages/pkg`, `${f.worktree}/node_modules/pkg`);
+          yield* f.linkDirectory(`${f.worktree}/packages/pkg`, `${f.worktree}/node_modules/pkg`);
           yield* f.fs.writeFileString(`${f.base}/outside.txt`, "outside");
-          yield* f.fs.symlink(f.base, `${f.worktree}/node_modules/outside`);
+          yield* f.linkDirectory(f.base, `${f.worktree}/node_modules/outside`);
           expect(yield* f.clean(["**/node_modules", "dist", "unignored", ".git"])).toEqual([
             "node_modules",
           ]);
@@ -97,10 +99,10 @@ describe("regenerable path deletion", () => {
         yield* f.write("dist/output");
         if (mode === "selected-link") {
           yield* f.fs.rename(`${f.worktree}/dist`, `${f.base}/outside`);
-          yield* f.fs.symlink(`${f.base}/outside`, `${f.worktree}/dist`);
+          yield* f.linkDirectory(`${f.base}/outside`, `${f.worktree}/dist`);
         } else if (mode === "parent-link") {
           yield* f.fs.makeDirectory(`${f.worktree}/node_modules`);
-          yield* f.fs.symlink(`${f.worktree}/dist`, `${f.worktree}/node_modules/link`);
+          yield* f.linkDirectory(`${f.worktree}/dist`, `${f.worktree}/node_modules/link`);
           expect(yield* f.clean(["node_modules/link/output"])).toEqual([]);
           expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
           return;
@@ -139,7 +141,7 @@ describe("regenerable path deletion", () => {
             Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
             Effect.provideService(DeletionLimits, {
               entries: mode === "cap" ? 1 : 100,
-              mounts: mode === "mount" ? [`${f.worktree}/dist`] : [],
+              mounts: mode === "mount" ? [f.path.join(f.worktree, "dist")] : [],
               ...(mode === "device"
                 ? {
                     device: (target: string, actual: number) =>
@@ -202,7 +204,7 @@ describe("regenerable path deletion", () => {
           yield* f.command(f.worktree, ["config", "--worktree", "core.worktree", redirected]);
           expect(
             (yield* f.command(f.worktree, ["rev-parse", "--show-toplevel"])).stdout.trim(),
-          ).toBe(redirected);
+          ).toBe(redirected.split(f.path.sep).join("/"));
           expect((yield* f.clean(["dist"]).pipe(Effect.result))._tag).toBe("Failure");
           expect(yield* f.fs.exists(`${f.worktree}/dist/precious`)).toBe(true);
         }),
@@ -238,7 +240,7 @@ it.effect.each([".scratch", ".styal", ".scratch-with-tracked-file"])(
           "**/.turbo",
           "**/*.tsbuildinfo",
         ]);
-        expect(selected).toEqual([`${f.worktree}/apps/web/node_modules`]);
+        expect(selected).toEqual([f.path.join(f.worktree, "apps/web/node_modules")]);
         for (const target of selected) yield* f.deletion.remove(f.worktree, target);
         for (const file of ["node_modules/pkg", ".turbo/cache", "build.tsbuildinfo"])
           expect(yield* f.fs.exists(`${f.worktree}/${parent}/experiment/${file}`)).toBe(true);
@@ -249,9 +251,10 @@ it.effect.each([".scratch", ".styal", ".scratch-with-tracked-file"])(
 );
 
 it.effect.each([
-  ["Build", "build"],
-  ["Café", "cafe\u0301"],
-])("keeps macOS case and Unicode aliases of tracked paths (%s)", ([tracked, ignored]) =>
+  ["darwin", "Build", "build"],
+  ["darwin", "Café", "cafe\u0301"],
+  ["win32", "Build", "build"],
+] as const)("keeps %s aliases of tracked paths (%s)", ([platform, tracked, ignored]) =>
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.write(`${tracked}/keep`);
@@ -260,7 +263,7 @@ it.effect.each([
     yield* f.fs.writeFileString(`${f.worktree}/.gitignore`, `${ignored}/\n`);
     const deletion = yield* makeDeletion.pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
-      Effect.provideService(HostProcess.Platform, "darwin"),
+      Effect.provideService(HostProcess.Platform, platform),
     );
     for (const target of yield* deletion.inspect(f.worktree, [ignored!]))
       yield* deletion.remove(f.worktree, target);
