@@ -46,7 +46,7 @@ const atoms = await vi.hoisted(async () => {
   return {
     shell: Atom.make<unknown>(null),
     environmentIds: Atom.make<ReadonlyArray<string>>(["env-1"]),
-    jobThreadIds: Atom.make(""),
+    jobList: Atom.make<unknown>(null),
     projects: Atom.make<ReadonlyArray<unknown>>([
       {
         environmentId: "env-1",
@@ -200,7 +200,7 @@ vi.mock(import("../state/projects"), async (original) => {
 vi.mock(import("../state/server"), async (original) => ({
   ...(await original()),
   environmentServerConfigsAtom: atoms.serverConfigs as never,
-  projectJobThreadIdsAtom: (() => atoms.jobThreadIds) as never,
+  projectJobListAtom: (() => atoms.jobList) as never,
 }));
 vi.mock(import("../hooks/useSettings"), async (original) => ({
   ...(await original()),
@@ -272,7 +272,20 @@ function setup() {
   );
   let started = false;
   const renderCoordinator = async () => {
-    registry.set(atoms.jobThreadIds, state.job === null ? "" : "thread-1");
+    registry.set(atoms.jobList, {
+      tasks:
+        state.job === null
+          ? []
+          : [
+              {
+                threadId: "thread-1",
+                enabled: true,
+                schedule: { type: "webhook" },
+                createdAt: "2000-01-01T00:00:00.000Z",
+                lastRunAt: null,
+              },
+            ],
+    });
     registry.set(atoms.shell, {
       status: state.live ? "live" : "disconnected",
       snapshot: Option.some({ threads: mockThreads() }),

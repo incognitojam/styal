@@ -1288,9 +1288,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : [],
     ),
   );
-  const jobThreadKeys = new Set(
-    [...projectPages.values()].flatMap((page) => page.jobThreads.map(threadShellKey)),
-  );
+  const jobThreadKeys = new Map([...projectPages.values()].flatMap((page) => [...page.jobsSince]));
   // On the chat's own thread URL, the header that stands for the chat is the active location.
   // Only while the chat has no row of its own: an active chat, which its header stands for.
   const isRouteChat = (projectKey: string) => {

@@ -3,8 +3,10 @@ import * as Schema from "effect/Schema";
 
 import {
   MIN_SCHEDULED_TASK_INTERVAL_MS,
+  type ScheduledTask,
   ScheduledTaskSchedule,
   ScheduledTaskUpsertSchedule,
+  scheduledTaskThreads,
 } from "./scheduledTask.ts";
 
 const decodeSchedule = Schema.decodeUnknownSync(ScheduledTaskSchedule);
@@ -72,5 +74,50 @@ describe("webhook filters", () => {
     expect(accepts([{ path: "body.label.name", op: "in", value: ["needs review"] }])).toBe(true);
     expect(accepts([{ path: "body.action", op: "equals" }])).toBe(false);
     expect(accepts([{ path: "body.action", op: "matches", value: "^opened$" }])).toBe(false);
+  });
+});
+
+it("lists tasks that run in one thread without their prompts", () => {
+  const task = (id: string, overrides: Partial<ScheduledTask>) =>
+    ({
+      id,
+      title: `Task ${id}`,
+      prompt: "A long prompt",
+      enabled: true,
+      schedule: { type: "interval", everyMs: 60_000 },
+      threadId: null,
+      createdAt: "2026-11-20T09:00:00.000Z",
+      nextRunAt: null,
+      lastRunAt: null,
+      lastRunStatus: "never",
+      modelSelection: { instanceId: "codex", model: "gpt-5" },
+      ...overrides,
+    }) as ScheduledTask;
+  const result = scheduledTaskThreads({
+    tasks: [
+      task("bound", { threadId: "thread-1" as never, blockedByPolicy: "Webhooks are off." }),
+      task("fresh", { threadId: "thread-2" as never, threadMode: "fresh_session" }),
+      task("each-run", { threadId: "thread-3" as never, threadMode: "new_thread" }),
+      task("unbound", {}),
+    ],
+    timeZone: "Europe/London",
+  });
+  expect(result).toEqual({
+    tasks: [
+      {
+        id: "bound",
+        title: "Task bound",
+        enabled: true,
+        schedule: { type: "interval", everyMs: 60_000 },
+        threadId: "thread-1",
+        createdAt: "2026-11-20T09:00:00.000Z",
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: "never",
+        blockedByPolicy: "Webhooks are off.",
+      },
+      expect.objectContaining({ id: "fresh", threadId: "thread-2" }),
+    ],
+    timeZone: "Europe/London",
   });
 });
