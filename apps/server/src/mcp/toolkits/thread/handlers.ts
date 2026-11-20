@@ -110,13 +110,50 @@ export const declarations = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "t3_report");
       const { threads } = yield* readThread(thread.threadId);
       const commandId = yield* newCommandId();
+      const { key, title, body, question, answers, resolved, outcome } = input;
+      const invalid = (message: string) =>
+        new OrchestratorMcpFailure({ code: "invalid_request", message });
+      if (resolved) {
+        const extra = Object.entries({ title, body, question, answers }).flatMap(([name, value]) =>
+          value === undefined ? [] : [`\`${name}\``],
+        );
+        if (extra.length > 0)
+          return yield* invalid(
+            `Resolve with only \`key\`, \`resolved\` and \`outcome\`; drop ${extra.join(", ")}.`,
+          );
+        const { storedEvents } = yield* threads
+          .dispatch({
+            type: "report.resolve",
+            commandId,
+            threadId: thread.threadId,
+            key,
+            // The card shows one line.
+            ...(outcome === undefined ? {} : { outcome: outcome.replace(/\s*[\r\n]+\s*/g, " ") }),
+          })
+          .pipe(Effect.mapError(dispatchFailure));
+        const resolved = storedEvents
+          .map(({ event }) => event)
+          .find((event) => event.type === "message.updated")!.payload;
+        return { messageId: resolved.id, version: resolved.report!.version };
+      }
+      if (outcome !== undefined) return yield* invalid("`outcome` goes with `resolved: true`.");
+      if (!title || !body) {
+        const missing = [title ? "" : "`title`", body ? "" : "`body`"].filter(Boolean);
+        return yield* invalid(
+          `A report needs \`title\` and \`body\`; missing ${missing.join(" and ")}.`,
+        );
+      }
       const { storedEvents } = yield* threads
         .dispatch({
           type: "report.post",
           commandId,
           threadId: thread.threadId,
           messageId: MessageId.make(`report:${commandId}`),
-          ...input,
+          key,
+          title,
+          body,
+          ...(question === undefined ? {} : { question }),
+          ...(answers === undefined ? {} : { answers }),
         })
         .pipe(Effect.mapError(dispatchFailure));
       const message = storedEvents

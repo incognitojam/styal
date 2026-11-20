@@ -51,9 +51,11 @@ export function coordinatorReports<M extends Message>(
           ? "answered"
           : dismissed.has(key)
             ? "dismissed"
-            : tag.question
-              ? "open"
-              : "posted";
+            : tag.resolved
+              ? "resolved"
+              : tag.question
+                ? "open"
+                : "posted";
     return [{ message, latest: current, state, answer }];
   });
 }

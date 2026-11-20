@@ -169,7 +169,7 @@ type ReportState = {
     readonly createdAt: string;
     readonly report?: Pick<CoordinatorReport, "key" | "title" | "version"> | undefined;
   };
-  /** As `coordinatorReports` gives it: replaced, answered, dismissed, open or posted. */
+  /** As `coordinatorReports` gives it: replaced, resolved, answered, dismissed, open or posted. */
   readonly state: string;
 };
 
@@ -207,6 +207,32 @@ export function sinceLastVisitReportLines(
     });
   }
   return lines.sort(newestFirst);
+}
+
+/**
+ * Changes when anything the card reads from the chat's reports changes. A resolve updates its
+ * report message in place, so the key includes it.
+ */
+export function sinceLastVisitReportsKey(
+  earliestLoadedAt: string | null,
+  messages: ReadonlyArray<{
+    readonly id: string;
+    readonly report?: Pick<CoordinatorReport, "version" | "resolved"> | undefined;
+    readonly reportAnswer?: { readonly messageId: string; readonly version: number } | undefined;
+  }>,
+  dismissals: ReadonlyArray<{ readonly messageId: string; readonly version: number }>,
+): string {
+  return JSON.stringify([
+    earliestLoadedAt,
+    messages.map((m) => [
+      m.id,
+      m.report?.version,
+      m.report?.resolved?.at,
+      m.reportAnswer?.messageId,
+      m.reportAnswer?.version,
+    ]),
+    dismissals.map((d) => [d.messageId, d.version]),
+  ]);
 }
 
 /**

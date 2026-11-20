@@ -1768,7 +1768,11 @@ function openReportQuestions(projection: OrchestrationV2ThreadProjection) {
     const report = message.report!;
     const key = referenceKey({ messageId: message.id, key: report.key, version: report.version });
     return (
-      message.role === "assistant" && !!report.question && !answered.has(key) && !dismissed.has(key)
+      message.role === "assistant" &&
+      !!report.question &&
+      !report.resolved &&
+      !answered.has(key) &&
+      !dismissed.has(key)
     );
   });
 }
@@ -5325,6 +5329,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE thread_id = ${threadId} AND (
                 message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                   WHERE thread_id = ${threadId} AND run_id = ${runId})
+                -- The report the run's message answers, for the note about its question.
+                OR message_id IN (
+                  SELECT json_extract(answer.payload_json, '$.reportAnswer.messageId')
+                  FROM orchestration_v2_projection_messages AS answer
+                  WHERE answer.thread_id = ${threadId}
+                    AND answer.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                      WHERE thread_id = ${threadId} AND run_id = ${runId})
+                )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
@@ -7039,6 +7051,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       WHERE report.thread_id = t.thread_id AND report.role = 'assistant'
         AND json_extract(report.payload_json, '$.report.key') IS NOT NULL
         AND json_extract(report.payload_json, '$.report.question') IS NOT NULL
+        AND json_extract(report.payload_json, '$.report.resolved') IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_messages newer
             INDEXED BY orchestration_v2_projection_messages_report_key_idx

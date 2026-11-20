@@ -1,6 +1,13 @@
 import { WorkflowRunReviewRow } from "./WorkflowRunReviewPanel";
 import type { ChatMessage } from "../../types";
-import { FileTextIcon, MessageSquareIcon, ReplyIcon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  FileTextIcon,
+  MessageSquareIcon,
+  ReplyIcon,
+  RotateCcwIcon,
+  XIcon,
+} from "lucide-react";
 import { createContext, use, useState, type ComponentProps, type ReactNode } from "react";
 import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
@@ -64,6 +71,8 @@ export function ReportAnswerBar({
   renderAnswer: (answer: NonNullable<ReportState["answer"]>, text: string) => ReactNode;
 }) {
   const ctx = use(CoordinatorReportsContext);
+  // A resolved question asks again here until the person answers or cancels.
+  const [reopened, setReopened] = useState(false);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "dismissed") {
@@ -73,6 +82,36 @@ export function ReportAnswerBar({
           <XIcon />
           Dismissed. The agent hears it on its next turn.
         </span>
+      </div>
+    );
+  }
+  if (report.state === "resolved" && !reopened) {
+    const { question, resolved } = report.message.report!;
+    return (
+      <div className={panelClassName}>
+        <span className="text-muted-foreground">{question}</span>
+        <div className="flex items-start justify-between gap-2">
+          <span className="flex min-w-0 items-start gap-1.5 text-muted-foreground [&_svg]:mt-0.75 [&_svg]:size-3.5 [&_svg]:shrink-0">
+            <CheckIcon />
+            <span className="min-w-0 break-words">
+              Resolved by the agent
+              {resolved?.outcome ? (
+                <>
+                  : <span className="text-foreground">{resolved.outcome}</span>
+                </>
+              ) : null}
+            </span>
+          </span>
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            disabled={!ctx.canOperate}
+            onClick={() => setReopened(true)}
+          >
+            <RotateCcwIcon />
+            Reopen
+          </Button>
+        </div>
       </div>
     );
   }
@@ -98,7 +137,7 @@ export function ReportAnswerBar({
       </div>
     );
   }
-  if (report.state !== "open") return null;
+  if (report.state !== "open" && report.state !== "resolved") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
   const disabled = !ctx.canOperate;
@@ -120,15 +159,21 @@ export function ReportAnswerBar({
           <ReplyIcon />
           Reply…
         </Button>
-        <Button
-          size="xs"
-          variant="ghost-muted"
-          disabled={disabled}
-          onClick={() => ctx.dismiss(ref)}
-        >
-          <XIcon />
-          Dismiss
-        </Button>
+        {report.state === "resolved" ? (
+          <Button size="xs" variant="ghost-muted" onClick={() => setReopened(false)}>
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            disabled={disabled}
+            onClick={() => ctx.dismiss(ref)}
+          >
+            <XIcon />
+            Dismiss
+          </Button>
+        )}
       </div>
     </div>
   );

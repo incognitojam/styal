@@ -90,6 +90,10 @@ describe("resolveT3McpToolDefinition", () => {
     expect(resolveT3McpToolDefinition("preview_act", { action: "unknown" })?.labels[2]).toBe(
       "Used",
     );
+    expect(resolveT3McpToolDefinition("t3_report", { key: "pr:1" })?.labels[2]).toBe("Posted");
+    expect(
+      resolveT3McpToolDefinition("t3_report", { key: "pr:1", resolved: true })?.labels[2],
+    ).toBe("Resolved");
   });
 });
 
@@ -107,5 +111,9 @@ describe("resolveT3McpSummaryAction", () => {
       "schedule-update",
     );
     expect(resolveT3McpSummaryAction("delegate_task", { task: "x" })).toBe("delegate");
+    expect(resolveT3McpSummaryAction("t3_report", { key: "pr:1" })).toBe("report-post");
+    expect(resolveT3McpSummaryAction("t3_report", { key: "pr:1", resolved: true })).toBe(
+      "report-resolve",
+    );
   });
 });

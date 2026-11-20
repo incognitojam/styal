@@ -74,6 +74,8 @@ export type T3McpToolSummaryAction =
   | "device"
   | "hardware"
   | "feedback-report"
+  | "report-post"
+  | "report-resolve"
   | "html-preview"
   | "html-render";
 
@@ -319,7 +321,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Run", "Running", "Requested a run of", "a scheduled task"],
     "schedule-run",
   ),
-  t3_report: tool(["Post", "Posting", "Posted", "a report"], "feedback-report"),
+  t3_report: tool(["Post", "Posting", "Posted", "a report"], "report-post"),
+  t3_report_resolve: tool(["Resolve", "Resolving", "Resolved", "a report"], "report-resolve"),
   t3_queue: tool(["Manage", "Managing", "Managed", "queued messages"], "queue-edit"),
   t3_pending_request: tool(
     ["Handle", "Handling", "Handled", "pending questions"],
@@ -498,8 +501,16 @@ export function resolveT3McpToolDefinition(
 ): T3McpToolDefinition | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
   if (name === null || !Object.hasOwn(STYAL_MCP_TOOLS, name)) return null;
-  const action = asSummaryInput(input)?.action;
-  const actionTool = typeof action === "string" ? ACTION_TOOLS[name]?.(action) : undefined;
+  const fields = asSummaryInput(input);
+  const action = fields?.action;
+  const actionTool =
+    name === "t3_report"
+      ? fields?.resolved === true
+        ? "t3_report_resolve"
+        : undefined
+      : typeof action === "string"
+        ? ACTION_TOOLS[name]?.(action)
+        : undefined;
   return actionTool !== undefined && Object.hasOwn(STYAL_MCP_TOOLS, actionTool)
     ? STYAL_MCP_TOOLS[actionTool]!
     : STYAL_MCP_TOOLS[name]!;

@@ -47,6 +47,8 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
             kind: Schema.Literal("report"),
             messageId: MessageId,
             answerMessageId: Schema.NullOr(MessageId),
+            /** Its agent resolved the question; otherwise a null answer is a dismissal. */
+            resolved: Schema.optional(Schema.Literal(true)),
           }),
         ]),
         /** The agent thread that answered; absent for the user. */

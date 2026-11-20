@@ -475,6 +475,12 @@ export function summarizeT3ToolCalls(
     case "feedback-report":
       label = phrase("Reported", "report", quantity(selected.length, "styal issue"));
       break;
+    case "report-post":
+      label = phrase("Posted", "post", quantity(selected.length, "report"));
+      break;
+    case "report-resolve":
+      label = phrase("Resolved", "resolve", quantity(selected.length, "report"));
+      break;
     case "html-preview":
       label = phrase("Previewed", "preview", quantity(selected.length, "HTML page"));
       break;

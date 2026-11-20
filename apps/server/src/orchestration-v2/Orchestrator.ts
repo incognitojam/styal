@@ -634,6 +634,7 @@ export function threadHasUnfinishedWork(records: {
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
   switch (command.type) {
     case "report.post":
+    case "report.resolve":
     case "report.dismiss":
     case "thread.create":
     case "thread.archive":
@@ -4051,7 +4052,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   const dispatchCoordinatorReport = Effect.fn("Orchestrator.dispatchCoordinatorReport")(function* (
-    command: Extract<OrchestrationV2ServerCommand, { type: "report.post" | "report.dismiss" }>,
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { type: "report.post" | "report.resolve" | "report.dismiss" }
+    >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
@@ -4072,6 +4076,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandId: command.commandId,
           commandType: command.type,
           cause: "Report does not exist.",
+        });
+      }
+      // Its agent already closed it; Reopen and an answer is the person's way back.
+      if (report.resolved) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Version ${report.version} of report "${report.key}" is already resolved.`,
         });
       }
       if (thread.reportDismissals?.some((note) => note.messageId === message.id)) return;
@@ -4099,6 +4111,67 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...existing,
         answerNoteEffect(thread.id, `${message.id}:dismissed`, {
           answered: { kind: "report", messageId: message.id, answerMessageId: null },
+        }),
+      ]);
+      return;
+    }
+    if (command.type === "report.resolve") {
+      const latest = projection.messages.reduce<OrchestrationV2ConversationMessage | undefined>(
+        (current, message) =>
+          message.role === "assistant" &&
+          message.report?.key === command.key &&
+          message.report.version > (current?.report?.version ?? 0)
+            ? message
+            : current,
+        undefined,
+      );
+      const report = latest?.report;
+      const same = (ref: { messageId: string; key: string; version: number } | undefined) =>
+        ref !== undefined &&
+        ref.messageId === latest?.id &&
+        ref.key === report?.key &&
+        ref.version === report?.version;
+      // The person's own answer or dismissal stands; a resolve is for questions still open.
+      const closedBy = projection.messages.some(
+        (message) => message.role === "user" && same(message.reportAnswer),
+      )
+        ? "answered"
+        : (thread.reportDismissals ?? []).some(same)
+          ? "dismissed"
+          : report?.resolved
+            ? "resolved"
+            : null;
+      if (!latest || !report?.question || closedBy !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: !report
+            ? `No report has key "${command.key}".`
+            : !report.question
+              ? `Version ${report.version} of report "${command.key}" asks no question.`
+              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.`,
+        });
+      }
+      yield* emitEvent({
+        type: "message.updated",
+        ...eventFields,
+        payload: {
+          ...latest,
+          report: {
+            ...report,
+            resolved: {
+              at: DateTime.formatIso(now),
+              ...(command.outcome === undefined ? {} : { outcome: command.outcome }),
+            },
+          },
+        },
+      });
+      // Its own agent resolves a report, so the note names this thread.
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        answerNoteEffect(thread.id, `${latest.id}:resolved`, {
+          answered: { kind: "report", messageId: latest.id, answerMessageId: null, resolved: true },
+          byThreadId: thread.id,
         }),
       ]);
       return;
@@ -12369,6 +12442,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const emitEvent = emit(events, command);
     const editedAttachments =
       command.attachments === undefined ? {} : { attachments: command.attachments };
+    // An edit that drops the `[<title>, version <n>] ` prefix clients add no longer answers it.
+    const { reportAnswer, ...unlinked } = queuedMessage;
+    const answered =
+      reportAnswer === undefined
+        ? undefined
+        : (yield* loadProjectionForCommand(command, ["messages"], {
+            messageIds: [reportAnswer.messageId],
+          })).messages.find((message) => message.id === reportAnswer.messageId)?.report;
+    const stillAnswers =
+      answered !== undefined &&
+      command.text.startsWith(`[${answered.title}, version ${answered.version}] `);
     yield* emitEvent({
       type: "message.updated",
       threadId: command.threadId,
@@ -12377,7 +12461,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerInstanceId: queuedRun.providerInstanceId,
       occurredAt: now,
       payload: withoutGuestAttribution({
-        ...queuedMessage,
+        ...(stillAnswers ? queuedMessage : unlinked),
         text: command.text,
         ...editedAttachments,
         ...(command.context ? { context: command.context } : {}),
@@ -15737,6 +15821,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadProjectAdoptFolder(command, events);
         break;
       case "report.post":
+      case "report.resolve":
       case "report.dismiss":
         yield* dispatchCoordinatorReport(command, events, effects);
         break;

@@ -748,6 +748,19 @@ it.effect(
         });
         yield* count(0);
         yield* orchestrator.dispatch({
+          type: "queued-run.edit",
+          commandId: CommandId.make("edit:answer:away"),
+          threadId: launcherId,
+          runId: queued.id,
+          text: "[Other report, version 1] Wait",
+        });
+        yield* count(1);
+        assert.isUndefined(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "answer:other",
+          )?.reportAnswer,
+        );
+        yield* orchestrator.dispatch({
           type: "queued-run.cancel",
           commandId: CommandId.make("cancel:answer"),
           threadId: launcherId,
@@ -770,6 +783,59 @@ it.effect(
           answered.messages.find((message) => message.id === "answer:other")?.reportAnswer,
           undefined,
         );
+
+        // The agent closes the question without a new version; a later version asks again.
+        const resolve = (key: string, id: string) =>
+          orchestrator.dispatch({
+            type: "report.resolve",
+            commandId: CommandId.make(id),
+            threadId: launcherId,
+            key,
+            outcome: "Fixed in abc123",
+          });
+        yield* resolve("issue:9", "resolve:other");
+        yield* count(0);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "report:other",
+          )?.report?.resolved?.outcome,
+          "Fixed in abc123",
+        );
+        for (const [key, cause] of [
+          ["issue:9", 'Version 1 of report "issue:9" is already resolved.'],
+          ["issue:404", 'No report has key "issue:404".'],
+          ["pr:214", 'Version 3 of report "pr:214" is already dismissed.'],
+        ] as const) {
+          assert.include(String((yield* Effect.flip(resolve(key, `resolve:${key}`))).cause), cause);
+        }
+        // The agent closed it, so the person reopens and answers instead of dismissing.
+        const dismissResolved = orchestrator.dispatch({
+          type: "report.dismiss",
+          commandId: CommandId.make("dismiss:other"),
+          threadId: launcherId,
+          messageId: MessageId.make("report:other"),
+          key: "issue:9",
+          version: 1,
+        });
+        assert.include(
+          String((yield* Effect.flip(dismissResolved)).cause),
+          'Version 1 of report "issue:9" is already resolved.',
+        );
+        yield* post("report:other:2", "issue:9");
+        yield* count(1);
+        yield* post("report:plain", "issue:10");
+        yield* orchestrator.dispatch({
+          type: "report.resolve",
+          commandId: CommandId.make("resolve:plain"),
+          threadId: launcherId,
+          key: "issue:10",
+        });
+        yield* count(1);
+        const plain = (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+          (message) => message.id === "report:plain",
+        )?.report?.resolved;
+        assert.isDefined(plain?.at);
+        assert.isUndefined(plain?.outcome);
 
         yield* endTurn(last, "completed");
       }),
@@ -1114,16 +1180,22 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             threadId: launchedId,
             messageId: MessageId.make(`report:${key}`),
             key,
-            title: key === "merge" ? "Merge the fix?" : "Old plan",
+            title: key === "merge" ? "Merge the fix?" : key === "ship" ? "Ship it?" : "Old plan",
             body: "Ready.",
+            ...(key === "plan" ? {} : { question: `${key}?` }),
           });
         yield* post("merge");
         yield* post("plan");
+        yield* post("ship");
         yield* endTurn(turn, "completed");
-        yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
+        const answered = yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
           sender: "user",
           reportAnswer: { messageId: MessageId.make("report:merge"), key: "merge", version: 1 },
         });
+        assert.include(
+          answered.message.text,
+          'Note: this message answers your report "Merge the fix?" (version 1), which closes its question.',
+        );
         yield* orchestrator.dispatch({
           type: "report.dismiss",
           commandId: CommandId.make("dismiss:plan"),
@@ -1132,12 +1204,34 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           key: "plan",
           version: 1,
         });
+        yield* orchestrator.dispatch({
+          type: "report.resolve",
+          commandId: CommandId.make("resolve:ship"),
+          threadId: launchedId,
+          key: "ship",
+          outcome: "Shipped",
+        });
+        // The person's answer stands.
+        assert.include(
+          String(
+            (yield* Effect.flip(
+              orchestrator.dispatch({
+                type: "report.resolve",
+                commandId: CommandId.make("resolve:merge"),
+                threadId: launchedId,
+                key: "merge",
+              }),
+            )).cause,
+          ),
+          'Version 1 of report "merge" is already answered.',
+        );
         yield* worker.drain();
         assert.deepEqual(
           (yield* notes()).map((note) => note.text),
           [
             `- "Fix the login page" (${launchedId}): the user answered the report "Merge the fix?" with "Merge it".`,
             `- "Fix the login page" (${launchedId}): the user dismissed the report "Old plan".`,
+            `- "Fix the login page" (${launchedId}): its agent resolved the report "Ship it?" as "Shipped".`,
           ],
         );
 

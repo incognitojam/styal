@@ -82,7 +82,7 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
-import { answerNotesText, threadReportNote } from "./ThreadReports.ts";
+import { answerNotesText, reportAnswerNote, threadReportNote } from "./ThreadReports.ts";
 import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -1110,12 +1110,17 @@ export const layer: Layer.Layer<
         .filter((note) => !deliveredContextIds.has(note.id))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
       let inlineContextIds: ReadonlyArray<string> = [];
+      const answeredReport = message?.reportAnswer
+        ? projection.messages.find((candidate) => candidate.id === message.reportAnswer?.messageId)
+            ?.report
+        : undefined;
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
         projection.thread.reportTo != null && reportsTo !== null
           ? threadReportNote(projection.thread.reportTo, reportsTo)
           : "",
         branchNote,
+        answeredReport?.question === undefined ? "" : reportAnswerNote(answeredReport),
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
