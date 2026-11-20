@@ -16,6 +16,7 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Predicate from "effect/Predicate";
+import { isShellToolName } from "@t3tools/shared/toolRowPresentation";
 
 export interface OpenReport {
   readonly messageId: MessageId;
@@ -143,9 +144,13 @@ export function withChildApprovals(
   return added.length === 0 ? needs : [...needs, ...added].sort(oldestFirst);
 }
 
-/** The command an approval would run, when the provider said which; its prompt may be prose. */
-export function approvalCommand(approval: Pick<ThreadPendingApproval, "toolInput">) {
+/**
+ * The shell command an approval would run, when the provider said which; its prompt may be prose.
+ * Any tool's input can name a `command`, so a named tool must be a shell.
+ */
+export function approvalCommand(approval: Pick<ThreadPendingApproval, "toolName" | "toolInput">) {
   const input = approval.toolInput;
+  if (approval.toolName !== undefined && !isShellToolName(approval.toolName)) return undefined;
   return Predicate.isObject(input) && typeof input.command === "string" && input.command.trim()
     ? input.command
     : undefined;

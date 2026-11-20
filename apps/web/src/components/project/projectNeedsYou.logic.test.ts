@@ -125,6 +125,11 @@ describe("withChildApprovals", () => {
 describe("approvalCommand", () => {
   it("takes the command from the approval's input, never from its prose prompt", () => {
     expect(approvalCommand({ toolInput: { command: "pnpm test" } })).toBe("pnpm test");
+    expect(approvalCommand({ toolName: "Bash", toolInput: { command: "ls" } })).toBe("ls");
+    // An editor tool from an MCP server names its operation `command`.
+    expect(
+      approvalCommand({ toolName: "mcp__editor__edit", toolInput: { command: "str_replace" } }),
+    ).toBeUndefined();
     expect(approvalCommand({ toolInput: { command: "  " } })).toBeUndefined();
     expect(approvalCommand({ toolInput: { url: "https://example.com" } })).toBeUndefined();
     expect(approvalCommand({})).toBeUndefined();

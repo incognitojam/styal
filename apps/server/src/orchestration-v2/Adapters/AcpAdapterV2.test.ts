@@ -4860,13 +4860,13 @@ describe("AcpAdapterV2", () => {
       assert.deepEqual(
         {
           prompt: approval.prompt,
-          toolInput: approval.toolInput,
+          toolInput: approval.toolInput ?? null,
           requestKind: approval.requestKind,
           terminalCreated: Exit.isSuccess(terminalExit),
         },
         {
           prompt: "git status",
-          toolInput: { command: "git status" },
+          toolInput: granted ? { command: "git status" } : null,
           requestKind: "command",
           terminalCreated: granted,
         },

@@ -5740,9 +5740,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             requestId,
             requestKind,
             ...(parsed.detail === undefined ? {} : { prompt: parsed.detail }),
-            ...(parsed.toolCall?.command === undefined
-              ? {}
-              : { toolInput: { command: parsed.toolCall.command } }),
+            // Any tool's input can name a `command`; only an execute approval runs one.
+            ...(parsed.kind === "execute" && parsed.toolCall?.command !== undefined
+              ? { toolInput: { command: parsed.toolCall.command } }
+              : {}),
             ...(approvalOptions === undefined ? {} : { options: approvalOptions }),
           };
           yield* Ref.update(pendingRuntimeRequests, (current) => {
