@@ -95,7 +95,8 @@ describe("V2 session presentation", () => {
     expect(deriveCanInterruptRunningThread(true, runtimeWithStatus("queued", runId))).toBe(true);
 
     expect(derivePhase(runtimeWithStatus("waiting"))).toBe("running");
-    expect(deriveCanInterruptRunningThread(true, runtimeWithStatus("waiting"))).toBe(true);
+    expect(deriveCanInterruptRunningThread(true, runtimeWithStatus("waiting"))).toBe(false);
+    expect(deriveCanInterruptRunningThread(true, runtimeWithStatus("running"))).toBe(false);
 
     expect(deriveCanInterruptRunningThread(true, null)).toBe(false);
   });
