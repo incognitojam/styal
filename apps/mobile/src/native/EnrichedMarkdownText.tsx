@@ -150,6 +150,8 @@ function enrichedStyle(
       // The bullet is centred on the gap's edge and scales with the system text size; the gap must too.
       gapWidth: 12 * fontScale,
     },
+    // Table and list images keep the library's fixed box, showing the whole capture instead of a slice.
+    image: { resizeMode: "contain" },
     thematicBreak: { color: style.dividerColor, height: 1, marginTop: 8, marginBottom: 8 },
     table: {
       ...body,
