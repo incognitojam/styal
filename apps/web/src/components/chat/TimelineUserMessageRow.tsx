@@ -135,7 +135,7 @@ const UNSENT_MEDIA_CLASS_NAME =
 
 /** Unsent file cards and audio sent alone each take the text bubble's unsent look: the edge, no fill. */
 const UNSENT_CARDS_CLASS_NAME =
-  "[&_:is([data-file-card],[data-slot=context-chip])]:relative [&_:is([data-file-card],[data-slot=context-chip])]:bg-transparent [&_:is([data-file-card],[data-slot=context-chip])]:after:pointer-events-none [&_:is([data-file-card],[data-slot=context-chip])]:after:absolute [&_:is([data-file-card],[data-slot=context-chip])]:after:inset-0 [&_:is([data-file-card],[data-slot=context-chip])]:after:rounded-[inherit] [&_:is([data-file-card],[data-slot=context-chip])]:after:border [&_:is([data-file-card],[data-slot=context-chip])]:after:border-dashed [&_:is([data-file-card],[data-slot=context-chip])]:after:border-muted-foreground/40";
+  "[&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:relative [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:bg-transparent [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:pointer-events-none [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:absolute [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:inset-0 [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:rounded-[inherit] [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border-dashed [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border-muted-foreground/40";
 
 const BUBBLE_CHIP_CLASS_NAME =
   "[&_[data-slot=context-chip]]:[--context-chip-ink:var(--context-chip-message,var(--context-chip-accent))]";
@@ -1101,7 +1101,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </div>
             ) : null}
             {userAudio.length > 0 ? (
-              <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
+              <div
+                data-user-audio
+                className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}
+              >
                 {userAudio.map((file) => (
                   <InlineAudioPreview
                     key={file.id}
