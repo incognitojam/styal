@@ -233,7 +233,7 @@ const ScheduledTaskRunTool = Tool.make("run_scheduled_task_now", {
 const ReportTool = Tool.make("t3_report", {
   ...commandTool,
   description:
-    "Post a report the user decides from, as a message in this thread. `key` names its topic (pr:123, issue:9, a slug); a new report on the same key is its next version and must stand alone: what the topic is and why it matters, then what changed. `body`: Markdown with context, recommendation, evidence, links. Optional `question` and `answers`, recommended first. Don't repeat the report in your reply. When the user settles an open question in chat instead of with its answers, close it with only `key`, `resolved: true` and an optional one-line `outcome`.",
+    "Post a report the user decides from, as a message in this thread. `key` names its topic (pr:123, issue:9, a slug); a new report on the same key is its next version and must stand alone: what the topic is and why it matters, then what changed. `body`: Markdown with context, recommendation, evidence, links. Optional `question` and `answers`, recommended first. Don't repeat the report in your reply. Once its question is settled, by the user's answer or in chat, act, then close it with only `key` and a one-line `outcome`, not a new version. If acting needs another decision from the user, post a new version that asks it; new versions are otherwise for new evidence.",
   parameters: Schema.Struct({
     ...CoordinatorReportInput.fields,
     title: Schema.optional(CoordinatorReportInput.fields.title),

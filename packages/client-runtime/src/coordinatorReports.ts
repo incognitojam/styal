@@ -137,6 +137,17 @@ export function reportAnswers<M extends Message>(messages: readonly M[]) {
   return answers;
 }
 
+/** The agent's one-line result for an answered report; a resolve from before the answer is not one. */
+export function answeredReportResult(
+  report: Pick<CoordinatorReport, "resolved">,
+  answer: { readonly createdAt: string },
+) {
+  const { resolved } = report;
+  return resolved?.outcome && Date.parse(resolved.at) >= Date.parse(answer.createdAt)
+    ? resolved.outcome
+    : undefined;
+}
+
 export type ReportReply = { ref: typeof CoordinatorReportReference.Type; title: string };
 
 export function waitingCoordinatorReports<M extends Message & { readonly createdAt: string }>(

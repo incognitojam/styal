@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   acknowledgeReportResponse,
+  answeredReportResult,
   claimReportResponse,
   coordinatorReports,
   formatReportAnswer,
@@ -124,6 +125,16 @@ describe("coordinator reports", () => {
       messageId: "n",
       text: "Why?",
     });
+  });
+
+  it("shows a result recorded after the answer, not a resolve the answer reopened", () => {
+    const resolved = { at: "2026-11-20T10:00:00.000Z", outcome: "Merged" };
+    expect(answeredReportResult({ resolved }, { createdAt: "2026-11-20T09:59:00.000Z" })).toBe(
+      "Merged",
+    );
+    expect(
+      answeredReportResult({ resolved }, { createdAt: "2026-11-20T10:01:00.000Z" }),
+    ).toBeUndefined();
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {
