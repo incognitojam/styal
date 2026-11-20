@@ -133,6 +133,10 @@ export const UNSENT_BUBBLE_CLASS_NAME =
 const UNSENT_MEDIA_CLASS_NAME =
   "[&_[data-media-edge]]:after:border [&_[data-media-edge]]:after:border-dashed [&_[data-media-edge]]:after:border-muted-foreground/40 [&_[data-media-edge]]:after:ring-0 [&_[data-media-edge]_:is(img,video)]:opacity-65";
 
+/** Unsent file cards and audio sent alone each take the text bubble's unsent look: the edge, no fill. */
+const UNSENT_CARDS_CLASS_NAME =
+  "[&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:relative [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:bg-transparent [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:pointer-events-none [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:absolute [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:inset-0 [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:rounded-[inherit] [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border-dashed [&_:is([data-file-card],[data-user-audio]_[data-slot=context-chip])]:after:border-muted-foreground/40";
+
 const BUBBLE_CHIP_CLASS_NAME =
   "[&_[data-slot=context-chip]]:[--context-chip-ink:var(--context-chip-message,var(--context-chip-accent))]";
 
@@ -171,6 +175,7 @@ function UserFileCard({
   );
   return (
     <div
+      data-file-card
       data-markdown-copy={copyMarkdown}
       className="flex w-64 max-w-full items-center gap-1 rounded-2xl bg-message py-2 ps-2 pe-1 text-message-foreground"
     >
@@ -1037,12 +1042,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             : unsent
               ? mediaOnly
                 ? UNSENT_MEDIA_CLASS_NAME
-                : UNSENT_BUBBLE_CLASS_NAME
+                : fileCardsOnly || audioOnly
+                  ? UNSENT_CARDS_CLASS_NAME
+                  : UNSENT_BUBBLE_CLASS_NAME
               : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
-          // The edge sits on the cards or player itself here, so it is drawn in two tones.
-          unsent &&
-            (fileCardsOnly || audioOnly) &&
-            "after:border-2 after:border-foreground/80 after:ring-2 after:ring-inset after:ring-background/70",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
         )}
@@ -1098,7 +1101,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </div>
             ) : null}
             {userAudio.length > 0 ? (
-              <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
+              <div
+                data-user-audio
+                className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}
+              >
                 {userAudio.map((file) => (
                   <InlineAudioPreview
                     key={file.id}
