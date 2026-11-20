@@ -29,6 +29,7 @@ import {
 import { createProject, deleteProject, updateProject } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createFileMetadataAtoms } from "./fileMetadata.ts";
+import { sourceCheckoutRevision } from "./git.ts";
 import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
 
 export type {
@@ -62,6 +63,11 @@ function writtenFilePaths(
     ),
   );
 }
+
+const refreshAfterSourceCheckout = (target: {
+  environmentId: EnvironmentId;
+  input: { readonly cwd: string };
+}) => sourceCheckoutRevision(target.environmentId, target.input.cwd);
 
 export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProjectNotLoadedError>()(
   "ScratchProjectNotLoadedError",
@@ -109,6 +115,7 @@ export function createProjectEnvironmentAtoms<R, E>(
     }),
     searchEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:search-entries",
+      refreshTrigger: refreshAfterSourceCheckout,
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
       execute: (input) =>
@@ -119,6 +126,7 @@ export function createProjectEnvironmentAtoms<R, E>(
     }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
+      refreshTrigger: refreshAfterSourceCheckout,
       tag: WS_METHODS.projectsListEntries,
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,
@@ -135,6 +143,7 @@ export function createProjectEnvironmentAtoms<R, E>(
     }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
+      refreshTrigger: refreshAfterSourceCheckout,
       tag: WS_METHODS.projectsReadFile,
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,

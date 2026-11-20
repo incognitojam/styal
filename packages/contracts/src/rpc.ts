@@ -528,6 +528,7 @@ export const WS_METHODS = {
   vcsInit: "vcs.init",
 
   gitRunStackedAction: "git.runStackedAction",
+  gitCheckOutSources: "git.checkOutSources",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
 
@@ -1726,6 +1727,12 @@ const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
   stream: true,
 });
 
+const WsGitCheckOutSourcesRpc = Rpc.make(WS_METHODS.gitCheckOutSources, {
+  payload: VcsStatusInput,
+  success: Schema.Void,
+  error: Schema.Union([WorktreeCleanupError, EnvironmentAuthorizationError]),
+});
+
 const WsGitResolvePullRequestRpc = Rpc.make(WS_METHODS.gitResolvePullRequest, {
   payload: GitPullRequestRefInput,
   success: GitResolvePullRequestResult,
@@ -2490,6 +2497,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
+  WsGitCheckOutSourcesRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
   WsVcsListRefsRpc,

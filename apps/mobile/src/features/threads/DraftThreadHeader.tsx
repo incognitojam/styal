@@ -49,6 +49,7 @@ export function DraftThreadHeader(props: {
       title="New thread"
       subtitle=""
       hasThreadCwd={props.cwd !== null}
+      cwd={props.cwd}
       inspectorMode={null}
       onOpenFilesInspector={openFiles}
       gitControls={{

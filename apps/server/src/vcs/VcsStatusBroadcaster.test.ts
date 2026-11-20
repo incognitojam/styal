@@ -109,6 +109,7 @@ function layerTestFor(state: {
     ),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
+        sourceCheckoutState: () => Effect.sync(() => state.currentLocalStatus.sourceCheckout),
         localStatus: () =>
           Effect.suspend(() => {
             state.localStatusCalls += 1;
@@ -439,6 +440,14 @@ describe("VcsStatusBroadcaster", () => {
         { cwd: "/repo", refName: "main" },
         { cwd: "/repo", refName: "union" },
       ]);
+      state.currentLocalStatus = {
+        ...baseLocalStatus,
+        refName: "union",
+        sourceCheckout: "released",
+      };
+      assert.equal((yield* broadcaster.getStatus({ cwd: "/repo" })).sourceCheckout, "released");
+      state.currentLocalStatus = { ...baseLocalStatus, refName: "union" };
+      assert.isUndefined((yield* broadcaster.getStatus({ cwd: "/repo" })).sourceCheckout);
     }).pipe(Effect.provide(layerTestFor(state)));
   });
 
@@ -622,6 +631,7 @@ describe("VcsStatusBroadcaster", () => {
         ),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
+            sourceCheckoutState: () => Effect.undefined,
             localStatus: () => Effect.succeed(localStatus),
             currentBranch: () => Effect.succeed(localStatus.refName),
             remoteStatus: () => Effect.succeed(remoteStatus),
@@ -726,6 +736,7 @@ describe("VcsStatusBroadcaster", () => {
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
+          sourceCheckoutState: () => Effect.undefined,
           localStatus: () => Effect.succeed(baseLocalStatus),
           currentBranch: () => Effect.succeed(baseLocalStatus.refName),
           remoteStatus: () =>
@@ -773,6 +784,7 @@ describe("VcsStatusBroadcaster", () => {
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
+          sourceCheckoutState: () => Effect.undefined,
           localStatus: () => Effect.succeed(baseLocalStatus),
           currentBranch: () => Effect.succeed(baseLocalStatus.refName),
           remoteStatus: () =>
@@ -823,6 +835,7 @@ describe("VcsStatusBroadcaster", () => {
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
+          sourceCheckoutState: () => Effect.undefined,
           localStatus: () =>
             Effect.sync(() => {
               state.localStatusCalls += 1;
@@ -907,6 +920,7 @@ describe("VcsStatusBroadcaster", () => {
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
+            sourceCheckoutState: () => Effect.undefined,
             localStatus: (input) =>
               Effect.sync(() => {
                 seenCwds.push(input.cwd);
@@ -1011,6 +1025,7 @@ describe("VcsStatusBroadcaster", () => {
         Layer.provide(layerBackgroundPolicy(() => true)),
         Layer.provide(
           Layer.mock(GitWorkflowService.GitWorkflowService)({
+            sourceCheckoutState: () => Effect.undefined,
             localStatus: readLocalStatus,
             invalidateStatus: () =>
               Effect.sync(() => {
@@ -1294,56 +1309,91 @@ describe("VcsStatusBroadcaster", () => {
     }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
   });
 
-  it.effect("a terminal checkout publishes the new branch without waiting for a poll", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const gitDir = yield* fs.makeTempDirectoryScoped({ prefix: "vcs-head-watch-" });
-      const headPath = path.join(gitDir, "HEAD");
-      yield* fs.writeFileString(headPath, "ref: refs/heads/main\n");
-      const state = {
-        currentLocalStatus: { ...baseLocalStatus, isDefaultRef: true, refName: "main" },
-        currentRemoteStatus: remoteStatusWithPr as VcsStatusRemoteResult | null,
-        localStatusCalls: 0,
-        remoteStatusCalls: 0,
-        localInvalidationCalls: 0,
-        remoteInvalidationCalls: 0,
-        remoteStatusRefreshUpstreamValues: [] as Array<boolean | undefined>,
-        headPath,
-      };
+  it.effect.each(["HEAD", "styal-checkout.json"] as const)(
+    "publishes %s changes without waiting for a poll",
+    (fileName) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const gitDir = yield* fs.makeTempDirectoryScoped({ prefix: "vcs-head-watch-" });
+        const headPath = path.join(gitDir, "HEAD");
+        yield* fs.writeFileString(headPath, "ref: refs/heads/main\n");
+        const state: Parameters<typeof layerTestFor>[0] = {
+          currentLocalStatus: { ...baseLocalStatus, isDefaultRef: true, refName: "main" },
+          currentRemoteStatus: remoteStatusWithPr as VcsStatusRemoteResult | null,
+          localStatusCalls: 0,
+          remoteStatusCalls: 0,
+          localInvalidationCalls: 0,
+          remoteInvalidationCalls: 0,
+          remoteStatusRefreshUpstreamValues: [] as Array<boolean | undefined>,
+          // HEAD uses the default fetch interval; the checkout-state case turns fetch off so
+          // every status read is a no-fetch read.
+          ...(fileName === "HEAD" ? {} : { automaticFetchInterval: Effect.succeed(Duration.zero) }),
+          headPath,
+        };
 
-      yield* Effect.gen(function* () {
-        const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
-        yield* broadcaster.getStatus({ cwd: "/repo" });
-        const clientStates: Array<VcsStatusResult> = [];
-        const subscribed = yield* Deferred.make<void>();
-        const checkedOut = yield* Deferred.make<void>();
-        yield* Stream.runForEach(broadcaster.streamStatus({ cwd: "/repo" }), (event) =>
-          Effect.gen(function* () {
-            const next = applyGitStatusStreamEvent(clientStates.at(-1) ?? null, event);
-            clientStates.push(next);
-            yield* Deferred.succeed(subscribed, undefined);
-            if (next.refName === "repro") yield* Deferred.succeed(checkedOut, undefined);
-          }),
-        ).pipe(Effect.forkScoped);
-        yield* Deferred.await(subscribed);
+        yield* Effect.gen(function* () {
+          const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+          yield* broadcaster.getStatus({ cwd: "/repo" });
+          const clientStates: Array<VcsStatusResult> = [];
+          const subscribed = yield* Deferred.make<void>();
+          const checkedOut = yield* Deferred.make<void>();
+          const restored = yield* Deferred.make<void>();
+          yield* Stream.runForEach(broadcaster.streamStatus({ cwd: "/repo" }), (event) =>
+            Effect.gen(function* () {
+              const next = applyGitStatusStreamEvent(clientStates.at(-1) ?? null, event);
+              if (
+                next.sourceCheckout === undefined &&
+                clientStates.some((status) => status.sourceCheckout === "released")
+              )
+                yield* Deferred.succeed(restored, undefined);
+              clientStates.push(next);
+              yield* Deferred.succeed(subscribed, undefined);
+              if (
+                fileName === "HEAD" ? next.refName === "repro" : next.sourceCheckout === "released"
+              )
+                yield* Deferred.succeed(checkedOut, undefined);
+            }),
+          ).pipe(Effect.forkScoped);
+          yield* Deferred.await(subscribed);
 
-        // What `git switch -c repro` does to HEAD, with the test clock never advanced.
-        state.currentLocalStatus = { ...baseLocalStatus, isDefaultRef: false, refName: "repro" };
-        state.currentRemoteStatus = { ...baseRemoteStatus, hasUpstream: false };
-        const lockPath = path.join(gitDir, "HEAD.lock");
-        yield* fs.writeFileString(lockPath, "ref: refs/heads/repro\n");
-        yield* fs.rename(lockPath, headPath);
-        yield* Deferred.await(checkedOut);
+          // What `git switch -c repro` does to HEAD, with the test clock never advanced.
+          state.currentLocalStatus =
+            fileName === "HEAD"
+              ? { ...baseLocalStatus, isDefaultRef: false, refName: "repro" }
+              : { ...state.currentLocalStatus, sourceCheckout: "released" };
+          state.currentRemoteStatus = { ...baseRemoteStatus, hasUpstream: false };
+          const lockPath = path.join(gitDir, `${fileName}.lock`);
+          yield* fs.writeFileString(lockPath, "ref: refs/heads/repro\n");
+          yield* fs.rename(lockPath, path.join(gitDir, fileName));
+          yield* Deferred.await(checkedOut);
 
-        assert.deepStrictEqual(
-          clientStates.filter((status) => status.refName === "repro").map((status) => status.pr),
-          [null],
-        );
-        // A checkout must not trigger a network fetch.
-        assert.deepStrictEqual(state.remoteStatusRefreshUpstreamValues.slice(1), [false]);
-      }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+          if (fileName === "styal-checkout.json") {
+            const { sourceCheckout: _released, ...full } = state.currentLocalStatus;
+            state.currentLocalStatus = full;
+            yield* fs.remove(path.join(gitDir, fileName));
+            yield* Deferred.await(restored);
+            assert.deepStrictEqual(
+              new Set(state.remoteStatusRefreshUpstreamValues),
+              new Set([false]),
+            );
+            return;
+          }
+          assert.deepStrictEqual(
+            new Set(
+              clientStates
+                .filter((status) => status.refName === "repro")
+                .map((status) => status.pr),
+            ),
+            new Set([null]),
+          );
+          // A checkout must not trigger a network fetch; the first read is the initial fetch.
+          assert.deepStrictEqual(
+            new Set(state.remoteStatusRefreshUpstreamValues?.slice(1)),
+            new Set([false]),
+          );
+        }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
   it.effect("a terminal checkout updates branch-only subscribers without full status", () =>
@@ -1604,6 +1654,7 @@ describe("VcsStatusBroadcaster", () => {
       Layer.provide(layerBackgroundPolicy(() => true)),
       Layer.provide(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
+          sourceCheckoutState: () => Effect.undefined,
           localStatus: () =>
             Effect.sync(() => {
               state.localStatusCalls += 1;

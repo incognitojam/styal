@@ -2,6 +2,7 @@ import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/files
 import { environmentSession } from "../../state/session";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AppBar } from "../../components/ui/AppBar";
+import { SourceCheckoutNotice } from "../../components/SourceCheckoutNotice";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { useState } from "react";
 import { View } from "react-native";
@@ -80,7 +81,10 @@ export function ThreadFileNavigatorPane(props: {
   return (
     // Material drags target the first scroll view, so place content before the header.
     <View className="flex-1 ios:bg-sheet android:bg-header android:flex-col-reverse">
-      <ScreenContent insetHorizontal>{fileTree}</ScreenContent>
+      <ScreenContent insetHorizontal>
+        <SourceCheckoutNotice environmentId={props.environmentId} cwd={props.cwd} context="files" />
+        {fileTree}
+      </ScreenContent>
       <AppBar
         title="Files"
         subtitle={props.projectName}

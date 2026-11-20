@@ -32,6 +32,7 @@ import {
   refreshVcsBranch,
   type EnvironmentRpcInput,
 } from "../rpc/client.ts";
+import { sourceCheckoutRevision } from "./git.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 import { vcsCommandConcurrency, vcsCommandScheduler } from "./vcsCommandScheduler.ts";
 import {
@@ -339,9 +340,25 @@ export function createVcsEnvironmentAtoms<R, E>(
             () => null as VcsStatusResult | null,
             (current, event) => {
               const next = applyGitStatusStreamEvent(current, event);
-              return [next, [next]] as const;
+              const restored =
+                current?.sourceCheckout !== undefined && next.sourceCheckout === undefined;
+              return [next, [{ next, restored }]] as const;
             },
           ),
+          // Sources come back from a checkout, a turn, a terminal or another client alike.
+          Stream.tap(({ restored }) =>
+            restored
+              ? Effect.gen(function* () {
+                  const { environmentId } = (yield* EnvironmentSupervisor.EnvironmentSupervisor)
+                    .target;
+                  (yield* AtomRegistry.AtomRegistry).update(
+                    sourceCheckoutRevision(environmentId, input.cwd),
+                    (revision) => revision + 1,
+                  );
+                })
+              : Effect.void,
+          ),
+          Stream.map(({ next }) => next),
         ),
     }),
     pull: createEnvironmentRpcCommand(runtime, {

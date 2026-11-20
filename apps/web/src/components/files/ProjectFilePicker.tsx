@@ -7,6 +7,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
+import { SourceCheckoutNotice } from "../SourceCheckoutNotice";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import { type CommandPaletteActionItem } from "../CommandPalette.logic";
 import { CommandPaletteResults } from "../CommandPaletteResults";
@@ -127,6 +128,7 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
       testId="project-file-picker"
       value={query}
     >
+      <SourceCheckoutNotice environmentId={target.environmentId} cwd={target.cwd} context="files" />
       <CommandPaletteResults
         groups={
           items.length > 0 ? [{ value: "project-files", label: target.projectName, items }] : []

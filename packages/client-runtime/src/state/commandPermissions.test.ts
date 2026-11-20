@@ -38,6 +38,8 @@ import { createCommandPermissions } from "./commandPermissions.ts";
 import { createEnvironmentRpcCommand } from "./runtime.ts";
 import { AVAILABLE_CONNECTION_STATE, BearerConnectionTarget } from "../connection/model.ts";
 import { createPeerLinkEnvironmentAtoms } from "./peerLinks.ts";
+import { createGitEnvironmentAtoms } from "./git.ts";
+import { EnvironmentCacheStore } from "../platform/persistence.ts";
 
 vi.mock("./session.ts", () => ({
   createEnvironmentSessionAtoms: () => ({ sessionStateAtom: sessions }),
@@ -59,9 +61,12 @@ const grant = (allowed: boolean): AuthSessionState => ({
   permissions: allowed ? [AuthOrchestrationOperateScope] : [],
 });
 const runtime = Atom.runtime(
-  Layer.succeed(EnvironmentRegistry, {
-    run: (_id: EnvironmentId, effect: Effect.Effect<unknown>) => effect,
-  } as unknown as EnvironmentRegistry["Service"]),
+  Layer.mergeAll(
+    Layer.mock(EnvironmentCacheStore)({}),
+    Layer.succeed(EnvironmentRegistry, {
+      run: (_id: EnvironmentId, effect: Effect.Effect<unknown>) => effect,
+    } as unknown as EnvironmentRegistry["Service"]),
+  ),
 );
 const permissions = createCommandPermissions(runtime, WS_METHODS.scheduledTasksDelete);
 const setup = Effect.gen(function* () {
@@ -72,6 +77,33 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
+  it.effect("shows a denied checkout from the file view on the same thread workspace", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const git = createGitEnvironmentAtoms(runtime);
+        registry.set(sessions(env), AsyncResult.success(grant(false)));
+        const thread = git.sourceCheckoutAction({ environmentId: env, cwd: "/worktree" });
+        registry.mount(thread);
+        const result = yield* Effect.promise(() =>
+          git.checkOutSources.run(registry, {
+            environmentId: env,
+            input: { cwd: "/worktree" },
+          }),
+        );
+        expect(result._tag).toBe("Failure");
+        expect(registry.get(thread).pending).toBe(false);
+        expect(registry.get(thread).error).toContain(AuthSourceControlWriteScope);
+        expect(
+          registry.get(git.sourceCheckoutAction({ environmentId: env, cwd: "/other" })).error,
+        ).toBeNull();
+        expect(
+          registry.get(git.sourceCheckoutAction({ environmentId: other, cwd: "/worktree" })).error,
+        ).toBeNull();
+      }),
+    ),
+  );
+
   it.effect("requires the destination read grant to refresh providers", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -466,14 +498,14 @@ describe("command permissions", () => {
   });
 });
 
-it.effect(
-  "requires source control alone for git, and both grants when attaching a worktree to a thread",
-  () =>
+it.effect.each([WS_METHODS.vcsInit, WS_METHODS.gitCheckOutSources])(
+  "%s requires source control alone; attaching a worktree also needs thread permission",
+  (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         registry.set(sessions(env), AsyncResult.success(grant(true)));
-        const git = createCommandPermissions(runtime, WS_METHODS.vcsInit);
+        const git = createCommandPermissions(runtime, method);
         expect((yield* git.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
           AuthSourceControlWriteScope,
         );

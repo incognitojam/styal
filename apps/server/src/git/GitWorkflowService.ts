@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 import {
   GitManagerError,
   GitCommandError,
+  WorktreeCleanupError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
@@ -51,6 +52,10 @@ export class GitWorkflowService extends Context.Service<
     readonly status: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
+    readonly checkOutSources: (input: VcsStatusInput) => Effect.Effect<void, WorktreeCleanupError>;
+    readonly sourceCheckoutState: (
+      cwd: string,
+    ) => Effect.Effect<VcsStatusLocalResult["sourceCheckout"], GitManagerServiceError>;
     readonly localStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
@@ -184,6 +189,33 @@ export const make = Effect.gen(function* () {
   const withWorkspaceLease = yield* makeWorkspaceLease;
   const checkout = yield* makeCheckout;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
+  const readSourceCheckout = Effect.fn("GitWorkflowService.readSourceCheckout")(
+    function* (cwd: string) {
+      const root = yield* checkout.root(cwd);
+      const state = yield* checkout.state(root);
+      return {
+        root,
+        sourceCheckout:
+          state === null
+            ? undefined
+            : state.phase === "released"
+              ? ("released" as const)
+              : ("recovery-required" as const),
+      };
+    },
+    (effect, cwd) =>
+      effect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.sourceCheckoutState",
+              cwd,
+              detail: "Could not inspect worktree source checkout state.",
+              cause,
+            }),
+        ),
+      ),
+  );
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
@@ -307,6 +339,24 @@ export const make = Effect.gen(function* () {
       ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
   return GitWorkflowService.of({
+    sourceCheckoutState: Effect.fn("GitWorkflowService.sourceCheckoutState")(function* (cwd) {
+      return (yield* readSourceCheckout(cwd)).sourceCheckout;
+    }),
+    checkOutSources: Effect.fn("GitWorkflowService.checkOutSources")(function* (input) {
+      const root = yield* checkout.root(input.cwd);
+      yield* withWorkspaceLease(root, checkout.restore(root)).pipe(
+        Effect.catchTags({
+          SchemaError: () =>
+            Effect.fail(
+              new WorktreeCleanupError({
+                reason: "run-failed",
+                message: "Invalid worktree checkout recovery record.",
+              }),
+            ),
+        }),
+      );
+      yield* gitManager.invalidateStatus(input.cwd);
+    }),
     repositoryRoot: Effect.fn("GitWorkflowService.repositoryRoot")(function (cwd) {
       return registry.detect({ cwd }).pipe(
         Effect.map((handle) => (handle?.kind === "git" ? handle.repository.rootPath : null)),
@@ -354,23 +404,34 @@ export const make = Effect.gen(function* () {
             Effect.map((result) => result.stdout.trim().length > 0),
           );
     }),
-    status: Effect.fn("GitWorkflowService.status")(function (input) {
-      return detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
-        Effect.flatMap((isGitRepository) =>
-          isGitRepository ? gitManager.status(input) : Effect.succeed(nonRepositoryStatus()),
-        ),
-      );
+    status: Effect.fn("GitWorkflowService.status")(function* (input) {
+      const { root, sourceCheckout } = yield* readSourceCheckout(input.cwd);
+      const cwd = sourceCheckout ? root : input.cwd;
+      if (!(yield* detectGitRepositoryForStatus("GitWorkflowService.status", cwd)))
+        return nonRepositoryStatus();
+      const status = yield* gitManager.status({ ...input, cwd });
+      return { ...status, ...(sourceCheckout ? { sourceCheckout } : {}) };
     }),
-    localStatus: Effect.fn("GitWorkflowService.localStatus")(function (input) {
-      return detectGitRepositoryForStatus("GitWorkflowService.localStatus", input.cwd).pipe(
-        Effect.flatMap((isGitRepository) =>
-          isGitRepository
-            ? gitManager.localStatus(input)
-            : Effect.succeed(nonRepositoryLocalStatus()),
-        ),
-      );
+    localStatus: Effect.fn("GitWorkflowService.localStatus")(function* (input) {
+      const { root, sourceCheckout } = yield* readSourceCheckout(input.cwd);
+      const cwd = sourceCheckout ? root : input.cwd;
+      if (!(yield* detectGitRepositoryForStatus("GitWorkflowService.localStatus", cwd)))
+        return nonRepositoryLocalStatus();
+      const status = yield* gitManager.localStatus({ ...input, cwd });
+      return { ...status, ...(sourceCheckout ? { sourceCheckout } : {}) };
     }),
     currentBranch: Effect.fn("GitWorkflowService.currentBranch")(function* (cwd) {
+      cwd = yield* checkout.root(cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.currentBranch",
+              cwd,
+              detail: "Could not resolve the worktree folder.",
+              cause,
+            }),
+        ),
+      );
       if (!(yield* detectGitRepositoryForStatus("GitWorkflowService.currentBranch", cwd))) {
         return null;
       }
@@ -407,17 +468,18 @@ export const make = Effect.gen(function* () {
     invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
     invalidateStatus: gitManager.invalidateStatus,
     headPath: Effect.fn("GitWorkflowService.headPath")(function (cwd) {
-      return git
-        .execute({
-          operation: "GitWorkflowService.headPath",
-          cwd,
-          args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
-          allowNonZeroExit: true,
-        })
-        .pipe(
-          Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
-          Effect.orElseSucceed(() => null),
-        );
+      return checkout.root(cwd).pipe(
+        Effect.flatMap((root) =>
+          git.execute({
+            operation: "GitWorkflowService.headPath",
+            cwd: root,
+            args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
+            allowNonZeroExit: true,
+          }),
+        ),
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
+        Effect.orElseSucceed(() => null),
+      );
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(

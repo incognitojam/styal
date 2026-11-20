@@ -434,8 +434,12 @@ const make = Effect.gen(function* () {
       const project = yield* loadProject(scope, projection.thread.projectId);
 
       const defaultStartFromOrigin = yield* readDefaultStartFromOrigin(project.id);
+      const sourceCheckout = yield* gitWorkflow
+        .sourceCheckoutState(projection.thread.worktreePath ?? project.workspaceRoot)
+        .pipe(asOperationFailed("Unable to read source checkout state"));
 
       const result: WorktreeMcpStatusResult = {
+        ...(sourceCheckout === undefined ? {} : { sourceCheckout }),
         attached: projection.thread.worktreePath !== null,
         worktreePath: projection.thread.worktreePath,
         branch: projection.thread.branch,

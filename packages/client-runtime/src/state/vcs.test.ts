@@ -35,7 +35,7 @@ import * as Persistence from "../platform/persistence.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { createGitEnvironmentAtoms } from "./git.ts";
+import { createGitEnvironmentAtoms, sourceCheckoutRevision } from "./git.ts";
 
 import {
   commitVcsRefsRefresh,
@@ -199,6 +199,63 @@ describe("branch subscriptions", () => {
         registry.dispose();
         expect(yield* Queue.take(released)).toBe("external");
       }).pipe(Effect.scoped),
+  );
+});
+
+describe("source checkout status", () => {
+  it.effect("signals once when a status stops reporting freed sources", () =>
+    Effect.gen(function* () {
+      const events = yield* Queue.unbounded<unknown>();
+      const client = {
+        [WS_METHODS.subscribeVcsStatus]: () => Stream.fromQueue(events),
+      } as unknown as WsRpcProtocolClient;
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(CONNECTED_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.some(session(client))),
+        prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      });
+      const runtime = Atom.runtime(
+        Layer.merge(
+          Layer.succeed(
+            EnvironmentRegistry.EnvironmentRegistry,
+            EnvironmentRegistry.EnvironmentRegistry.of({
+              followStream: (_environmentId, stream) =>
+                Stream.provideService(
+                  stream,
+                  EnvironmentSupervisor.EnvironmentSupervisor,
+                  supervisor,
+                ),
+            } as EnvironmentRegistry.EnvironmentRegistry["Service"]),
+          ),
+          Layer.succeed(Persistence.EnvironmentCacheStore, cacheWithRefs(Option.none())),
+        ),
+      );
+      const atoms = createVcsEnvironmentAtoms(runtime);
+      const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (value) =>
+        Effect.sync(() => value.dispose()),
+      );
+      const statuses = yield* Stream.toPull(
+        AtomRegistry.toStreamResult(
+          registry,
+          atoms.status({ environmentId: TARGET.environmentId, input: { cwd: "/repo" } }),
+        ),
+      );
+      const revision = sourceCheckoutRevision(TARGET.environmentId, "/repo");
+      const snapshot = (local: VcsStatusResult) => ({ _tag: "snapshot", local, remote: null });
+      yield* Queue.offer(events, snapshot(status({ sourceCheckout: "released" })));
+      expect((yield* statuses).at(-1)?.sourceCheckout).toBe("released");
+      expect(registry.get(revision)).toBe(0);
+      yield* Queue.offer(events, snapshot(status()));
+      expect((yield* statuses).at(-1)?.sourceCheckout).toBeUndefined();
+      expect(registry.get(revision)).toBe(1);
+      yield* Queue.offer(events, snapshot(status({ refName: "other" })));
+      expect((yield* statuses).at(-1)?.refName).toBe("other");
+      expect(registry.get(revision)).toBe(1);
+    }).pipe(Effect.scoped),
   );
 });
 

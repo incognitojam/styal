@@ -840,7 +840,7 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
     Input,
     A,
     E,
-    EnvironmentSupervisor.EnvironmentSupervisor | R
+    EnvironmentSupervisor.EnvironmentSupervisor | AtomRegistry.AtomRegistry | R
   >,
 ) {
   const idleTtlMs = options.idleTtlMs ?? 5 * 60_000;

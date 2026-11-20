@@ -27,6 +27,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import type { EnvironmentProject } from "./models.ts";
+import { sourceCheckoutRevision } from "./git.ts";
 import { createProjectEnvironmentAtoms } from "./projectCommands.ts";
 
 const decodeReadFileInput = Schema.decodeUnknownSync(ProjectReadFileInput);
@@ -267,6 +268,28 @@ describe("openScratch", () => {
       registry.set(storedProject, PROJECT);
       const result = yield* Fiber.join(opening);
       expect(result).toMatchObject({ _tag: "Success", value: PROJECT });
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("source checkout", () => {
+  it.effect("re-reads an open file once freed sources come back", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      h.readResponse.missing = true;
+      const file = h.commands.readFile({
+        environmentId: ENVIRONMENT_ID,
+        input: { cwd: "/repo", relativePath: "foo", allowMissing: true },
+      });
+      h.registry.mount(file);
+      const read = () => AtomRegistry.getResult(h.registry, file, { suspendOnWaiting: true });
+      expect((yield* read()).exists).toBe(false);
+      h.readResponse.missing = false;
+      h.registry.update(
+        sourceCheckoutRevision(ENVIRONMENT_ID, "/repo"),
+        (revision) => revision + 1,
+      );
+      expect((yield* read()).contents).toBe("old");
     }).pipe(Effect.scoped),
   );
 });

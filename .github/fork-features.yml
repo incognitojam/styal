@@ -7960,16 +7960,19 @@ features:
     title: Free settled worktree sources in place and restore before use
     status: maintained
     tier: keep
-    prs: [1584]
+    prs: [1584, 1605]
     invariants:
       - Source cleanup is per project and machine, off by default, and waits seven days after settlement with delegated children following their parent chain.
       - Only canonical managed linked worktrees recorded on live threads may be un-checked-out under the workspace lease; local changes, untracked and ignored files remain intact.
       - Git non-cone sparse checkout keeps root files and preserves nested ignored files and links while removing unchanged sources. Unstaged deletions, user sparse checkouts, populated submodules, content filters including LFS, active sessions and terminals, pending work, locks and unfinished Git operations prevent cleanup.
       - Turns, terminals, checkpoint rollback and Git mutations restore sources under the same lease or fail loudly. Durable recovery records protect interrupted operations.
+      - Threads, file views and skills pickers show freed sources on web, desktop and mobile; Check out uses the same leased restore, with failures visible on the thread. The worktree status tool reports the state without adding agent context.
       - Storage estimates released space from allocated blocks of removed single-link regular files. Windows does not un-check-out sources. No agent context is added.
     implementation_paths:
+      - apps/mobile/src/components/SourceCheckoutNotice.tsx
       - apps/server/src/worktreeCleanup/Checkout.ts
       - apps/server/src/worktreeCleanup/CheckoutSweep.ts
+      - apps/web/src/components/SourceCheckoutNotice.tsx
       - apps/web/src/components/settings/RegenerableFiles.tsx
       - apps/web/src/components/settings/worktreeSourcesExplainer.tsx
     upstream_paths:
@@ -7979,8 +7982,13 @@ features:
       - apps/server/src/storageCleanup.ts
       - apps/server/src/terminal/Manager.ts
     tests:
+      - apps/server/src/git/GitWorkflowService.test.ts
+      - apps/server/src/mcp/WorktreeMcpService.test.ts
+      - apps/server/src/vcs/VcsStatusBroadcaster.test.ts
       - apps/server/src/worktreeCleanup/Checkout.test.ts
       - apps/server/src/worktreeCleanup/CheckoutSweep.test.ts
+      - packages/client-runtime/src/state/commandPermissions.test.ts
+      - packages/shared/src/git.test.ts
     upstream:
       status: tracking
       tracking:

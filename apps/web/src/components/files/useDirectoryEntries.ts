@@ -1,5 +1,6 @@
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { useAtomMount, useAtomSubscribe } from "@effect/atom-react";
+import { sourceCheckoutRevision } from "@t3tools/client-runtime/state/git";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useEffect, useRef, useState } from "react";
@@ -144,6 +145,11 @@ export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
       void load(path, true);
     }
   };
+  // A source checkout restores folders without file events, including ones that failed while released.
+  useAtomSubscribe(sourceCheckoutRevision(environmentId, cwd), () => {
+    refresh();
+    for (const path of errors.keys()) void load(path);
+  });
 
   return {
     entries,
