@@ -1,10 +1,12 @@
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type ScheduledTaskThread, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   coordinatedProjectKey,
+  isProjectPageJob,
+  jobThreadsSince,
   staysOnProjectPage,
   isProjectChatDraftId,
   projectChatDraftId,
@@ -33,6 +35,74 @@ function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
 
 const running = { status: "running" } as EnvironmentThreadShell["runtime"];
 
+describe("jobThreadsSince", () => {
+  const task = (id: string, overrides: Partial<ScheduledTaskThread> = {}): ScheduledTaskThread => ({
+    id: id as ScheduledTaskThread["id"],
+    title: id,
+    enabled: true,
+    schedule: { type: "interval", everyMs: 60_000 },
+    threadId: ThreadId.make(`thread-${id}`),
+    createdAt: "2026-11-01T09:00:00.000Z",
+    nextRunAt: "2026-11-20T10:00:00.000Z",
+    lastRunAt: null,
+    lastRunStatus: "never",
+    ...overrides,
+  });
+  const once = { type: "once", runAt: "2026-11-19T09:00:00.000Z" } as const;
+
+  it("counts from a thread's latest run, or before any run from when its latest task was made", () => {
+    const shared = ThreadId.make("thread-shared");
+    expect(
+      jobThreadsSince([
+        task("new"),
+        task("daily", { threadId: shared, lastRunAt: "2026-11-19T09:00:00.000Z" }),
+        task("hourly", { threadId: shared, lastRunAt: "2026-11-20T08:00:00.000Z" }),
+      ]),
+    ).toEqual(
+      new Map([
+        [ThreadId.make("thread-new"), Date.parse("2026-11-01T09:00:00.000Z")],
+        [shared, Date.parse("2026-11-20T08:00:00.000Z")],
+      ]),
+    );
+  });
+
+  it("leaves out paused, blocked and finished one-time tasks, but not webhooks or a run in progress", () => {
+    const since = jobThreadsSince([
+      task("paused", { enabled: false }),
+      task("blocked", { blockedByPolicy: "Webhooks are off." }),
+      task("ran-once", { schedule: once, nextRunAt: null, lastRunStatus: "succeeded" }),
+      task("running-once", { schedule: once, nextRunAt: null, lastRunStatus: "running" }),
+      task("webhook", { schedule: { type: "webhook", signature: null }, nextRunAt: null }),
+    ]);
+    expect([...since.keys()]).toEqual(["thread-running-once", "thread-webhook"]);
+  });
+});
+
+describe("isProjectPageJob", () => {
+  const settings = {
+    projectCoordinatorsEnabled: true,
+    projectCoordinators: { [project]: { threadId: chatId } },
+  };
+  const page = { archived: false };
+  const jobs = new Map([
+    [ThreadId.make("job"), 0],
+    [chatId, 0],
+  ]);
+
+  it("keeps a scheduled task's thread in a project with a page, but not the chat or other threads", () => {
+    expect(isProjectPageJob(shell("job"), jobs, settings, page)).toBe(true);
+    expect(isProjectPageJob(shell(chatId), jobs, settings, page)).toBe(false);
+    expect(isProjectPageJob(shell("other"), jobs, settings, page)).toBe(false);
+  });
+
+  it("leaves it alone in Scratch, an archived project, or before settings or the project load", () => {
+    for (const group of [{ isScratch: true, archived: false }, { archived: true }, undefined]) {
+      expect(isProjectPageJob(shell("job"), jobs, settings, group)).toBe(false);
+    }
+    expect(isProjectPageJob(shell("job"), jobs, undefined, page)).toBe(false);
+  });
+});
+
 describe("staysOnProjectPage", () => {
   const chats = new Set([`${local}:${chatId}`]);
   const started = (id: string, overrides: Partial<EnvironmentThreadShell> = {}) =>
@@ -50,7 +120,37 @@ describe("staysOnProjectPage", () => {
     expect(staysOnProjectPage(started("done"), chats)).toBe(true);
   });
 
-  it("brings it back when it needs you, fails, is pinned or you write to it", () => {
+  it("keeps a scheduled task's thread off the sidebar, whoever made the task", () => {
+    const job = started("job", {
+      reportTo: null,
+      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
+      runtime: running,
+    });
+    expect(staysOnProjectPage(job, new Set(), new Map([[`${local}:job`, 0]]))).toBe(true);
+    expect(staysOnProjectPage(job, new Set(), new Map([[`${remote}:job`, 0]]))).toBe(false);
+  });
+
+  it("keeps a scheduled task's thread despite what the person wrote before its latest run", () => {
+    const handMade = started("hand-made", {
+      reportTo: null,
+      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
+      latestUserAuthoredMessageAt: "2026-11-01T10:00:00.000Z",
+    });
+    const latestRun = new Map([[`${local}:hand-made`, Date.parse("2026-11-19T09:00:00.000Z")]]);
+    expect(staysOnProjectPage(handMade, new Set(), latestRun)).toBe(true);
+  });
+
+  it("brings a scheduled task's thread back for a message after its latest run, until the next run", () => {
+    const written = started("written", {
+      reportTo: null,
+      latestUserAuthoredMessageAt: "2026-11-19T10:00:00.000Z",
+    });
+    const since = (at: string) => new Map([[`${local}:written`, Date.parse(at)]]);
+    expect(staysOnProjectPage(written, new Set(), since("2026-11-19T09:00:00.000Z"))).toBe(false);
+    expect(staysOnProjectPage(written, new Set(), since("2026-11-19T11:00:00.000Z"))).toBe(true);
+  });
+
+  it("brings it, or a scheduled task's thread, back when it needs you, fails, is pinned or you write to it", () => {
     for (const thread of [
       started("approval", { hasPendingApprovals: true }),
       started("question", { hasPendingUserInput: true }),
@@ -64,6 +164,9 @@ describe("staysOnProjectPage", () => {
       started("written", { latestUserAuthoredMessageAt: "2026-11-18T10:00:00.000Z" }),
     ]) {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
+      const job = { ...thread, reportTo: null };
+      const jobs = new Map([[`${local}:${thread.id}`, 0]]);
+      expect([thread.id, staysOnProjectPage(job, new Set(), jobs)]).toEqual([thread.id, false]);
     }
   });
 

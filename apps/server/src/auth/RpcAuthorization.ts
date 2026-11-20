@@ -121,6 +121,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.serverReportForkClientUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.scheduledTasksSubscribeThreads]: AuthOrchestrationReadScope,
   [WS_METHODS.secretsAnswerRequest]: AuthOrchestrationOperateScope,
   // Files under the server's GitHub sign-in, like the other source control writes.
   [WS_METHODS.feedbackSubmit]: AuthSourceControlWriteScope,

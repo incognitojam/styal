@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   type EnvironmentTheme,
+  type ScheduledTaskThreadListResult,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleLegacyThreadMigrationPayload,
@@ -41,6 +42,25 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   serverEnvironment.updateStateAtom,
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
+const NO_TASK_THREADS: ScheduledTaskThreadListResult = { tasks: [] };
+/**
+ * The tasks that run in one thread on a machine with project coordinators on, or null until the
+ * list loads there. Subscribed only while the switch is on, and only from servers that serve it.
+ */
+export const projectJobListAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ScheduledTaskThreadListResult | null => {
+    const config = get(serverEnvironment.configValueAtom(environmentId));
+    return config?.settings.projectCoordinatorsEnabled !== true ||
+      config.environment.capabilities.scheduledTaskThreads !== true
+      ? NO_TASK_THREADS
+      : Option.getOrNull(
+          AsyncResult.value(
+            get(serverEnvironment.scheduledTaskThreadsLive({ environmentId, input: {} })),
+          ),
+        );
+  }),
+);
+export const projectJobListsAtom = environmentAtomList("web-project-job-lists", projectJobListAtom);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

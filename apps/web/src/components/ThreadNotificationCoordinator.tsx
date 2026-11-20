@@ -54,14 +54,21 @@ import {
   resolveThreadListStatus,
   type ThreadListStatus,
 } from "@t3tools/client-runtime/state/thread-list-status";
-import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
-import { environmentServerConfigsAtom } from "../state/server";
+import {
+  isProjectPageJob,
+  jobThreadsSince,
+  projectChatTakesReports,
+  staysOnProjectPage,
+} from "./project/projectPage.logic";
+import { environmentServerConfigsAtom, projectJobListAtom } from "../state/server";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
+
+const NO_JOBS: ReadonlyMap<string, number> = new Map();
 
 // A workflow run's deployment review outlives the agent run that was latest when it
 // appeared, so keying it by run would alert again on every message sent while it waits.
@@ -307,12 +314,26 @@ export function startThreadNotifications(
       environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
     );
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
-    // A thread the project chat launched finishes quietly while the chat hears its result. Read
-    // only when some thread was launched to report back, which few are.
+    // A thread the project chat launched, or a scheduled task's thread its project page keeps,
+    // finishes quietly while it stays off the sidebar.
+    const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
+    const jobsSince = jobThreadsSince(registry.get(projectJobListAtom(environmentId))?.tasks ?? []);
+    const jobThreadKeys = (thread: EnvironmentThreadShell): ReadonlyMap<string, number> => {
+      const group = projectGroup(environmentId, thread.projectId);
+      const since = jobsSince.get(thread.id);
+      return since !== undefined &&
+        isProjectPageJob(
+          thread,
+          jobsSince,
+          settings,
+          group && { isScratch: group.representative.isScratch, archived: group.archived },
+        )
+        ? new Map([[`${environmentId}:${thread.id}`, since]])
+        : NO_JOBS;
+    };
     let projectChatKeys: ReadonlySet<string> | null = null;
     const reportingChatKeys = () => {
       if (projectChatKeys !== null) return projectChatKeys;
-      const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
       const chatIds = new Set(
         settings?.projectCoordinatorsEnabled
           ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
@@ -327,7 +348,7 @@ export function startThreadNotifications(
       );
       return projectChatKeys;
     };
-    const changed: Array<[NotificationState | undefined, NotificationState]> = [];
+    const changed: Array<[NotificationState | undefined, NotificationState, boolean]> = [];
     for (const rawThread of threads) {
       if (
         isShownUnderParent(
@@ -370,14 +391,12 @@ export function startThreadNotifications(
             ? `${status}:${subject}`
             : `${thread.latestRun?.runId ?? ""}:${status}`;
       const completed = status === "ready" && thread.latestRun?.status === "completed";
-      const settled =
+      const quietCompletion =
         completed &&
-        !monitorHoldsWakeCompletion(rawThread) &&
-        !(
-          rawThread.reportTo != null &&
-          rawThread.reportTo.source === undefined &&
-          staysOnProjectPage(thread, reportingChatKeys())
-        );
+        ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
+          jobsSince.has(rawThread.id)) &&
+        staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread));
+      const settled = completed && !monitorHoldsWakeCompletion(rawThread) && !quietCompletion;
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
       // Draw the project's icon when work starts, so it is ready when the thread notifies.
@@ -397,19 +416,19 @@ export function startThreadNotifications(
         attention,
         requestId,
         settled,
-        completedAt: settled ? completedAt : null,
+        completedAt: settled || quietCompletion ? completedAt : null,
         backgroundWake: rawThread.latestRunBackgroundWake === true,
       };
       next.set(thread.id, state);
-      changed.push([prior, state]);
+      changed.push([prior, state, quietCompletion]);
     }
     entry.reconnecting = false;
     entry.previous = next;
     entry.gate.retain(new Set(next.keys()));
-    for (const [prior, state] of changed) {
+    for (const [prior, state, quietCompletion] of changed) {
       entry.gate.observe(state.thread.id, prior, state, {
         archived: state.thread.archivedAt !== null,
-        quiet: state.raw.latestRunStopRequested === true,
+        quiet: state.raw.latestRunStopRequested === true || quietCompletion,
       });
     }
   };
@@ -452,10 +471,12 @@ export function startThreadNotifications(
       environmentThreadShells.delegatedUnderParentAtom,
       reobserve,
     );
+    const unmountJobList = registry.mount(projectJobListAtom(environmentId));
     entry.unsubscribe = () => {
       unsubscribeShell();
       unsubscribeRequests();
       unsubscribeDelegated();
+      unmountJobList();
       entry.gate.clear();
     };
     return entry;

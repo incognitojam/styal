@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type ProjectId,
   projectCoordinatorThreadId,
+  type ScheduledTaskThread,
   type ServerSettings,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -74,21 +75,81 @@ export function projectChatTakesReports(chat: {
 }
 
 /**
- * A thread the project's chat launched with reportBack stays on the project page until it needs
- * you, fails, is pinned or you write to it. A `project-coordinator` report target only says the
- * thread was created in the project. `chatThreadKeys`: chats that still take reports.
+ * Whether a task runs in its thread again: a paused task, one a policy blocks, or a one-time task
+ * that has run leaves its thread in the sidebar.
+ */
+export function jobRunsAgain(task: ScheduledTaskThread): boolean {
+  return (
+    task.enabled &&
+    task.blockedByPolicy === undefined &&
+    (task.schedule.type === "webhook" ||
+      task.nextRunAt !== null ||
+      task.lastRunStatus === "running")
+  );
+}
+
+/**
+ * By thread id, for the threads tasks that run again are bound to: when its tasks' latest run
+ * began, or before any has run, when the latest task was made. Only what the person writes after
+ * that brings the thread back to the sidebar.
+ */
+export function jobThreadsSince(
+  tasks: ReadonlyArray<ScheduledTaskThread>,
+): ReadonlyMap<ThreadId, number> {
+  const since = new Map<ThreadId, number>();
+  for (const task of tasks) {
+    if (!jobRunsAgain(task)) continue;
+    const at = Date.parse(task.lastRunAt ?? task.createdAt);
+    since.set(task.threadId, Math.max(at, since.get(task.threadId) ?? at));
+  }
+  return since;
+}
+
+/**
+ * Whether a scheduled task's thread is one its project page keeps: it is in `jobsSince`
+ * (`jobThreadsSince` of its machine), it is not its project's chat, and the project has a page
+ * (not Scratch or archived).
+ */
+export function isProjectPageJob(
+  thread: { readonly id: ThreadId; readonly projectId: ProjectId },
+  jobsSince: ReadonlyMap<ThreadId, number>,
+  settings: CoordinatorSettings | undefined,
+  group: { readonly isScratch?: boolean | undefined; readonly archived: boolean } | undefined,
+): boolean {
+  return (
+    jobsSince.has(thread.id) &&
+    settings !== undefined &&
+    projectCoordinatorThreadId(settings, thread.projectId) !== thread.id &&
+    group !== undefined &&
+    group.isScratch !== true &&
+    !group.archived
+  );
+}
+
+const NO_JOB_THREADS: ReadonlyMap<string, number> = new Map();
+
+/**
+ * A thread the project's chat launched with reportBack, or a scheduled task's thread in
+ * `jobsSince` (by thread key), stays on the project page until it needs you, fails, is pinned or
+ * you write to it (to a job, after its `jobsSince` time). A `project-coordinator` report target
+ * only says the thread was created in the project. `chatThreadKeys`: chats taking reports.
  */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,
   chatThreadKeys: ReadonlySet<string>,
+  jobsSince: ReadonlyMap<string, number> = NO_JOB_THREADS,
 ): boolean {
+  const launched =
+    thread.reportTo != null &&
+    thread.reportTo.source === undefined &&
+    chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) &&
+    thread.source.createdBy === "agent";
+  const jobSince = jobsSince.get(`${thread.environmentId}:${thread.id}`);
+  const authored = thread.latestUserAuthoredMessageAt;
   if (
-    thread.reportTo == null ||
-    thread.reportTo.source !== undefined ||
-    !chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) ||
-    thread.source.createdBy !== "agent" ||
+    !(launched || jobSince !== undefined) ||
     thread.pinnedAt != null ||
-    thread.latestUserAuthoredMessageAt != null ||
+    (authored != null && (jobSince === undefined || Date.parse(authored) > jobSince)) ||
     thread.latestRun?.status === "failed"
   )
     return false;

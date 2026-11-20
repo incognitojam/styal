@@ -12,6 +12,7 @@ import {
   ProviderThreadId,
   RunId,
   RuntimeRequestId,
+  ScheduledTaskId,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -579,7 +580,7 @@ it.effect("sql: a store without server settings counts no open report questions"
   }).pipe(Effect.provide(layerSql)),
 );
 
-it.effect("sql: the user-authored message time ignores agent notifications", () =>
+it.effect("sql: the user-authored time ignores notifications and scheduled runs", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
     const threadId = yield* createThread("agent-woken");
@@ -589,6 +590,7 @@ it.effect("sql: the user-authored message time ignores agent notifications", () 
       createdBy: "user" | "agent",
       creationSource: "web" | "provider",
       at: DateTime.Utc,
+      scheduledTaskId?: ScheduledTaskId,
     ) =>
       store.apply({
         id: EventId.make(`event:settlement:${id}`),
@@ -608,10 +610,19 @@ it.effect("sql: the user-authored message time ignores agent notifications", () 
           streaming: false,
           createdAt: at,
           updatedAt: at,
+          ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
         },
       });
     const written = DateTime.subtract(now, { hours: 2 });
     yield* message("written", "user", "web", written);
+    // A task the user made sends its runs as the user.
+    yield* message(
+      "scheduled",
+      "user",
+      "web",
+      DateTime.subtract(now, { hours: 1 }),
+      ScheduledTaskId.make("scheduled-task:settlement"),
+    );
     yield* message("notification", "agent", "provider", now);
 
     const [candidate] = yield* store.getSettlementCandidates(threadId);
@@ -621,13 +632,15 @@ it.effect("sql: the user-authored message time ignores agent notifications", () 
       DateTime.formatIso(candidate.latestUserAuthoredMessageAt!),
       DateTime.formatIso(written),
     );
-    const shellThread = (yield* store.getShellSnapshot()).threads.find(
-      (thread) => thread.id === threadId,
-    );
-    assert.equal(
-      DateTime.formatIso(shellThread!.latestUserAuthoredMessageAt!),
-      DateTime.formatIso(written),
-    );
+    for (const shell of [
+      (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === threadId)!,
+      ProjectionStore.threadShellFromProjection(yield* store.getThreadProjection(threadId)),
+    ]) {
+      assert.equal(
+        DateTime.formatIso(shell.latestUserAuthoredMessageAt!),
+        DateTime.formatIso(written),
+      );
+    }
   }).pipe(Effect.provide(layerSql)),
 );
 
