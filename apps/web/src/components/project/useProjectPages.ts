@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 
@@ -5,12 +6,14 @@ import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
+import { environmentIdsKey } from "../../state/environmentAtomList";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import {
   useEnvironmentShellStatuses,
   useServerConfigs,
   useThreadShells,
 } from "../../state/entities";
+import { projectJobThreadIdListsAtom } from "../../state/server";
 import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
 import {
@@ -19,6 +22,9 @@ import {
   type ProjectChatHost,
   resolveProjectChatHost,
 } from "@t3tools/client-runtime/project-page";
+import { isProjectPageJob } from "./projectPage.logic";
+
+const NO_IDS: ReadonlySet<string> = new Set();
 
 export interface ProjectPage {
   readonly group: SidebarProjectSnapshot;
@@ -28,6 +34,8 @@ export interface ProjectPage {
   readonly statusLine: string | null;
   /** The threads the status line counts as needing you. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** Scheduled tasks' threads the page keeps (`isProjectPageJob`), latest activity first. */
+  readonly jobThreads: ReadonlyArray<EnvironmentThreadShell>;
 }
 
 /** Every project with a page (project coordinators on in Labs), by its logical project key. */
@@ -87,8 +95,22 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
       statusLine: null,
       needYou: [],
+      jobThreads: [],
     });
   }
+  const environmentIds = [
+    ...new Set(
+      [...pages.values()].flatMap((page) =>
+        page.group.memberProjects.map((member) => member.environmentId),
+      ),
+    ),
+  ].toSorted();
+  const jobThreadIdLists = useAtomValue(
+    projectJobThreadIdListsAtom(environmentIdsKey(environmentIds)),
+  );
+  const jobThreadIds = new Map(
+    environmentIds.map((id, index) => [id, new Set(jobThreadIdLists[index]!.split("\n"))]),
+  );
   if (pages.size === 0) return pages;
   const threadsByPage = new Map<string, EnvironmentThreadShell[]>();
   for (const thread of threads) {
@@ -99,11 +121,26 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     else threadsByPage.set(projectKey, [thread]);
   }
   for (const [projectKey, page] of pages) {
-    const counts = countProjectThreads(threadsByPage.get(projectKey) ?? [], page.chatThreadKey);
+    const pageThreads = threadsByPage.get(projectKey) ?? [];
+    const counts = countProjectThreads(pageThreads, page.chatThreadKey);
     pages.set(projectKey, {
       ...page,
       statusLine: formatProjectStatusLine(counts),
       needYou: counts.needYou,
+      jobThreads: pageThreads
+        .filter((thread) =>
+          isProjectPageJob(
+            thread,
+            jobThreadIds.get(thread.environmentId) ?? NO_IDS,
+            serverConfigs.get(thread.environmentId)?.settings,
+            page.group,
+          ),
+        )
+        .toSorted(
+          (left, right) =>
+            getThreadSortTimestamp(right, "updated_at") -
+            getThreadSortTimestamp(left, "updated_at"),
+        ),
     });
   }
   return pages;

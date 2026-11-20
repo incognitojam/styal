@@ -41,21 +41,28 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   serverEnvironment.updateStateAtom,
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
-/** `environmentId:threadId` of each thread a scheduled task runs in, joined per environment. */
-export const scheduledTaskThreadKeysAtom = environmentAtomList(
-  "web-scheduled-task-thread-keys",
-  Atom.family((environmentId: EnvironmentId) =>
-    Atom.make((get) =>
-      (
-        AsyncResult.getOrElse(
-          get(serverEnvironment.scheduledTasksLive({ environmentId, input: {} })),
-          () => null,
-        )?.tasks ?? []
-      )
-        .flatMap((task) => (task.threadId === null ? [] : [`${environmentId}:${task.threadId}`]))
-        .join("\n"),
-    ),
+/**
+ * Newline-joined ids of the threads scheduled tasks run in on a machine with project coordinators
+ * on. Its scheduled tasks are subscribed only while the switch is on there.
+ */
+export const projectJobThreadIdsAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) =>
+    get(serverEnvironment.configValueAtom(environmentId))?.settings.projectCoordinatorsEnabled !==
+    true
+      ? ""
+      : (
+          AsyncResult.getOrElse(
+            get(serverEnvironment.scheduledTasksLive({ environmentId, input: {} })),
+            () => null,
+          )?.tasks ?? []
+        )
+          .flatMap((task) => (task.threadId === null ? [] : [task.threadId]))
+          .join("\n"),
   ),
+);
+export const projectJobThreadIdListsAtom = environmentAtomList(
+  "web-project-job-thread-ids",
+  projectJobThreadIdsAtom,
 );
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,

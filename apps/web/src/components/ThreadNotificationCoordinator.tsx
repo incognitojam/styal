@@ -54,14 +54,20 @@ import {
   resolveThreadListStatus,
   type ThreadListStatus,
 } from "@t3tools/client-runtime/state/thread-list-status";
-import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
-import { environmentServerConfigsAtom } from "../state/server";
+import {
+  isProjectPageJob,
+  projectChatTakesReports,
+  staysOnProjectPage,
+} from "./project/projectPage.logic";
+import { environmentServerConfigsAtom, projectJobThreadIdsAtom } from "../state/server";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
+
+const NO_KEYS: ReadonlySet<string> = new Set();
 
 // A workflow run's deployment review outlives the agent run that was latest when it
 // appeared, so keying it by run would alert again on every message sent while it waits.
@@ -307,12 +313,24 @@ export function startThreadNotifications(
       environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
     );
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
-    // A thread the project chat launched finishes quietly while the chat hears its result. Read
-    // only when some thread was launched to report back, which few are.
+    // A thread the project chat launched, or a scheduled task's thread its project page keeps,
+    // finishes quietly while it stays off the sidebar.
+    const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
+    const jobThreadIds = new Set(registry.get(projectJobThreadIdsAtom(environmentId)).split("\n"));
+    const jobThreadKeys = (thread: EnvironmentThreadShell): ReadonlySet<string> => {
+      const group = projectGroup(environmentId, thread.projectId);
+      return isProjectPageJob(
+        thread,
+        jobThreadIds,
+        settings,
+        group && { isScratch: group.representative.isScratch, archived: group.archived },
+      )
+        ? new Set([`${environmentId}:${thread.id}`])
+        : NO_KEYS;
+    };
     let projectChatKeys: ReadonlySet<string> | null = null;
     const reportingChatKeys = () => {
       if (projectChatKeys !== null) return projectChatKeys;
-      const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
       const chatIds = new Set(
         settings?.projectCoordinatorsEnabled
           ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
@@ -374,9 +392,9 @@ export function startThreadNotifications(
         completed &&
         !monitorHoldsWakeCompletion(rawThread) &&
         !(
-          rawThread.reportTo != null &&
-          rawThread.reportTo.source === undefined &&
-          staysOnProjectPage(thread, reportingChatKeys())
+          ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
+            jobThreadIds.has(rawThread.id)) &&
+          staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread))
         );
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
@@ -452,10 +470,12 @@ export function startThreadNotifications(
       environmentThreadShells.delegatedUnderParentAtom,
       reobserve,
     );
+    const unmountJobThreadIds = registry.mount(projectJobThreadIdsAtom(environmentId));
     entry.unsubscribe = () => {
       unsubscribeShell();
       unsubscribeRequests();
       unsubscribeDelegated();
+      unmountJobThreadIds();
       entry.gate.clear();
     };
     return entry;

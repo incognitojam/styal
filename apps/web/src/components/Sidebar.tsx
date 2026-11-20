@@ -186,8 +186,7 @@ import {
   useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { environmentIdsKey } from "../state/environmentAtomList";
-import { primaryServerKeybindingsAtom, scheduledTaskThreadKeysAtom } from "../state/server";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 
 import { threadEnvironment } from "../state/threads";
@@ -1289,24 +1288,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : [],
     ),
   );
-  const pageCheckouts = [...projectPages.values()].flatMap((page) => page.group.memberProjects);
-  const pageCheckoutKeys = new Set(
-    pageCheckouts.map((member) => `${member.environmentId}:${member.id}`),
-  );
-  const pageEnvironmentIds = [...new Set(pageCheckouts.map((member) => member.environmentId))];
-  const scheduledThreadKeys = new Set(
-    useAtomValue(
-      scheduledTaskThreadKeysAtom(environmentIdsKey(pageEnvironmentIds.toSorted())),
-    ).flatMap((keys) => (keys === "" ? [] : keys.split("\n"))),
-  );
   const jobThreadKeys = new Set(
-    listedThreads.flatMap((thread) =>
-      scheduledThreadKeys.has(threadShellKey(thread)) &&
-      !projectChatKeys.has(threadShellKey(thread)) &&
-      pageCheckoutKeys.has(`${thread.environmentId}:${thread.projectId}`)
-        ? [threadShellKey(thread)]
-        : [],
-    ),
+    [...projectPages.values()].flatMap((page) => page.jobThreads.map(threadShellKey)),
   );
   // On the chat's own thread URL, the header that stands for the chat is the active location.
   // Only while the chat has no row of its own: an active chat, which its header stands for.

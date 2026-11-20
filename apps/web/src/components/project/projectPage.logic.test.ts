@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   coordinatedProjectKey,
+  isProjectPageJob,
   staysOnProjectPage,
   isProjectChatDraftId,
   projectChatDraftId,
@@ -32,6 +33,28 @@ function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
 }
 
 const running = { status: "running" } as EnvironmentThreadShell["runtime"];
+
+describe("isProjectPageJob", () => {
+  const settings = {
+    projectCoordinatorsEnabled: true,
+    projectCoordinators: { [project]: { threadId: chatId } },
+  };
+  const page = { archived: false };
+  const jobs = new Set(["job", chatId]);
+
+  it("keeps a scheduled task's thread in a project with a page, but not the chat or other threads", () => {
+    expect(isProjectPageJob(shell("job"), jobs, settings, page)).toBe(true);
+    expect(isProjectPageJob(shell(chatId), jobs, settings, page)).toBe(false);
+    expect(isProjectPageJob(shell("other"), jobs, settings, page)).toBe(false);
+  });
+
+  it("leaves it alone in Scratch, an archived project, or before settings or the project load", () => {
+    for (const group of [{ isScratch: true, archived: false }, { archived: true }, undefined]) {
+      expect(isProjectPageJob(shell("job"), jobs, settings, group)).toBe(false);
+    }
+    expect(isProjectPageJob(shell("job"), jobs, undefined, page)).toBe(false);
+  });
+});
 
 describe("staysOnProjectPage", () => {
   const chats = new Set([`${local}:${chatId}`]);
