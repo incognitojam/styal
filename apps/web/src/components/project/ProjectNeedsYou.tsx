@@ -25,6 +25,7 @@ import {
   type ProviderApprovalDecision,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -48,6 +49,7 @@ import { ReportAnswerOptions } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
+  approvalCommand,
   listProjectNeeds,
   openReports,
   type ProjectNeed,
@@ -121,12 +123,12 @@ export function ChildThreadApprovals({ threadRef }: { threadRef: ScopedThreadRef
   );
 }
 
-const APPROVAL_ASKS = {
-  command: "Wants to run a command",
-  "file-change": "Wants to change files",
-  "file-read": "Wants to read a file",
-  permission: "Asks for permission",
-  "mcp-elicitation": "Asks for app access",
+const APPROVAL_HEADINGS = {
+  command: "Run command",
+  "file-change": "Change files",
+  "file-read": "Read file",
+  permission: "Permission",
+  "mcp-elicitation": "App access",
 } satisfies Record<ThreadPendingApproval["requestKind"], string>;
 
 const DECISION_LABELS = {
@@ -141,21 +143,20 @@ function summary(need: ProjectNeed): ReactNode {
   switch (need.kind) {
     case "approval": {
       const { approval } = need;
-      const ask = APPROVAL_ASKS[approval.requestKind];
-      if (!approval.detail) {
-        return approval.requestKind === "command" ? `${ask} it did not name` : ask;
+      const command = approvalCommand(approval);
+      if (command) {
+        return (
+          <>
+            Wants to run <code className="font-mono">{command}</code>
+          </>
+        );
       }
-      // The detail is the provider's: a command, a path, or its own explanation.
-      return (
-        <>
-          {ask}:{" "}
-          {approval.requestKind === "mcp-elicitation" ? (
-            approval.detail
-          ) : (
-            <code className="font-mono">{approval.detail}</code>
-          )}
-        </>
-      );
+      const heading =
+        (approval.toolName
+          ? deriveToolRowPresentation({ toolName: approval.toolName, input: approval.toolInput })
+              ?.heading
+          : undefined) ?? APPROVAL_HEADINGS[approval.requestKind];
+      return approval.detail ? `${heading}: ${approval.detail}` : heading;
     }
     case "question":
       return need.userInput.questions[0]?.question ?? "A question";
@@ -275,17 +276,24 @@ function NeedAnswer({
   onAnswered: (answer: string) => void;
 }) {
   switch (need.kind) {
-    case "approval":
+    case "approval": {
+      const command = approvalCommand(need.approval);
+      // Codex sends its reason as the prompt; the row shows the command, so show the reason here.
+      const note = command && need.approval.detail !== command ? need.approval.detail : undefined;
       return (
-        <ChildApproval
-          entry={{
-            thread: scopeThreadRef(need.thread.environmentId, need.thread.id),
-            title: need.thread.title,
-            approval: need.approval,
-          }}
-          onResponded={(decision) => onAnswered(DECISION_LABELS[decision])}
-        />
+        <>
+          {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
+          <ChildApproval
+            entry={{
+              thread: scopeThreadRef(need.thread.environmentId, need.thread.id),
+              title: need.thread.title,
+              approval: need.approval,
+            }}
+            onResponded={(decision) => onAnswered(DECISION_LABELS[decision])}
+          />
+        </>
       );
+    }
     case "question":
       return <QuestionAnswer need={need} onAnswered={onAnswered} />;
     case "report":

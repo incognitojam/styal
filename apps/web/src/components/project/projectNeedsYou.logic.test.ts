@@ -14,6 +14,7 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  approvalCommand,
   listProjectNeeds,
   openReports,
   type ThreadNeeds,
@@ -118,6 +119,15 @@ describe("withChildApprovals", () => {
         [subagent, listed],
       ).map((need) => need.key),
     ).toEqual([`${local}:subagent:a2`, `${local}:listed:a1`]);
+  });
+});
+
+describe("approvalCommand", () => {
+  it("takes the command from the approval's input, never from its prose prompt", () => {
+    expect(approvalCommand({ toolInput: { command: "pnpm test" } })).toBe("pnpm test");
+    expect(approvalCommand({ toolInput: { command: "  " } })).toBeUndefined();
+    expect(approvalCommand({ toolInput: { url: "https://example.com" } })).toBeUndefined();
+    expect(approvalCommand({})).toBeUndefined();
   });
 });
 

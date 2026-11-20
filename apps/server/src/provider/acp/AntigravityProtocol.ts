@@ -91,7 +91,7 @@ export function antigravityApprovalOptions(
     const warning = antigravitySecurityWarning(always);
     options.push({
       decision: "acceptForSession",
-      label: "Don't ask again for this command",
+      label: "Allow this command for this session",
       ...(warning ? { warning } : {}),
     });
   }

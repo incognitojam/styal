@@ -39,6 +39,10 @@ export function assertToolCallReadOnlyOnRequestOutput(
     [[request?.id, request?.kind]],
     "the approval card must show the resolved request",
   );
+  if (request?.kind === "command") {
+    const input = approvals[0]?.toolInput as { readonly command?: unknown } | undefined;
+    assert.include(String(input?.command), PROBE_FILE, "a command approval names its command");
+  }
 
   const writes = projection.turnItems.filter((item) =>
     request?.kind === "command"

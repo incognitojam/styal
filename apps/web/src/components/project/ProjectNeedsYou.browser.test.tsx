@@ -42,6 +42,7 @@ function setup() {
         requestId: RuntimeRequestId.make("approval"),
         requestKind: "command",
         detail: "tsc --build",
+        toolInput: { command: "tsc --build" },
         createdAt: "2026-11-01T00:00:00.000Z",
         responseCapability: "live",
       },
@@ -57,7 +58,7 @@ it("says what the subagent asks, and shows a failed decision until the user retr
   const thread = setup();
   await using screen = await render(<ChildThreadApprovals threadRef={thread} />);
   const card = screen.getByRole("region", { name: "Approval from Compile task" });
-  await expect.element(card.getByText("Wants to run a command: tsc --build")).toBeVisible();
+  await expect.element(card.getByText("Wants to run tsc --build")).toBeVisible();
   await expect.element(card.getByRole("button", { name: "Open thread" })).toBeVisible();
   await card.getByRole("button", { name: "More approval options" }).click();
   await expect

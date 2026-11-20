@@ -15,6 +15,7 @@ import type {
   OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Predicate from "effect/Predicate";
 
 export interface OpenReport {
   readonly messageId: MessageId;
@@ -140,4 +141,12 @@ export function withChildApprovals(
     });
   }
   return added.length === 0 ? needs : [...needs, ...added].sort(oldestFirst);
+}
+
+/** The command an approval would run, when the provider said which; its prompt may be prose. */
+export function approvalCommand(approval: Pick<ThreadPendingApproval, "toolInput">) {
+  const input = approval.toolInput;
+  return Predicate.isObject(input) && typeof input.command === "string" && input.command.trim()
+    ? input.command
+    : undefined;
 }
