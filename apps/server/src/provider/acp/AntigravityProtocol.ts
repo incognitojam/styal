@@ -176,6 +176,14 @@ export { boundText as boundAntigravityToolText };
 /** True when bounding cut some of this text. */
 export const isCutAntigravityToolText = (text: string) => text.includes(TOOL_TEXT_TRUNCATED);
 
+/** Keeps the start of a long command, the program it runs, unless the payload was already cut. */
+function boundCommand(command: string): string {
+  const cut = isCutAntigravityToolText(command) ? TOOL_TEXT_TRUNCATED.length : 0;
+  if (command.length <= TOOL_TEXT_LIMIT + cut) return command;
+  const highSurrogate = /[\uD800-\uDBFF]/u.test(command[TOOL_TEXT_LIMIT - 1]!);
+  return copyBoundedText(`${command.slice(0, TOOL_TEXT_LIMIT - (highSurrogate ? 1 : 0))}…`);
+}
+
 interface ToolPayloadBudget {
   nodes: number;
   text: number;
@@ -425,7 +433,7 @@ export function normalizeAntigravityToolCall(
     output?.commandLine ??
     output?.command_line ??
     toolCall.command;
-  const command = nativeCommand?.trim() ? boundText(nativeCommand.trim()) : undefined;
+  const command = nativeCommand?.trim() ? boundCommand(nativeCommand.trim()) : undefined;
   const nativeCwd =
     input?.Cwd ??
     input?.WorkingDirectory ??

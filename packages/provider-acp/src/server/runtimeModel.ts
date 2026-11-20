@@ -1239,10 +1239,12 @@ export function withTrackedPermissionToolCall(
   };
 }
 
+/** `normalizeToolCall` is the flavor's, so a command in the agent's own field names is found. */
 export function parsePermissionRequest(
   params: EffectAcpSchema.RequestPermissionRequest,
+  normalizeToolCall: (toolCall: AcpToolCallState) => AcpToolCallState = (toolCall) => toolCall,
 ): AcpPermissionRequest {
-  const toolCall = makeToolCallState(
+  const parsed = makeToolCallState(
     {
       toolCallId: params.toolCall.toolCallId,
       title: params.toolCall.title,
@@ -1255,6 +1257,7 @@ export function parsePermissionRequest(
     },
     { fallbackStatus: "pending" },
   );
+  const toolCall = parsed && normalizeToolCall(parsed);
   const kind = normalizeToolKind(params.toolCall.kind) ?? "unknown";
   const detail =
     toolCall?.command ??

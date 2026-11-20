@@ -5664,7 +5664,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           transportRequestId: string,
         ) {
           yield* closeTextStreams(context);
-          const parsed = parsePermissionRequest(params);
+          const parsed = parsePermissionRequest(params, flavor.normalizeToolCall);
           const approvalOptions = flavor.approvalOptions?.(params);
           const nativeRequestId = params.toolCall.toolCallId;
           const requestId = yield* idAllocator.allocate.runtimeRequest({
