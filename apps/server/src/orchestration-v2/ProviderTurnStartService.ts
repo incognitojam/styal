@@ -1119,16 +1119,19 @@ export const layer: Layer.Layer<
       const replacedAnswer = (() => {
         const report = linkedReport?.report;
         if (linked === undefined || linked.typed || report === undefined || !message) return;
-        const earlier = projection.messages
-          .filter(
-            (candidate) =>
-              candidate.role === "user" &&
-              candidate.id !== message.id &&
-              candidate.reportAnswer?.typed !== true &&
-              candidate.reportAnswer?.messageId === linked.messageId &&
-              candidate.reportAnswer.version === linked.version &&
-              !DateTime.isGreaterThan(candidate.createdAt, message.createdAt),
-          )
+        const answers = projection.messages.filter(
+          (candidate) =>
+            candidate.role === "user" &&
+            candidate.id !== message.id &&
+            candidate.reportAnswer?.typed !== true &&
+            candidate.reportAnswer?.messageId === linked.messageId &&
+            candidate.reportAnswer.version === linked.version,
+        );
+        // Messages with the same time have no reliable order, so name none rather than guess.
+        if (answers.some((answer) => DateTime.Equivalence(answer.createdAt, message.createdAt)))
+          return;
+        const earlier = answers
+          .filter((answer) => DateTime.isLessThan(answer.createdAt, message.createdAt))
           .at(-1);
         if (earlier === undefined) return;
         const prefix = `[${report.title}, version ${report.version}] `;

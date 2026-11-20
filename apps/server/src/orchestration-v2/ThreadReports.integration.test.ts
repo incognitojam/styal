@@ -872,6 +872,7 @@ it.effect(
         yield* endTurn(late, "completed");
         // A changed answer names the one it replaces, so the agent can undo what no longer fits.
         assert.notInclude(merged.message.text, "replaces the earlier answer");
+        yield* TestClock.adjust("1 minute");
         const changed = yield* send(launcherId, "[Release, version 2] Wait", {
           sender: "user",
           reportAnswer: ref,
@@ -881,6 +882,14 @@ it.effect(
           'which closes its question. It replaces the earlier answer "Merge": undo what no longer fits.',
         );
         yield* endTurn(changed, "completed");
+        // An answer sent at the same time as another cannot tell which came first, so names none.
+        const tied = yield* send(launcherId, "[Release, version 2] Hold", {
+          sender: "user",
+          reportAnswer: ref,
+        });
+        assert.include(tied.message.text, "which closes its question.");
+        assert.notInclude(tied.message.text, "replaces the earlier answer");
+        yield* endTurn(tied, "completed");
       }),
     ),
 );
