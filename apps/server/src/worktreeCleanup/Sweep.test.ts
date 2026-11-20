@@ -13,6 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
