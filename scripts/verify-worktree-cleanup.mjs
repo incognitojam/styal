@@ -3,7 +3,6 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import * as NodeURL from "node:url";
 
 export function verifyWorktreeCleanup(executable, entry) {
   NodeFS.mkdirSync(".scratch", { recursive: true });
@@ -66,7 +65,7 @@ export function verifyWorktreeCleanup(executable, entry) {
   }
 }
 
-if (process.argv[1] && import.meta.url === NodeURL.pathToFileURL(process.argv[1]).href) {
+if (import.meta.main) {
   const [, , executable, entry] = process.argv;
   if (!executable)
     throw new Error("Usage: verify-worktree-cleanup.mjs <executable> [server-entry]");
