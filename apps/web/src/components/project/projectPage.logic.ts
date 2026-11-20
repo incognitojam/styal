@@ -73,13 +73,34 @@ export function projectChatTakesReports(chat: {
   );
 }
 
+/**
+ * Whether a scheduled task's thread is one its project page keeps: it is in `jobThreadIds`, its
+ * machine's `projectJobThreadIdsAtom`, it is not its project's chat, and the project has a page
+ * (not Scratch or archived).
+ */
+export function isProjectPageJob(
+  thread: { readonly id: ThreadId; readonly projectId: ProjectId },
+  jobThreadIds: ReadonlySet<string>,
+  settings: CoordinatorSettings | undefined,
+  group: { readonly isScratch?: boolean | undefined; readonly archived: boolean } | undefined,
+): boolean {
+  return (
+    jobThreadIds.has(thread.id) &&
+    settings !== undefined &&
+    projectCoordinatorThreadId(settings, thread.projectId) !== thread.id &&
+    group !== undefined &&
+    group.isScratch !== true &&
+    !group.archived
+  );
+}
+
 const NO_JOB_THREADS: ReadonlySet<string> = new Set();
 
 /**
  * A thread the project's chat launched with reportBack, or a scheduled task's thread in a project
  * with a page, stays on the project page until it needs you, fails, is pinned or you write to it.
  * A `project-coordinator` report target only says the thread was created in the project.
- * `chatThreadKeys`: chats that still take reports. `jobThreadKeys`: those scheduled tasks' threads.
+ * `chatThreadKeys`: chats that still take reports. `jobThreadKeys`: see `isProjectPageJob`.
  */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,

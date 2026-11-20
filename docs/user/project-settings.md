@@ -350,9 +350,8 @@ they finish; the chat lists the ones still working or waiting on you right after
 started them, and the page's status line counts them. A thread comes back to the sidebar when it
 needs an approval or an answer, fails, or when you open it, pin it or send it a message
 yourself. They finish without a Done notification, and stay in search and the command palette.
-A thread a scheduled task runs in leaves the sidebar the same way and comes back for the same
-reasons, but still notifies when a run finishes; **Open thread** in **Settings → Scheduled tasks**
-opens it.
+A thread a scheduled task runs in leaves the sidebar and comes back the same way, and its runs
+finish without a Done notification. **Scheduled threads** in the page's header lists them.
 
 When you open the page after at least half an hour away, the end of the chat lists what happened
 since you last looked at it on any of your devices: threads that failed or hit a usage limit, the

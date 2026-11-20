@@ -1,10 +1,18 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { MessageSquareTextIcon, SettingsIcon, SquarePenIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  MessageSquareTextIcon,
+  SettingsIcon,
+  SquarePenIcon,
+} from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { startedThreadState } from "../chat/startedThreads.logic";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface ProjectChatHeaderProps {
@@ -16,6 +24,9 @@ export interface ProjectChatHeaderProps {
   readonly onOpenSettings: () => void;
   /** Once the chat exists: its thread view, for the thread's title, menu and details panel. */
   readonly onOpenThread?: (() => void) | null;
+  /** Scheduled tasks' threads the page keeps off the sidebar, listed in a menu. */
+  readonly jobThreads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly onOpenJobThread: (thread: EnvironmentThreadShell) => void;
 }
 
 /** The project page's header, in the slot and height of a thread's header. */
@@ -50,6 +61,40 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
         <SquarePenIcon aria-hidden />
         <span className="max-sm:sr-only">New thread</span>
       </Button>
+      {props.jobThreads.length > 0 ? (
+        <Menu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  render={
+                    <Button variant="ghost-muted" size="icon-sm" aria-label="Scheduled threads" />
+                  }
+                />
+              }
+            >
+              <CalendarClockIcon aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">Scheduled threads</TooltipPopup>
+          </Tooltip>
+          <MenuPopup align="end" sideOffset={6} className="max-w-80">
+            {props.jobThreads.map((thread) => {
+              const state = startedThreadState(thread);
+              return (
+                <MenuItem
+                  key={`${thread.environmentId}:${thread.id}`}
+                  onClick={() => props.onOpenJobThread(thread)}
+                >
+                  <span className="min-w-0 truncate">{thread.title}</span>
+                  {state ? (
+                    <MenuItemDetail>{state === "working" ? "Working" : "Needs you"}</MenuItemDetail>
+                  ) : null}
+                </MenuItem>
+              );
+            })}
+          </MenuPopup>
+        </Menu>
+      ) : null}
       {props.onOpenThread ? (
         <Tooltip>
           <TooltipTrigger

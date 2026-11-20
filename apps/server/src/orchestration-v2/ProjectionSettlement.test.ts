@@ -632,13 +632,15 @@ it.effect("sql: the user-authored time ignores notifications and scheduled runs"
       DateTime.formatIso(candidate.latestUserAuthoredMessageAt!),
       DateTime.formatIso(written),
     );
-    const shellThread = (yield* store.getShellSnapshot()).threads.find(
-      (thread) => thread.id === threadId,
-    );
-    assert.equal(
-      DateTime.formatIso(shellThread!.latestUserAuthoredMessageAt!),
-      DateTime.formatIso(written),
-    );
+    for (const shell of [
+      (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === threadId)!,
+      ProjectionStore.threadShellFromProjection(yield* store.getThreadProjection(threadId)),
+    ]) {
+      assert.equal(
+        DateTime.formatIso(shell.latestUserAuthoredMessageAt!),
+        DateTime.formatIso(written),
+      );
+    }
   }).pipe(Effect.provide(layerSql)),
 );
 
