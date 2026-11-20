@@ -73,20 +73,26 @@ export function projectChatTakesReports(chat: {
   );
 }
 
+const NO_JOB_THREADS: ReadonlySet<string> = new Set();
+
 /**
- * A thread the project's chat launched with reportBack stays on the project page until it needs
- * you, fails, is pinned or you write to it. A `project-coordinator` report target only says the
- * thread was created in the project. `chatThreadKeys`: chats that still take reports.
+ * A thread the project's chat launched with reportBack, or a scheduled task's thread in a project
+ * with a page, stays on the project page until it needs you, fails, is pinned or you write to it.
+ * A `project-coordinator` report target only says the thread was created in the project.
+ * `chatThreadKeys`: chats that still take reports. `jobThreadKeys`: those scheduled tasks' threads.
  */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,
   chatThreadKeys: ReadonlySet<string>,
+  jobThreadKeys: ReadonlySet<string> = NO_JOB_THREADS,
 ): boolean {
+  const launched =
+    thread.reportTo != null &&
+    thread.reportTo.source === undefined &&
+    chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) &&
+    thread.source.createdBy === "agent";
   if (
-    thread.reportTo == null ||
-    thread.reportTo.source !== undefined ||
-    !chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) ||
-    thread.source.createdBy !== "agent" ||
+    !(launched || jobThreadKeys.has(`${thread.environmentId}:${thread.id}`)) ||
     thread.pinnedAt != null ||
     thread.latestUserAuthoredMessageAt != null ||
     thread.latestRun?.status === "failed"

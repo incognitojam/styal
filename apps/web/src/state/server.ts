@@ -41,6 +41,22 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   serverEnvironment.updateStateAtom,
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
+/** `environmentId:threadId` of each thread a scheduled task runs in, joined per environment. */
+export const scheduledTaskThreadKeysAtom = environmentAtomList(
+  "web-scheduled-task-thread-keys",
+  Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) =>
+      (
+        AsyncResult.getOrElse(
+          get(serverEnvironment.scheduledTasksLive({ environmentId, input: {} })),
+          () => null,
+        )?.tasks ?? []
+      )
+        .flatMap((task) => (task.threadId === null ? [] : [`${environmentId}:${task.threadId}`]))
+        .join("\n"),
+    ),
+  ),
+);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,
