@@ -32,6 +32,7 @@ vi.mock("expo", async () => {
 });
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: vi.fn((key: string) => {
     if (failNextRead) {
       failNextRead = false;

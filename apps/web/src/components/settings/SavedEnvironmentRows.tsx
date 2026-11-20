@@ -58,7 +58,7 @@ import {
   ServerUpdateAction,
   ServerUpdateProgress,
 } from "../ServerUpdateAction";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
@@ -509,7 +509,6 @@ function ConfiguredCloudLinkRow({
     tunnelLimit,
     reconcileCloudState,
   } = useCloudLinkController(environmentId);
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
   // The server unlinks and refuses relay changes under such a policy; unlinking stays possible.
   const connectDenial = managedCapabilityDenial(useManagedPolicy(environmentId), "connect");
   const turnOn = useT3ConnectTurnOn(environmentId);
@@ -533,7 +532,7 @@ function ConfiguredCloudLinkRow({
   // a fresh sign-in offers both linking and publishing.
   const signedOut = isSignedIn === false;
   const signInButton = (
-    <Button size="sm" variant="outline" onClick={openAuthPrompt}>
+    <Button size="sm" variant="outline" onClick={openRelaySignIn}>
       Sign in
     </Button>
   );

@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { useAtomValue } from "@effect/atom-react";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -21,7 +21,7 @@ import { useEnvironments } from "../../state/environments";
 import { environmentProjects } from "../../state/projects";
 import { environmentThreadShells } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogState";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmentConnectionPresentation";
 import { InstallT3Commands } from "../InstallT3Commands";
@@ -218,8 +218,7 @@ function LinkedComputers({
   readonly onToggle: (environmentId: EnvironmentId, selected: boolean) => void;
 }) {
   const { environments } = useEnvironments();
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { isLoaded, isSignedIn } = useRelayAccount();
   const [discoveryReady, setDiscoveryReady] = useState(false);
   const onDiscoveryReady = () => setDiscoveryReady(true);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -235,7 +234,7 @@ function LinkedComputers({
         {!isLoaded ? (
           <span className="text-xs text-muted-foreground">Loading sign-in…</span>
         ) : !isSignedIn ? (
-          <Button size="xs" variant="outline" disabled={disabled} onClick={openAuthPrompt}>
+          <Button size="xs" variant="outline" disabled={disabled} onClick={openRelaySignIn}>
             Sign in
           </Button>
         ) : !discoveryReady ? (

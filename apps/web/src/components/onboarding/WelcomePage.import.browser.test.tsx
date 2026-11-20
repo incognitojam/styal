@@ -89,13 +89,13 @@ vi.mock(import("../../cloud/publicConfig"), async (original) => ({
   ...(await original()),
   hasCloudPublicConfig: () => state.cloud,
 }));
-vi.mock(import("@clerk/react"), async (original) => ({
+vi.mock(import("../../cloud/useRelayAccount"), async (original) => ({
   ...(await original()),
-  useAuth: (() => state.auth) as never,
+  useRelayAccount: (() => ({ ...state.auth, accountId: state.auth.userId })) as never,
 }));
-vi.mock(import("../clerk/useT3ConnectAuthPrompt"), async (original) => ({
+vi.mock(import("../relay-auth/relayAuthDialogState"), async (original) => ({
   ...(await original()),
-  useT3ConnectAuthPrompt: (() => ({ openAuthPrompt: () => {} })) as never,
+  openRelaySignIn: () => {},
 }));
 vi.mock(import("../../cloud/cloudLinkState"), async (original) => {
   const { useAtomValue } = await import("@effect/atom-react");

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveCloudPublicConfig } from "./publicConfig";
+import { hasLegacyClerkConfig, resolveCloudPublicConfig } from "./publicConfig";
 
 vi.mock("expo-constants", () => ({
   default: {
@@ -31,5 +31,18 @@ describe("resolveCloudPublicConfig", () => {
         tracesToken: null,
       },
     });
+  });
+
+  it("needs Clerk settings only to move an older Clerk sign-in", () => {
+    const relayOnly = resolveCloudPublicConfig({ relay: { url: "https://relay.example.test" } });
+    expect(hasLegacyClerkConfig(relayOnly)).toBe(false);
+    expect(
+      hasLegacyClerkConfig(
+        resolveCloudPublicConfig({
+          clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
+          relay: { url: "https://relay.example.test" },
+        }),
+      ),
+    ).toBe(true);
   });
 });

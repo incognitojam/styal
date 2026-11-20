@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { hasCloudPublicConfig } from "./publicConfig.ts";
+import { hasCloudPublicConfig, hasLegacyClerkConfig } from "./publicConfig.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -16,6 +16,15 @@ describe("hasCloudPublicConfig", () => {
     expect(hasCloudPublicConfig()).toBe(false);
   });
 
+  it("keeps styal Link sign-in on private browser origins", () => {
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
+    vi.stubGlobal("window", { location: new URL("http://localhost:3773") });
+
+    expect(hasCloudPublicConfig()).toBe(true);
+  });
+});
+
+describe("hasLegacyClerkConfig", () => {
   describe("browser origins", () => {
     beforeEach(() => {
       vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", `pk_live_${btoa("clerk.example.com$")}`);
@@ -24,20 +33,20 @@ describe("hasCloudPublicConfig", () => {
     });
 
     it.each(["https://example.com", "https://nightly.app.example.com:443"])(
-      "enables production auth on the configured root and subdomains: %s",
+      "enables moving a Clerk sign-in on the configured root and subdomains: %s",
       (origin) => {
         vi.stubGlobal("window", { location: new URL(origin) });
 
-        expect(hasCloudPublicConfig()).toBe(true);
+        expect(hasLegacyClerkConfig()).toBe(true);
       },
     );
 
     it.each(["http://localhost:3773", "https://machine.example.ts.net"])(
-      "disables production auth on private browser origins: %s",
+      "disables moving a Clerk sign-in on private browser origins: %s",
       (origin) => {
         vi.stubGlobal("window", { location: new URL(origin) });
 
-        expect(hasCloudPublicConfig()).toBe(false);
+        expect(hasLegacyClerkConfig()).toBe(false);
       },
     );
 
@@ -46,7 +55,7 @@ describe("hasCloudPublicConfig", () => {
       (origin) => {
         vi.stubGlobal("window", { location: new URL(origin) });
 
-        expect(hasCloudPublicConfig()).toBe(false);
+        expect(hasLegacyClerkConfig()).toBe(false);
       },
     );
 
@@ -55,7 +64,7 @@ describe("hasCloudPublicConfig", () => {
       (origin) => {
         vi.stubGlobal("window", { location: new URL(origin) });
 
-        expect(hasCloudPublicConfig()).toBe(false);
+        expect(hasLegacyClerkConfig()).toBe(false);
       },
     );
 
@@ -66,13 +75,13 @@ describe("hasCloudPublicConfig", () => {
       vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", `pk_live_${btoa("tenant.clerk.accounts.dev$")}`);
       vi.stubGlobal("window", { location: new URL(origin) });
 
-      expect(hasCloudPublicConfig()).toBe(expected);
+      expect(hasLegacyClerkConfig()).toBe(expected);
     });
 
     it("keeps production keys available in the Electron auth shell", () => {
       vi.stubGlobal("window", { location: new URL("file:///app/index.html"), desktopBridge: {} });
 
-      expect(hasCloudPublicConfig()).toBe(true);
+      expect(hasLegacyClerkConfig()).toBe(true);
     });
   });
 });

@@ -76,7 +76,13 @@ export function resolveRelayTracingConfig() {
     : null;
 }
 
+/** styal Link needs only a relay; Clerk settings are read while sign-ins still move over from it. */
 export function hasCloudPublicConfig(): boolean {
+  return resolveCloudPublicConfig().relayUrl !== null;
+}
+
+/** Whether a Clerk sign-in left from before relay sign-in can still be moved over. */
+export function hasLegacyClerkConfig(): boolean {
   const config = resolveCloudPublicConfig();
   if (!config.clerkPublishableKey || !config.clerkJwtTemplate || !config.relayUrl) {
     return false;

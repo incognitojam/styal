@@ -300,14 +300,14 @@ export const updateCloudPreferences: (input: {
 
 export const unlinkEnvironmentFromCloud: (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string | null;
+  readonly credential: ManagedRelay.ManagedRelayCredential | null;
 }) => Effect.Effect<
   void,
   CloudEnvironmentLinkError,
   CloudLinkServices | ManagedRelay.ManagedRelayClient
 > = Effect.fn("linkEnvironment.unlinkEnvironmentFromCloud")(function* (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string | null;
+  readonly credential: ManagedRelay.ManagedRelayCredential | null;
 }) {
   yield* connectRequest(
     input.target,
@@ -320,11 +320,11 @@ export const unlinkEnvironmentFromCloud: (input: {
   );
 
   const configuredRelayUrl = relayUrl();
-  if (configuredRelayUrl && input.clerkToken) {
+  if (configuredRelayUrl && input.credential) {
     const relayClient = yield* ManagedRelay.ManagedRelayClient;
     yield* relayClient
       .unlinkEnvironment({
-        clerkToken: input.clerkToken,
+        credential: input.credential,
         environmentId: input.target.environmentId,
       })
       .pipe(
@@ -346,7 +346,7 @@ const PUBLISH_ONLY_PROVIDER_KIND = "manual" satisfies RelayManagedEndpointProvid
 
 export const linkEnvironmentToCloud: (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string;
+  readonly credential: ManagedRelay.ManagedRelayCredential;
   readonly mode?: CloudLinkMode;
 }) => Effect.Effect<
   void,
@@ -354,7 +354,7 @@ export const linkEnvironmentToCloud: (input: {
   CloudLinkServices | ManagedRelay.ManagedRelayClient
 > = Effect.fn("linkEnvironment.linkEnvironmentToCloud")(function* (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string;
+  readonly credential: ManagedRelay.ManagedRelayCredential;
   readonly mode?: CloudLinkMode;
 }) {
   const configuredRelayUrl = relayUrl();
@@ -376,7 +376,7 @@ export const linkEnvironmentToCloud: (input: {
 
   const challenge = yield* relayClient
     .createEnvironmentLinkChallenge({
-      clerkToken: input.clerkToken,
+      credential: input.credential,
       payload: {
         notificationsEnabled: true,
         liveActivitiesEnabled: true,
@@ -410,7 +410,7 @@ export const linkEnvironmentToCloud: (input: {
   );
   const link = yield* relayClient
     .linkEnvironment({
-      clerkToken: input.clerkToken,
+      credential: input.credential,
       payload: {
         proof,
         notificationsEnabled: true,

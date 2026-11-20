@@ -186,6 +186,24 @@ function withServices<A, E>(
   return effect.pipe(Effect.provide(layerServices(options)));
 }
 
+/** Answers the relay's access-token refresh so `fetchMock` sees only the requests under test. */
+function withRelayAccessToken(
+  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+) {
+  return (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith("/v1/auth/token")
+      ? Promise.resolve(
+          Response.json({
+            access_token: "relay-access-token",
+            token_type: "DPoP",
+            expires_in: 1_800,
+            scope: "environment:connect environment:status account",
+            user: { id: "account-1", email: "someone@example.com" },
+          }),
+        )
+      : fetchMock(input, init);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
@@ -212,7 +230,7 @@ describe("web cloud link environment client", () => {
           publishAgentActivity: false,
         }),
       );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
       vi.stubGlobal("window", {
         location: { origin: "t3code://app" },
         desktopBridge: {
@@ -244,17 +262,25 @@ describe("web cloud link environment client", () => {
     Effect.gen(function* () {
       const fetchMock = vi.fn((input: RequestInfo | URL) =>
         Promise.resolve(
-          String(input).startsWith("https://relay.example.test/")
-            ? Response.json(
-                {
-                  _tag: "RelayInternalError",
-                  code: "internal_error",
-                  reason: "upstream_unavailable",
-                  traceId: "trace-unlink",
-                },
-                { status: 500 },
-              )
-            : Response.json({ ok: true, endpointRuntimeStatus: null }),
+          String(input).endsWith("/v1/auth/token")
+            ? Response.json({
+                access_token: "access-token",
+                user: { id: "account-1", email: null },
+                token_type: "DPoP",
+                expires_in: 300,
+                scope: "account",
+              })
+            : String(input).startsWith("https://relay.example.test/")
+              ? Response.json(
+                  {
+                    _tag: "RelayInternalError",
+                    code: "internal_error",
+                    reason: "upstream_unavailable",
+                    traceId: "trace-unlink",
+                  },
+                  { status: 500 },
+                )
+              : Response.json({ ok: true, endpointRuntimeStatus: null }),
         ),
       );
       vi.stubGlobal("fetch", fetchMock);
@@ -268,12 +294,13 @@ describe("web cloud link environment client", () => {
       const error = yield* withServices(
         unlinkEnvironmentFromCloud({
           target: { environmentId: EnvironmentId.make(TARGET.environmentId) },
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         }),
       ).pipe(Effect.flip);
 
       expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
         "http://127.0.0.1:3000/api/connect/unlink",
+        "https://relay.example.test/v1/auth/token",
         "https://relay.example.test/v1/client/environment-links/environment-1",
       ]);
       expect(error).toMatchObject({

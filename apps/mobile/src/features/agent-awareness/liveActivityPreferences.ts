@@ -1,3 +1,4 @@
+import type { ManagedRelay } from "@t3tools/client-runtime/relay";
 import * as Effect from "effect/Effect";
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -9,7 +10,7 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
   function* (input: {
     readonly enabled: boolean;
     readonly previousEnabled: boolean;
-    readonly clerkToken: string | null;
+    readonly credential: ManagedRelay.ManagedRelayCredential | null;
     readonly connections: ReadonlyArray<SavedRemoteConnection>;
     readonly canConfigureEnvironment: (environmentId: EnvironmentId) => boolean;
   }) {
@@ -20,12 +21,12 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
     const updateEnvironmentPreference = Effect.fn("updateEnvironmentPreference")(function* (
       connection: SavedRemoteConnection,
       enabled: boolean,
-      clerkToken: string,
+      credential: ManagedRelay.ManagedRelayCredential,
     ) {
       if (!input.canConfigureEnvironment(connection.environmentId)) return;
 
       yield* linkEnvironmentToCloudWithPreference({
-        clerkToken,
+        credential,
         connection,
         liveActivitiesEnabled: enabled,
       });
@@ -36,12 +37,12 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
         liveActivitiesEnabled: enabled,
       });
 
-      const clerkToken = input.clerkToken;
-      if (!clerkToken) return;
+      const credential = input.credential;
+      if (!credential) return;
 
       yield* Effect.forEach(
         linkedConnections,
-        (connection) => updateEnvironmentPreference(connection, enabled, clerkToken),
+        (connection) => updateEnvironmentPreference(connection, enabled, credential),
         { concurrency: "unbounded" },
       );
     });
@@ -55,13 +56,13 @@ export const setLiveActivityUpdatesEnabled = Effect.fn("setLiveActivityUpdatesEn
         ),
       );
 
-      const clerkToken = input.clerkToken;
-      if (!clerkToken) return;
+      const credential = input.credential;
+      if (!credential) return;
 
       yield* Effect.forEach(
         linkedConnections,
         (connection) =>
-          updateEnvironmentPreference(connection, input.previousEnabled, clerkToken).pipe(
+          updateEnvironmentPreference(connection, input.previousEnabled, credential).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning(
                 `Could not restore Live Activity preference for environment ${connection.environmentId}.`,

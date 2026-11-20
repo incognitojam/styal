@@ -2,7 +2,7 @@ import { passkeys } from "@clerk/electron/passkeys";
 import { ClerkProvider } from "@clerk/electron/react";
 import type { ReactNode } from "react";
 
-import { ManagedRelayAuthProvider } from "../../cloud/managedAuth";
+import { LegacyClerkSessionAdoption } from "../../cloud/legacyClerkSession";
 import { clerkAppearance } from "./clerkAppearance";
 
 /** Load only lazily inside desktop; clerk-js is statically bundled and would otherwise enter every
@@ -16,7 +16,8 @@ export default function ElectronManagedAuthShell({
 }) {
   return (
     <ClerkProvider appearance={clerkAppearance} publishableKey={publishableKey} passkeys={passkeys}>
-      <ManagedRelayAuthProvider>{children}</ManagedRelayAuthProvider>
+      <LegacyClerkSessionAdoption />
+      {children}
     </ClerkProvider>
   );
 }

@@ -82,9 +82,14 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
     case "RelayAuthRateLimitedError":
       return `Too many sign-in attempts. Try again in ${formatRetryAfter(error.retryAfterSeconds)}.`;
     case "RelayEmailSignInUnavailableError":
-      return error.reason === "delivery_failed"
-        ? "The sign-in email could not be sent. Try again in a few minutes."
-        : "Email sign-in is not available on this relay.";
+      switch (error.reason) {
+        case "delivery_failed":
+          return "The sign-in email could not be sent. Try again in a few minutes.";
+        case "account_disabled":
+          return "This account has been disabled.";
+        case "not_configured":
+          return "Email sign-in is not available on this relay.";
+      }
     case "RelayInternalError":
       return `Relay encountered an internal error (${error.reason}).`;
   }

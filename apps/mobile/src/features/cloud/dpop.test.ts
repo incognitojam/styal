@@ -5,6 +5,7 @@ import * as NodeCrypto from "node:crypto";
 import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import { DpopProof } from "@t3tools/client-runtime/relay";
+import * as SecureStore from "expo-secure-store";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -34,11 +35,12 @@ vi.mock("expo-crypto", () => ({
 
 const secureStore = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: (key: string) => Promise.resolve(secureStore.get(key) ?? null),
-  setItemAsync: (key: string, value: string) => {
+  setItemAsync: vi.fn((key: string, value: string) => {
     secureStore.set(key, value);
     return Promise.resolve();
-  },
+  }),
 }));
 
 vi.mock("expo", async () => {
@@ -64,6 +66,12 @@ describe("mobile DPoP", () => {
       const second = yield* loadOrCreateDpopProofKeyPair();
 
       expect(second.privateJwk).toEqual(first.privateJwk);
+      // Live Activity token reports can need the key while the phone is locked.
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+        "styal.cloud.dpop-proof-key",
+        expect.any(String),
+        { keychainAccessible: "after-first-unlock-this-device-only" },
+      );
     }).pipe(Effect.provide(Dpop.layer)),
   );
 

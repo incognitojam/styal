@@ -3,6 +3,8 @@ import {
   createRuntimeCommand,
 } from "@t3tools/client-runtime/state/runtime";
 
+import type { ManagedRelay } from "@t3tools/client-runtime/relay";
+
 import { connectionAtomRuntime } from "../connection/runtime";
 import {
   checkCloudReachability,
@@ -26,7 +28,7 @@ export const linkEnvironment = createRuntimeCommand(connectionAtomRuntime, {
   concurrency: cloudLinkConcurrency,
   execute: (input: {
     readonly target: CloudLinkTarget;
-    readonly clerkToken: string;
+    readonly credential: ManagedRelay.ManagedRelayCredential;
     readonly mode?: CloudLinkMode;
   }) => linkEnvironmentToCloud(input),
 });
@@ -35,8 +37,10 @@ export const unlinkEnvironment = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:cloud:unlink-environment",
   scheduler: cloudLinkScheduler,
   concurrency: cloudLinkConcurrency,
-  execute: (input: { readonly target: CloudLinkTarget; readonly clerkToken: string | null }) =>
-    unlinkEnvironmentFromCloud(input),
+  execute: (input: {
+    readonly target: CloudLinkTarget;
+    readonly credential: ManagedRelay.ManagedRelayCredential | null;
+  }) => unlinkEnvironmentFromCloud(input),
 });
 
 export const updateEnvironmentPreferences = createRuntimeCommand(connectionAtomRuntime, {
