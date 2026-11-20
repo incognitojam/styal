@@ -52,6 +52,9 @@ describe("recallableComposerPrompt", () => {
     const sent =
       "Ultrathink:\nInvestigate this\n\n<terminal_context>\n- Terminal 1 lines 12-13:\n  12 | git status\n  13 | On branch main\n</terminal_context>\n\n<element_context>\n- <button>:\n  url: https://example.com\n</element_context>";
     expect(recallableComposerPrompt(sent)).toBe("Investigate this");
+    expect(recallableComposerPrompt("[Merge?, version 1] Ultrathink:\nWait")).toBe(
+      "[Merge?, version 1] Wait",
+    );
   });
 
   it.each([

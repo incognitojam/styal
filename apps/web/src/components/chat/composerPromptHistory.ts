@@ -5,7 +5,8 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
-const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
+// A report reply's `[<title>, version <n>] ` prefix goes before the effort prefix.
+const CLAUDE_ULTRATHINK_PREFIX = /^(\[[^\n]*?, version \d+\] )?Ultrathink:\n/;
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
@@ -74,10 +75,7 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
 }
 
 export function recallableComposerPrompt(messageText: string): string {
-  let prompt = messageText.trim();
-  if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
-    prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);
-  }
+  let prompt = messageText.trim().replace(CLAUDE_ULTRATHINK_PREFIX, "$1");
 
   while (prompt.length > 0) {
     const withoutReviewComments = stripTrailingReviewComments(prompt);
