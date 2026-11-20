@@ -422,7 +422,7 @@ function ReportAnswer({
     const response: ReportResponse = {
       ref,
       kind: "answer",
-      ...(report.answers?.includes(text) ? {} : { reply: true }),
+      ...(report.answers?.includes(text) ? {} : { reply: text }),
       messageId: answerId,
       text: answer,
       createdAt: new Date().toISOString(),

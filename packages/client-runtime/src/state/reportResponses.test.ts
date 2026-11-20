@@ -97,7 +97,7 @@ it("forgets a failed response once its report is no longer open", async () => {
   const reply = {
     ref,
     kind: "answer" as const,
-    reply: true,
+    reply: "Next week",
     messageId: MessageId.make("answer"),
     text: "[Shed, version 1] Next week",
     createdAt: "2026-11-19T10:00:00.000Z",

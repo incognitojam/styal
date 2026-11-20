@@ -1154,7 +1154,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
             ref: input.reportReply.ref,
             kind: "answer",
-            reply: true,
+            reply: messageTextForSend,
             messageId: messageIdForSend,
             text: outgoingMessageText,
             createdAt: messageCreatedAt,
@@ -1168,7 +1168,7 @@ export function useComposerSend(input: ComposerSendInput) {
     // A reply restored after an unknown outcome, sent again without its report link.
     if (
       !input.reportReply &&
-      hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), outgoingMessageText)
+      hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), messageTextForSend)
     ) {
       sendInFlightRef.current = false;
       setThreadError(

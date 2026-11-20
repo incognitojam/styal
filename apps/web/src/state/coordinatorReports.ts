@@ -22,14 +22,12 @@ export const { begin: beginReportResponse, respond: respondToReport } = createRe
   environmentThreadDetails,
 );
 
-/** Whether `thread` has a typed reply with this text that the server has not confirmed yet. */
+/** Whether `thread` has a typed reply with exactly this text that the server has not confirmed yet. */
 export const hasUnconfirmedReply = (thread: ScopedThreadRef, text: string) =>
+  text.trim() !== "" &&
   appAtomRegistry
     .get(threadReportResponsesAtom(threadKey(thread)))
     .some(
       (response) =>
-        response.kind === "answer" &&
-        response.reply === true &&
-        response.failed === undefined &&
-        response.text.endsWith(text),
+        response.kind === "answer" && response.failed === undefined && response.reply === text,
     );

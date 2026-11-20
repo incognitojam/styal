@@ -7,7 +7,9 @@ import {
   coordinatorReports,
   formatReportAnswer,
   reportAnswerDisplay,
+  reportResponseDelivered,
   reportResponseFailure,
+  reportResponsePending,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { threadReportResponsesAtom, type ReportResponse } from "../../state/coordinatorReports";
@@ -24,10 +26,14 @@ import {
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
 import { useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import { Atom } from "effect/reactivity";
+import { environmentThreadDetails } from "../../state/threads";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
 
 const NO_PROJECT_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
+const NO_THREAD_STATE = Atom.make(null);
 
 export type ReportReference = { messageId: MessageId; key: string; version: number };
 export type ReportState = ReturnType<
@@ -259,18 +265,30 @@ export function NeedsYou({
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
-  // The summary steps back if its send fails; the report's row is then open again.
+  // Shown while its response is on its way and once the thread shows it, never after it fails.
   const summaryRef = answered?.report?.need.thread;
+  const summaryThread = summaryRef ? scopeThreadRef(summaryRef.environmentId, summaryRef.id) : null;
   const summaryResponses = useAtomValue(
-    threadReportResponsesAtom(
-      summaryRef ? threadKey(scopeThreadRef(summaryRef.environmentId, summaryRef.id)) : "",
-    ),
+    threadReportResponsesAtom(summaryThread ? threadKey(summaryThread) : ""),
   );
+  const summaryState = useAtomValue(
+    summaryThread ? environmentThreadDetails.stateAtom(summaryThread) : NO_THREAD_STATE,
+  );
+  const summaryProjection = summaryState === null ? null : Option.getOrNull(summaryState.data);
+  const summaryResponse = answered?.report?.response;
   const shownAnswered =
-    answered?.report &&
-    reportResponseFailure(summaryResponses, answered.report.response.ref) !== undefined
-      ? null
-      : answered;
+    !summaryResponse ||
+    reportResponsePending(summaryResponses, summaryResponse) ||
+    (summaryProjection !== null &&
+      reportResponseDelivered(
+        {
+          messages: summaryProjection.messages,
+          dismissals: summaryProjection.thread.reportDismissals ?? [],
+        },
+        summaryResponse,
+      ))
+      ? answered
+      : null;
   const needs = useProjectNeeds(project);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),

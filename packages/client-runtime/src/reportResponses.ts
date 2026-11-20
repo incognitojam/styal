@@ -18,8 +18,8 @@ export type PendingReportResponse<R extends Reference = Reference> = (
       readonly messageId: R["messageId"];
       readonly text: string;
       readonly createdAt: string;
-      /** Typed rather than one of the offered answers. */
-      readonly reply?: boolean;
+      /** The typed text, when typed rather than one of the offered answers. */
+      readonly reply?: string;
     }
   | { readonly ref: R; readonly kind: "dismiss" }
 ) & {
@@ -47,6 +47,27 @@ export function reportResponseFailedMessage(response: PendingReportResponse): st
     : response.reply
       ? REPORT_REPLY_FAILED
       : REPORT_ANSWER_FAILED;
+}
+
+/** Whether the server shows `response`: its answer message still tied to the report, or the dismissal. */
+export function reportResponseDelivered(
+  server: {
+    readonly messages: ReadonlyArray<{
+      readonly id: string;
+      readonly reportAnswer?: Reference | undefined;
+    }>;
+    readonly dismissals: readonly Reference[];
+  },
+  response: PendingReportResponse,
+): boolean {
+  if (response.kind === "dismiss")
+    return server.dismissals.some((ref) => sameReport(ref, response.ref));
+  return server.messages.some(
+    (message) =>
+      message.id === response.messageId &&
+      message.reportAnswer !== undefined &&
+      sameReport(message.reportAnswer, response.ref),
+  );
 }
 
 /** Whether `response` is still pending in `pending`: neither settled nor failed. */

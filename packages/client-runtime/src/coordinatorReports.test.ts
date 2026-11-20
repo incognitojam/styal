@@ -10,6 +10,7 @@ import {
   pendingReportResponseCount,
   reportAnswerDisplay,
   REPORT_ANSWER_FAILED,
+  reportResponseDelivered,
   reportResponseFailure,
   reportResponsePending,
   settleReportResponses,
@@ -154,6 +155,19 @@ describe("coordinator reports", () => {
     // Cancelling a queued answer keeps its message but drops its report reference.
     const cancelled = settleReportResponses(sent, { messageIds: ["m1"], dismissals: [] });
     expect(cancelled).toEqual([]);
+    // So the answer was not delivered, and nothing may say it was.
+    expect(reportResponseDelivered({ messages: [{ id: "m1" }], dismissals: [] }, answer)).toBe(
+      false,
+    );
+    expect(
+      reportResponseDelivered(
+        { messages: [{ id: "m1", reportAnswer: ref }], dismissals: [] },
+        answer,
+      ),
+    ).toBe(true);
+    expect(
+      reportResponseDelivered({ messages: [], dismissals: [] }, { ref, kind: "dismiss" }),
+    ).toBe(false);
     expect(
       coordinatorReports(
         [report("a", "pr:1", 1), { id: "m1", role: "user", text: answer.text }],
