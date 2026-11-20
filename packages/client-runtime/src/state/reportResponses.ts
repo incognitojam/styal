@@ -182,16 +182,22 @@ export function createReportResponses(
       threads.onFailed(response, detail);
     };
     // The thread list arrives on its own stream, so it may not count the response yet.
+    const list = threads.snapshotAtom(thread.environmentId);
+    let listedAt: number | undefined;
+    let stopList: (() => void) | undefined;
+    const listed = (snapshot: { readonly snapshotSequence: number } | null) =>
+      snapshot === null || snapshot.snapshotSequence >= listedAt!;
     const dropOnceListed = (sequence: number) => {
-      update(key, (current) => acknowledgeReportResponse(current, response, sequence));
-      const list = threads.snapshotAtom(thread.environmentId);
-      const listed = (snapshot: { readonly snapshotSequence: number } | null) =>
-        snapshot === null || snapshot.snapshotSequence >= sequence;
-      if (listed(registry.get(list))) return remove();
-      const stopList = registry.subscribe(list, (snapshot) => {
+      listedAt = Math.min(listedAt ?? sequence, sequence);
+      update(key, (current) => acknowledgeReportResponse(current, response, listedAt!));
+      if (listed(registry.get(list))) {
+        stopList?.();
+        return remove();
+      }
+      stopList ??= registry.subscribe(list, (snapshot) => {
         if (!listed(snapshot)) return;
         remove();
-        queueMicrotask(stopList);
+        queueMicrotask(() => stopList?.());
       });
     };
     const check = (state: ReportResponseThreadState) => {
@@ -219,7 +225,16 @@ export function createReportResponses(
     return {
       settle: (result) => {
         settled = true;
-        if (finished) return;
+        if (finished) {
+          // Shown before the reply came back; its own commit may be earlier than the thread's.
+          if (
+            listedAt !== undefined &&
+            result._tag === "Success" &&
+            result.value.sequence !== undefined
+          )
+            dropOnceListed(result.value.sequence);
+          return;
+        }
         if (result._tag === "Success" && result.value.sequence !== undefined) {
           acknowledgedAt = result.value.sequence;
           update(key, (current) => acknowledgeReportResponse(current, response, acknowledgedAt!));

@@ -155,7 +155,7 @@ it("keeps lowering the count until the thread list catches up with the thread", 
     sequence: 5,
   });
   const list = Atom.make<{ readonly snapshotSequence: number } | null>({ snapshotSequence: 5 });
-  const { respond } = store(registry, state, list);
+  const { respond, begin } = store(registry, state, list);
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
   const shells = [{ id: thread.threadId, openReportQuestionCount: 1 }] as never;
   const count = () =>
@@ -186,6 +186,27 @@ it("keeps lowering the count until the thread list catches up with the thread", 
   });
   expect(count()).toBe(0);
   registry.set(list, { snapshotSequence: 6 });
+  expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
+
+  // Shown at a later sequence before the send's own acknowledgement comes back.
+  const laterRef = { ...ref, version: 2 };
+  const handle = begin(thread, {
+    ref: laterRef,
+    kind: "answer",
+    messageId: MessageId.make("later"),
+    text: "[Shed, version 2] Start it",
+    createdAt: "2026-11-19T10:01:00.000Z",
+  });
+  registry.set(state, {
+    data: Option.some(
+      projection([{ id: MessageId.make("later"), role: "user", reportAnswer: laterRef }]),
+    ),
+    status: "live",
+    sequence: 9,
+  });
+  registry.set(list, { snapshotSequence: 7 });
+  expect(registry.get(pendingReportResponsesAtom).size).toBe(1);
+  handle?.settle(AsyncResult.success({ sequence: 7 }));
   expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
 });
 
