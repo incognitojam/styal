@@ -83,8 +83,6 @@ export interface ReportResponseHandle {
   readonly settle: (
     result: AtomCommandResult<{ readonly sequence?: number | undefined }, unknown>,
   ) => void;
-  /** Nothing was sent; the report is open again. Ignored once the send has settled. */
-  readonly fail: (detail?: string) => void;
 }
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
@@ -221,10 +219,8 @@ export function createReportResponses(
         fail("The server did not receive it.");
     };
     stop = registry.subscribe(threads.stateAtom(thread), check, { immediate: true });
-    let settled = false;
     return {
       settle: (result) => {
-        settled = true;
         if (finished) {
           // Shown before the reply came back; its own commit may be earlier than the thread's.
           if (
@@ -248,9 +244,6 @@ export function createReportResponses(
           return fail(cause instanceof Error ? cause.message : undefined);
         }
         check(registry.get(threads.stateAtom(thread)));
-      },
-      fail: (detail) => {
-        if (!settled && !finished) fail(detail);
       },
     };
   };

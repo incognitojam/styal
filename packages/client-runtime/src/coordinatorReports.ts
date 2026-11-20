@@ -92,27 +92,45 @@ export function reportAnswerDisplay(
   return { text, compact };
 }
 
-/** Each message that answers a report, with that report's title and version and the typed text. */
+/**
+ * Each user message about a report, with that report's title and version and the typed text: an
+ * answer tied to it, or a reply that only starts with its `formatReportAnswer` prefix.
+ */
 export function reportAnswers<M extends Message>(messages: readonly M[]) {
   type Answer = {
-    readonly messageId: NonNullable<M["reportAnswer"]>["messageId"];
+    readonly messageId: M["id"];
     readonly title: string;
     readonly version: number;
     readonly text: string;
   };
-  const reports = new Map<string, CoordinatorReport>();
-  for (const message of messages) if (message.report) reports.set(message.id, message.report);
+  const reports = new Map<string, M>();
+  const byPrefix = new Map<string, M>();
+  for (const message of messages)
+    if (message.report) {
+      reports.set(message.id, message);
+      byPrefix.set(formatReportAnswer(message.report, ""), message);
+    }
+  const named = (text: string) => {
+    if (!text.startsWith("[")) return undefined;
+    for (let end = text.indexOf("] "); end !== -1; end = text.indexOf("] ", end + 1)) {
+      const report = byPrefix.get(text.slice(0, end + 2));
+      if (report) return report;
+    }
+    return undefined;
+  };
   const answers = new Map<M["id"], Answer>();
   for (const message of messages) {
-    const ref = message.role === "user" ? message.reportAnswer : undefined;
-    const report = ref ? reports.get(ref.messageId) : undefined;
-    if (!ref || !report || report.version !== ref.version) continue;
+    if (message.role !== "user") continue;
+    const ref = message.reportAnswer;
+    const source = ref ? reports.get(ref.messageId) : named(message.text);
+    const report = source?.report;
+    if (!source || !report || (ref && report.version !== ref.version)) continue;
     const text = splitReportAnswer(message.text, report);
     if (text !== null)
       answers.set(message.id, {
-        messageId: ref.messageId,
+        messageId: source.id,
         title: report.title,
-        version: ref.version,
+        version: report.version,
         text,
       });
   }

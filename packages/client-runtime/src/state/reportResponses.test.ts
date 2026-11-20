@@ -97,7 +97,7 @@ it("waits for a full sync to judge an interrupted send, and fails only the uncon
   expect(reportResponsePending(pending(), other)).toBe(true);
 });
 
-it("drops a refused reply at once and stops lowering the count", async () => {
+it("drops a refused answer at once and stops lowering the count", async () => {
   const registry = AtomRegistry.make();
   const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
   const state = Atom.make<ReportResponseThreadState>({
@@ -116,7 +116,6 @@ it("drops a refused reply at once and stops lowering the count", async () => {
     {
       ref,
       kind: "answer",
-      reply: "Next week",
       messageId: MessageId.make("answer"),
       text: "[Shed, version 1] Next week",
       createdAt: "2026-11-19T10:00:00.000Z",
@@ -269,29 +268,4 @@ it("refuses a response to a report the thread already shows answered", async () 
   );
   expect(accepted).toBe(false);
   expect(sent).toBe(0);
-});
-
-it("drops a response that fails before it is sent", () => {
-  const registry = AtomRegistry.make();
-  const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
-  const projection = { messages: [], thread: {} } as unknown as Option.Option.Value<
-    ReportResponseThreadState["data"]
-  >;
-  const state = Atom.make<ReportResponseThreadState>({
-    data: Option.some(projection),
-    status: "live",
-    sequence: 5,
-  });
-  const { begin, failed } = store(registry, state);
-  const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
-  const handle = begin(thread, {
-    ref,
-    kind: "answer",
-    messageId: MessageId.make("answer"),
-    text: "[Shed, version 1] Start it",
-    createdAt: "2026-11-19T10:00:00.000Z",
-  });
-  handle?.fail("Attachments could not upload");
-  expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
-  expect(failed).toEqual([["answer", "Attachments could not upload"]]);
 });

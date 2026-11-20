@@ -8,6 +8,7 @@ import {
   pendingReportDismissals,
   pendingReportResponseCount,
   reportAnswerDisplay,
+  reportAnswers,
   reportResponseDelivered,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
@@ -83,6 +84,30 @@ describe("coordinator reports", () => {
         (x) => x.state,
       ),
     ).toEqual(["replaced", "open", "replaced", "open"]);
+  });
+
+  it("leaves the question open after a typed reply and closes it on a tapped answer", () => {
+    const reply = {
+      id: "reply",
+      role: "user",
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, "Does it cover mobile?"),
+    };
+    const tap = {
+      id: "tap",
+      role: "user",
+      text: formatReportAnswer({ title: "pr:1", version: 1 }, "Merge"),
+      reportAnswer: { messageId: "a", key: "pr:1", version: 1 },
+    };
+    const messages = [report("a", "pr:1", 1), reply];
+    expect(coordinatorReports(messages, [])[0]?.state).toBe("open");
+    expect(coordinatorReports([...messages, tap], [])[0]).toMatchObject({
+      state: "answered",
+      answer: { id: "tap" },
+    });
+    expect([...reportAnswers([...messages, tap])]).toEqual([
+      ["reply", { messageId: "a", title: "pr:1", version: 1, text: "Does it cover mobile?" }],
+      ["tap", { messageId: "a", title: "pr:1", version: 1, text: "Merge" }],
+    ]);
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {

@@ -82,7 +82,12 @@ import {
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
 import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
-import { answerNotesText, reportAnswerNote, threadReportNote } from "./ThreadReports.ts";
+import {
+  answerNotesText,
+  reportAnswerNote,
+  reportReplyNote,
+  threadReportNote,
+} from "./ThreadReports.ts";
 import { worktreeBranchNote } from "./WorktreeBranchNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -1114,6 +1119,13 @@ export const layer: Layer.Layer<
         ? projection.messages.find((candidate) => candidate.id === message.reportAnswer?.messageId)
             ?.report
         : undefined;
+      // The context loads a report a reply names only while its question is open.
+      const repliedReport =
+        message === undefined || message.reportAnswer
+          ? undefined
+          : projection.messages.find(
+              (candidate) => candidate.role === "assistant" && candidate.report,
+            )?.report;
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
         projection.thread.reportTo != null && reportsTo !== null
@@ -1121,6 +1133,7 @@ export const layer: Layer.Layer<
           : "",
         branchNote,
         answeredReport?.question === undefined ? "" : reportAnswerNote(answeredReport),
+        repliedReport === undefined ? "" : reportReplyNote(repliedReport),
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),

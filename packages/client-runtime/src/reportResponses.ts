@@ -14,8 +14,6 @@ export type PendingReportResponse<R extends Reference = Reference> = (
       readonly messageId: R["messageId"];
       readonly text: string;
       readonly createdAt: string;
-      /** The typed text, when typed rather than one of the offered answers. */
-      readonly reply?: string;
     }
   | { readonly ref: R; readonly kind: "dismiss" }
 ) & { readonly acknowledgedAt?: number };
@@ -59,11 +57,6 @@ export function reportResponsePending(
   response: PendingReportResponse,
 ): boolean {
   return pending.some((entry) => sameReportResponse(entry, response));
-}
-
-/** Whether `response`'s send was cut off or unconfirmed, so the server may or may not have it. */
-export function reportResponseOutcomeUnknown(response: PendingReportResponse): boolean {
-  return response.acknowledgedAt === Number.POSITIVE_INFINITY;
 }
 
 /**

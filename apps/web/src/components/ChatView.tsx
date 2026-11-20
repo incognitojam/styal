@@ -7,7 +7,6 @@ import {
   pendingReportAnswers,
   pendingReportDismissals,
   reportAnswers,
-  reportResponseOutcomeUnknown,
 } from "@t3tools/client-runtime/coordinator-reports";
 import {
   dismissCoordinatorReport,
@@ -1130,17 +1129,11 @@ export default function ChatView(props: ChatViewProps) {
       )
     : [];
   // A reply to a report that has since been answered or dismissed is no longer a reply.
-  // Kept while a reply's outcome is unknown, so resending the restored draft is refused, not sent plainly.
   const activeReportReply =
     reportReply?.threadKey === activeThreadKey &&
-    (reportStates.some(
+    reportStates.some(
       (report) => report.state === "open" && report.message.id === reportReply.ref.messageId,
-    ) ||
-      reportResponses.some(
-        (response) =>
-          reportResponseOutcomeUnknown(response) &&
-          response.ref.messageId === reportReply.ref.messageId,
-      ))
+    )
       ? reportReply
       : null;
   const dismissReport = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
@@ -3252,7 +3245,7 @@ export default function ChatView(props: ChatViewProps) {
     beforeDraftThreadCreate: routeKind === "draft" ? props.beforeThreadCreate : undefined,
     onDraftThreadNotCreated: routeKind === "draft" ? props.onThreadNotCreated : undefined,
     reportReply: settings.coordinatorReportsEnabled ? activeReportReply : null,
-    onReportAnswered: () => setReportReply(null),
+    onReportReplySent: () => setReportReply(null),
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,

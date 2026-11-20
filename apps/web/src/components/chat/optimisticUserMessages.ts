@@ -24,7 +24,7 @@ export function emptyOptimisticUserMessages(threadId: ThreadId): OptimisticUserM
 
 /**
  * `optimistic` with the report answers tapped in this client that the server does not show yet,
- * so they read like sent messages. Typed replies already have the composer's own.
+ * so they read like sent messages.
  */
 export function withTappedReportAnswers(
   optimistic: ChatMessage[],
@@ -34,7 +34,6 @@ export function withTappedReportAnswers(
 ): ChatMessage[] {
   const tapped = responses.flatMap((response): ChatMessage[] =>
     response.kind === "answer" &&
-    response.reply === undefined &&
     !serverMessages.some((message) => message.id === response.messageId)
       ? [
           {

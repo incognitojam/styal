@@ -1188,6 +1188,14 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
         yield* post("plan");
         yield* post("ship");
         yield* endTurn(turn, "completed");
+        // A typed reply names the report without answering it.
+        const replyNote =
+          'Note: this message is about your report "Merge the fix?" (version 1), whose question is still open.';
+        const reply = yield* send(launchedId, "[Merge the fix?, version 1] Is it tested?", {
+          sender: "user",
+        });
+        assert.include(reply.message.text, replyNote);
+        yield* endTurn(reply, "completed");
         const answered = yield* send(launchedId, "[Merge the fix?, version 1] Merge it", {
           sender: "user",
           reportAnswer: { messageId: MessageId.make("report:merge"), key: "merge", version: 1 },
@@ -1196,6 +1204,12 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           answered.message.text,
           'Note: this message answers your report "Merge the fix?" (version 1), which closes its question.',
         );
+        yield* endTurn(answered, "completed");
+        const late = yield* send(launchedId, "[Merge the fix?, version 1] Thanks", {
+          sender: "user",
+        });
+        assert.notInclude(late.message.text, replyNote);
+        yield* endTurn(late, "completed");
         yield* orchestrator.dispatch({
           type: "report.dismiss",
           commandId: CommandId.make("dismiss:plan"),

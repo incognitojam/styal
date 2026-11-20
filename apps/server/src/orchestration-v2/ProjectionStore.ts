@@ -5337,6 +5337,24 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     AND answer.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                       WHERE thread_id = ${threadId} AND run_id = ${runId})
                 )
+                -- The open report question an untied reply names by its "[<title>, version <n>] " prefix.
+                OR message_id = (
+                  SELECT (
+                    SELECT open.message_id FROM (${openReportQuestions}) AS open
+                    JOIN orchestration_v2_projection_messages AS named
+                      ON named.thread_id = t.thread_id AND named.message_id = open.message_id
+                    WHERE instr(
+                      (SELECT json_extract(reply.payload_json, '$.text') FROM orchestration_v2_projection_messages AS reply
+                        WHERE reply.thread_id = t.thread_id
+                          AND json_extract(reply.payload_json, '$.reportAnswer') IS NULL
+                          AND reply.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                            WHERE thread_id = ${threadId} AND run_id = ${runId})),
+                      '[' || json_extract(named.payload_json, '$.report.title') || ', version ' || json_extract(named.payload_json, '$.report.version') || '] '
+                    ) = 1
+                    ORDER BY open.created_at DESC LIMIT 1
+                  )
+                  FROM orchestration_v2_projection_threads AS t WHERE t.thread_id = ${threadId}
+                )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
                 OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
