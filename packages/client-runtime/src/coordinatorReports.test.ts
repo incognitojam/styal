@@ -108,6 +108,22 @@ describe("coordinator reports", () => {
       ["reply", { messageId: "a", title: "pr:1", version: 1, text: "Does it cover mobile?" }],
       ["tap", { messageId: "a", title: "pr:1", version: 1, text: "Merge" }],
     ]);
+    // A title that contains another report's prefix: the longest match, as the server picks it.
+    const nested = {
+      ...report("n", "pr:2", 1),
+      report: { ...report("n", "pr:2", 1).report, title: "pr:1, version 1] notes" },
+    };
+    const nestedReply = {
+      id: "nested",
+      role: "user",
+      text: "[pr:1, version 1] notes, version 1] Why?",
+    };
+    expect(
+      reportAnswers([report("a", "pr:1", 1), nested, nestedReply]).get("nested"),
+    ).toMatchObject({
+      messageId: "n",
+      text: "Why?",
+    });
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {

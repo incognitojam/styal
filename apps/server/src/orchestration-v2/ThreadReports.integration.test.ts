@@ -1180,14 +1180,33 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             threadId: launchedId,
             messageId: MessageId.make(`report:${key}`),
             key,
-            title: key === "merge" ? "Merge the fix?" : key === "ship" ? "Ship it?" : "Old plan",
+            title:
+              key === "merge"
+                ? "Merge the fix?"
+                : key === "ship"
+                  ? "Ship it?"
+                  : key === "notes"
+                    ? "Merge the fix?, version 1] notes"
+                    : "Old plan",
             body: "Ready.",
             ...(key === "plan" ? {} : { question: `${key}?` }),
           });
         yield* post("merge");
         yield* post("plan");
         yield* post("ship");
+        yield* post("notes");
         yield* endTurn(turn, "completed");
+        // A title holding another report's prefix: the longest match is the report it names.
+        const nestedReply = yield* send(
+          launchedId,
+          "[Merge the fix?, version 1] notes, version 1] Which notes?",
+          { sender: "user" },
+        );
+        assert.include(
+          nestedReply.message.text,
+          'about your report "Merge the fix?, version 1] notes" (version 1)',
+        );
+        yield* endTurn(nestedReply, "completed");
         // A typed reply names the report without answering it.
         const replyNote =
           'Note: this message is about your report "Merge the fix?" (version 1), whose question is still open.';

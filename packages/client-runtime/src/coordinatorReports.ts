@@ -110,13 +110,13 @@ export function reportAnswers<M extends Message>(messages: readonly M[]) {
       reports.set(message.id, message);
       byPrefix.set(formatReportAnswer(message.report, ""), message);
     }
+  // The longest matching prefix, as the server picks it for the agent's note.
   const named = (text: string) => {
     if (!text.startsWith("[")) return undefined;
-    for (let end = text.indexOf("] "); end !== -1; end = text.indexOf("] ", end + 1)) {
-      const report = byPrefix.get(text.slice(0, end + 2));
-      if (report) return report;
-    }
-    return undefined;
+    let found: M | undefined;
+    for (let end = text.indexOf("] "); end !== -1; end = text.indexOf("] ", end + 1))
+      found = byPrefix.get(text.slice(0, end + 2)) ?? found;
+    return found;
   };
   const answers = new Map<M["id"], Answer>();
   for (const message of messages) {

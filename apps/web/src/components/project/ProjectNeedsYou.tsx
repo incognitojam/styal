@@ -460,7 +460,7 @@ function ReportAnswer({
         rows={1}
         aria-label={`Reply to ${report.title}`}
         placeholder="Or reply"
-        disabled={disabled}
+        disabled={disabled || sending}
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
