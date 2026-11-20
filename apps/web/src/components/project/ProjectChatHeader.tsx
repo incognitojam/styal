@@ -1,4 +1,3 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import {
   CalendarClockIcon,
@@ -11,9 +10,18 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { startedThreadState } from "../chat/startedThreads.logic";
+import { scheduleLabel } from "../settings/scheduledTasksSettings.logic";
 import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import type { ProjectPageJob } from "./useProjectPages";
+
+const RUN_RESULT = {
+  never: "Not run yet",
+  running: "Running",
+  succeeded: "Last run succeeded",
+  failed: "Last run failed",
+} as const;
 
 export interface ProjectChatHeaderProps {
   readonly project: ProjectFaviconProject;
@@ -24,9 +32,9 @@ export interface ProjectChatHeaderProps {
   readonly onOpenSettings: () => void;
   /** Once the chat exists: its thread view, for the thread's title, menu and details panel. */
   readonly onOpenThread?: (() => void) | null;
-  /** Scheduled tasks' threads the page keeps off the sidebar, listed in a menu. */
-  readonly jobThreads: ReadonlyArray<EnvironmentThreadShell>;
-  readonly onOpenJobThread: (thread: EnvironmentThreadShell) => void;
+  /** Scheduled tasks whose threads the page keeps off the sidebar, listed in a menu. */
+  readonly jobs: ReadonlyArray<ProjectPageJob>;
+  readonly onOpenJobThread: (thread: ProjectPageJob["thread"]) => void;
 }
 
 /** The project page's header, in the slot and height of a thread's header. */
@@ -61,37 +69,30 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
         <SquarePenIcon aria-hidden />
         <span className="max-sm:sr-only">New thread</span>
       </Button>
-      {props.jobThreads.length > 0 ? (
+      {props.jobs.length > 0 ? (
         <Menu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <MenuTrigger
-                  render={
-                    <Button variant="ghost-muted" size="icon-sm" aria-label="Scheduled threads" />
-                  }
-                />
-              }
-            >
-              <CalendarClockIcon aria-hidden />
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">Scheduled threads</TooltipPopup>
-          </Tooltip>
+          <MenuTrigger render={<Button variant="ghost-muted" size="compact" />}>
+            <CalendarClockIcon aria-hidden />
+            Scheduled
+          </MenuTrigger>
           <MenuPopup align="end" sideOffset={6} className="max-w-80">
-            {props.jobThreads.map((thread) => {
-              const state = startedThreadState(thread);
-              return (
-                <MenuItem
-                  key={`${thread.environmentId}:${thread.id}`}
-                  onClick={() => props.onOpenJobThread(thread)}
-                >
-                  <span className="min-w-0 truncate">{thread.title}</span>
-                  {state ? (
-                    <MenuItemDetail>{state === "working" ? "Working" : "Needs you"}</MenuItemDetail>
-                  ) : null}
-                </MenuItem>
-              );
-            })}
+            {props.jobs.map(({ thread, task, timeZone }) => (
+              <MenuItem
+                key={`${thread.environmentId}:${task.id}`}
+                onClick={() => props.onOpenJobThread(thread)}
+              >
+                <CalendarClockIcon className="mt-1 size-3.5 shrink-0 self-start" />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{task.title}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
+                    {startedThreadState(thread) === "needs-you"
+                      ? "Needs you"
+                      : RUN_RESULT[task.lastRunStatus]}
+                  </span>
+                </span>
+              </MenuItem>
+            ))}
           </MenuPopup>
         </Menu>
       ) : null}

@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   type EnvironmentTheme,
+  type ScheduledTaskThreadListResult,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleLegacyThreadMigrationPayload,
@@ -41,29 +42,25 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   serverEnvironment.updateStateAtom,
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
+const NO_TASK_THREADS: ScheduledTaskThreadListResult = { tasks: [] };
 /**
- * Newline-joined ids of the threads scheduled tasks run in on a machine with project coordinators
- * on. Its scheduled tasks are subscribed only while the switch is on there.
+ * The tasks that run in one thread on a machine with project coordinators on, or null until the
+ * list loads there. Subscribed only while the switch is on, and only from servers that serve it.
  */
-export const projectJobThreadIdsAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) =>
-    get(serverEnvironment.configValueAtom(environmentId))?.settings.projectCoordinatorsEnabled !==
-    true
-      ? ""
-      : (
-          AsyncResult.getOrElse(
-            get(serverEnvironment.scheduledTasksLive({ environmentId, input: {} })),
-            () => null,
-          )?.tasks ?? []
-        )
-          .flatMap((task) => (task.threadId === null ? [] : [task.threadId]))
-          .join("\n"),
-  ),
+export const projectJobListAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ScheduledTaskThreadListResult | null => {
+    const config = get(serverEnvironment.configValueAtom(environmentId));
+    return config?.settings.projectCoordinatorsEnabled !== true ||
+      config.environment.capabilities.scheduledTaskThreads !== true
+      ? NO_TASK_THREADS
+      : Option.getOrNull(
+          AsyncResult.value(
+            get(serverEnvironment.scheduledTaskThreadsLive({ environmentId, input: {} })),
+          ),
+        );
+  }),
 );
-export const projectJobThreadIdListsAtom = environmentAtomList(
-  "web-project-job-thread-ids",
-  projectJobThreadIdsAtom,
-);
+export const projectJobListsAtom = environmentAtomList("web-project-job-lists", projectJobListAtom);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

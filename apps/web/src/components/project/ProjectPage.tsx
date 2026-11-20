@@ -289,7 +289,7 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         to: "/settings/projects",
         search: { project: page.group.projectKey, machine: undefined },
       }),
-    jobThreads: page.jobThreads,
+    jobs: page.jobs,
     onOpenJobThread: (thread: { readonly environmentId: EnvironmentId; readonly id: ThreadId }) =>
       void navigate({
         to: "/$environmentId/$threadId",

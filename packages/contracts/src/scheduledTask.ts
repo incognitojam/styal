@@ -276,6 +276,56 @@ export const ScheduledTaskListResult = Schema.Struct({
 });
 export type ScheduledTaskListResult = typeof ScheduledTaskListResult.Type;
 
+/** A task that runs in one thread, without its prompt or run settings. */
+export const ScheduledTaskThread = Schema.Struct({
+  id: ScheduledTaskId,
+  title: TrimmedNonEmptyString,
+  enabled: Schema.Boolean,
+  schedule: ScheduledTaskSchedule,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+  nextRunAt: Schema.NullOr(IsoDateTime),
+  lastRunAt: Schema.NullOr(IsoDateTime),
+  lastRunStatus: ScheduledTaskRunStatus,
+  blockedByPolicy: Schema.optionalKey(Schema.String),
+});
+export type ScheduledTaskThread = typeof ScheduledTaskThread.Type;
+
+export const ScheduledTaskThreadListResult = Schema.Struct({
+  tasks: ForwardCompatibleArray(ScheduledTaskThread),
+  timeZone: Schema.optional(TrimmedNonEmptyString),
+});
+export type ScheduledTaskThreadListResult = typeof ScheduledTaskThreadListResult.Type;
+
+/** The tasks that run in one thread, for clients that only place that thread. */
+export function scheduledTaskThreads(
+  result: ScheduledTaskListResult,
+): ScheduledTaskThreadListResult {
+  return {
+    tasks: result.tasks.flatMap((task) =>
+      task.threadId === null || scheduledTaskThreadMode(task) === "new_thread"
+        ? []
+        : [
+            {
+              id: task.id,
+              title: task.title,
+              enabled: task.enabled,
+              schedule: task.schedule,
+              threadId: task.threadId,
+              createdAt: task.createdAt,
+              nextRunAt: task.nextRunAt,
+              lastRunAt: task.lastRunAt,
+              lastRunStatus: task.lastRunStatus,
+              ...(task.blockedByPolicy === undefined
+                ? {}
+                : { blockedByPolicy: task.blockedByPolicy }),
+            },
+          ],
+    ),
+    ...(result.timeZone === undefined ? {} : { timeZone: result.timeZone }),
+  };
+}
+
 export const ScheduledTaskUpsertInput = Schema.Struct({
   id: Schema.optional(ScheduledTaskId),
   requireExisting: Schema.optional(Schema.Boolean).annotate({
