@@ -56,6 +56,7 @@ const env = {
   TMPDIR: root,
   TEMP: root,
   STYAL_HOME: state,
+  T3CODE_EVENT_PRUNING: "0",
   SHELL: "/bin/sh",
   ...(platform === "win32"
     ? { SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec }

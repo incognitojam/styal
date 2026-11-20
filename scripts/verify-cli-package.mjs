@@ -86,6 +86,7 @@ NodeChildProcess.execFileSync(
 );
 const cli = NodePath.join(install, "node_modules", ".bin", "styal");
 const env = {
+  T3CODE_EVENT_PRUNING: "0",
   PATH: process.env.PATH,
   HOME: NodePath.join(root, "home"),
   STYAL_HOME: state,
