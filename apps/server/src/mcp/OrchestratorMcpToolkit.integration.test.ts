@@ -881,22 +881,23 @@ describe("orchestrator MCP toolkit", () => {
               );
             for (const [args, text] of [
               [
-                { key: "pr:1", resolved: true, title: "T", answers: ["A"] },
-                "drop `title`, `answers`",
+                { key: "pr:1", outcome: "Merged", question: "Q?", answers: ["A"] },
+                "drop `question`, `answers`",
               ],
               [{ key: "pr:1", title: "T", body: "B", outcome: "Merged" }, "not with a new version"],
               [{ key: "pr:1", body: "B" }, "missing `title`"],
+              [{ key: "pr:1" }, "send only `key` and a one-line `outcome`"],
             ] as const) {
               expect(yield* reportError(args)).toContain(text);
             }
-            expect(yield* reportError({ key: "pr:1", resolved: true })).toContain(
+            expect(yield* reportError({ key: "pr:1", outcome: "Merged" })).toContain(
               "Reports are disabled.",
             );
             yield* (yield* ServerSettings.ServerSettingsService).updateSettings({
               coordinatorReportsEnabled: true,
             });
             yield* report({ key: "pr:1", title: "Release", body: "Ready." });
-            expect(yield* reportError({ key: "pr:1", resolved: true })).toContain(
+            expect(yield* reportError({ key: "pr:1", outcome: "Merged" })).toContain(
               "asks no question.",
             );
             const posted = yield* report({
@@ -906,11 +907,13 @@ describe("orchestrator MCP toolkit", () => {
               question: "Merge?",
             });
             expect(posted.structuredContent).toMatchObject({ version: 2 });
-            const resolved = yield* report({
-              key: "pr:1",
-              resolved: true,
-              outcome: "Merged\n  as abc123",
-            });
+            // A session that still sends the old `resolved` is told the arguments that exist.
+            expect(
+              String(
+                yield* Effect.flip(report({ key: "pr:1", resolved: true, outcome: "Merged" })),
+              ),
+            ).toContain('Unknown argument "resolved". Accepted arguments: key, title, body');
+            const resolved = yield* report({ key: "pr:1", outcome: "Merged\n  as abc123" });
             expect(resolved.structuredContent).toEqual(posted.structuredContent);
             expect(
               (yield* orchestrator.getThreadProjection(parentThreadId)).messages.find(

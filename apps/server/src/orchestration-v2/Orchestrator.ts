@@ -4132,8 +4132,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ref.key === report?.key &&
         ref.version === report?.version;
       // The person's own answer or dismissal stands; a resolve is for questions still open. After
-      // an answer the agent can still record what happened, shown under the answer; a later
-      // outcome replaces it.
+      // an answer or its own resolve the agent can still record what happened; a later outcome
+      // replaces the earlier one.
       const closedBy = projection.messages.some(
         (message) => message.role === "user" && same(message.reportAnswer),
       )
@@ -4143,7 +4143,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : report?.resolved
             ? "resolved"
             : null;
-      const recordsOutcome = closedBy === "answered" && command.outcome !== undefined;
+      const recordsOutcome =
+        command.outcome !== undefined && (closedBy === "answered" || closedBy === "resolved");
       if (!latest || !report?.question || (closedBy !== null && !recordsOutcome)) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
@@ -4152,7 +4153,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ? `No report has key "${command.key}".`
             : !report.question
               ? `Version ${report.version} of report "${command.key}" asks no question.`
-              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.${closedBy === "answered" ? " Record what happened with only `key` and `outcome`." : ""}`,
+              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.${closedBy === "dismissed" ? "" : " Record what happened with only `key` and `outcome`."}`,
         });
       }
       yield* emitEvent({

@@ -785,13 +785,13 @@ it.effect(
         );
 
         // The agent closes the question without a new version; a later version asks again.
-        const resolve = (key: string, id: string) =>
+        const resolve = (key: string, id: string, outcome = "Fixed in abc123") =>
           orchestrator.dispatch({
             type: "report.resolve",
             commandId: CommandId.make(id),
             threadId: launcherId,
             key,
-            outcome: "Fixed in abc123",
+            outcome,
           });
         yield* resolve("issue:9", "resolve:other");
         yield* count(0);
@@ -801,8 +801,16 @@ it.effect(
           )?.report?.resolved?.outcome,
           "Fixed in abc123",
         );
+        // A later outcome replaces it, as after an answer.
+        yield* resolve("issue:9", "resolve:other:again", "Released in 2.4");
+        yield* count(0);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(launcherId)).messages.find(
+            (message) => message.id === "report:other",
+          )?.report?.resolved?.outcome,
+          "Released in 2.4",
+        );
         for (const [key, cause] of [
-          ["issue:9", 'Version 1 of report "issue:9" is already resolved.'],
           ["issue:404", 'No report has key "issue:404".'],
           ["pr:214", 'Version 3 of report "pr:214" is already dismissed.'],
         ] as const) {
