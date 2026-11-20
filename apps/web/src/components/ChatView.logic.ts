@@ -1194,10 +1194,9 @@ export function formatOutgoingPrompt(params: {
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  const text = params.reportReply
-    ? formatReportAnswer(params.reportReply, params.text)
-    : params.text;
-  return applyClaudePromptEffortPrefix(text, promptEffort);
+  const text = applyClaudePromptEffortPrefix(params.text, promptEffort);
+  // The report's prefix leads, so the reply still names its report with an effort prefix.
+  return params.reportReply ? formatReportAnswer(params.reportReply, text) : text;
 }
 
 export function isCompactCommandMessage(message: ChatMessage): boolean {

@@ -131,10 +131,13 @@ function summary(need: ProjectNeed): string {
   }
 }
 
-/** A report response sent from the card, so its summary can step back if the send fails. */
+/**
+ * A report response sent from the card, so its summary can step back if the send fails. Without
+ * one it was a typed reply, which leaves the question open.
+ */
 export interface AnsweredReport {
   readonly need: Extract<ProjectNeed, { kind: "report" }>;
-  readonly response: ReportResponse;
+  readonly response?: ReportResponse;
 }
 
 export interface AnsweredNeed {
@@ -211,13 +214,14 @@ export function ProjectNeedRow({
 }
 
 export function AnsweredNeedRow({ answered }: { answered: AnsweredNeed }) {
-  const dismissed = answered.report?.response.kind === "dismiss";
+  const dismissed = answered.report?.response?.kind === "dismiss";
+  const replied = answered.report !== undefined && answered.report.response === undefined;
   return (
     <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm [&_svg]:size-3.5">
       <MessageSquareIcon className="mt-1 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-muted-foreground">
-          {dismissed ? "Dismissed · " : "Answered · sent to "}
+          {dismissed ? "Dismissed · " : replied ? "Replied · sent to " : "Answered · sent to "}
           <span className="text-foreground">{answered.threadTitle}</span>
         </span>
         {dismissed ? null : (
@@ -446,12 +450,17 @@ function ReportAnswer({
     );
   };
   // A typed reply names the report but does not answer it, so the question stays open.
-  const sendReply = () =>
+  const sendReply = () => {
+    const text = reply.trim();
     void run(
-      () => sendTurn(newMessageId(), formatReportAnswer(report, reply.trim())),
+      () => sendTurn(newMessageId(), formatReportAnswer(report, text)),
       "Failed to send your reply.",
-      () => setReply(""),
+      () => {
+        setReply("");
+        onAnswered(text, { need });
+      },
     );
+  };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={answer} />

@@ -1214,7 +1214,7 @@ export const buildMessages = (sample: Sample) => {
       testCase.setup.reportAnswer === undefined
         ? ""
         : reportAnswerNote(testCase.setup.reportAnswer),
-      testCase.setup.reportReply === undefined ? "" : reportReplyNote(testCase.setup.reportReply),
+      testCase.setup.reportReply === undefined ? "" : reportReplyNote([testCase.setup.reportReply]),
     ]
       .filter((part) => part !== "")
       .join("\n\n"),
