@@ -1,4 +1,4 @@
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
@@ -22,13 +22,16 @@ const store = (
   list = Atom.make<{ readonly snapshotSequence: number } | null>(null),
 ) => {
   const failed: Array<readonly [string, string | undefined]> = [];
+  const failedThreads: ScopedThreadRef[] = [];
   const responses = createReportResponses(registry, {
     stateAtom: () => state,
     snapshotAtom: () => list,
-    onFailed: (response: ReportResponse, detail?: string) =>
-      failed.push([response.kind === "answer" ? response.messageId : "dismiss", detail]),
+    onFailed: (thread: ScopedThreadRef, response: ReportResponse, detail?: string) => {
+      failedThreads.push(thread);
+      failed.push([response.kind === "answer" ? response.messageId : "dismiss", detail]);
+    },
   });
-  return { ...responses, failed };
+  return { ...responses, failed, failedThreads };
 };
 
 it("waits for a full sync to judge an interrupted send, and fails only the unconfirmed ones", async () => {
@@ -282,7 +285,7 @@ it("drops a response that fails before it is sent", () => {
     status: "live",
     sequence: 5,
   });
-  const { begin, failed } = store(registry, state);
+  const { begin, failed, failedThreads } = store(registry, state);
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
   const handle = begin(thread, {
     ref,
@@ -294,4 +297,5 @@ it("drops a response that fails before it is sent", () => {
   handle?.fail("Attachments could not upload");
   expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
   expect(failed).toEqual([["answer", "Attachments could not upload"]]);
+  expect(failedThreads).toEqual([thread]);
 });
