@@ -347,6 +347,31 @@ export const makeCheckout = Effect.gen(function* () {
     yield* syncAdmin(admin);
     yield* step("restore-finished");
   }, Effect.uninterruptible);
+  const verifyOwnership = Effect.fn("WorktreeCleanup.verifyOwnership")(function* (
+    root: string,
+    project: string,
+  ) {
+    const admin = yield* adminDirectory(root);
+    if (admin === null) return yield* fail("Not a linked worktree.");
+    yield* identity(root, admin);
+    const commonPath = path.resolve(
+      root,
+      (yield* command(root, ["rev-parse", "--git-common-dir"])).trimEnd(),
+    );
+    const ownerPath = path.resolve(
+      project,
+      (yield* command(project, ["rev-parse", "--git-common-dir"])).trimEnd(),
+    );
+    const common = yield* io(() => fs.realpath(commonPath));
+    const owner = yield* io(() => fs.realpath(ownerPath));
+    if (
+      common !== owner ||
+      admin === common ||
+      path.dirname(admin) !== path.join(common, "worktrees")
+    )
+      return yield* fail("Worktree belongs to another repository.");
+    return admin;
+  });
   const release = Effect.fn("WorktreeCleanup.releaseCheckout")(function* (
     root: string,
     project: string,
@@ -354,23 +379,7 @@ export const makeCheckout = Effect.gen(function* () {
   ) {
     if (platform === "win32")
       return yield* fail("Worktree source cleanup is unavailable on Windows.");
-    const admin = yield* adminDirectory(root);
-    if (admin === null) return yield* fail("Not a linked worktree.");
-    yield* identity(root, admin);
-    const common = path.resolve(
-      root,
-      (yield* command(root, ["rev-parse", "--git-common-dir"])).trimEnd(),
-    );
-    const owner = path.resolve(
-      project,
-      (yield* command(project, ["rev-parse", "--git-common-dir"])).trimEnd(),
-    );
-    if (
-      common !== owner ||
-      admin === common ||
-      !admin.startsWith(`${common}${path.sep}worktrees${path.sep}`)
-    )
-      return yield* fail("Worktree belongs to another repository.");
+    const admin = yield* verifyOwnership(root, project);
     for (const name of [
       "locked",
       "MERGE_HEAD",
@@ -523,5 +532,5 @@ export const makeCheckout = Effect.gen(function* () {
           Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
         );
   });
-  return { release, restore, state, root };
+  return { release, restore, state, root, verifyOwnership };
 });
