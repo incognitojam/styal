@@ -8,6 +8,8 @@ import {
 } from "@t3tools/contracts";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
+export * from "./reportResponses.ts";
+
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 type Message = {
   readonly id: string;

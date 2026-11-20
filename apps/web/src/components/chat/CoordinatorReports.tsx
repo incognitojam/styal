@@ -7,8 +7,11 @@ import {
   coordinatorReports,
   formatReportAnswer,
   reportAnswerDisplay,
+  reportResponseDelivered,
+  reportResponsePending,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
+import { threadReportResponsesAtom } from "../../state/coordinatorReports";
 import { Button } from "../ui/button";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
@@ -20,8 +23,15 @@ import {
   ProjectNeedRow,
   useProjectNeeds,
 } from "../project/ProjectNeedsYou";
+import { useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import { Atom } from "effect/reactivity";
+import { environmentThreadDetails } from "../../state/threads";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 
 const NO_PROJECT_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
+const NO_THREAD_STATE = Atom.make(null);
 
 export type ReportReference = { messageId: MessageId; key: string; version: number };
 export type ReportState = ReturnType<
@@ -37,7 +47,7 @@ export type ReportAnswer = { messageId: MessageId; title: string; version: numbe
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   answers: ReadonlyMap<MessageId, ReportAnswer>;
-  send: (text: string, ref: ReportReference) => Promise<void>;
+  answer: (text: string, ref: ReportReference) => void;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
@@ -54,8 +64,6 @@ export function ReportAnswerBar({
   renderAnswer: (answer: NonNullable<ReportState["answer"]>, text: string) => ReactNode;
 }) {
   const ctx = use(CoordinatorReportsContext);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   if (!ctx) return null;
   const panelClassName = "flex flex-col gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-sm";
   if (report.state === "dismissed") {
@@ -93,26 +101,14 @@ export function ReportAnswerBar({
   if (report.state !== "open") return null;
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
-  const disabled = !ctx.canOperate || sending;
+  const disabled = !ctx.canOperate;
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
-      {sendError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {sendError}
-        </p>
-      ) : null}
       <ReportAnswerOptions
         answers={tag.answers ?? []}
         disabled={disabled}
-        onPick={(answer) => {
-          setSending(true);
-          setSendError(null);
-          void ctx
-            .send(formatReportAnswer(tag, answer), ref)
-            .catch(() => setSendError("Could not send your answer. Try again."))
-            .finally(() => setSending(false));
-        }}
+        onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
       />
       <div className="flex items-center justify-between">
         <Button
@@ -241,13 +237,37 @@ export function NeedsYou({
   const [openNeed, setOpenNeed] = useState<string | null>(null);
   // The latest answer only; the rows follow each thread's own pending state.
   const [answered, setAnswered] = useState<AnsweredNeed | null>(null);
+  // Shown while its response is on its way and once the thread shows it, never after it fails.
+  const summaryRef = answered?.report?.need.thread;
+  const summaryThread = summaryRef ? scopeThreadRef(summaryRef.environmentId, summaryRef.id) : null;
+  const summaryResponses = useAtomValue(
+    threadReportResponsesAtom(summaryThread ? threadKey(summaryThread) : ""),
+  );
+  const summaryState = useAtomValue(
+    summaryThread ? environmentThreadDetails.stateAtom(summaryThread) : NO_THREAD_STATE,
+  );
+  const summaryProjection = summaryState === null ? null : Option.getOrNull(summaryState.data);
+  const summaryResponse = answered?.report?.response;
+  const shownAnswered =
+    !summaryResponse ||
+    reportResponsePending(summaryResponses, summaryResponse) ||
+    (summaryProjection !== null &&
+      reportResponseDelivered(
+        {
+          messages: summaryProjection.messages,
+          dismissals: summaryProjection.thread.reportDismissals ?? [],
+        },
+        summaryResponse,
+      ))
+      ? answered
+      : null;
   const needs = useProjectNeeds(project);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
-  if (!rows.length && !answered) return null;
+  if (!rows.length && !shownAnswered) return null;
   const visible = expanded ? rows : rows.slice(0, 3);
   return (
     <div className="mx-auto mb-2 w-full max-w-(--chat-content-max-width)">
@@ -276,7 +296,13 @@ export function NeedsYou({
                 need={row.need}
                 open={openNeed === row.need.key}
                 onToggle={() => setOpenNeed(openNeed === row.need.key ? null : row.need.key)}
-                onAnswered={(answer) => setAnswered({ threadTitle: row.need.thread.title, answer })}
+                onAnswered={(answer, report) =>
+                  setAnswered({
+                    threadTitle: row.need.thread.title,
+                    answer,
+                    ...(report ? { report } : {}),
+                  })
+                }
               />
             ) : (
               <button
@@ -299,9 +325,9 @@ export function NeedsYou({
             ),
           )}
         </div>
-        {answered ? (
+        {shownAnswered ? (
           <div className="border-t border-border/60">
-            <AnsweredNeedRow answered={answered} />
+            <AnsweredNeedRow answered={shownAnswered} />
           </div>
         ) : null}
       </div>

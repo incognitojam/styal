@@ -6,6 +6,7 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
+import { pendingReportResponsesAtom, withPendingReportResponses } from "./reportResponses.ts";
 import {
   isListedThreadLineage,
   isProviderNativeSubagentThread,
@@ -237,10 +238,15 @@ export function createEnvironmentThreadShellAtoms(input: {
   };
 
   const environmentThreadsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make(
-      (get): ReadonlyArray<OrchestrationV2ThreadShell> =>
-        get(input.snapshotAtom(environmentId))?.threads ?? EMPTY_THREADS,
-    ).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
+    Atom.make((get): ReadonlyArray<OrchestrationV2ThreadShell> => {
+      const snapshot = get(input.snapshotAtom(environmentId));
+      return withPendingReportResponses(
+        environmentId,
+        snapshot?.threads ?? EMPTY_THREADS,
+        get(pendingReportResponsesAtom),
+        snapshot?.snapshotSequence,
+      );
+    }).pipe(Atom.withLabel(`environment-threads:${environmentId}`)),
   );
 
   const environmentThreadIndexAtom = Atom.family((environmentId: EnvironmentId) =>

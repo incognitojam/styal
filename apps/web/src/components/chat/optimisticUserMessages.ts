@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import type { SetStateAction } from "react";
 import type { ChatMessage } from "../../types";
+import type { ReportResponse } from "../../state/coordinatorReports";
 import { collectUserMessageBlobPreviewUrls } from "../ChatView.logic";
 
 /**
@@ -19,6 +20,38 @@ export interface OptimisticUserMessages {
 
 export function emptyOptimisticUserMessages(threadId: ThreadId): OptimisticUserMessages {
   return { threadId, messages: [], handoff: {} };
+}
+
+/**
+ * `optimistic` with the report answers tapped in this client that the server does not show yet,
+ * so they read like sent messages. Typed replies already have the composer's own.
+ */
+export function withTappedReportAnswers(
+  optimistic: ChatMessage[],
+  responses: ReadonlyArray<ReportResponse>,
+  serverMessages: ReadonlyArray<{ readonly id: MessageId }>,
+  queued: boolean,
+): ChatMessage[] {
+  const tapped = responses.flatMap((response): ChatMessage[] =>
+    response.kind === "answer" &&
+    response.reply === undefined &&
+    !serverMessages.some((message) => message.id === response.messageId)
+      ? [
+          {
+            id: response.messageId,
+            role: "user",
+            text: response.text,
+            reportAnswer: response.ref,
+            runId: null,
+            createdAt: response.createdAt,
+            updatedAt: response.createdAt,
+            streaming: false,
+            ...(queued ? { inputIntent: "queued_turn" as const } : {}),
+          },
+        ]
+      : [],
+  );
+  return tapped.length === 0 ? optimistic : [...optimistic, ...tapped];
 }
 
 /**

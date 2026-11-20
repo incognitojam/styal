@@ -32,7 +32,12 @@ import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
-import { dismissCoordinatorReport } from "../../state/coordinatorReports";
+import {
+  dismissCoordinatorReport,
+  respondToReport,
+  threadReportResponsesAtom,
+  type ReportResponse,
+} from "../../state/coordinatorReports";
 import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -57,11 +62,16 @@ const threadNeedsAtom = Atom.family((key: string) => {
   return Atom.make((get) => {
     const requests = get(environmentThreadDetails.pendingRequestsAtom(ref));
     const projection = Option.getOrNull(get(environmentThreadDetails.stateAtom(ref)).data);
+    const responses = get(threadReportResponsesAtom(key));
     if (requests === null || projection === null) return null;
-    const inputs = [requests, projection.messages, projection.thread.reportDismissals];
+    const inputs = [requests, projection.messages, projection.thread.reportDismissals, responses];
     if (inputs.some((input, index) => input !== previous[index])) {
       previous = inputs;
-      value = { requests, reports: openReports(projection) };
+      value = {
+        requests,
+        reports: openReports(projection, responses),
+        responding: responses.length > 0,
+      };
     }
     return value;
   });
@@ -120,9 +130,16 @@ function summary(need: ProjectNeed): string {
   }
 }
 
+/** A report response sent from the card, so its summary can step back if the send fails. */
+export interface AnsweredReport {
+  readonly need: Extract<ProjectNeed, { kind: "report" }>;
+  readonly response: ReportResponse;
+}
+
 export interface AnsweredNeed {
   readonly threadTitle: string;
   readonly answer: string;
+  readonly report?: AnsweredReport;
 }
 
 // The card scrolls; an opened row near its bottom brings its answers into view. Stable, so
@@ -139,7 +156,7 @@ export function ProjectNeedRow({
   need: ProjectNeed;
   open: boolean;
   onToggle: () => void;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report?: AnsweredReport) => void;
 }) {
   const navigate = useNavigate();
   const ref = scopeThreadRef(need.thread.environmentId, need.thread.id);
@@ -193,14 +210,18 @@ export function ProjectNeedRow({
 }
 
 export function AnsweredNeedRow({ answered }: { answered: AnsweredNeed }) {
+  const dismissed = answered.report?.response.kind === "dismiss";
   return (
     <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-sm [&_svg]:size-3.5">
       <MessageSquareIcon className="mt-1 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-muted-foreground">
-          Answered · sent to <span className="text-foreground">{answered.threadTitle}</span>
+          {dismissed ? "Dismissed · " : "Answered · sent to "}
+          <span className="text-foreground">{answered.threadTitle}</span>
         </span>
-        <span className="line-clamp-2 whitespace-pre-wrap">{answered.answer}</span>
+        {dismissed ? null : (
+          <span className="line-clamp-2 whitespace-pre-wrap">{answered.answer}</span>
+        )}
       </span>
     </div>
   );
@@ -211,7 +232,7 @@ function NeedAnswer({
   onAnswered,
 }: {
   need: ProjectNeed;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report?: AnsweredReport) => void;
 }) {
   switch (need.kind) {
     case "approval":
@@ -378,29 +399,41 @@ function ReportAnswer({
   onAnswered,
 }: {
   need: Extract<ProjectNeed, { kind: "report" }>;
-  onAnswered: (answer: string) => void;
+  onAnswered: (answer: string, report: AnsweredReport) => void;
 }) {
   const { environmentId, id: threadId, runtimeMode, interactionMode } = need.thread;
+  const thread = scopeThreadRef(environmentId, threadId);
   const canOperate = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const [reply, setReply] = useState("");
-  const { sending, run, alert } = useAnswerCommand();
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
-  const disabled = !canOperate || sending;
+  const disabled = !canOperate;
   // The answer is the asking thread's next message, so it reaches that thread's agent.
-  const send = (text: string) =>
-    run(
+  const send = (text: string) => {
+    const answerId = newMessageId();
+    const answer = formatReportAnswer(report, text);
+    const response: ReportResponse = {
+      ref,
+      kind: "answer",
+      ...(report.answers?.includes(text) ? {} : { reply: text }),
+      messageId: answerId,
+      text: answer,
+      createdAt: new Date().toISOString(),
+    };
+    void respondToReport(
+      thread,
+      response,
       () =>
         startTurn({
           environmentId,
           input: {
             threadId,
             message: {
-              messageId: newMessageId(),
+              messageId: answerId,
               role: "user",
-              text: formatReportAnswer(report, text),
+              text: answer,
               attachments: [],
               reportAnswer: ref,
             },
@@ -409,16 +442,12 @@ function ReportAnswer({
             dispatchMode: "queue",
           },
         }),
-      "Could not send your answer. Try again.",
-      () => onAnswered(text),
+      () => onAnswered(text, { need, response }),
     );
+  };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <ReportAnswerOptions
-        answers={report.answers ?? []}
-        disabled={disabled}
-        onPick={(answer) => void send(answer)}
-      />
+      <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={send} />
       <Textarea
         size="sm"
         rows={1}
@@ -428,30 +457,31 @@ function ReportAnswer({
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
-      {alert}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"
           variant="ghost-muted"
           disabled={disabled}
-          onClick={() =>
-            void run(
+          onClick={() => {
+            const response: ReportResponse = { ref, kind: "dismiss" };
+            void respondToReport(
+              thread,
+              response,
               () =>
                 dismiss({
                   environmentId,
                   input: { commandId: CommandId.make(randomUUID()), threadId, ...ref },
                 }),
-              "Could not dismiss the report.",
-              () => {},
-            )
-          }
+              () => onAnswered("Dismissed", { need, response }),
+            );
+          }}
         >
           Dismiss
         </Button>
         <Button
           size="xs"
           disabled={disabled || reply.trim() === ""}
-          onClick={() => void send(reply.trim())}
+          onClick={() => send(reply.trim())}
         >
           Send
         </Button>

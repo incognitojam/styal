@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  acknowledgeReportResponse,
+  claimReportResponse,
   coordinatorReports,
   formatReportAnswer,
+  pendingReportAnswers,
+  pendingReportDismissals,
+  pendingReportResponseCount,
   reportAnswerDisplay,
+  reportResponseDelivered,
   splitReportAnswer,
 } from "./coordinatorReports.ts";
 const report = (id: string, key: string, version: number) => ({
@@ -80,5 +86,52 @@ describe("coordinator reports", () => {
         .compact,
     ).toBe(false);
     expect(reportAnswerDisplay(answer("Start it\nafter lunch"), report).compact).toBe(false);
+  });
+
+  it("keeps one response per report and reads it as given", () => {
+    const ref = { messageId: "a", key: "pr:1", version: 1 };
+    const answer = (messageId: string, text: string) => ({
+      ref,
+      kind: "answer" as const,
+      messageId,
+      text,
+      createdAt: "2026-11-19T00:00:00.000Z",
+    });
+    const first = claimReportResponse([], answer("m1", "[pr:1, version 1] Merge it"));
+    expect(first).not.toBeNull();
+    // A double click, a different answer, and a dismiss before the first settles send nothing.
+    expect(claimReportResponse(first!, answer("m2", "Merge it"))).toBeNull();
+    expect(claimReportResponse(first!, answer("m3", "Hold"))).toBeNull();
+    expect(claimReportResponse(first!, { ref, kind: "dismiss" })).toBeNull();
+    // Another report, or another version of it, is still free.
+    expect(
+      claimReportResponse(first!, { ...answer("m4", "Hold"), ref: { ...ref, version: 2 } }),
+    ).not.toBeNull();
+
+    const messages = [report("a", "pr:1", 1)];
+    expect(coordinatorReports([...messages, ...pendingReportAnswers(first!)], [])[0]?.state).toBe(
+      "answered",
+    );
+    const dismissed = claimReportResponse([], { ref, kind: "dismiss" })!;
+    expect(coordinatorReports(messages, pendingReportDismissals(dismissed))[0]?.state).toBe(
+      "dismissed",
+    );
+
+    // A thread list that has reached the acknowledgement already counts the answer.
+    const sent = acknowledgeReportResponse(first!, answer("m1", ""), 10);
+    expect(pendingReportResponseCount(sent, 9)).toBe(1);
+    expect(pendingReportResponseCount(sent, 10)).toBe(0);
+
+    // Cancelling a queued answer keeps its message but drops its report reference, so it was
+    // not delivered.
+    expect(reportResponseDelivered({ messages: [{ id: "m1" }], dismissals: [] }, sent[0]!)).toBe(
+      false,
+    );
+    expect(
+      reportResponseDelivered(
+        { messages: [{ id: "m1", reportAnswer: ref }], dismissals: [] },
+        sent[0]!,
+      ),
+    ).toBe(true);
   });
 });

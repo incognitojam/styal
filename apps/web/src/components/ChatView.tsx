@@ -2,8 +2,18 @@ import { threadKey } from "@t3tools/client-runtime/state/entities";
 import { resolveCacheLossBaseline } from "./chat/compaction.logic";
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
-import { coordinatorReports, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
-import { dismissCoordinatorReport } from "../state/coordinatorReports";
+import {
+  coordinatorReports,
+  pendingReportAnswers,
+  pendingReportDismissals,
+  reportAnswers,
+  reportResponseOutcomeUnknown,
+} from "@t3tools/client-runtime/coordinator-reports";
+import {
+  dismissCoordinatorReport,
+  respondToReport,
+  threadReportResponsesAtom,
+} from "../state/coordinatorReports";
 import { CommandId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { projectFileActions } from "~/state/projectFileActions";
@@ -41,6 +51,7 @@ import {
   createOptimisticBlobPreviews,
   emptyOptimisticUserMessages,
   reconcileOptimisticUserMessages,
+  withTappedReportAnswers,
 } from "./chat/optimisticUserMessages";
 import { useTimelineRewind } from "./chat/useTimelineRewind";
 import { useThreadLifecycle } from "./chat/useThreadLifecycle";
@@ -425,6 +436,7 @@ import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplat
 const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
+const EMPTY_SERVER_MESSAGES: ReadonlyArray<{ readonly id: MessageId }> = [];
 const EMPTY_RUNS: ThreadStructure["runs"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
 const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
@@ -1092,21 +1104,46 @@ export default function ChatView(props: ChatViewProps) {
     ref: ReportReference;
     title: string;
   } | null>(null);
-  const activeReportReply = reportReply?.threadKey === activeThreadKey ? reportReply : null;
+  const reportResponses = useAtomValue(
+    threadReportResponsesAtom(activeThreadRef ? threadKey(activeThreadRef) : ""),
+  );
+  // Answers this client has sent and the server does not show yet read as given.
+  const sendingReportAnswers = pendingReportAnswers(reportResponses);
   const reportAnswerMessages = reportAnswers([
     ...(serverProjection?.messages ?? []),
     ...optimisticUserMessages,
+    ...sendingReportAnswers,
   ]);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
-        (serverProjection?.messages ?? []).map((message) => ({
-          ...message,
-          createdAt: DateTime.formatIso(message.createdAt),
-        })),
-        serverProjection?.thread.reportDismissals ?? [],
+        [
+          ...(serverProjection?.messages ?? []).map((message) => ({
+            ...message,
+            createdAt: DateTime.formatIso(message.createdAt),
+          })),
+          ...sendingReportAnswers,
+        ],
+        [
+          ...(serverProjection?.thread.reportDismissals ?? []),
+          ...pendingReportDismissals(reportResponses),
+        ],
       )
     : [];
-  const dismissReport = useAtomCommand(dismissCoordinatorReport);
+  // A reply to a report that has since been answered or dismissed is no longer a reply.
+  // Kept while a reply's outcome is unknown, so resending the restored draft is refused, not sent plainly.
+  const activeReportReply =
+    reportReply?.threadKey === activeThreadKey &&
+    (reportStates.some(
+      (report) => report.state === "open" && report.message.id === reportReply.ref.messageId,
+    ) ||
+      reportResponses.some(
+        (response) =>
+          reportResponseOutcomeUnknown(response) &&
+          response.ref.messageId === reportReply.ref.messageId,
+      ))
+      ? reportReply
+      : null;
+  const dismissReport = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
@@ -1719,8 +1756,14 @@ export default function ChatView(props: ChatViewProps) {
           { ...codexFeedbackMessage(submission, "assistant"), runId: null },
         ],
   );
+  const optimisticMessages = withTappedReportAnswers(
+    optimisticUserMessages,
+    reportResponses,
+    serverProjection?.messages ?? EMPTY_SERVER_MESSAGES,
+    phase === "running",
+  );
   const timelineEntriesInput = {
-    optimisticMessages: optimisticUserMessages,
+    optimisticMessages,
     anchoredMessages: anchoredTimelineMessages,
     attachmentUrlById: timelineAttachmentUrlById,
     ...(serverProjection === null
@@ -2104,7 +2147,7 @@ export default function ChatView(props: ChatViewProps) {
     scheduleComposerFocus();
   };
   const insertArtifactTemplateStable = useStableCallback(insertArtifactTemplate);
-  const sendAppMessage = async (text: string, reportAnswer?: ReportReference) => {
+  const sendAppMessage = async (text: string) => {
     if (!isServerThread || activeThreadId === null) {
       throw new Error("Messages from apps need a started thread.");
     }
@@ -2117,7 +2160,6 @@ export default function ChatView(props: ChatViewProps) {
           role: "user",
           text,
           attachments: [],
-          ...(reportAnswer ? { reportAnswer } : {}),
         },
         runtimeMode,
         interactionMode: DEFAULT_INTERACTION_MODE,
@@ -3347,7 +3389,7 @@ export default function ChatView(props: ChatViewProps) {
           })}
           environmentId={activeThread.environmentId}
           threadId={activeThread.id}
-          optimisticMessages={optimisticUserMessages}
+          optimisticMessages={optimisticMessages}
           editingRunId={queuedRunEdit.editingRunId}
           editBlockedReason={queuedRunEditBlockedReason({
             openQuestionCount: pendingUserInputs.length,
@@ -3418,7 +3460,7 @@ export default function ChatView(props: ChatViewProps) {
   // something, by its own rule: an optimistic message stops counting once the server has it.
   const hasQueuedTurns =
     queuedRunCount > 0 ||
-    optimisticUserMessages.some(
+    optimisticMessages.some(
       (message) =>
         message.inputIntent === "queued_turn" &&
         !serverProjection?.messages.some((committed) => committed.id === message.id),
@@ -3728,21 +3770,53 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           answers: reportAnswerMessages,
-                          send: sendAppMessageStable,
+                          answer: (text, ref) => {
+                            if (activeThreadRef === null || activeThreadId === null) return;
+                            const messageId = newMessageId();
+                            void respondToReport(
+                              activeThreadRef,
+                              {
+                                ref,
+                                kind: "answer",
+                                messageId,
+                                text,
+                                createdAt: new Date().toISOString(),
+                              },
+                              () =>
+                                startThreadTurn({
+                                  environmentId,
+                                  input: {
+                                    threadId: activeThreadId,
+                                    message: {
+                                      messageId,
+                                      role: "user",
+                                      text,
+                                      attachments: [],
+                                      reportAnswer: ref,
+                                    },
+                                    runtimeMode,
+                                    interactionMode: DEFAULT_INTERACTION_MODE,
+                                    dispatchMode: "queue",
+                                  },
+                                }),
+                            );
+                          },
                           reply: (ref, title) => {
                             setReportReply({ threadKey: activeThreadKey, ref, title });
                             scheduleComposerFocus();
                           },
                           dismiss: (ref) => {
-                            if (activeThreadId)
-                              void dismissReport({
+                            if (activeThreadRef === null || activeThreadId === null) return;
+                            void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
+                              dismissReport({
                                 environmentId,
                                 input: {
                                   commandId: CommandId.make(randomUUID()),
                                   threadId: activeThreadId,
                                   ...ref,
                                 },
-                              });
+                              }),
+                            );
                           },
                           scroll: scrollToReport,
                           canOperate: canOperateReport,

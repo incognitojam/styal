@@ -99,6 +99,7 @@ import {
   previewAnnotationContextReference,
   responseContextReference,
 } from "../../lib/composerContextRecords";
+import { beginReportResponse, hasUnconfirmedReply } from "../../state/coordinatorReports";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { Atom } from "effect/reactivity";
@@ -1145,6 +1146,37 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
     }
+    // Every surface that shows the report counts this reply as given until the server has it;
+    // one answered elsewhere while this send waited is not answered twice.
+    // A send to several models uses its own messages, so it makes no claim.
+    const reportReply =
+      input.reportReply && multipleModelSelections === null
+        ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
+            ref: input.reportReply.ref,
+            kind: "answer",
+            reply: messageTextForSend,
+            messageId: messageIdForSend,
+            text: outgoingMessageText,
+            createdAt: messageCreatedAt,
+          })
+        : undefined;
+    if (reportReply === null) {
+      sendInFlightRef.current = false;
+      setThreadError(threadIdForSend, "This report already has a response.");
+      return;
+    }
+    // A reply restored after an unknown outcome, sent again without its report link.
+    if (
+      !input.reportReply &&
+      hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), messageTextForSend)
+    ) {
+      sendInFlightRef.current = false;
+      setThreadError(
+        threadIdForSend,
+        "This reply may already have been sent. Wait for it to sync.",
+      );
+      return;
+    }
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else {
@@ -1405,6 +1437,7 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       }
       const startResult = await startPromise;
+      reportReply?.settle(startResult);
       if (startResult._tag === "Failure") {
         failure = startResult;
         // Only a server-decided failure may have created and rolled back a
@@ -1474,6 +1507,8 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure !== null) {
+      const failureCause = squashAtomCommandFailure(failure);
+      reportReply?.fail(failureCause instanceof Error ? failureCause.message : undefined);
       if (isLocalDraftThread && draftId && draftThread) {
         restoreFailedDraftThread(
           draftId,
@@ -1543,7 +1578,11 @@ export function useComposerSend(input: ComposerSendInput) {
           );
         }
       }
-      if (!isAtomCommandInterrupted(failure)) {
+      // A report reply that is not sent says so in a toast.
+      if (
+        !isAtomCommandInterrupted(failure) &&
+        !(reportReply && !isUncertainComposerSendFailure(failureCause))
+      ) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,

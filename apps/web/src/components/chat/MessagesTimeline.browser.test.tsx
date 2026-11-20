@@ -1,4 +1,9 @@
-import { CoordinatorReportsContext, NeedsYou } from "./CoordinatorReports";
+import {
+  CoordinatorReportsContext,
+  NeedsYou,
+  ReportAnswerBar,
+  type ReportState,
+} from "./CoordinatorReports";
 import {
   coordinatorReports,
   formatReportAnswer,
@@ -33,7 +38,9 @@ import {
   type ReactElement,
 } from "react";
 import * as DateTime from "effect/DateTime";
-import { Atom, AsyncResult } from "effect/reactivity";
+import { Atom, AsyncResult, AtomRegistry } from "effect/reactivity";
+import * as Option from "effect/Option";
+import { createReportResponses } from "@t3tools/client-runtime/state/report-responses";
 import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 import "~/index.css";
@@ -515,6 +522,64 @@ describe("MessagesTimeline work rows", () => {
 });
 
 describe("MessagesTimeline messages", () => {
+  it("sends one answer when an offered answer is clicked twice before the server confirms", async () => {
+    const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
+    const threadState = Atom.make({ data: Option.none(), status: "live" as const, sequence: 0 });
+    const { respond } = createReportResponses(AtomRegistry.make(), {
+      stateAtom: () => threadState,
+      snapshotAtom: () => Atom.make(null),
+      onFailed: () => {},
+    });
+    let confirm = () => {};
+    const send = vi.fn(
+      () =>
+        new Promise<AsyncResult.Success<{ readonly sequence: number }, never>>((resolve) => {
+          confirm = () => resolve(AsyncResult.success({ sequence: 1 }));
+        }),
+    );
+    const message = {
+      id: MessageId.make("report"),
+      role: "assistant" as const,
+      text: "Report",
+      createdAt: "2026-11-19T10:00:00.000Z",
+      report: { key: "shed", title: "Shed", version: 1, question: "Start?", answers: ["Start it"] },
+    };
+    const report: ReportState = { message, latest: message, state: "open", answer: undefined };
+    await using screen = await render(
+      <CoordinatorReportsContext
+        value={{
+          reports: [report],
+          answers: new Map(),
+          answer: (text, ref) =>
+            void respond(
+              thread,
+              {
+                ref,
+                kind: "answer",
+                messageId: MessageId.make(`answer-${send.mock.calls.length}`),
+                text,
+                createdAt: "2026-11-19T10:01:00.000Z",
+              },
+              send,
+            ),
+          reply: () => {},
+          dismiss: () => {},
+          scroll: () => {},
+          canOperate: true,
+          target: null,
+          clear: () => {},
+        }}
+      >
+        <ReportAnswerBar report={report} renderAnswer={() => null} />
+      </CoordinatorReportsContext>,
+    );
+    const answer = screen.getByRole("button", { name: /^Start it/ });
+    await answer.click();
+    await answer.click();
+    confirm();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("reveals an offscreen report when its waiting line is clicked", async () => {
     setup();
     const props = baseProps();
@@ -545,7 +610,7 @@ describe("MessagesTimeline messages", () => {
             target,
             clear: () => setTarget(null),
             scroll: (messageId) => setTarget({ messageId }),
-            send: async () => {},
+            answer: () => {},
             reply: () => {},
             dismiss: () => {},
             canOperate: true,
@@ -1555,7 +1620,7 @@ describe("MessagesTimeline attachments", () => {
           target: null,
           clear: () => {},
           scroll: () => {},
-          send: async () => {},
+          answer: () => {},
           reply: () => {},
           dismiss: () => {},
           canOperate: true,
