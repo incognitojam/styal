@@ -206,6 +206,15 @@ function decide(files, packages, full) {
       test_web: has("@t3tools/web"),
       test_server: has("@styal/cli"),
       test_device_windows: has("@styal/cli"),
+      test_cleanup_windows:
+        everything ||
+        has("@t3tools/contracts") ||
+        has("@t3tools/shared") ||
+        files.some((file) =>
+          /^(apps\/server\/src\/(worktreeCleanup\/|vcs\/GitVcsDriver|worktreesDirectory\.|serverSettings\.|storageCleanup\.|workspace\/workspaceLease\.|orchestration-v2\/(ThreadSettlementService|ProjectionStore|ProjectStore|ProviderSessionManager)\.|config\.|environment\/ServerEnvironment\.|auth\/ServerSecretStore\.)|packages\/shared\/src\/(PhysicalFileSystem|shell\.|regenerableFilePatterns)|\.github\/(workflows\/fork-ci\.yml|actions\/setup-deps\/|scripts\/ci-changes\.cjs))/.test(
+            file,
+          ),
+        ),
       // Calibration also imports the web viewport layout directly.
       preview_calibration: has("@t3tools/desktop") || has("@t3tools/web"),
       test_web_1: web1,
