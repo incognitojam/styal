@@ -433,6 +433,20 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         });
       }),
     );
+
+    it.effect("reports a listing git could not make as failed, not as no files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-not-git-" });
+        yield* writeTextFile(cwd, ".env", "A=1");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        expect(yield* workspaceEntries.listIgnoredFiles({ cwd })).toEqual({
+          files: [],
+          truncated: false,
+          failed: true,
+        });
+      }),
+    );
   });
 
   describe("search", () => {

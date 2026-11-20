@@ -575,7 +575,7 @@ export const make = Effect.gen(function* () {
         maxOutputBytes: 4 * 1024 * 1024,
       })
       .pipe(Effect.orElseSucceed(() => undefined));
-    if (!result || result.exitCode !== 0) return { files: [], truncated: false };
+    if (!result || result.exitCode !== 0) return { files: [], truncated: false, failed: true };
     const paths = result.stdout
       .split("\0")
       .filter((entry) => entry.length > 0 && !entry.endsWith("/"))

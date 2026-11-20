@@ -29,6 +29,14 @@ saved project regardless of the filter.
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
 
+To start a thread on a machine that does not have the project yet, open the machine
+menu under the composer and pick **Add to** that machine; the folder the clone will
+use is shown beneath it. The clone starts straight away and the composer shows its
+progress; **Cancel** calls it off while it is still preparing. If ignored files such
+as `.env` would be copied, that folder already exists there, or either cannot be
+checked, a dialog asks first. **Add with options…** opens the same dialog to choose
+the folder, the clone protocol and the files to copy.
+
 ### Start without a project
 
 A thread does not need a project. To start one without a project, click **or

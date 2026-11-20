@@ -10,6 +10,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
 } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { create } from "zustand";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -49,14 +50,14 @@ function failureMessage(result: Parameters<typeof squashAtomCommandFailure>[0]):
 }
 
 /**
- * Resolves when the clone is listed or, with "done", finishes; null once it is removed or after
- * `timeoutMs`. A failed or cancelled clone keeps waiting for "done", since the composer offers a
- * retry.
+ * Resolves when the clone is listed, with "done" when it finishes, or with "settled" when it stops
+ * running; null once it is removed or after `timeoutMs`. A failed or cancelled clone keeps waiting
+ * for "done", since the composer offers a retry.
  */
 function waitForClone(
   environmentId: EnvironmentId,
   projectId: ProjectId,
-  until: "listed" | "done",
+  until: "listed" | "done" | "settled",
   timeoutMs?: number,
 ) {
   return new Promise<ProjectCloneSnapshot | null>((resolve) => {
@@ -75,12 +76,11 @@ function waitForClone(
       if (settled) return;
       const clone = clones.find((candidate) => candidate.projectId === projectId);
       if (clone) seen = true;
-      const result =
-        clone && (until === "listed" || clone.phase === "done")
-          ? clone
-          : !clone && seen
-            ? null
-            : undefined;
+      const reached =
+        until === "listed" ||
+        (until === "done" && clone?.phase === "done") ||
+        (until === "settled" && clone?.phase !== "running");
+      const result = clone && reached ? clone : !clone && seen ? null : undefined;
       if (result !== undefined) settle(result);
     };
     unsubscribe = appAtomRegistry.subscribe(atom, check);
@@ -114,6 +114,101 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
   setFileCopy(scopedProjectKey(ref), null);
 }
 
+export interface PreparingAdd {
+  readonly title: string;
+  readonly draftId: string;
+  readonly projectRef: ScopedProjectRef;
+  /** Calls the add off; while the clone request is out, lets go of it. */
+  readonly onCancel: () => void;
+  /** The clone request is out: the row and its holds stay until it settles, dialog or not. */
+  readonly sending?: boolean;
+  /** Cancelled while its request was out: the row is gone, and the Add rows wait until it settles. */
+  readonly cancelled?: boolean;
+}
+
+/** The one-click add being decided or sent; one at a time, so every Add row waits for it. */
+export const usePreparingAddStore = create<{ add: PreparingAdd | null }>(() => ({ add: null }));
+
+export class NoAnswerError extends Schema.TaggedError<NoAnswerError>()("NoAnswerError", {
+  message: Schema.String,
+}) {}
+
+/** Counts a request of an add, or of cancelling it, as unanswered after 30 seconds. */
+function within<A>(promise: Promise<A>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), 30_000);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+const CANCEL_SETTLE_WAIT_MS = 10_000;
+
+/**
+ * What became of an add cancelled while its clone request was out: its partial clone and project
+ * were removed, it finished anyway and was kept, the machine already had the project so nothing
+ * was touched, or a step failed and the project may still be there.
+ */
+export type CancelledAddOutcome = "removed" | "completed" | "existing" | "failed";
+
+/**
+ * Only a clone this add started and that is still running is stopped; the server deletes its
+ * partial checkout, and then the project record this add created goes too. A clone that finishes
+ * first is kept, so no folder is left on the other machine without a project pointing to it.
+ */
+export async function settleCancelledAdd(
+  ref: ScopedProjectRef,
+  createdByThisAdd: boolean,
+): Promise<CancelledAddOutcome> {
+  if (!createdByThisAdd) return "existing";
+  const clone = appAtomRegistry
+    .get(environmentProjectClonesAtom(ref.environmentId))
+    .find((candidate) => candidate.projectId === ref.projectId);
+  if (clone?.phase === "done") return "completed";
+  if (clone?.phase !== "running") return "failed";
+  const target = { environmentId: ref.environmentId, input: { projectId: ref.projectId } };
+  const cancelling = runAtomCommand(
+    appAtomRegistry,
+    sourceControlEnvironment.cancelProjectClone,
+    target,
+    { label: "Cancel clone", reportFailure: false },
+  );
+  const cancelled = await within(cancelling);
+  if (cancelled === "timeout" || cancelled._tag === "Failure") return "failed";
+  // `applied` is also true when the clone finished while being cancelled; its phase says which.
+  const settled = await waitForClone(
+    ref.environmentId,
+    ref.projectId,
+    "settled",
+    CANCEL_SETTLE_WAIT_MS,
+  );
+  if (settled?.phase === "done") return "completed";
+  if (settled?.phase !== "cancelled") return "failed";
+  const removing = runAtomCommand(appAtomRegistry, projectEnvironment.delete, target, {
+    label: "Remove cancelled clone",
+    reportFailure: false,
+  });
+  const removed = await within(removing);
+  return removed !== "timeout" && removed._tag === "Success" ? "removed" : "failed";
+}
+
+export function readPreparingAdd(): PreparingAdd | null {
+  return usePreparingAddStore.getState().add;
+}
+
+export function setPreparingAdd(add: PreparingAdd | null) {
+  usePreparingAddStore.setState({ add });
+}
+
+export function usePreparingAdd(draftId: string | null, projectRef: ScopedProjectRef | null) {
+  const projectKey = projectRef ? scopedProjectKey(projectRef) : null;
+  return usePreparingAddStore(({ add }) =>
+    add?.draftId === draftId && !add.cancelled && scopedProjectKey(add.projectRef) === projectKey
+      ? add
+      : null,
+  );
+}
+
 /**
  * Clones onto another machine, then relays the chosen ignored files, since the
  * two servers never talk. Resolves with the cloning project once its clone is
@@ -121,7 +216,7 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
  */
 export async function addProjectToMachine(input: AddProjectToMachineInput): Promise<ProjectId> {
   // Read first, so the copy reflects the files as they were when the user asked.
-  const reads = await Promise.all(
+  const reading = Promise.all(
     input.files.map(async (relativePath) => {
       const result = await executeAtomQuery(
         appAtomRegistry,
@@ -136,13 +231,15 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
       return { relativePath, contents: result.value.contents };
     }),
   );
+  const reads = await within(reading);
+  if (reads === "timeout") throw new Error("The files to copy could not be read in time.");
 
   const requestedRef = { environmentId: input.target.environmentId, projectId: input.projectId };
   const requestedKey = scopedProjectKey(requestedRef);
   // Marked before the start request, since the clone list can arrive before its reply.
   silenceProjectCloneToasts(requestedRef);
   if (reads.length > 0) setFileCopy(requestedKey, { phase: "copying" });
-  const started = await runAtomCommand(
+  const starting = runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.startProjectClone,
     {
@@ -157,9 +254,11 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
     },
     { label: "Add project to machine", reportFailure: false },
   );
-  if (started._tag === "Failure") {
+  const started = await within(starting);
+  if (started === "timeout" || started._tag === "Failure") {
     setFileCopy(requestedKey, null);
-    throw new Error(failureMessage(started));
+    if (started !== "timeout") throw new Error(failureMessage(started));
+    throw new NoAnswerError({ message: `${input.target.label} did not answer.` });
   }
   // The server clones for the existing project when one already owns the empty destination.
   const { projectId } = started.value;

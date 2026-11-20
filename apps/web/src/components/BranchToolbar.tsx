@@ -6,7 +6,7 @@ import { ComposerContextLabel } from "./ComposerContextLabel";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { TurnUsageView } from "@t3tools/shared/turnUsage";
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, PlusIcon, ScaleIcon } from "lucide-react";
+import { FolderGit2Icon, FolderGitIcon, FolderIcon, ScaleIcon } from "lucide-react";
 import {
   type Ref,
   type MouseEvent as ReactMouseEvent,
@@ -22,7 +22,6 @@ import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useProject, useThreadShellsForProjectRefs } from "../state/entities";
 import {
-  ADD_TO_MACHINE_LABEL_CLASS,
   type EnvMode,
   type EnvironmentOption,
   resolveContextStripLabelsCompact,
@@ -37,8 +36,13 @@ import {
   BranchToolbarBranchSelector,
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
-import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
+import {
+  AddTargetLabel,
+  AddWithOptionsLabel,
+  BranchToolbarEnvironmentSelector,
+} from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
+import { usePreparingAddStore } from "../lib/addProjectToMachine";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
@@ -58,9 +62,6 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "./ui/menu";
 import { Separator } from "./ui/separator";
@@ -169,7 +170,9 @@ interface RunContextSelectorProps {
   onUsePreviousWorktree: () => void;
   worktreeUnavailableReason: string | null;
   addTargets: readonly AddProjectTarget[];
-  onAddToMachine: (environmentId: EnvironmentId) => void;
+  onAddToMachine: (environmentId: EnvironmentId | null) => void;
+  /** Why the Add rows are unavailable, while a one-click add is decided or sent. */
+  addBusyReason: string | null;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -194,6 +197,7 @@ const RunContextSelector = memo(function RunContextSelector({
   worktreeUnavailableReason,
   addTargets,
   onAddToMachine,
+  addBusyReason,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -375,30 +379,26 @@ const RunContextSelector = memo(function RunContextSelector({
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>
-              {addTargets.length > 0 ? (
-                <MenuSub>
-                  <MenuSubTrigger>
-                    <span className={ADD_TO_MACHINE_LABEL_CLASS}>
-                      <PlusIcon className="size-3" />
-                      <span className="min-w-0 truncate">Add to another machine</span>
-                    </span>
-                  </MenuSubTrigger>
-                  <MenuSubPopup {...(!isPanel ? composerFloatingLayerProps : {})}>
-                    {addTargets.map((target) => (
-                      <MenuItem
-                        key={target.environmentId}
-                        onClick={() => onAddToMachine(target.environmentId)}
-                      >
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <EnvironmentMachineIcon kind={target.machine} className="size-3" />
-                          <span className="min-w-0 truncate">{target.label}</span>
-                        </span>
-                      </MenuItem>
-                    ))}
-                  </MenuSubPopup>
-                </MenuSub>
-              ) : null}
             </MenuGroup>
+            {addTargets.length > 0 ? (
+              <>
+                <MenuSeparator />
+                <MenuGroup>
+                  {addTargets.map((target) => (
+                    <MenuItem
+                      key={target.environmentId}
+                      disabled={addBusyReason !== null}
+                      onClick={() => onAddToMachine(target.environmentId)}
+                    >
+                      <AddTargetLabel target={target} busyReason={addBusyReason} />
+                    </MenuItem>
+                  ))}
+                  <MenuItem disabled={addBusyReason !== null} onClick={() => onAddToMachine(null)}>
+                    <AddWithOptionsLabel />
+                  </MenuItem>
+                </MenuGroup>
+              </>
+            ) : null}
             <MenuSeparator />
           </>
         ) : null}
@@ -696,12 +696,15 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const defaultAddTargets = useAddProjectTargets(activeProject, availableEnvironments);
   const addTargets = addTargetsOverride ?? defaultAddTargets;
+  const addBusyReason = usePreparingAddStore((state) => state.add !== null) ? "Preparing…" : null;
   const onAddToMachine = (targetEnvironmentId: EnvironmentId | null) =>
     openAddProjectToMachine({
       projectRef: activeProjectRef,
       targetEnvironmentId,
       draftId,
       onlyTargets: addTargetsOverride?.map((target) => target.environmentId),
+      // One click needs a draft: it is what moves to the clone and shows its progress.
+      quick: targetEnvironmentId !== null && draftId !== undefined,
     });
   // A project on one machine still gets the picker when it can be added to another.
   const hasMultipleEnvironments = (availableEnvironments?.length ?? 0) > 1 || addTargets.length > 0;
@@ -744,6 +747,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+            addBusyReason={addBusyReason}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -795,6 +799,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             worktreeUnavailableReason={worktreeUnavailableReason}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+            addBusyReason={addBusyReason}
           />
         </div>
       ) : null}
@@ -815,14 +820,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 environmentId={environmentId}
                 availableEnvironments={availableEnvironments}
                 {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0
-                  ? {
-                      onAddToMachine: () =>
-                        onAddToMachine(
-                          addTargets.length === 1 ? addTargets[0]!.environmentId : null,
-                        ),
-                    }
-                  : {})}
+                {...(addTargets.length > 0 ? { addTargets, onAddToMachine, addBusyReason } : {})}
               />
               {showGitControls ? (
                 <Separator

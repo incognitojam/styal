@@ -1270,8 +1270,10 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectActions = activeProject
     ? resolveProjectActions(settings, activeProject, activeProjectConfig)
     : [];
-  const { projectCloneBannerItem, projectCloneSendBlockReason } =
-    useProjectCloneBanner(activeProjectRef);
+  const { projectCloneBannerItem, projectCloneSendBlockReason } = useProjectCloneBanner(
+    activeProjectRef,
+    draftId,
+  );
   const activeProjectDefaultModelSelection =
     !isServerThread && draftFallback
       ? draftFallback.selection
