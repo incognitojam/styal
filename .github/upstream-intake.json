@@ -10,6 +10,10 @@
     "41b513d99aac6ba4d4a4000a3a3a1320b0f79dad": {
       "disposition": "skip",
       "reason": "Reverts upstream #20907, which is skipped with it as a pair (net effect zero); see that exception."
+    },
+    "b0e469ceb9542bc3cfc2bc3d8345c43b66cd9832": {
+      "disposition": "pending",
+      "reason": "Fork #1647 imports the desktop executor retry/resume patch and tests only. Reconcile the omitted server pinned-runtime download changes at chronological intake before marking the upstream integration complete."
     }
   }
 }
