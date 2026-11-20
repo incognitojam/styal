@@ -22,6 +22,7 @@ import {
 import {
   AuthOrchestrationOperateScope,
   CommandId,
+  type MessageId,
   type ProviderApprovalDecision,
 } from "@t3tools/contracts";
 import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
@@ -407,56 +408,63 @@ function ReportAnswer({
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const [reply, setReply] = useState("");
+  const { sending, run, alert } = useAnswerCommand();
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
   const disabled = !canOperate;
-  // The answer is the asking thread's next message, so it reaches that thread's agent.
-  const send = (text: string) => {
-    const answerId = newMessageId();
-    const answer = formatReportAnswer(report, text);
+  // Sent as the asking thread's next message, so it reaches that thread's agent.
+  const sendTurn = (id: MessageId, text: string, reportAnswer?: typeof ref) =>
+    startTurn({
+      environmentId,
+      input: {
+        threadId,
+        message: {
+          messageId: id,
+          role: "user",
+          text,
+          attachments: [],
+          ...(reportAnswer ? { reportAnswer } : {}),
+        },
+        runtimeMode,
+        interactionMode,
+        dispatchMode: "queue",
+      },
+    });
+  const answer = (text: string) => {
     const response: ReportResponse = {
       ref,
       kind: "answer",
-      ...(report.answers?.includes(text) ? {} : { reply: text }),
-      messageId: answerId,
-      text: answer,
+      messageId: newMessageId(),
+      text: formatReportAnswer(report, text),
       createdAt: new Date().toISOString(),
     };
     void respondToReport(
       thread,
       response,
-      () =>
-        startTurn({
-          environmentId,
-          input: {
-            threadId,
-            message: {
-              messageId: answerId,
-              role: "user",
-              text: answer,
-              attachments: [],
-              reportAnswer: ref,
-            },
-            runtimeMode,
-            interactionMode,
-            dispatchMode: "queue",
-          },
-        }),
+      () => sendTurn(response.messageId, response.text, ref),
       () => onAnswered(text, { need, response }),
     );
   };
+  // A typed reply names the report but does not answer it, so the question stays open.
+  const sendReply = () =>
+    void run(
+      () => sendTurn(newMessageId(), formatReportAnswer(report, reply.trim())),
+      "Failed to send your reply.",
+      () => setReply(""),
+    );
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={send} />
+      <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={answer} />
       <Textarea
         size="sm"
         rows={1}
         aria-label={`Reply to ${report.title}`}
         placeholder="Or reply"
-        disabled={disabled}
+        disabled={disabled || sending}
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
+      {alert}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"
@@ -478,11 +486,7 @@ function ReportAnswer({
         >
           Dismiss
         </Button>
-        <Button
-          size="xs"
-          disabled={disabled || reply.trim() === ""}
-          onClick={() => send(reply.trim())}
-        >
+        <Button size="xs" disabled={disabled || sending || reply.trim() === ""} onClick={sendReply}>
           Send
         </Button>
       </div>

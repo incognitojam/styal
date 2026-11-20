@@ -663,6 +663,10 @@ export function sentReport(input: {
 export const reportAnswerNote = (report: Pick<CoordinatorReport, "title" | "version">) =>
   `Note: this message answers your report "${report.title}" (version ${report.version}), which closes its question.`;
 
+/** For a turn started by a person's typed reply to a report whose question is still open. */
+export const reportReplyNote = (report: Pick<CoordinatorReport, "key" | "title" | "version">) =>
+  `Note: this message is about your report "${report.title}" (version ${report.version}), whose question is still open. If it settles the question, act on it, then resolve the report with t3_report {key: "${report.key}", resolved: true}. If it asks something, answer and leave the question open.`;
+
 export const threadReportNote = (
   target: Pick<OrchestrationV2ThreadReportTarget, "source">,
   recipientId: ThreadId,

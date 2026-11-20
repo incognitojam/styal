@@ -58,6 +58,7 @@ import { buildCodexAdditionalContext } from "../../apps/server/src/provider/Code
 import {
   answerNotesText,
   reportAnswerNote,
+  reportReplyNote,
   sentReport,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
@@ -375,6 +376,10 @@ export const McpToolUseCase = Schema.Struct({
     answerNotes: Schema.optional(Schema.Array(Schema.String)),
     /** The prompt answers this report of the thread's, as a picked answer reaches it in T3. */
     reportAnswer: Schema.optional(Schema.Struct({ title: Schema.String, version: Schema.Number })),
+    /** The prompt is a typed reply to this report of the thread's, whose question stays open. */
+    reportReply: Schema.optional(
+      Schema.Struct({ key: Schema.String, title: Schema.String, version: Schema.Number }),
+    ),
     /**
      * Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. For a
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3; for a
@@ -1209,6 +1214,7 @@ export const buildMessages = (sample: Sample) => {
       testCase.setup.reportAnswer === undefined
         ? ""
         : reportAnswerNote(testCase.setup.reportAnswer),
+      testCase.setup.reportReply === undefined ? "" : reportReplyNote(testCase.setup.reportReply),
     ]
       .filter((part) => part !== "")
       .join("\n\n"),

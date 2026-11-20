@@ -852,7 +852,8 @@ export function useThreadComposerState(input: {
     const queuedText = reply
       ? formatReportAnswer({ title: reply.title, version: reply.ref.version }, text)
       : text;
-    const reportAnswer = reply?.ref ?? draft.reportAnswer;
+    // Only a tapped answer answers the report; a typed reply names it by the prefix alone.
+    const reportAnswer = reportResponse?.reply.ref ?? draft.reportAnswer;
     const enqueuePromise = enqueueThreadOutboxMessage({
       environmentId: selectedThreadShell.environmentId,
       threadId: selectedThreadShell.id,

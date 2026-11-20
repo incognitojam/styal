@@ -99,7 +99,6 @@ import {
   previewAnnotationContextReference,
   responseContextReference,
 } from "../../lib/composerContextRecords";
-import { beginReportResponse, hasUnconfirmedReply } from "../../state/coordinatorReports";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { Atom } from "effect/reactivity";
@@ -181,8 +180,9 @@ interface ComposerSendInput {
     | undefined;
   /** The server refused to create the draft's thread, so that thread id will never exist. */
   onDraftThreadNotCreated?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** The report a typed message is about; it names the report but does not answer it. */
   reportReply?: { ref: import("./CoordinatorReports").ReportReference; title: string } | null;
-  onReportAnswered?: () => void;
+  onReportReplySent?: () => void;
   readonly environmentId: EnvironmentId;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
@@ -1146,37 +1146,6 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
     }
-    // Every surface that shows the report counts this reply as given until the server has it;
-    // one answered elsewhere while this send waited is not answered twice.
-    // A send to several models uses its own messages, so it makes no claim.
-    const reportReply =
-      input.reportReply && multipleModelSelections === null
-        ? beginReportResponse(scopeThreadRef(environmentId, threadIdForSend), {
-            ref: input.reportReply.ref,
-            kind: "answer",
-            reply: messageTextForSend,
-            messageId: messageIdForSend,
-            text: outgoingMessageText,
-            createdAt: messageCreatedAt,
-          })
-        : undefined;
-    if (reportReply === null) {
-      sendInFlightRef.current = false;
-      setThreadError(threadIdForSend, "This report already has a response.");
-      return;
-    }
-    // A reply restored after an unknown outcome, sent again without its report link.
-    if (
-      !input.reportReply &&
-      hasUnconfirmedReply(scopeThreadRef(environmentId, threadIdForSend), messageTextForSend)
-    ) {
-      sendInFlightRef.current = false;
-      setThreadError(
-        threadIdForSend,
-        "This reply may already have been sent. Wait for it to sync.",
-      );
-      return;
-    }
     if (sendQueuesBehindSetup) {
       setSetupQueueSendThreadKey(activeThreadKey);
     } else {
@@ -1227,7 +1196,6 @@ export function useComposerSend(input: ComposerSendInput) {
       id: messageIdForSend,
       role: "user",
       text: outgoingMessageText,
-      ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
       ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
       ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
       runId: null,
@@ -1392,7 +1360,6 @@ export function useComposerSend(input: ComposerSendInput) {
         input: {
           threadId: threadIdForSend,
           message: {
-            ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
             messageId: messageIdForSend,
             role: "user",
             attachments: turnAttachmentsResult.value,
@@ -1437,7 +1404,6 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       }
       const startResult = await startPromise;
-      reportReply?.settle(startResult);
       if (startResult._tag === "Failure") {
         failure = startResult;
         // Only a server-decided failure may have created and rolled back a
@@ -1456,7 +1422,7 @@ export function useComposerSend(input: ComposerSendInput) {
         }
       } else {
         turnStartSucceeded = true;
-        input.onReportAnswered?.();
+        input.onReportReplySent?.();
         if (checkoutPullRequestUrl) {
           linkCheckoutPullRequest(
             scopeThreadRef(environmentId, threadIdForSend),
@@ -1507,8 +1473,6 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure !== null) {
-      const failureCause = squashAtomCommandFailure(failure);
-      reportReply?.fail(failureCause instanceof Error ? failureCause.message : undefined);
       if (isLocalDraftThread && draftId && draftThread) {
         restoreFailedDraftThread(
           draftId,
@@ -1564,7 +1528,6 @@ export function useComposerSend(input: ComposerSendInput) {
               failure: squashAtomCommandFailure(failure),
               registry: appAtomRegistry,
               target: scopeThreadRef(environmentId, threadIdForSend),
-              ...(input.reportReply ? { reportAnswer: input.reportReply.ref } : {}),
               messageId: messageIdForSend,
               messagesAtom: Atom.make((get) => {
                 const target = scopeThreadRef(environmentId, threadIdForSend);
@@ -1578,11 +1541,7 @@ export function useComposerSend(input: ComposerSendInput) {
           );
         }
       }
-      // A report reply that is not sent says so in a toast.
-      if (
-        !isAtomCommandInterrupted(failure) &&
-        !(reportReply && !isUncertainComposerSendFailure(failureCause))
-      ) {
+      if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,
