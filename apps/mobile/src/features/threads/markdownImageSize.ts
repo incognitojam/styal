@@ -62,3 +62,34 @@ export function resolveMarkdownImageDisplaySize(input: {
     height: input.sourceHeight * scale,
   };
 }
+
+/** Tall enough that a portrait phone screenshot stays recognisable beside a landscape one. */
+export const MARKDOWN_IMAGE_ROW_MIN_HEIGHT = 180;
+
+/**
+ * A thumbnail line's tile height. With no landscape image it is the tallest image's fitted height.
+ * Otherwise it is what the most landscape image needs at the tile width, raised to a floor that
+ * keeps a phone screenshot recognisable, and never more than the tallest image needs.
+ */
+export function resolveMarkdownImageRowHeight(
+  sizes: ReadonlyArray<{ readonly width: number; readonly height: number }>,
+  tileWidth: number,
+): number | null {
+  const fitted = sizes.flatMap((size) => {
+    const display = resolveMarkdownImageDisplaySize({
+      sourceWidth: size.width,
+      sourceHeight: size.height,
+      availableWidth: tileWidth,
+    });
+    return display ? [{ ratio: size.height / size.width, height: display.height }] : [];
+  });
+  if (fitted.length === 0) return null;
+  const tallest = Math.max(...fitted.map((image) => image.height));
+  const landscape = fitted.filter((image) => image.ratio < 1);
+  if (landscape.length === 0) return tallest;
+  const widestRatio = Math.min(...landscape.map((image) => image.ratio));
+  const widest = Math.max(
+    ...landscape.filter((image) => image.ratio === widestRatio).map((image) => image.height),
+  );
+  return Math.min(Math.max(widest, MARKDOWN_IMAGE_ROW_MIN_HEIGHT), tallest);
+}

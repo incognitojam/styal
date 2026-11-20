@@ -164,6 +164,11 @@ import {
 import { isFileBackedComposerAttachment } from "../../lib/composerImages";
 import { useLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { messageImageGallery } from "./messageImageGallery";
+import { MarkdownImageTable } from "./MarkdownImageTable";
+import {
+  splitMarkdownImageTables,
+  type MarkdownImageTableSegment,
+} from "../../lib/markdownImageTables";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { inlineFilePreviewKind, isPdfFile } from "../../lib/filePreview";
 import { ThreadInlineFilePreview } from "./ThreadInlineFilePreview";
@@ -1302,6 +1307,10 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   );
 });
 
+type AssistantMarkdownSegment =
+  | ReturnType<typeof splitCodexArtifactTemplateMarkdown>[number]
+  | MarkdownImageTableSegment;
+
 // Folds split first, so an artifact card inside a fold stays inside it.
 function AssistantMarkdownBlocks(props: {
   readonly markdown: string;
@@ -1317,7 +1326,18 @@ function AssistantMarkdownBlocks(props: {
       splitMarkdownDetails(props.markdown).map((block) =>
         block.kind === "details"
           ? block
-          : { ...block, segments: splitCodexArtifactTemplateMarkdown(block.markdown) },
+          : {
+              ...block,
+              segments: splitCodexArtifactTemplateMarkdown(block.markdown).flatMap(
+                (segment): ReadonlyArray<AssistantMarkdownSegment> =>
+                  segment.kind === "markdown"
+                    ? splitMarkdownImageTables(segment.markdown).map((part) => ({
+                        ...part,
+                        sourceOffset: segment.sourceOffset + part.sourceOffset,
+                      }))
+                    : [segment],
+              ),
+            },
       ),
     [props.markdown],
   );
@@ -1341,6 +1361,16 @@ function AssistantMarkdownBlocks(props: {
             key={`artifact-template:${offset}`}
             template={segment.template}
             onUse={props.onUseArtifactTemplate}
+          />
+        );
+      }
+      if (segment.kind === "image-table") {
+        return (
+          <MarkdownImageTable
+            key={`image-table:${offset}`}
+            rows={segment.rows}
+            renderImage={props.renderImage}
+            textStyle={props.markdownStyles.nativeTextStyle}
           />
         );
       }

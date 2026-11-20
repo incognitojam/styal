@@ -43,6 +43,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Mobile
 
+- **Image tables read as rows of thumbnails.** In assistant replies on mobile, a table whose cells are all images, such as an agent's before and after captures, shows as equal-width thumbnails with headers above and alt text below, wrapping two per line past three columns; a tap opens the image with the message's other images to swipe through. Tables with any text cell stay tables. Upstream draws each image in its own 300 dp table column as of [revision 6b6950a](https://github.com/pingdotgg/t3code/tree/6b6950adfe2ea03b31894829ac8bfb369c9c35a2), checked November 19, 2026.
 - **New threads follow the project filter.** On mobile, New thread uses the filtered project even when another thread is open. Without a filter or an open thread, it reuses the last valid project automatically; there is no reuse toggle. The contextual keyboard shortcut still prefers the open thread. Upstream ignores the filter as of [revision c6ca605](https://github.com/pingdotgg/t3code/tree/c6ca6056309904f89b90b6055d797973be0a0939), checked November 9, 2026. [Start a thread](./thread-sidebar.md#start-a-thread).
 
 - **Android updates inside the app.** styal offers APK updates in **Settings → About**,
