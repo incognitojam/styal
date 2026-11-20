@@ -292,23 +292,31 @@ export function storageCleanupPullRequestMerged(
   );
 }
 
+export const storageCleanupPathKey = (target: string, platform: NodeJS.Platform) =>
+  platform === "darwin"
+    ? target.normalize("NFD").toLowerCase()
+    : platform === "win32"
+      ? target.toLowerCase()
+      : target;
+
 export const makeHasCanonicalTerminal = Effect.gen(function* () {
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
+  const platform = yield* HostProcess.Platform;
+  const key = (target: string) => storageCleanupPathKey(target, platform);
   return Effect.fn("StorageCleanup.hasCanonicalTerminal")(function* (
     worktreePath: string,
     terminals: ReadonlyArray<Pick<TerminalSummary, "status" | "cwd" | "worktreePath">>,
   ) {
+    const root = key(worktreePath);
     for (const terminal of terminals) {
       if (terminal.status !== "starting" && terminal.status !== "running") continue;
       for (const target of [terminal.cwd, terminal.worktreePath]) {
         if (target === null) continue;
-        const resolved = path.resolve(target);
-        if (resolved === worktreePath || resolved.startsWith(`${worktreePath}${path.sep}`))
-          return true;
-        const canonical = yield* fs.realPath(resolved);
-        if (canonical === worktreePath || canonical.startsWith(`${worktreePath}${path.sep}`))
-          return true;
+        const resolved = key(path.resolve(target));
+        if (resolved === root || resolved.startsWith(`${root}${path.sep}`)) return true;
+        const canonical = key(yield* fs.realPath(path.resolve(target)));
+        if (canonical === root || canonical.startsWith(`${root}${path.sep}`)) return true;
       }
     }
     return false;
@@ -1469,15 +1477,17 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
-    yield* stripWorktrees(hasTerminal, entries).pipe(
-      Effect.catch(() => Effect.logWarning("Regenerable file sweep failed")),
-    );
-    yield* releaseWorktrees(hasTerminal, entries, (root) =>
+    const canonicalTerminal = (root: string) =>
       hasCanonicalTerminal(
         root,
         [...liveTerminals.values()].flatMap((terminals) => [...terminals.values()]),
-      ),
-    ).pipe(Effect.catch(() => Effect.logWarning("Source checkout sweep failed")));
+      );
+    yield* stripWorktrees(hasTerminal, entries, canonicalTerminal).pipe(
+      Effect.catch(() => Effect.logWarning("Regenerable file sweep failed")),
+    );
+    yield* releaseWorktrees(hasTerminal, entries, canonicalTerminal).pipe(
+      Effect.catch(() => Effect.logWarning("Source checkout sweep failed")),
+    );
     deletedWorktreeWaits = deletedWorktrees.waiting;
     keptDeletedWorktrees = deletedWorktrees.kept;
     sweptDeletions = deletionsAtStart;

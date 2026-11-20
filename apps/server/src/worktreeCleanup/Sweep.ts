@@ -1,4 +1,5 @@
 import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
 import * as FileSystem from "effect/FileSystem";
 import {
   OrchestrationV2AppThreadJson,
@@ -18,7 +19,11 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import { threadHoldsWorktree } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as Settings from "../serverSettings.ts";
-import { storageCleanupThreadIdle, storageCleanupActivityAt } from "../storageCleanup.ts";
+import {
+  storageCleanupThreadIdle,
+  storageCleanupActivityAt,
+  storageCleanupPathKey,
+} from "../storageCleanup.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -47,10 +52,12 @@ export const makeSweep = Effect.gen(function* () {
   const checkout = yield* makeCheckout;
   const readPatterns = yield* makeReadPatterns;
   const platform = yield* HostProcess.Platform;
+  const key = (target: string) => storageCleanupPathKey(target, platform);
   const checked = new Map<string, string>();
   return Effect.fn("WorktreeCleanup.sweep")(function* (
     hasTerminal: (root: string) => boolean,
     report: StorageCleanupReportEntry[],
+    hasCanonicalTerminal: (root: string) => Effect.Effect<boolean, PlatformError>,
   ) {
     if (platform === "win32") {
       yield* Effect.logDebug("Regenerable file cleanup is not supported on Windows");
@@ -139,17 +146,18 @@ export const makeSweep = Effect.gen(function* () {
           if ((yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`).length)
             return null;
           yield* checkout.verifyOwnership(root, project.workspaceRoot);
+          if (yield* hasCanonicalTerminal(root)) return null;
+          const location = key(root);
           const sessionRows = yield* sql<{
             payload_json: string;
           }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
           for (const row of sessionRows) {
             const session = yield* decodeSession(row.payload_json);
-            const cwd = path.resolve(session.cwd);
-            if (
-              (cwd === root || cwd.startsWith(`${root}${path.sep}`)) &&
-              (yield* sessions.isLive(session.id))
-            )
-              return null;
+            if (!(yield* sessions.isLive(session.id))) continue;
+            const declared = key(path.resolve(session.cwd));
+            if (declared === location || declared.startsWith(`${location}${path.sep}`)) return null;
+            const cwd = key(yield* fs.realPath(path.resolve(session.cwd)));
+            if (cwd === location || cwd.startsWith(`${location}${path.sep}`)) return null;
           }
           let patterns = patternCache.get(project.id);
           if (patterns === undefined) {
@@ -173,8 +181,10 @@ export const makeSweep = Effect.gen(function* () {
               current.patterns,
               deadline - (yield* Clock.currentTimeMillis),
             );
-            checked.set(root, current.stamp);
-            if (!selected.length) return;
+            if (!selected.length) {
+              checked.set(root, current.stamp);
+              return;
+            }
             const final = yield* eligible();
             if (!final || final.stamp !== current.stamp) return;
             yield* sql`INSERT INTO worktree_stripped (worktree_path, project_id, stripped_at) VALUES (${root}, ${current.project.id}, ${DateTime.formatIso(yield* DateTime.now)})`;

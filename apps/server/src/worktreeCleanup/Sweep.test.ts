@@ -20,6 +20,7 @@ import {
   RunId,
   type OrchestrationProjectShell,
   type StorageCleanupReportEntry,
+  type TerminalSummary,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { fixture, nodeLayer, shell } from "./fixtures.testkit.ts";
@@ -30,6 +31,7 @@ import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
 import { makeSweep } from "./Sweep.ts";
+import { makeHasCanonicalTerminal } from "../storageCleanup.ts";
 import { DeletionLimits } from "./Deletion.ts";
 import { makeConsume } from "./Stripped.ts";
 import migration from "../persistence/ForkMigrations/015_WorktreeStripped.ts";
@@ -45,6 +47,7 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2AppThrea
 const setup = Effect.gen(function* () {
   const f = yield* fixture;
   const sql = yield* SqlClient.SqlClient;
+  const hasCanonicalTerminal = yield* makeHasCanonicalTerminal;
   yield* migration;
   yield* sql`CREATE TABLE orchestration_v2_projection_threads (payload_json TEXT)`;
   yield* sql`CREATE TABLE orchestration_v2_projection_provider_sessions (payload_json TEXT, status TEXT)`;
@@ -83,6 +86,7 @@ const setup = Effect.gen(function* () {
   let afterRead = Effect.void;
   let projectList = [project];
   let terminal = false;
+  let terminalPaths: Array<Pick<TerminalSummary, "cwd" | "worktreePath" | "status">> = [];
   let live = false;
   const persist = Effect.fn("fixture.persist")(function* () {
     yield* sql`DELETE FROM orchestration_v2_projection_threads`;
@@ -131,6 +135,10 @@ const setup = Effect.gen(function* () {
     },
     threads: () => threads,
     terminal: () => terminal,
+    canonicalTerminal: (root: string) => hasCanonicalTerminal(root, terminalPaths),
+    setTerminalPaths: (next: typeof terminalPaths) => {
+      terminalPaths = next;
+    },
     setTerminal: (value: boolean) => {
       terminal = value;
     },
@@ -170,13 +178,13 @@ it.effect.each(["canonical", "aliased"])(
       const report: StorageCleanupReportEntry[] = [];
       yield* Effect.gen(function* () {
         const sweep = yield* makeSweep;
-        yield* sweep(f.terminal, report);
+        yield* sweep(f.terminal, report, f.canonicalTerminal);
         expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
         expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
         expect(yield* f.fs.exists(`${f.worktree}/cache/keep`)).toBe(true);
         expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
         yield* f.write("dist/recreated");
-        yield* sweep(f.terminal, report);
+        yield* sweep(f.terminal, report, f.canonicalTerminal);
         expect(yield* f.fs.exists(`${f.worktree}/dist/recreated`)).toBe(true);
         const consume = yield* makeConsume;
         expect(yield* consume(f.worktree)).toBe(true);
@@ -192,6 +200,16 @@ it.effect.each([
   "queued",
   "terminal",
   "live-session",
+  "session-alias",
+  "session-case",
+  "session-symlink-out",
+  "session-unverifiable",
+  "session-after-inspection",
+  "terminal-alias",
+  "terminal-case",
+  "terminal-late-alias",
+  "terminal-unverifiable",
+  "terminal-after-inspection",
   "recent",
   "disabled",
   "migration-incomplete",
@@ -211,7 +229,10 @@ it.effect.each([
   "unpushed-worktree",
 ] as const)("keeps files for %s", (mode) =>
   Effect.gen(function* () {
-    const f = yield* setup;
+    const platform = yield* HostProcess.Platform;
+    const f = yield* setup.pipe(
+      Effect.provideService(HostProcess.Platform, mode.endsWith("-case") ? "darwin" : platform),
+    );
     yield* f.write("dist/output");
     const initial = f.threads()[0]!;
     const overrides =
@@ -231,14 +252,44 @@ it.effect.each([
     f.setThreads(mode === "unreferenced" ? [] : [{ ...initial, ...overrides }]);
     yield* f.persist();
     f.setTerminal(mode === "terminal");
-    if (mode === "live-session") {
-      f.setLive(true);
+    const alias = `${f.base}/in-use-alias`;
+    let inspected = false;
+    if (mode.includes("alias") || mode.endsWith("-case") || mode.endsWith("after-inspection"))
+      yield* f.fs.symlink(f.worktree, alias);
+    if (mode.startsWith("terminal-")) {
+      const locations = [
+        {
+          cwd:
+            mode === "terminal-unverifiable"
+              ? `${f.base}/missing`
+              : mode === "terminal-case"
+                ? f.worktree.toUpperCase()
+                : alias,
+          worktreePath: null,
+          status: "running" as const,
+        },
+      ];
+      if (mode === "terminal-late-alias")
+        f.setAfterRead(Effect.sync(() => f.setTerminalPaths(locations)));
+      else if (mode !== "terminal-after-inspection") f.setTerminalPaths(locations);
+      if (mode === "terminal-case") expect(yield* f.canonicalTerminal(f.worktree)).toBe(true);
+    }
+    if (mode === "live-session" || mode.startsWith("session-")) {
+      f.setLive(mode !== "session-after-inspection");
+      if (mode === "session-symlink-out") yield* f.fs.symlink(f.base, `${f.worktree}/outside-link`);
       const session = {
         id: ProviderSessionId.make("session"),
         driver: ProviderDriverKind.make("codex"),
         providerInstanceId: ProviderInstanceId.make("codex"),
         status: "ready" as const,
-        cwd: f.worktree,
+        cwd:
+          mode === "live-session"
+            ? f.worktree
+            : mode === "session-symlink-out"
+              ? `${f.worktree}/outside-link`
+              : mode === "session-unverifiable"
+                ? `${f.base}/missing`
+                : alias,
         model: null,
         capabilities: CodexProviderCapabilitiesV2,
         createdAt: DateTime.makeUnsafe(0),
@@ -305,16 +356,53 @@ it.effect.each([
         });
       }
       const sweep = yield* makeSweep;
-      yield* sweep(f.terminal, []);
+      yield* sweep(f.terminal, [], f.canonicalTerminal);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
+      if (mode.endsWith("after-inspection")) {
+        expect(inspected).toBe(true);
+        f.setLive(false);
+        f.setTerminalPaths([]);
+        yield* sweep(f.terminal, [], f.canonicalTerminal);
+        expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
+        expect((yield* f.sql`SELECT * FROM worktree_stripped`).length).toBe(1);
+      }
     }).pipe(
+      Effect.provideService(GitVcsDriver.GitVcsDriver, {
+        ...f.git,
+        execute: (input) =>
+          f.git.execute(input).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (
+                  !inspected &&
+                  mode.endsWith("after-inspection") &&
+                  input.args.includes("ls-files")
+                ) {
+                  inspected = true;
+                  if (mode === "session-after-inspection") f.setLive(true);
+                  else f.setTerminalPaths([{ cwd: alias, worktreePath: null, status: "running" }]);
+                }
+              }),
+            ),
+          ),
+      }),
       Effect.provide(
         mode === "migration-incomplete"
           ? Layer.merge(f.layers, Settings.layerTest({ regenerableFileCleanupMigrated: false }))
           : f.layers,
       ),
-      Effect.provideService(HostProcess.Platform, mode === "windows" ? "win32" : "linux"),
+      Effect.provideService(
+        HostProcess.Platform,
+        mode === "windows" ? "win32" : mode.endsWith("-case") ? "darwin" : platform,
+      ),
+      Effect.provideService(FileSystem.FileSystem, {
+        ...f.fs,
+        realPath: (target) =>
+          mode.endsWith("-case") && target === alias
+            ? Effect.succeed(f.worktree.toUpperCase())
+            : f.fs.realPath(target),
+      }),
     );
   }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
@@ -328,11 +416,11 @@ it.effect("retries an inspection that exhausted its budget without thread or pat
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
       const report: StorageCleanupReportEntry[] = [];
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       expect(report).toEqual([]);
       exhausted = false;
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(yield* f.fs.exists(`${f.worktree}/dist`)).toBe(false);
       expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`]);
     }).pipe(
@@ -360,7 +448,7 @@ it.effect("rechecks threads under the exact turn-start lease", () =>
       const sweep = yield* makeSweep;
       const read = yield* Deferred.make<void>();
       f.setAfterRead(Deferred.succeed(read, undefined).pipe(Effect.asVoid));
-      const pending = yield* sweep(f.terminal, []).pipe(Effect.forkChild);
+      const pending = yield* sweep(f.terminal, [], f.canonicalTerminal).pipe(Effect.forkChild);
       yield* Deferred.await(read);
       f.setThreads([{ ...f.threads()[0]!, settledOverride: null }]);
       yield* Deferred.succeed(release, undefined);
@@ -392,7 +480,7 @@ it.effect.each(["/", "/.", "/../quiet", "symlink"])(
       yield* Effect.gen(function* () {
         const sweep = yield* makeSweep;
         const report: StorageCleanupReportEntry[] = [];
-        yield* sweep(f.terminal, report);
+        yield* sweep(f.terminal, report, f.canonicalTerminal);
         expect(report).toEqual([]);
         expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       }).pipe(Effect.provide(f.layers));
@@ -458,7 +546,7 @@ it.effect("scans thread spellings once while cleaning multiple worktrees", () =>
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
       const report: StorageCleanupReportEntry[] = [];
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(report.map((entry) => entry.path)).toEqual([`${f.worktree}/dist`, `${other}/dist`]);
       expect(scans).toBe(1);
       expect(patternReads).toBe(1);
@@ -498,7 +586,7 @@ it.effect.each(["project-root", "git-directory", "root-link"] as const)(
       const inspected: string[] = [];
       yield* Effect.gen(function* () {
         const sweep = yield* makeSweep;
-        yield* sweep(f.terminal, []);
+        yield* sweep(f.terminal, [], f.canonicalTerminal);
         expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
         expect(inspected).toEqual([]);
       }).pipe(
@@ -543,7 +631,7 @@ it.effect("persists the stripped record before the first unlink", () =>
     );
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
-      const pending = yield* sweep(f.terminal, []).pipe(Effect.forkChild);
+      const pending = yield* sweep(f.terminal, [], f.canonicalTerminal).pipe(Effect.forkChild);
       const socket = yield* Effect.promise(() => connected.promise);
       const [beforeDelete, stillPresent] = yield* Effect.all([
         f.sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${f.worktree}`,
@@ -569,12 +657,12 @@ it.effect("keeps a partial selection for a later complete inspection", () =>
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
       const report: StorageCleanupReportEntry[] = [];
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(report).toEqual([]);
       expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
       expect(yield* f.fs.exists(`${f.worktree}/dist/output`)).toBe(true);
       limited = false;
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(report.map((entry) => entry.path)).toEqual([
         `${f.worktree}/dist`,
         `${f.worktree}/node_modules`,
@@ -600,7 +688,7 @@ it.effect("records stripping before permission failures and continues independen
     const report: StorageCleanupReportEntry[] = [];
     yield* Effect.gen(function* () {
       const sweep = yield* makeSweep;
-      yield* sweep(f.terminal, report);
+      yield* sweep(f.terminal, report, f.canonicalTerminal);
       expect(report.find((entry) => entry.path?.endsWith("/dist"))?.outcome).toBe("failed");
       expect(report.find((entry) => entry.path?.endsWith("/node_modules"))?.outcome).toBe(
         "removed",
@@ -653,9 +741,30 @@ it.effect.each(["separate-git-dir", "foreign-owner", "broken-registration", "nes
       yield* f.write("dist/output");
       yield* Effect.gen(function* () {
         const sweep = yield* makeSweep;
-        yield* sweep(f.terminal, []);
+        yield* sweep(f.terminal, [], f.canonicalTerminal);
         expect(yield* f.fs.readFileString(`${f.worktree}/dist/output`)).toBe("synthetic");
         expect(yield* f.sql`SELECT * FROM worktree_stripped`).toEqual([]);
       }).pipe(Effect.provide(f.layers));
     }).pipe(Effect.provide(testLayers), Effect.scoped),
+);
+
+it.effect("folds case and Unicode aliases after resolving terminal locations on macOS", () =>
+  Effect.gen(function* () {
+    const f = yield* setup;
+    const root = `${f.base}/Café`;
+    const alias = `${f.base}/terminal-alias`;
+    yield* f.fs.makeDirectory(root);
+    yield* f.fs.symlink(root, alias);
+    const check = yield* makeHasCanonicalTerminal.pipe(
+      Effect.provideService(HostProcess.Platform, "darwin"),
+      Effect.provideService(FileSystem.FileSystem, {
+        ...f.fs,
+        realPath: (target) =>
+          target === alias
+            ? Effect.succeed(root.normalize("NFD").toUpperCase())
+            : f.fs.realPath(target),
+      }),
+    );
+    expect(yield* check(root, [{ cwd: alias, worktreePath: null, status: "running" }])).toBe(true);
+  }).pipe(Effect.provide(testLayers), Effect.scoped),
 );
