@@ -9,9 +9,11 @@ import {
   type ReportResponse,
 } from "@t3tools/client-runtime/state/report-responses";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { AnyRouter } from "@tanstack/react-router";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { buildThreadRouteParams, isThreadRoutePathname } from "../threadRoutes";
 import { environmentThreadDetails, threadEnvironment } from "./threads";
 
 export {
@@ -29,19 +31,42 @@ const failedTitle = (response: ReportResponse) =>
       ? "Could not send your answer"
       : "Could not send your reply";
 
+let router: AnyRouter | null = null;
+/** Lets a failure toast shown away from its thread open it; the router exists once the app starts. */
+export const startReportResponseToasts = (appRouter: AnyRouter) => {
+  router = appRouter;
+};
+
 export const { begin: beginReportResponse, respond: respondToReport } = createReportResponses(
   appAtomRegistry,
   {
     stateAtom: environmentThreadDetails.stateAtom,
     snapshotAtom: threadEnvironment.snapshotAtom,
-    onFailed: (response, detail) =>
-      toastManager.add(
+    onFailed: (thread, response, detail) => {
+      const elsewhere =
+        router !== null && !isThreadRoutePathname(router.state.location.pathname, thread);
+      const id = toastManager.add(
         stackedThreadToast({
           type: "error",
           title: failedTitle(response),
           description: detail ?? "Failed to send message.",
+          ...(elsewhere
+            ? {
+                actionProps: {
+                  children: "Open thread",
+                  onClick: () => {
+                    toastManager.close(id);
+                    void router?.navigate({
+                      to: "/$environmentId/$threadId",
+                      params: buildThreadRouteParams(thread),
+                    });
+                  },
+                },
+              }
+            : {}),
         }),
-      ),
+      );
+    },
   },
 );
 

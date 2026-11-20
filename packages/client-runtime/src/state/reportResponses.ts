@@ -122,7 +122,7 @@ export function createReportResponses(
     readonly snapshotAtom: (
       environmentId: EnvironmentId,
     ) => Atom.Atom<{ readonly snapshotSequence: number } | null>;
-    readonly onFailed: (response: ReportResponse, detail?: string) => void;
+    readonly onFailed: (thread: ScopedThreadRef, response: ReportResponse, detail?: string) => void;
   },
 ) {
   const update = (
@@ -179,7 +179,7 @@ export function createReportResponses(
     const fail = (detail?: string) => {
       finish();
       remove();
-      threads.onFailed(response, detail);
+      threads.onFailed(thread, response, detail);
     };
     // The thread list arrives on its own stream, so it may not count the response yet.
     const list = threads.snapshotAtom(thread.environmentId);

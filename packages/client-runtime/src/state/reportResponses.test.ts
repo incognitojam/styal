@@ -25,7 +25,7 @@ const store = (
   const responses = createReportResponses(registry, {
     stateAtom: () => state,
     snapshotAtom: () => list,
-    onFailed: (response: ReportResponse, detail?: string) =>
+    onFailed: (_thread: unknown, response: ReportResponse, detail?: string) =>
       failed.push([response.kind === "answer" ? response.messageId : "dismiss", detail]),
   });
   return { ...responses, failed };
