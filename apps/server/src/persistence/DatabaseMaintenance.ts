@@ -15,6 +15,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { isSqlError } from "effect/sql/SqlError";
 
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
+import * as PruneSafety from "./preEventPruneSafety.ts";
 import { rebuildMessageSearch } from "../orchestration-v2/messageSearchIndex.ts";
 
 export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingError>()(
@@ -83,6 +84,7 @@ export class DatabaseMaintenance extends Context.Service<
         readonly incrementalVacuumEnabled: boolean;
         /** Size of the database from 0.1.0 or earlier still kept beside it, or null. */
         readonly legacyDatabaseBytes: number | null;
+        readonly pruningRecoveryWarning?: string;
       },
       DatabaseMissingError | DatabaseInspectError
     >;
@@ -168,7 +170,12 @@ const make = Effect.gen(function* () {
       const legacyDatabaseBytes = (yield* fs.exists(legacy))
         ? Number((yield* fs.stat(legacy)).size)
         : null;
-      return { ...storage, legacyDatabaseBytes };
+      const pruningRecoveryWarning = yield* PruneSafety.legacyRecoveryNotice(databasePath);
+      return {
+        ...storage,
+        legacyDatabaseBytes,
+        ...(pruningRecoveryWarning === undefined ? {} : { pruningRecoveryWarning }),
+      };
     },
     (effect, databasePath) =>
       effect.pipe(

@@ -38,7 +38,12 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const maintenance = yield* DatabaseMaintenance.DatabaseMaintenance;
-        const userdata = yield* fs.makeTempDirectoryScoped({ prefix: "t3-legacy-" });
+        const scratch = path.resolve(import.meta.dirname, "../../../../.scratch");
+        yield* fs.makeDirectory(scratch, { recursive: true });
+        const userdata = yield* fs.makeTempDirectoryScoped({
+          directory: scratch,
+          prefix: "t3-legacy-",
+        });
         const dbPath = path.join(userdata, "statev2.sqlite");
         const legacy = path.join(userdata, "state.sqlite");
         yield* Effect.gen(function* () {
@@ -47,6 +52,27 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
           yield* sql`INSERT INTO retained_data VALUES ('keep')`;
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
         assert.isNull((yield* maintenance.inspect(dbPath)).legacyDatabaseBytes);
+        const backup = path.join(userdata, "backups", "pre-event-prune");
+        yield* fs.makeDirectory(backup, { recursive: true });
+        yield* fs.copyFile(dbPath, path.join(backup, "statev2.sqlite"));
+        const recoveryCopy = yield* fs.readFile(path.join(backup, "statev2.sqlite"));
+        yield* fs.writeFileString(
+          path.join(backup, "manifest.json"),
+          JSON.stringify({
+            generation: "synthetic",
+            createdAt: 0,
+            method: "copy",
+            sourceSize: 0,
+            eventHead: 0,
+            eventCount: 0,
+            threadCount: 0,
+            firstDeleteCompletedAt: 0,
+          }),
+        );
+        const recoveryWarning = (yield* maintenance.inspect(dbPath)).pruningRecoveryWarning;
+        assert.include(recoveryWarning ?? "", backup);
+        assert.include(recoveryWarning ?? "", "move backups/pre-event-prune/");
+        assert.deepEqual(yield* fs.readFile(path.join(backup, "statev2.sqlite")), recoveryCopy);
 
         const openLegacy = NodeSqliteClient.layer({ filename: legacy });
         yield* Effect.gen(function* () {
