@@ -3,6 +3,8 @@ import {
   CommandId,
   OrchestratorMcpFailure,
   type ProjectId,
+  type OrchestratorMcpThreadSendInput,
+  projectCoordinatorThreadId,
   type ProviderInstanceId,
   type ProviderInteractionMode,
   type RuntimeMode,
@@ -15,6 +17,7 @@ import * as Effect from "effect/Effect";
 
 import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
@@ -233,3 +236,34 @@ export const reportTargetFor = (
           }),
         )
       : Effect.succeed({ threadId: launcher.id });
+
+export const resolveThreadSendTarget = Effect.fn("mcp.resolveThreadSendTarget")(function* (
+  input: OrchestratorMcpThreadSendInput,
+) {
+  if (input.threadId !== "project-chat") return input;
+  const { caller } = yield* readCaller();
+  if (caller === undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "target_required",
+      message: "project-chat needs a calling thread in this project. Otherwise pass a threadId.",
+    });
+  }
+  const settings = yield* (yield* ServerSettingsService).getSettings.pipe(
+    Effect.mapError(unavailable),
+  );
+  const threadId = projectCoordinatorThreadId(settings, caller.projectId);
+  if (threadId === null) {
+    return yield* new OrchestratorMcpFailure({
+      code: "target_required",
+      message: "This project has no chat. Post a project report with t3_report instead.",
+    });
+  }
+  if (threadId === caller.id) {
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message:
+        "The project chat cannot send to itself. Post a project report with t3_report instead.",
+    });
+  }
+  return { ...input, threadId };
+});
