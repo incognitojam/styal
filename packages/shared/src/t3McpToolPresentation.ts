@@ -505,7 +505,8 @@ export function resolveT3McpToolDefinition(
   const action = fields?.action;
   const actionTool =
     name === "t3_report"
-      ? fields?.resolved === true
+      ? // `{key, outcome}` closes a question; older calls sent `resolved: true`.
+        (fields?.outcome !== undefined && fields.title === undefined) || fields?.resolved === true
         ? "t3_report_resolve"
         : undefined
       : typeof action === "string"
