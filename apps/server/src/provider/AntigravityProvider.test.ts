@@ -397,19 +397,45 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     ),
   );
 
-  it.effect("does not offer Auto, so Auto threads fall back to Supervised", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const harness = yield* makeHarness();
-        yield* harness.initialize;
-        // Antigravity has no automatic review; the shared ACP policy would approve every request.
-        expect((yield* harness.provider.snapshot.getSnapshot).supportedRuntimeModes).toEqual([
-          "approval-required",
-          "auto-accept-edits",
-          "full-access",
-        ]);
-      }),
-    ),
+  it.effect("offers Auto only while the signed-in session advertises agy's own Auto", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* harness.initialize;
+      const supportedModes = harness.provider.snapshot.getSnapshot.pipe(
+        Effect.map((snapshot) => snapshot.supportedRuntimeModes),
+      );
+      const withoutAuto = ["approval-required", "auto-accept-edits", "full-access"];
+      const startedWithAuto = {
+        ...started,
+        sessionSetupResult: {
+          ...sessionSetupResult,
+          modes: {
+            currentModeId: "default",
+            availableModes: [
+              { id: "default", name: "Default" },
+              { id: "auto", name: "Auto" },
+            ],
+          },
+        },
+      };
+      expect(yield* supportedModes).toEqual(withoutAuto);
+      expect((yield* harness.provider.snapshot.getSnapshot).reviewsAutoMode).not.toBe(true);
+      yield* harness.provider.onSessionStarted(startedWithAuto);
+      expect(yield* supportedModes).toEqual([
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+      ]);
+      expect((yield* harness.provider.snapshot.getSnapshot).reviewsAutoMode).toBe(true);
+      yield* harness.provider.onSessionStarted(started);
+      expect(yield* supportedModes).toEqual(withoutAuto);
+      expect((yield* harness.provider.snapshot.getSnapshot).reviewsAutoMode).not.toBe(true);
+      yield* harness.provider.onSessionStarted(startedWithAuto);
+      yield* harness.provider.onSignedOut;
+      expect(yield* supportedModes).toEqual(withoutAuto);
+      expect((yield* harness.provider.snapshot.getSnapshot).reviewsAutoMode).not.toBe(true);
+    }),
   );
 
   it.effect("publishes session metadata and native commands without another health probe", () =>

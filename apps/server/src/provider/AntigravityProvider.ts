@@ -3,6 +3,7 @@ import {
   ProviderDriverKind,
   type AntigravitySettings,
   type ProviderSetupError,
+  type RuntimeMode,
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
@@ -24,6 +25,7 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { groupAntigravityModels } from "./AntigravityModels.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { parseSessionModeState } from "@t3tools/provider-acp/server/runtimeModel";
 import { acpProviderOptionDescriptors } from "@t3tools/provider-acp/server/sessionConfig";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import {
@@ -159,6 +161,23 @@ interface AntigravityProviderOptions {
   readonly auth?: { readonly type: string; readonly label: string };
 }
 
+const RUNTIME_MODES_WITHOUT_AUTO = [
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+] as const;
+
+/** Auto is offered only where the session advertises agy's own Auto; elsewhere it runs Supervised. */
+function antigravityRuntimeModes(
+  sessionSetupResult: AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],
+): ReadonlyArray<RuntimeMode> {
+  return parseSessionModeState(sessionSetupResult)?.availableModes.some(
+    (mode) => mode.id === "auto",
+  )
+    ? ["approval-required", "auto-accept-edits", "auto", "full-access"]
+    : RUNTIME_MODES_WITHOUT_AUTO;
+}
+
 export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(function* (
   settings: AntigravitySettings,
   options: AntigravityProviderOptions,
@@ -177,8 +196,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       presentation: {
         displayName: "Antigravity",
         showInteractionModeToggle: false,
-        // No automatic review, so Auto falls back to Supervised instead of approving everything.
-        supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
+        supportedRuntimeModes: RUNTIME_MODES_WITHOUT_AUTO,
       },
       enabled: settings.enabled,
       checkedAt,
@@ -215,8 +233,13 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       thinkingLevels.set(model.currentValue, antigravityThinkingConfig(configOptions) ?? null);
     }
   };
+  const stampIdentity = (draft: ServerProviderDraft) =>
+    options.stampIdentity({
+      ...draft,
+      reviewsAutoMode: draft.supportedRuntimeModes?.includes("auto") === true,
+    });
   const getSnapshot = SubscriptionRef.get(metadata).pipe(
-    Effect.flatMap((state) => options.stampIdentity(state.draft)),
+    Effect.flatMap((state) => stampIdentity(state.draft)),
   );
 
   // The quota read can take 30 seconds, so it never blocks readiness or a session start.
@@ -328,7 +351,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       } satisfies AntigravityProviderState;
     });
     if (initialized !== undefined) yield* refreshUsage();
-    return yield* options.stampIdentity(next.draft);
+    return yield* stampIdentity(next.draft);
   });
 
   const maintenanceCapabilities =
@@ -347,7 +370,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     enrichSnapshot: ({ publishSnapshot }) =>
       SubscriptionRef.changes(metadata).pipe(
         Stream.runForEach((state) =>
-          options.stampIdentity(state.draft).pipe(Effect.flatMap(publishSnapshot)),
+          stampIdentity(state.draft).pipe(Effect.flatMap(publishSnapshot)),
         ),
       ),
   });
@@ -386,6 +409,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           },
           checkedAt: updatedAt,
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
+          supportedRuntimeModes: antigravityRuntimeModes(started.sessionSetupResult),
           supportsTextGeneration,
           ...(cwd
             ? {
@@ -474,6 +498,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             slashCommands: [],
             skills: [],
             workspaceSnapshots: [],
+            supportedRuntimeModes: RUNTIME_MODES_WITHOUT_AUTO,
             supportsTextGeneration: false,
             usageLimits: undefined,
           },

@@ -4759,7 +4759,7 @@ features:
     prs: [928, 930, 943]
     invariants:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
-      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, Grok, and fx report one. An unloaded snapshot or an older server counts as no reviewer.
+      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, Grok, and fx report one; Antigravity reports one only when its signed-in session offers native Auto. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
       - Under a managed policy's `maxRuntimeMode` below Full access, a default of Auto stays Auto on a provider without a reviewer rather than starting a thread the ceiling refuses.
       - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
@@ -4771,6 +4771,7 @@ features:
       - apps/server/scripts/verify-provider-live.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ClaudeProvider.ts
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/serverRuntimeStartup.ts
