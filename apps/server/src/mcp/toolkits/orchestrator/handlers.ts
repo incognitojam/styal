@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type OrchestratorMcpThreadSendInput } from "@t3tools/contracts";
 import { OrchestratorToolkit } from "./tools.ts";
 import * as Effect from "effect/Effect";
 
@@ -6,7 +6,7 @@ import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
-import { readCaller } from "../../threadAccess.ts";
+import { readCaller, resolveThreadSendTarget } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -171,25 +171,28 @@ export const handlers = {
       }),
   ),
   t3_thread_send: McpToolAccess.afterForwarding(
-    McpToolAccess.writesThreads(
-      (input) => [input.threadId],
-      (input) =>
-        Effect.gen(function* () {
-          const scope = yield* McpInvocationContext.McpInvocationContext;
-          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-          return yield* service.sendToThread(scope, input);
-        }),
-      {
-        // Steering or restarting a turn stays a normal send, under the normal limits.
-        reportTarget: (input) =>
-          input.freshContext !== true &&
-          (input.mode === undefined || input.mode === "auto" || input.mode === "queue")
-            ? input.threadId
-            : undefined,
-      },
+    McpToolAccess.mapInput(
+      resolveThreadSendTarget,
+      McpToolAccess.writesThreads(
+        (input: OrchestratorMcpThreadSendInput) => [input.threadId],
+        (input) =>
+          Effect.gen(function* () {
+            const scope = yield* McpInvocationContext.McpInvocationContext;
+            const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+            return yield* service.sendToThread(scope, input);
+          }),
+        {
+          // Steering or restarting a turn stays a normal send, under the normal limits.
+          reportTarget: (input) =>
+            input.freshContext !== true &&
+            (input.mode === undefined || input.mode === "auto" || input.mode === "queue")
+              ? input.threadId
+              : undefined,
+        },
+      ),
     ),
     // There the thread's parent is here, so only this side can make a follow-up a task.
-    (input, environmentId, sent) =>
+    (input: OrchestratorMcpThreadSendInput, environmentId, sent) =>
       Effect.gen(function* () {
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const remote = yield* RemoteDelegation.RemoteDelegation;
