@@ -281,9 +281,6 @@ export function useThreadComposerState(input: {
         selectedThreadProjection?.projection.thread.reportDismissals ?? [],
       )
     : [];
-  const reportAnswerMessages = reportSettings?.coordinatorReportsEnabled
-    ? reportAnswers(selectedThreadMessages ?? [])
-    : undefined;
 
   const selectedTurnUsage = useTurnUsage(selectedThreadProjection?.projection);
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
@@ -312,6 +309,12 @@ export function useThreadComposerState(input: {
   // cannot be an either/or with the loaded messages.
   const pendingCreationMessage = selectedThreadCreation?.message ?? null;
   const [feedCache] = useState(createThreadFeedCache);
+  const pendingAcknowledgments = selectPendingAcknowledgedMessages(acknowledgedMessages, {
+    threadKey: selectedThreadKey,
+    queuedMessages: selectedThreadQueuedMessages,
+    sequence: selectedThreadSequence,
+    projectedMessages: selectedThreadMessages,
+  });
   const selectedThreadFeed = (() => {
     const pendingCreation =
       pendingCreationMessage !== null &&
@@ -325,17 +328,23 @@ export function useThreadComposerState(input: {
       checkpointSummaries,
       cache: feedCache,
     });
-    const pendingAcknowledgments = selectPendingAcknowledgedMessages(acknowledgedMessages, {
-      threadKey: selectedThreadKey,
-      queuedMessages: selectedThreadQueuedMessages,
-      sequence: selectedThreadSequence,
-      projectedMessages: selectedThreadMessages,
-    });
     if (pendingAcknowledgments.length === 0) return feed;
     return appendPendingThreadMessages(feed, feed, pendingAcknowledgments).map((entry) =>
       entry.pendingMessage ? { ...entry, acknowledged: true } : entry,
     );
   })();
+  // Messages the server has not projected yet answer reports too, so they show the chip while sending.
+  const reportAnswerMessages = reportSettings?.coordinatorReportsEnabled
+    ? reportAnswers([
+        ...(selectedThreadMessages ?? []),
+        ...[...selectedThreadQueuedMessages, ...pendingAcknowledgments].map((message) => ({
+          id: message.messageId,
+          role: "user" as const,
+          text: message.text,
+          reportAnswer: message.reportAnswer,
+        })),
+      ])
+    : undefined;
 
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const followUpBehavior = AsyncResult.isSuccess(preferencesResult)
