@@ -16,7 +16,7 @@ npx @styal/cli@nightly up
 ```
 
 It asks how your other devices reach the machine: styal Link, the local network,
-or both. Choose styal Link and follow the sign-in instructions. It then runs styal as a [background service](./background-service.md).
+or both. Choose styal Link and enter your email and its eight-digit code in the terminal. Over SSH, use `ssh -t` to allocate an interactive terminal. It then runs styal as a [background service](./background-service.md).
 `npx @styal/cli link` is the same as `npx @styal/cli up --link`. Run `npx @styal/cli up` again to change your
 choice, and `npx @styal/cli status` to see it.
 
@@ -28,9 +28,13 @@ machine reachable.
 On your other device, sign in to the same styal Link account and choose the
 environment. If you close setup on app.styal.build before adding a computer,
 signing in on the home page lists the computers linked to your account for you
-to select. Over SSH, the CLI prints a browser link and a short code. Open the
-link on any device, confirm the code matches, and approve. The CLI continues on
-its own, so you do not need to forward an OAuth callback port.
+to select. Signing in sends an eight-digit code to your email. A sign-in lasts
+as long as you keep using it and ends after 90 days without use.
+Signing in to styal Link in a browser requires HTTPS or localhost.
+
+Your styal Link account lists every place you are signed in, and you can sign
+any of them out from there. Deleting the account there, or in **Settings →
+styal Link** on mobile, unlinks every environment and signs out every device.
 
 styal Link renews access credentials when needed without disconnecting a healthy
 connection. Pull request diffs and provider settings keep working after the
@@ -482,8 +486,9 @@ link to change a client's permissions.
 local changes. Add `filesystem:write` to allow editing files or saving plans to
 the workspace. These scopes control direct file access from the client.
 
-To remove an environment from styal Link, open your account menu's **styal Link**
-page, or **Settings → styal Link** on mobile, and choose **Deregister**. This
+To remove an environment from styal Link, open your styal Link account (the
+avatar at the bottom of the Settings sidebar), or **Settings → styal Link** on
+mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is
 offline or has been wiped. When styal Link rejects a host's link, the host
 shows that it was removed from styal Link. To link it again, turn on
