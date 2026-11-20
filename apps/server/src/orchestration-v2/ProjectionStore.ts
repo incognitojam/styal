@@ -5337,29 +5337,30 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     AND answer.message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
                       WHERE thread_id = ${threadId} AND run_id = ${runId})
                 )
-                -- The report an untied reply names by its "[<title>, version <n>] " prefix, picked as
-                -- clients pick it (longest prefix, then newest), while its question is open. The reply
-                -- is read once, and only when it starts with "[".
-                OR message_id = (
-                  SELECT pick.message_id
-                  FROM orchestration_v2_projection_threads AS t, (
-                    SELECT named.message_id
-                    FROM (SELECT json_extract(payload_json, '$.text') AS text FROM orchestration_v2_projection_messages
-                        WHERE thread_id = ${threadId}
-                          AND message_id = (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
-                            WHERE thread_id = ${threadId} AND run_id = ${runId})
-                          AND json_extract(payload_json, '$.reportAnswer') IS NULL
-                          AND json_extract(payload_json, '$.text') LIKE '[%') AS reply,
-                      (SELECT message_id, created_at,
-                          '[' || json_extract(payload_json, '$.report.title') || ', version ' || json_extract(payload_json, '$.report.version') || '] ' AS prefix
-                        FROM orchestration_v2_projection_messages
-                          INDEXED BY orchestration_v2_projection_messages_report_key_idx
-                        WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.report.key') IS NOT NULL) AS named
-                    WHERE instr(reply.text, named.prefix) = 1
-                    ORDER BY length(named.prefix) DESC, named.created_at DESC LIMIT 1
-                  ) AS pick
-                  WHERE t.thread_id = ${threadId}
-                    AND pick.message_id IN (SELECT open.message_id FROM (${openReportQuestions}) AS open)
+                -- The reports an untied reply names by its "[<title>, version <n>] " prefix (the longest,
+                -- as clients match it) whose questions are open. Reports can share a title and version,
+                -- so this can be several. The reply is read once, and only when it starts with "[".
+                OR message_id IN (
+                  WITH reply AS (
+                    SELECT json_extract(payload_json, '$.text') AS text FROM orchestration_v2_projection_messages
+                    WHERE thread_id = ${threadId}
+                      AND message_id = (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                        WHERE thread_id = ${threadId} AND run_id = ${runId})
+                      AND json_extract(payload_json, '$.reportAnswer') IS NULL
+                      AND json_extract(payload_json, '$.text') LIKE '[%'
+                  ), named AS (
+                    SELECT message_id,
+                      '[' || json_extract(payload_json, '$.report.title') || ', version ' || json_extract(payload_json, '$.report.version') || '] ' AS prefix
+                    FROM orchestration_v2_projection_messages
+                      INDEXED BY orchestration_v2_projection_messages_report_key_idx
+                    WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.report.key') IS NOT NULL
+                  ), pick AS (
+                    SELECT named.prefix FROM reply, named WHERE instr(reply.text, named.prefix) = 1
+                    ORDER BY length(named.prefix) DESC LIMIT 1
+                  )
+                  SELECT named.message_id FROM orchestration_v2_projection_threads AS t, pick, named
+                  WHERE t.thread_id = ${threadId} AND named.prefix = pick.prefix
+                    AND named.message_id IN (SELECT open.message_id FROM (${openReportQuestions}) AS open)
                 )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
