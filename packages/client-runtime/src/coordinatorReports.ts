@@ -137,13 +137,18 @@ export function reportAnswers<M extends Message>(messages: readonly M[]) {
   return answers;
 }
 
-/** The agent's one-line result for an answered report; a resolve from before the answer is not one. */
+/**
+ * The agent's one-line result for an answered report; a resolve from before the answer is not
+ * one. A pending answer has this client's clock, so it shows none until the server has it.
+ */
 export function answeredReportResult(
   report: Pick<CoordinatorReport, "resolved">,
-  answer: { readonly createdAt: string },
+  answer: { readonly createdAt: string; readonly pending?: boolean },
 ) {
   const { resolved } = report;
-  return resolved?.outcome && Date.parse(resolved.at) >= Date.parse(answer.createdAt)
+  return resolved?.outcome &&
+    !answer.pending &&
+    Date.parse(resolved.at) >= Date.parse(answer.createdAt)
     ? resolved.outcome
     : undefined;
 }
