@@ -78,6 +78,10 @@ it.each([
     const helper = NodePath.join(archive, "apps/desktop/dist-electron/serverCompileCache.cjs");
     NodeFS.mkdirSync(dist, { recursive: true });
     NodeFS.mkdirSync(NodePath.dirname(helper), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(dist, "bin.mjs"),
+      `import { runCliCommand } from ${JSON.stringify(new URL("../../apps/server/src/binMain.ts", import.meta.url).href)}; await runCliCommand();`,
+    );
     NodeFS.writeFileSync(NodePath.join(dist, "binCli-fixture.mjs"), "export const answer = 42;");
     NodeFS.writeFileSync(NodePath.join(dist, "server-fixture.mjs"), "export const answer = 43;");
     NodeFS.writeFileSync(
@@ -120,7 +124,7 @@ it.each([
       }).catch(error => { console.error(error); process.exitCode = 1; });
     `,
       ],
-      { encoding: "utf8" },
+      { encoding: "utf8", cwd: root },
     );
     if (startup === "missing module") {
       expect(result.status).not.toBe(0);

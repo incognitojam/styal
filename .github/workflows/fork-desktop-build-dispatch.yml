@@ -15,6 +15,7 @@ on:
       - "scripts/prepare-server-compile-cache.cjs"
       - "scripts/linux-after-pack.ts"
       - "scripts/verify-desktop-startup.mjs"
+      - "scripts/verify-worktree-cleanup.mjs"
       - "scripts/smoke-desktop-app.ts"
       - "scripts/fixtures/desktop-launch/**"
       - ".github/workflows/fork-desktop-build*.yml"
@@ -22,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Desktop target to build
+        description: Target to build; cli verifies native CLI archives
         required: true
         default: macos-arm64
         type: choice
@@ -31,6 +32,7 @@ on:
           - linux-x64
           - windows-x64
           - all
+          - cli
       windows_release:
         description: Instead of building, check startup of an existing Windows release tag
         required: false
@@ -55,6 +57,7 @@ jobs:
 
   build:
     name: Build ${{ inputs.target }}
+    if: inputs.target != 'cli'
     needs: bundle
     uses: ./.github/workflows/fork-desktop-build.yml
     with:
@@ -65,6 +68,15 @@ jobs:
       retention_days: 90
       sign_macos: false
       check_notarization: false
+
+  verify_cli:
+    name: Verify native CLI archives
+    if: inputs.target == 'cli'
+    needs: bundle
+    uses: ./.github/workflows/fork-cli-archives.yml
+    with:
+      ref: ${{ github.sha }}
+      version: 0.0.0-build.${{ github.run_number }}
 
   verify_windows_release:
     name: Check released Windows startup

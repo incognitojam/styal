@@ -44,6 +44,9 @@ module.exports = async ({ appOutDir, electronPlatformName, arch, packager }) => 
   );
   const { verifyDesktopStartup } = await import("./verify-desktop-startup.mjs");
   verifyDesktopStartup(executable, packager.appInfo.version);
+  const { verifyWorktreeCleanup } = await import("./verify-worktree-cleanup.mjs");
+  const archive = fs.existsSync(path.join(resources, "server.asar")) ? "server.asar" : "app.asar";
+  verifyWorktreeCleanup(executable, path.join(resources, archive, "apps/server/dist/bin.mjs"));
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
   for (const name of Object.keys(env)) {
     if (name.startsWith("NODE_") || name.startsWith("T3CODE_") || name.startsWith("STYAL_"))
