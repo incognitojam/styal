@@ -4860,10 +4860,16 @@ describe("AcpAdapterV2", () => {
       assert.deepEqual(
         {
           prompt: approval.prompt,
+          toolInput: approval.toolInput ?? null,
           requestKind: approval.requestKind,
           terminalCreated: Exit.isSuccess(terminalExit),
         },
-        { prompt: "git status", requestKind: "command", terminalCreated: granted },
+        {
+          prompt: "git status",
+          toolInput: granted ? { command: "git status" } : null,
+          requestKind: "command",
+          terminalCreated: granted,
+        },
       );
 
       yield* runtime.interruptTurn({ providerThread, providerTurnId });

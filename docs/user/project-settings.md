@@ -341,7 +341,8 @@ notification about the chat, and a `styal://projects/<environment>/<project>` li
 Starting a project's first chat still happens on web or desktop.
 
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
-questions and report questions, oldest first, each with its thread's name. Click one to answer it
+questions and report questions, oldest first, each with its thread's name. It also lists the
+approvals the chat's own subagents ask for. Click one to answer it
 there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the
 page can't answer, such as a subagent's request, offers **Open thread**.
 

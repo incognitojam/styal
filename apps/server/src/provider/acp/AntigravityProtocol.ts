@@ -86,11 +86,12 @@ export function antigravityApprovalOptions(
     options.push({ decision: "accept", label: "Allow once" });
   }
   const always = optionWithKind("allow_always");
+  // The agent remembers the exact command, in this workspace, until its process exits.
   if (always) {
     const warning = antigravitySecurityWarning(always);
     options.push({
       decision: "acceptForSession",
-      label: "Allow for this thread",
+      label: "Allow this command for this session",
       ...(warning ? { warning } : {}),
     });
   }

@@ -13,7 +13,13 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeedsYou.logic";
+import {
+  approvalCommand,
+  listProjectNeeds,
+  openReports,
+  type ThreadNeeds,
+  withChildApprovals,
+} from "./projectNeedsYou.logic";
 
 const local = EnvironmentId.make("env-local");
 
@@ -86,6 +92,47 @@ describe("listProjectNeeds", () => {
         createdAt: secret.pendingUserInputAt,
       },
     ]);
+  });
+});
+
+describe("withChildApprovals", () => {
+  it("lists the chat's subagent approvals among the project's needs, once each", () => {
+    const listed = shell("listed");
+    const subagent = shell("subagent");
+    const needs = listProjectNeeds([listed], () => ({
+      requests: { approvals: [approval("a1", "2026-11-18T10:03:00.000Z")], userInputs: [] },
+      reports: [],
+    }));
+    const child = (thread: EnvironmentThreadShell, id: string, createdAt: string) => ({
+      thread: { environmentId: thread.environmentId, threadId: thread.id },
+      title: thread.title,
+      approval: approval(id, createdAt),
+    });
+    expect(
+      withChildApprovals(
+        needs,
+        [
+          child(subagent, "a2", "2026-11-18T10:01:00.000Z"),
+          // A delegated task the project lists already has its own row.
+          child(listed, "a1", "2026-11-18T10:03:00.000Z"),
+        ],
+        [subagent, listed],
+      ).map((need) => need.key),
+    ).toEqual([`${local}:subagent:a2`, `${local}:listed:a1`]);
+  });
+});
+
+describe("approvalCommand", () => {
+  it("takes the command from the approval's input, never from its prose prompt", () => {
+    expect(approvalCommand({ toolInput: { command: "pnpm test" } })).toBe("pnpm test");
+    expect(approvalCommand({ toolName: "Bash", toolInput: { command: "ls" } })).toBe("ls");
+    // An editor tool from an MCP server names its operation `command`.
+    expect(
+      approvalCommand({ toolName: "mcp__editor__edit", toolInput: { command: "str_replace" } }),
+    ).toBeUndefined();
+    expect(approvalCommand({ toolInput: { command: "  " } })).toBeUndefined();
+    expect(approvalCommand({ toolInput: { url: "https://example.com" } })).toBeUndefined();
+    expect(approvalCommand({})).toBeUndefined();
   });
 });
 

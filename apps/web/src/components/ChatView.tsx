@@ -11,7 +11,6 @@ import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
-import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
@@ -335,6 +334,7 @@ import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
 import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
 import type { CapturedSinceLastVisit } from "@t3tools/client-runtime/project-since-last-visit";
 import { ProjectSinceLastVisit } from "./project/ProjectSinceLastVisit";
+import { ChildThreadApprovals } from "./project/ProjectNeedsYou";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -3944,7 +3944,7 @@ export default function ChatView(props: ChatViewProps) {
                         }
                       />
                     ) : null}
-                    <ChildThreadApprovals threadRef={activeThreadRef} />
+                    {projectChat ? null : <ChildThreadApprovals threadRef={activeThreadRef} />}
                     <div className="relative">
                       <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                         <ComposerSurface.Host

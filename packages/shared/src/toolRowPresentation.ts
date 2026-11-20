@@ -459,6 +459,11 @@ const ITEM_TYPE_BY_TOOL_NAME: Readonly<Record<string, ToolLifecycleItemType>> = 
   WebSearch: "web_search",
 };
 
+/** True for the tools that run a shell command, such as Claude's Bash. */
+export function isShellToolName(toolName: string): boolean {
+  return ITEM_TYPE_BY_TOOL_NAME[normalizeKnownToolName(toolName)] === "command_execution";
+}
+
 /**
  * ACP adapters type every search as `web_search`, including greps of the
  * workspace; only those name the directory they searched.

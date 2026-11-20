@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type {
+  ChildThreadApproval,
   PendingThreadRequests,
   ThreadPendingApproval,
   ThreadPendingUserInput,
@@ -14,6 +15,8 @@ import type {
   OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Predicate from "effect/Predicate";
+import { isShellToolName } from "@t3tools/shared/toolRowPresentation";
 
 export interface OpenReport {
   readonly messageId: MessageId;
@@ -57,6 +60,9 @@ export function openReports(
     createdAt: message.createdAt,
   }));
 }
+
+const oldestFirst = (a: ProjectNeed, b: ProjectNeed) =>
+  a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key);
 
 /**
  * Every request from the threads the status line counts, oldest first. A thread whose detail is
@@ -107,5 +113,45 @@ export function listProjectNeeds(
           ]),
     );
   }
-  return needs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));
+  return needs.sort(oldestFirst);
+}
+
+/**
+ * Adds the approvals a thread's subagents and delegated tasks wait on to `needs`, oldest first. A
+ * child the project already lists keeps its own rows.
+ */
+export function withChildApprovals(
+  needs: ReadonlyArray<ProjectNeed>,
+  approvals: ReadonlyArray<ChildThreadApproval>,
+  children: ReadonlyArray<EnvironmentThreadShell>,
+): ReadonlyArray<ProjectNeed> {
+  const listed = new Set(needs.map((need) => `${need.thread.environmentId}:${need.thread.id}`));
+  const added: ProjectNeed[] = [];
+  for (const { thread: ref, approval } of approvals) {
+    const key = `${ref.environmentId}:${ref.threadId}`;
+    const thread = children.find(
+      (child) => child.environmentId === ref.environmentId && child.id === ref.threadId,
+    );
+    if (thread === undefined || listed.has(key)) continue;
+    added.push({
+      kind: "approval",
+      key: `${key}:${approval.requestId}`,
+      thread,
+      createdAt: approval.createdAt,
+      approval,
+    });
+  }
+  return added.length === 0 ? needs : [...needs, ...added].sort(oldestFirst);
+}
+
+/**
+ * The shell command an approval would run, when the provider said which; its prompt may be prose.
+ * Any tool's input can name a `command`, so a named tool must be a shell.
+ */
+export function approvalCommand(approval: Pick<ThreadPendingApproval, "toolName" | "toolInput">) {
+  const input = approval.toolInput;
+  if (approval.toolName !== undefined && !isShellToolName(approval.toolName)) return undefined;
+  return Predicate.isObject(input) && typeof input.command === "string" && input.command.trim()
+    ? input.command
+    : undefined;
 }
