@@ -135,6 +135,9 @@ describe("coordinator reports", () => {
     expect(
       answeredReportResult({ resolved }, { createdAt: "2026-11-20T10:01:00.000Z" }),
     ).toBeUndefined();
+    expect(
+      answeredReportResult({ resolved }, { createdAt: "2026-11-20T09:59:00.000Z", pending: true }),
+    ).toBeUndefined();
   });
 
   it("splits only the answered report's own prefix and keeps the rest as typed", () => {
