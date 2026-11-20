@@ -17,6 +17,7 @@ import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  ProjectId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ProviderInstanceId,
@@ -38,6 +39,7 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 
 const autoThreadId = ThreadId.make("thread:auto");
@@ -836,6 +838,7 @@ it.effect.each([
   Effect.gen(function* () {
     const dependencies = Layer.mergeAll(
       NodeCrypto.layer,
+      ServerSettings.layerTest(),
       Layer.mock(RemoteDelegation.RemoteDelegation)({}),
       Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
       Layer.mock(ThreadManagement.ThreadManagementService)({
@@ -872,4 +875,93 @@ it.effect.each([
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
     expect(JSON.stringify(result)).toContain(expected);
   }),
+);
+
+it.effect("project-chat sends resolve current settings before checking target rights", () =>
+  Effect.gen(function* () {
+    const projectId = shells.get(autoThreadId)!.projectId;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const deliveries: string[] = [];
+    const scope = { ...threadCaller(autoThreadId), coordinatorReportsEnabled: false };
+    const testShells = new Map(shells);
+    const missingChat = ThreadId.make("thread:uncreated-chat");
+    const deletedChat = ThreadId.make("thread:deleted-chat");
+    const movedChat = ThreadId.make("thread:moved-chat");
+    testShells.set(deletedChat, {
+      ...shells.get(supervisedThreadId)!,
+      id: deletedChat,
+      deletedAt: shells.get(supervisedThreadId)!.updatedAt,
+    });
+    testShells.set(movedChat, {
+      ...shells.get(supervisedThreadId)!,
+      id: movedChat,
+      projectId: ProjectId.make("project:elsewhere"),
+    });
+    const dependencies = Layer.mergeAll(
+      Layer.succeed(ServerSettings.ServerSettingsService, settings),
+      Layer.succeed(McpInvocationContext.McpInvocationContext, scope),
+      Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (id) => Effect.succeed(testShells.get(id) ?? null),
+      }),
+      Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
+        sendToThread: (_, input) => {
+          deliveries.push(input.threadId);
+          return Effect.succeed({
+            threadId: input.threadId,
+            messageId: "message:role",
+            runId: "run:role",
+            status: "queued",
+            delivery: "queued",
+          } as never);
+        },
+      }),
+    );
+    const toolkit = yield* SendToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(
+          McpToolAccess.toLayer(SendToolkit, {
+            t3_thread_send: OrchestratorHandlers.handlers.t3_thread_send,
+          }),
+        ).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const send = () =>
+      toolkit
+        .handle("t3_thread_send", {
+          threadId: ThreadId.make("project-chat"),
+          message: "Triage verdict",
+        })
+        .pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provide(dependencies),
+          Effect.map(JSON.stringify),
+        );
+    const withoutReports = yield* send();
+    expect(withoutReports).toContain("Enable Reports");
+    expect(withoutReports).not.toContain("t3_report");
+    scope.coordinatorReportsEnabled = true;
+    expect(yield* send()).toContain("t3_report");
+    for (const [threadId, expected] of [
+      [missingChat, "This project has no chat"],
+      [deletedChat, "This project has no chat"],
+      [movedChat, "This project has no chat"],
+      [supervisedThreadId, "queued"],
+      [planThreadId, "queued"],
+      [fullAccessThreadId, "runtime_mode_escalation_denied"],
+      [autoThreadId, "itself"],
+    ] as const) {
+      yield* settings.updateSettings({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: { threadId } },
+      });
+      expect(yield* send()).toContain(expected);
+    }
+    scope.coordinatorReportsEnabled = false;
+    const selfWithoutReports = yield* send();
+    expect(selfWithoutReports).toContain("Enable Reports");
+    expect(selfWithoutReports).not.toContain("t3_report");
+    expect(deliveries).toEqual([supervisedThreadId, planThreadId]);
+  }).pipe(Effect.provide(ServerSettings.layerTest())),
 );

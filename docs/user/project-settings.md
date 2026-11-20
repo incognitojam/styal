@@ -304,6 +304,10 @@ Turn on **Project coordinators** in **Settings → Labs** to let one thread coor
 Choose it from **Coordinator** in the project's settings, or with **Make project coordinator** in
 the thread's menu on web, desktop or mobile. **Stop being coordinator** or **None** clears it.
 
+Agents in other threads can send to the project's current chat with `t3_thread_send` and
+`threadId: "project-chat"`, without looking up its id. If there is no chat, use `t3_report` with Reports enabled in Labs,
+or report to the user in the current thread.
+
 With every session, the coordinator gets instructions to hand changes to other threads instead of
 making them itself, unless you ask it to. Claude, Codex, Cursor, Grok and OpenCode receive them, as
 they do the project's Additional instructions. Threads started in
