@@ -884,7 +884,7 @@ describe("orchestrator MCP toolkit", () => {
                 { key: "pr:1", resolved: true, title: "T", answers: ["A"] },
                 "drop `title`, `answers`",
               ],
-              [{ key: "pr:1", outcome: "Merged" }, "`outcome` goes with `resolved: true`"],
+              [{ key: "pr:1", title: "T", body: "B", outcome: "Merged" }, "not with a new version"],
               [{ key: "pr:1", body: "B" }, "missing `title`"],
             ] as const) {
               expect(yield* reportError(args)).toContain(text);

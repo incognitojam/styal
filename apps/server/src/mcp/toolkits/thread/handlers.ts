@@ -113,7 +113,7 @@ export const declarations = {
       const { key, title, body, question, answers, resolved, outcome } = input;
       const invalid = (message: string) =>
         new OrchestratorMcpFailure({ code: "invalid_request", message });
-      if (resolved) {
+      if (resolved || (outcome !== undefined && !title && !body)) {
         const extra = Object.entries({ title, body, question, answers }).flatMap(([name, value]) =>
           value === undefined ? [] : [`\`${name}\``],
         );
@@ -136,7 +136,8 @@ export const declarations = {
           .find((event) => event.type === "message.updated")!.payload;
         return { messageId: resolved.id, version: resolved.report!.version };
       }
-      if (outcome !== undefined) return yield* invalid("`outcome` goes with `resolved: true`.");
+      if (outcome !== undefined)
+        return yield* invalid("Send `outcome` with only `key`, not with a new version.");
       if (!title || !body) {
         const missing = [title ? "" : "`title`", body ? "" : "`body`"].filter(Boolean);
         return yield* invalid(

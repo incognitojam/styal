@@ -1258,6 +1258,22 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
           ),
           'Version 1 of report "merge" is already answered.',
         );
+        // With an outcome it records what happened under the answer, and tells no one. A later
+        // outcome replaces it.
+        for (const outcome of ["Auto-merge on", "Merged as abc123"])
+          yield* orchestrator.dispatch({
+            type: "report.resolve",
+            commandId: CommandId.make(`outcome:merge:${outcome}`),
+            threadId: launchedId,
+            key: "merge",
+            outcome,
+          });
+        assert.deepInclude(
+          (yield* orchestrator.getThreadProjection(launchedId)).messages.find(
+            (message) => message.id === "report:merge",
+          )?.report?.resolved,
+          { outcome: "Merged as abc123" },
+        );
         yield* worker.drain();
         assert.deepEqual(
           (yield* notes()).map((note) => note.text),

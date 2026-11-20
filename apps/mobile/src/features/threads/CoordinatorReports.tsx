@@ -10,6 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   coordinatorReports,
+  answeredReportResult,
   reportAnswerDisplay,
   type ReportReply,
 } from "@t3tools/client-runtime/coordinator-reports";
@@ -153,6 +154,7 @@ export function CoordinatorReportMessage({
           answer={report.answer}
           display={reportAnswerDisplay(report.answer, tag)}
           renderAnswer={renderAnswer}
+          outcome={answeredReportResult(tag, report.answer)}
         />
       ) : report.state === "resolved" ? (
         <View className="gap-1 rounded-xl bg-secondary p-3">
@@ -186,13 +188,23 @@ function AnsweredReport(props: {
   answer: ReportMessage;
   display: { text: string; compact: boolean };
   renderAnswer: (answer: ReportMessage, text: string) => ReactNode;
+  outcome: string | undefined;
 }) {
+  const outcome = props.outcome ? (
+    <Text className="text-foreground-secondary">Result: {props.outcome}</Text>
+  ) : null;
   if (props.display.compact)
-    return <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>;
+    return (
+      <View className="gap-1">
+        <Text className="text-foreground-secondary">You answered: {props.display.text}</Text>
+        {outcome}
+      </View>
+    );
   return (
     <View className="gap-1 rounded-xl bg-secondary p-3">
       <Text className="text-foreground-secondary">You answered</Text>
       {props.renderAnswer(props.answer, props.display.text)}
+      {outcome}
     </View>
   );
 }

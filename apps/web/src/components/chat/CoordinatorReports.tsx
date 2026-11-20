@@ -13,6 +13,7 @@ import type { MessageId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 import {
   coordinatorReports,
   formatReportAnswer,
+  answeredReportResult,
   reportAnswerDisplay,
   reportResponseDelivered,
   reportResponsePending,
@@ -117,23 +118,26 @@ export function ReportAnswerBar({
   }
   if (report.state === "answered" && report.answer) {
     const { text, compact } = reportAnswerDisplay(report.answer, report.message.report!);
-    if (compact) {
-      return (
-        <div className={panelClassName}>
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
-            <MessageSquareIcon />
-            You answered: <span className="text-foreground">{text}</span>
-          </span>
-        </div>
-      );
-    }
+    const outcome = answeredReportResult(report.message.report!, report.answer);
     return (
       <div className={panelClassName}>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
           <MessageSquareIcon />
-          You answered
+          {compact ? (
+            <>
+              You answered: <span className="text-foreground">{text}</span>
+            </>
+          ) : (
+            "You answered"
+          )}
         </span>
-        {renderAnswer(report.answer, text)}
+        {compact ? null : renderAnswer(report.answer, text)}
+        {outcome ? (
+          <span className="flex min-w-0 items-start gap-1.5 text-muted-foreground [&_svg]:mt-0.75 [&_svg]:size-3.5 [&_svg]:shrink-0">
+            <CheckIcon />
+            <span className="min-w-0 break-words">Result: {outcome}</span>
+          </span>
+        ) : null}
       </div>
     );
   }
