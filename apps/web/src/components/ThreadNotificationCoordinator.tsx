@@ -348,7 +348,7 @@ export function startThreadNotifications(
       );
       return projectChatKeys;
     };
-    const changed: Array<[NotificationState | undefined, NotificationState]> = [];
+    const changed: Array<[NotificationState | undefined, NotificationState, boolean]> = [];
     for (const rawThread of threads) {
       if (
         isShownUnderParent(
@@ -391,14 +391,12 @@ export function startThreadNotifications(
             ? `${status}:${subject}`
             : `${thread.latestRun?.runId ?? ""}:${status}`;
       const completed = status === "ready" && thread.latestRun?.status === "completed";
-      const settled =
+      const quietCompletion =
         completed &&
-        !monitorHoldsWakeCompletion(rawThread) &&
-        !(
-          ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
-            jobsSince.has(rawThread.id)) &&
-          staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread))
-        );
+        ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
+          jobsSince.has(rawThread.id)) &&
+        staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread));
+      const settled = completed && !monitorHoldsWakeCompletion(rawThread) && !quietCompletion;
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
       // Draw the project's icon when work starts, so it is ready when the thread notifies.
@@ -418,19 +416,19 @@ export function startThreadNotifications(
         attention,
         requestId,
         settled,
-        completedAt: settled ? completedAt : null,
+        completedAt: settled || quietCompletion ? completedAt : null,
         backgroundWake: rawThread.latestRunBackgroundWake === true,
       };
       next.set(thread.id, state);
-      changed.push([prior, state]);
+      changed.push([prior, state, quietCompletion]);
     }
     entry.reconnecting = false;
     entry.previous = next;
     entry.gate.retain(new Set(next.keys()));
-    for (const [prior, state] of changed) {
+    for (const [prior, state, quietCompletion] of changed) {
       entry.gate.observe(state.thread.id, prior, state, {
         archived: state.thread.archivedAt !== null,
-        quiet: state.raw.latestRunStopRequested === true,
+        quiet: state.raw.latestRunStopRequested === true || quietCompletion,
       });
     }
   };

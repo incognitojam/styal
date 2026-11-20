@@ -27,7 +27,7 @@ const state = vi.hoisted(() => ({
   latestRunId: "run-1",
   workflowReview: false,
   launchedByChat: null as "chat-live" | "chat-archived" | null,
-  job: null as "kept" | "pinned" | "written" | null,
+  job: null as "kept" | "pinned" | "written" | "paused" | null,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -279,7 +279,7 @@ function setup() {
           : [
               {
                 threadId: "thread-1",
-                enabled: true,
+                enabled: state.job !== "paused",
                 schedule: { type: "webhook" },
                 createdAt: "2000-01-01T00:00:00.000Z",
                 lastRunAt: null,
@@ -361,6 +361,17 @@ describe("thread notifications", () => {
     await app.render();
     await app.complete();
     expect(state.sound).toHaveBeenCalledTimes(count);
+    if (job === "kept") {
+      state.job = "paused";
+      await app.render();
+      expect(state.sound).not.toHaveBeenCalled();
+      state.completedAt = null;
+      state.latestRunId = "run-2";
+      await app.render();
+      state.completedAt = "2026-09-13T11:00:00.000Z";
+      await app.render();
+      expect(state.sound).toHaveBeenCalledTimes(1);
+    }
   });
 
   it.each([false, true])("keeps viewed attention sounds (approval=%s)", async (approval) => {
