@@ -110,16 +110,16 @@ export const declarations = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "t3_report");
       const { threads } = yield* readThread(thread.threadId);
       const commandId = yield* newCommandId();
-      const { key, title, body, question, answers, resolved, outcome } = input;
+      const { key, title, body, question, answers, outcome } = input;
       const invalid = (message: string) =>
         new OrchestratorMcpFailure({ code: "invalid_request", message });
-      if (resolved || (outcome !== undefined && !title && !body)) {
-        const extra = Object.entries({ title, body, question, answers }).flatMap(([name, value]) =>
+      if (outcome !== undefined && !title && !body) {
+        const extra = Object.entries({ question, answers }).flatMap(([name, value]) =>
           value === undefined ? [] : [`\`${name}\``],
         );
         if (extra.length > 0)
           return yield* invalid(
-            `Resolve with only \`key\`, \`resolved\` and \`outcome\`; drop ${extra.join(", ")}.`,
+            `Close a question with only \`key\` and \`outcome\`; drop ${extra.join(", ")}.`,
           );
         const { storedEvents } = yield* threads
           .dispatch({
@@ -128,7 +128,7 @@ export const declarations = {
             threadId: thread.threadId,
             key,
             // The card shows one line.
-            ...(outcome === undefined ? {} : { outcome: outcome.replace(/\s*[\r\n]+\s*/g, " ") }),
+            outcome: outcome.replace(/\s*[\r\n]+\s*/g, " "),
           })
           .pipe(Effect.mapError(dispatchFailure));
         const resolved = storedEvents
@@ -141,7 +141,7 @@ export const declarations = {
       if (!title || !body) {
         const missing = [title ? "" : "`title`", body ? "" : "`body`"].filter(Boolean);
         return yield* invalid(
-          `A report needs \`title\` and \`body\`; missing ${missing.join(" and ")}.`,
+          `A report needs \`title\` and \`body\`; missing ${missing.join(" and ")}. To close its question, send only \`key\` and a one-line \`outcome\`.`,
         );
       }
       const { storedEvents } = yield* threads
