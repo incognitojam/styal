@@ -484,13 +484,19 @@ describe("sidebar folder menu", () => {
     ).toEqual(["copy-path:0", "copy-path:1"]);
 
     if (scenario.choose === "filter-project") {
-      // Beta's folder leaves; choosing Show all projects from the same menu brings it back.
-      await vi.waitFor(() =>
-        expect(folderNames().some((name) => name?.includes("beta"))).toBe(false),
-      );
+      // Both folders leave, alpha's too: the picker row names it. Show all projects brings them back.
+      await vi.waitFor(() => expect(folderNames()).toEqual([]));
       show.mockResolvedValue("filter-project");
+      // Filtered to alpha, the picker row heads the list instead of a folder, with the same menu.
+      const picker = await vi.waitFor(() => {
+        const element = screen.container.querySelector<HTMLElement>(
+          '[aria-label="Filter threads by project: alpha"]',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
       await act(() =>
-        folder.dispatchEvent(
+        picker.dispatchEvent(
           new MouseEvent("contextmenu", {
             bubbles: true,
             cancelable: true,

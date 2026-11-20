@@ -499,6 +499,8 @@ function useSidebarThreads(input: {
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
   readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
+  // Filtered to one project, its folder has no header to close it with.
+  readonly singleProjectScope: boolean;
   /** Project chats: in the flat list they stay where the user saw them while they work. */
   readonly projectChatKeys: ReadonlySet<string>;
 }) {
@@ -513,6 +515,7 @@ function useSidebarThreads(input: {
     routeRowThreadKey,
     folderGroups,
     keepEmptyFolders: keepEmpty,
+    singleProjectScope,
   } = input;
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
@@ -605,10 +608,9 @@ function useSidebarThreads(input: {
       : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty, (thread) =>
           input.projectChatKeys.has(threadShellKey(thread)),
         ).map((folder) => {
-          const collapsed = !resolveProjectExpanded(
-            projectExpandedById,
-            sidebarFolderExpansionKeys(folder.group),
-          );
+          const collapsed =
+            !singleProjectScope &&
+            !resolveProjectExpanded(projectExpandedById, sidebarFolderExpansionKeys(folder.group));
           return {
             group: folder.group,
             chat: folder.chat,
@@ -1172,6 +1174,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // Safari may click after Ctrl+click opens settings; suppress that selection until the picker reopens.
   const suppressNextScopeChangeRef = useRef(false);
   const highlightedProjectScopeKeyRef = useRef<string | null>(null);
+  const projectScopeRowRef = useRef<HTMLDivElement | null>(null);
   // Hold dropped rows until server placement is confirmed; block another pickup from replacing the hold.
   const [optimisticDrop, setOptimisticDrop] = useState<SidebarOptimisticDrop | null>(null);
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
@@ -1612,6 +1615,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeRowThreadKey,
     folderGroups,
     keepEmptyFolders: keepEmptyFolder,
+    singleProjectScope,
     projectChatKeys,
   });
   const orderedThreadKeys = listedThreadKeys;
@@ -2032,7 +2036,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
-  const hasProjectFolders = projectFolders !== null && projectFolders.length > 0;
+  // Filtered to one project, the picker row heads the list, so its threads draw without a folder.
+  const hasProjectFolders =
+    projectFolders !== null && projectFolders.length > 0 && !singleProjectScope;
+  const listedActiveThreads =
+    projectFolders !== null && singleProjectScope
+      ? projectFolders.flatMap((folder) => folder.threads)
+      : activeThreads;
   const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
   // Folders list threads by their latest message, so a drop in them only moves a thread to active.
   const activeTimeOrdered = workingShelfEnabled || projectFolders !== null;
@@ -2231,7 +2241,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (
       !hasProjectFolders &&
       pinnedThreads.length +
-        activeThreads.length +
+        listedActiveThreads.length +
         workingThreads.length +
         snoozedThreads.length +
         settledCount ===
@@ -2258,7 +2268,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (hasProjectFolders && !folderDividerPlaced) {
       items.push({ kind: "marker", marker: "pinned-projects-divider" });
     }
-    if (!hasProjectFolders) items.push(...rowsOf(activeThreads, "active"));
+    if (!hasProjectFolders) items.push(...rowsOf(listedActiveThreads, "active"));
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
       items.push(...rowsOf(visibleWorkingThreads, "working"));
@@ -2410,7 +2420,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           trailingProjectGroups: archivedFolderGroups,
         }
       : {}),
-    ...(projectFolders !== null && folderGroups !== null
+    ...(hasProjectFolders && folderGroups !== null
       ? {
           folders: {
             order: folderGroups.map((group) => group.projectKey),
@@ -3540,6 +3550,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // chat.newLocal for direct create, and is pointless once a plain click
   // already creates in place.
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const singleScopePage = singleProjectScope
+    ? projectPages.get(scopedProjectGroups[0]!.projectKey)
+    : undefined;
+  // In folders the chat has no row, so the picker row stands for it, as the folder header did.
+  const singleScopeChat = singleScopePage ? (projectFolders?.[0]?.chat ?? null) : null;
+  const singleScopePageSelected =
+    singleScopePage !== undefined &&
+    (routeProjectKey === singleScopePage.group.projectKey ||
+      isRouteChat(singleScopePage.group.projectKey));
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3588,78 +3607,147 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     }
                   }}
                 >
-                  <ComboboxTrigger
-                    render={
-                      singleProjectScope ? (
-                        <button
-                          type="button"
-                          aria-label={`Filter threads by project: ${scopedProjectGroups[0]!.displayName}`}
-                          className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
-                              x: event.clientX,
-                              y: event.clientY,
-                            });
-                          }}
-                          onKeyDown={(event) => {
-                            if (
-                              event.key !== "ContextMenu" &&
-                              !(event.shiftKey && event.key === "F10")
-                            )
-                              return;
-                            event.preventDefault();
-                            const rect = event.currentTarget.getBoundingClientRect();
-                            handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
-                              x: rect.left,
-                              y: rect.bottom,
-                            });
-                          }}
+                  {singleScopePage ? (
+                    // With a project page, the picker row is the project's header: the name opens the page and
+                    // the chevron opens the picker.
+                    <div
+                      ref={projectScopeRowRef}
+                      className={cn(
+                        "flex h-8 w-full min-w-0 items-center rounded-md text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover",
+                        singleScopePageSelected && "bg-sidebar-row-active text-sidebar-foreground",
+                      )}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        handleProjectFolderContextMenu(singleScopePage.group, {
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                    >
+                      <button
+                        type="button"
+                        ref={(row) =>
+                          row && singleScopeChat && isRouteChat(singleScopePage.group.projectKey)
+                            ? revealActiveRow(
+                                row,
+                                scopedThreadKey(
+                                  scopeThreadRef(singleScopeChat.environmentId, singleScopeChat.id),
+                                ),
+                              )
+                            : undefined
+                        }
+                        aria-current={singleScopePageSelected ? "page" : undefined}
+                        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md ps-2 text-left hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
+                        onClick={() => openProjectPageForGroup(singleScopePage.group)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key !== "ContextMenu" &&
+                            !(event.shiftKey && event.key === "F10")
+                          )
+                            return;
+                          event.preventDefault();
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          handleProjectFolderContextMenu(singleScopePage.group, {
+                            x: rect.left,
+                            y: rect.bottom,
+                          });
+                        }}
+                      >
+                        <ProjectFavicon
+                          project={singleScopePage.group}
+                          className="size-4 shrink-0"
                         />
-                      ) : (
-                        <SidebarHeaderIconButton
-                          label={
-                            scopedProjectGroups.length > 0
-                              ? `Filter threads by project: ${scopedProjectGroups.map((project) => project.displayName).join(", ")}`
-                              : "Filter threads by project"
-                          }
-                        />
-                      )
-                    }
-                  >
-                    {scopedProjectGroups.length > 1 ? (
-                      <span className="flex shrink-0">
-                        {scopedProjectGroups.slice(0, 2).map((project, index) => (
-                          <span
-                            key={project.projectKey}
-                            className={
-                              index === 0
-                                ? "flex"
-                                : "-ml-1 flex rounded-[25%] bg-sidebar ring-2 ring-sidebar"
-                            }
-                          >
-                            <ProjectFavicon project={project} className="size-3.5" />
-                          </span>
-                        ))}
-                      </span>
-                    ) : scopedProjectGroups[0] ? (
-                      <span className="flex shrink-0">
-                        <ProjectFavicon project={scopedProjectGroups[0]} className="size-4" />
-                      </span>
-                    ) : (
-                      <ListFilterIcon className="size-4" />
-                    )}
-                    {singleProjectScope ? (
-                      <>
-                        <span className="min-w-0 flex-1 truncate text-left">
-                          {scopedProjectGroups[0]!.displayName}
+                        <span className="min-w-0 flex-1 truncate">
+                          {singleScopePage.group.displayName}
                         </span>
-                        <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
-                      </>
-                    ) : null}
-                  </ComboboxTrigger>
+                      </button>
+                      <ComboboxTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label={`Filter threads by project: ${singleScopePage.group.displayName}`}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
+                          />
+                        }
+                      >
+                        <ChevronDownIcon aria-hidden className="size-4" />
+                      </ComboboxTrigger>
+                    </div>
+                  ) : (
+                    <ComboboxTrigger
+                      render={
+                        singleProjectScope ? (
+                          <button
+                            type="button"
+                            aria-label={`Filter threads by project: ${scopedProjectGroups[0]!.displayName}`}
+                            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/70"
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (
+                                event.key !== "ContextMenu" &&
+                                !(event.shiftKey && event.key === "F10")
+                              )
+                                return;
+                              event.preventDefault();
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              handleProjectFolderContextMenu(scopedProjectGroups[0]!, {
+                                x: rect.left,
+                                y: rect.bottom,
+                              });
+                            }}
+                          />
+                        ) : (
+                          <SidebarHeaderIconButton
+                            label={
+                              scopedProjectGroups.length > 0
+                                ? `Filter threads by project: ${scopedProjectGroups.map((project) => project.displayName).join(", ")}`
+                                : "Filter threads by project"
+                            }
+                          />
+                        )
+                      }
+                    >
+                      {scopedProjectGroups.length > 1 ? (
+                        <span className="flex shrink-0">
+                          {scopedProjectGroups.slice(0, 2).map((project, index) => (
+                            <span
+                              key={project.projectKey}
+                              className={
+                                index === 0
+                                  ? "flex"
+                                  : "-ml-1 flex rounded-[25%] bg-sidebar ring-2 ring-sidebar"
+                              }
+                            >
+                              <ProjectFavicon project={project} className="size-3.5" />
+                            </span>
+                          ))}
+                        </span>
+                      ) : scopedProjectGroups[0] ? (
+                        <span className="flex shrink-0">
+                          <ProjectFavicon project={scopedProjectGroups[0]} className="size-4" />
+                        </span>
+                      ) : (
+                        <ListFilterIcon className="size-4" />
+                      )}
+                      {singleProjectScope ? (
+                        <>
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {scopedProjectGroups[0]!.displayName}
+                          </span>
+                          <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+                        </>
+                      ) : null}
+                    </ComboboxTrigger>
+                  )}
                   {/* Refocusing the trigger after a pointer close shows its focus ring and opens its tooltip. */}
                   <ComboboxPopup
+                    {...(singleScopePage ? { anchor: projectScopeRowRef } : {})}
                     align="start"
                     collisionAvoidance={{ side: "flip", align: "shift" }}
                     className="w-[min(18rem,var(--available-width))] overflow-hidden"
@@ -3936,13 +4024,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         const projectPage = projectPageByChatKey.get(threadKey);
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
-                        const rowVariant = folderRow
-                          ? folderRowsMultiline
-                            ? "folder-multiline"
-                            : "folder"
-                          : isCard
-                            ? "card"
-                            : "slim";
+                        // Filtered to one project, its folder's rows draw without the folder.
+                        const flush =
+                          folderRow === undefined &&
+                          projectFolders !== null &&
+                          singleProjectScope &&
+                          section === "active";
+                        const rowVariant =
+                          folderRow || flush
+                            ? folderRowsMultiline
+                              ? "folder-multiline"
+                              : "folder"
+                            : isCard
+                              ? "card"
+                              : "slim";
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3955,6 +4050,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
+                            flush={flush}
                             grouped={singleProjectScope}
                             navigationParent={
                               folderRow ??
@@ -4068,7 +4164,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           // Folders draw active rows in their own place below.
-                          if (projectFolders !== null && item.section === "active") continue;
+                          if (hasProjectFolders && item.section === "active") continue;
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
                           continue;
                         }
@@ -4155,9 +4251,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 label="Active"
                                 showHint={
                                   from !== null &&
-                                  (activeThreads.length === 0 ||
+                                  (listedActiveThreads.length === 0 ||
                                     (from === "active" &&
-                                      activeThreads.length === 1 &&
+                                      listedActiveThreads.length === 1 &&
                                       dragTargetSection !== null &&
                                       dragTargetSection !== "active"))
                                 }
@@ -4264,8 +4360,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               </DndContext>
             </TooltipProvider>
           ) : null}
+          {/* A filtered project's page invites its first thread, so the list stays empty. */}
           {!isSearchingThreads &&
           !hasProjectFolders &&
+          singleScopePage === undefined &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +
