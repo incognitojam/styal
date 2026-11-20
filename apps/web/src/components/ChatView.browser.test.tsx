@@ -15,6 +15,10 @@ import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelSt
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { getRouter } from "~/router";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { environmentShell } from "~/state/shell";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/reactivity";
 import {
   ENVIRONMENT_ID,
   PROJECT_ID,
@@ -190,4 +194,50 @@ it("a stashed prompt ending in a file chip restores with the chip", async () => 
   await vi.waitFor(() => expect(editor.element().textContent).toContain("Check"));
   expect(editor.element().textContent).not.toContain("[package.json](package.json)");
   await expect.element(chip).toBeVisible();
+});
+
+it("an idle thread's background roster does not become a foreground Stop after sync", async () => {
+  const thread = threadWithHistory("completed-sample", 1);
+  using _environment = installFakeEnvironment([thread]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect
+    .element(page.getByText(`Answer 0 for ${thread.id}.`, { exact: false }))
+    .toBeVisible();
+  const atom = environmentShell.stateAtom(ENVIRONMENT_ID);
+  const state = appAtomRegistry.get(environmentShell.stateValueAtom(ENVIRONMENT_ID));
+  const snapshot = Option.getOrThrow(state.snapshot);
+  await act(() =>
+    appAtomRegistry.ensureNode(atom).setInitialValue(
+      AsyncResult.success({
+        ...state,
+        snapshot: Option.some({
+          ...snapshot,
+          snapshotSequence: snapshot.snapshotSequence + 1,
+          threads: snapshot.threads.map((shell) => ({
+            ...shell,
+            pendingBackgroundTasks: [
+              { taskId: "pull-request-watch:example/sample:1", kind: "monitor" as const },
+            ],
+          })),
+        }),
+      }),
+    ),
+  );
+  await expect
+    .element(page.getByRole("button", { name: "Stop generation", exact: true }))
+    .not.toBeInTheDocument();
+  await expect
+    .element(page.getByRole("button", { name: "Submit message", exact: true }))
+    .toBeVisible();
 });

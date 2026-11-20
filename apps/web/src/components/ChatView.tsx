@@ -2092,7 +2092,7 @@ export default function ChatView(props: ChatViewProps) {
       ? deriveCanInterruptRunningThread(
           serverThreadShell !== null,
           serverThreadShell?.runtime ?? null,
-        ) || (serverThreadShell?.pendingBackgroundTasks?.length ?? 0) > 0
+        )
       : deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime) ||
         (threadActivityState === "unconfirmed" &&
           deriveCanInterruptRunningThread(

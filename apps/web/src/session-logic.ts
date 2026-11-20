@@ -1127,10 +1127,7 @@ export function deriveCanInterruptRunningThread(
   hasActiveThread: boolean,
   runtime: ThreadStructureRuntime | null,
 ): boolean {
-  return (
-    hasActiveThread &&
-    (derivePhase(runtime) === "running" || threadRuntimeHasInterruptibleRun(runtime))
-  );
+  return hasActiveThread && threadRuntimeHasInterruptibleRun(runtime);
 }
 
 export type { TurnDiffSummary };
