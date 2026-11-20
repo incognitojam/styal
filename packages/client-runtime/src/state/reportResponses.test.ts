@@ -4,12 +4,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it } from "vite-plus/test";
 
-import {
-  REPORT_ANSWER_FAILED,
-  REPORT_REPLY_FAILED,
-  reportResponseFailure,
-  reportResponsePending,
-} from "../reportResponses.ts";
+import { reportResponsePending } from "../reportResponses.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { threadKey } from "./entities.ts";
 import {
@@ -17,10 +12,26 @@ import {
   pendingReportResponsesAtom,
   threadReportResponsesAtom,
   withPendingReportResponses,
+  type ReportResponse,
   type ReportResponseThreadState,
 } from "./reportResponses.ts";
 
-it("waits for a full sync to judge an interrupted send, and fails only that answer", async () => {
+const store = (
+  registry: AtomRegistry.AtomRegistry,
+  state: Atom.Atom<ReportResponseThreadState>,
+  list = Atom.make<{ readonly snapshotSequence: number } | null>(null),
+) => {
+  const failed: Array<readonly [string, string | undefined]> = [];
+  const responses = createReportResponses(registry, {
+    stateAtom: () => state,
+    snapshotAtom: () => list,
+    onFailed: (response: ReportResponse, detail?: string) =>
+      failed.push([response.kind === "answer" ? response.messageId : "dismiss", detail]),
+  });
+  return { ...responses, failed };
+};
+
+it("waits for a full sync to judge an interrupted send, and fails only the unconfirmed ones", async () => {
   const registry = AtomRegistry.make();
   const projection = { messages: [], thread: {} } as unknown as Option.Option.Value<
     ReportResponseThreadState["data"]
@@ -30,7 +41,7 @@ it("waits for a full sync to judge an interrupted send, and fails only that answ
     status: "live",
     sequence: 5,
   });
-  const { respond } = createReportResponses(registry, { stateAtom: () => state });
+  const { respond, failed } = store(registry, state);
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
   const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
   const answer = {
@@ -78,11 +89,62 @@ it("waits for a full sync to judge an interrupted send, and fails only that answ
   registry.set(state, { data: Option.some(projection), status: "synchronizing", sequence: 6 });
   registry.set(state, { data: Option.some(projection), status: "live", sequence: 7 });
   expect(reportResponsePending(pending(), answer)).toBe(false);
-  expect(reportResponseFailure(pending(), ref)?.message).toBe(REPORT_ANSWER_FAILED);
+  expect(reportResponsePending(pending(), lost)).toBe(false);
+  expect(failed).toEqual([
+    ["answer", "The server did not receive it."],
+    ["lost-answer", "The server did not receive it."],
+  ]);
   expect(reportResponsePending(pending(), other)).toBe(true);
 });
 
-it("forgets a failed response once its report is no longer open", async () => {
+it("drops a refused reply at once and stops lowering the count", async () => {
+  const registry = AtomRegistry.make();
+  const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
+  const state = Atom.make<ReportResponseThreadState>({
+    data: Option.some({ messages: [], thread: {} } as unknown as Option.Option.Value<
+      ReportResponseThreadState["data"]
+    >),
+    status: "live",
+    sequence: 5,
+  });
+  const { respond, failed } = store(registry, state);
+  const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
+  const shells = [{ id: thread.threadId, openReportQuestionCount: 1 }] as never;
+  let lowered: unknown;
+  await respond(
+    thread,
+    {
+      ref,
+      kind: "answer",
+      reply: "Next week",
+      messageId: MessageId.make("answer"),
+      text: "[Shed, version 1] Next week",
+      createdAt: "2026-11-19T10:00:00.000Z",
+    },
+    async () => {
+      lowered = withPendingReportResponses(
+        thread.environmentId,
+        shells,
+        registry.get(pendingReportResponsesAtom),
+      );
+      return AsyncResult.failure(Cause.fail(new Error("Offline")));
+    },
+  );
+  expect(lowered).toEqual([
+    { id: thread.threadId, openReportQuestionCount: 0, latestOpenReportQuestionAt: null },
+  ]);
+  expect(failed).toEqual([["answer", "Offline"]]);
+  expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
+  expect(
+    withPendingReportResponses(
+      thread.environmentId,
+      shells,
+      registry.get(pendingReportResponsesAtom),
+    ),
+  ).toBe(shells);
+});
+
+it("keeps lowering the count until the thread list catches up with the thread", async () => {
   const registry = AtomRegistry.make();
   const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
   const projection = (messages: ReadonlyArray<object>) =>
@@ -92,44 +154,38 @@ it("forgets a failed response once its report is no longer open", async () => {
     status: "live",
     sequence: 5,
   });
-  const { respond } = createReportResponses(registry, { stateAtom: () => state });
+  const list = Atom.make<{ readonly snapshotSequence: number } | null>({ snapshotSequence: 5 });
+  const { respond } = store(registry, state, list);
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
-  const reply = {
-    ref,
-    kind: "answer" as const,
-    reply: "Next week",
-    messageId: MessageId.make("answer"),
-    text: "[Shed, version 1] Next week",
-    createdAt: "2026-11-19T10:00:00.000Z",
-  };
-  await respond(thread, reply, async () => AsyncResult.failure(Cause.fail(new Error("Offline"))));
-  expect(
-    reportResponseFailure(
-      registry.get(pendingReportResponsesAtom).get(threadKey(thread)) ?? [],
-      ref,
-    ),
-  ).toEqual({
-    message: REPORT_REPLY_FAILED,
-    detail: "Offline",
-  });
-  // Failed responses no longer lower a thread's count.
   const shells = [{ id: thread.threadId, openReportQuestionCount: 1 }] as never;
-  expect(
+  const count = () =>
     withPendingReportResponses(
       thread.environmentId,
       shells,
       registry.get(pendingReportResponsesAtom),
-    ),
-  ).toBe(shells);
-
-  // Answered from another client: the failure has nothing left to say.
+      registry.get(list)?.snapshotSequence,
+    )[0]?.openReportQuestionCount;
+  await respond(
+    thread,
+    {
+      ref,
+      kind: "answer",
+      messageId: MessageId.make("answer"),
+      text: "[Shed, version 1] Start it",
+      createdAt: "2026-11-19T10:00:00.000Z",
+    },
+    async () => AsyncResult.success({ sequence: 6 }),
+  );
+  // The thread shows the answer before the thread list, which still counts the question.
   registry.set(state, {
     data: Option.some(
-      projection([{ id: MessageId.make("elsewhere"), role: "user", reportAnswer: ref }]),
+      projection([{ id: MessageId.make("answer"), role: "user", reportAnswer: ref }]),
     ),
     status: "live",
     sequence: 6,
   });
+  expect(count()).toBe(0);
+  registry.set(list, { snapshotSequence: 6 });
   expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
 });
 
@@ -172,7 +228,7 @@ it("refuses a response to a report the thread already shows answered", async () 
     status: "live",
     sequence: 5,
   });
-  const { respond } = createReportResponses(registry, { stateAtom: () => state });
+  const { respond } = store(registry, state);
   let sent = 0;
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
   // A screen that has fallen behind can still offer the buttons; the store knows better.
@@ -194,26 +250,18 @@ it("refuses a response to a report the thread already shows answered", async () 
   expect(sent).toBe(0);
 });
 
-it("forgets a response that fails before it is sent once a newer version has replaced its report", () => {
+it("drops a response that fails before it is sent", () => {
   const registry = AtomRegistry.make();
   const ref = { messageId: MessageId.make("report"), key: "shed", version: 1 };
-  const projection = {
-    messages: [
-      {
-        id: MessageId.make("report-2"),
-        role: "assistant",
-        text: "Report",
-        report: { key: "shed", title: "Shed", version: 2, question: "Start?" },
-      },
-    ],
-    thread: {},
-  } as unknown as Option.Option.Value<ReportResponseThreadState["data"]>;
+  const projection = { messages: [], thread: {} } as unknown as Option.Option.Value<
+    ReportResponseThreadState["data"]
+  >;
   const state = Atom.make<ReportResponseThreadState>({
     data: Option.some(projection),
     status: "live",
     sequence: 5,
   });
-  const { begin } = createReportResponses(registry, { stateAtom: () => state });
+  const { begin, failed } = store(registry, state);
   const thread = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
   const handle = begin(thread, {
     ref,
@@ -224,4 +272,5 @@ it("forgets a response that fails before it is sent once a newer version has rep
   });
   handle?.fail("Attachments could not upload");
   expect(registry.get(pendingReportResponsesAtom).size).toBe(0);
+  expect(failed).toEqual([["answer", "Attachments could not upload"]]);
 });

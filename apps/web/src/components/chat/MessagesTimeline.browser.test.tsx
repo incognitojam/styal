@@ -527,6 +527,8 @@ describe("MessagesTimeline messages", () => {
     const threadState = Atom.make({ data: Option.none(), status: "live" as const, sequence: 0 });
     const { respond } = createReportResponses(AtomRegistry.make(), {
       stateAtom: () => threadState,
+      snapshotAtom: () => Atom.make(null),
+      onFailed: () => {},
     });
     let confirm = () => {};
     const send = vi.fn(
@@ -548,7 +550,6 @@ describe("MessagesTimeline messages", () => {
         value={{
           reports: [report],
           answers: new Map(),
-          responses: [],
           answer: (text, ref) =>
             void respond(
               thread,
@@ -609,7 +610,6 @@ describe("MessagesTimeline messages", () => {
             target,
             clear: () => setTarget(null),
             scroll: (messageId) => setTarget({ messageId }),
-            responses: [],
             answer: () => {},
             reply: () => {},
             dismiss: () => {},
@@ -1620,7 +1620,6 @@ describe("MessagesTimeline attachments", () => {
           target: null,
           clear: () => {},
           scroll: () => {},
-          responses: [],
           answer: () => {},
           reply: () => {},
           dismiss: () => {},

@@ -141,8 +141,6 @@ describe("openReports", () => {
       { ref: openRef, kind: "dismiss" as const },
     ]) {
       expect(openReports(projection, [pending])).toEqual([]);
-      // A failed one leaves it waiting.
-      expect(openReports(projection, [{ ...pending, failed: "Offline" }])).toHaveLength(1);
     }
   });
 });

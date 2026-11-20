@@ -10,12 +10,8 @@ import { Atom, type AtomRegistry } from "effect/reactivity";
 import {
   acknowledgeReportResponse,
   claimReportResponse,
-  failReportResponse,
   pendingReportResponseCount,
-  reportResponseFailedMessage,
-  reportResponsePending,
   sameReportResponse,
-  settleReportResponses,
   type PendingReportResponse,
 } from "../reportResponses.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
@@ -37,7 +33,7 @@ export type ReportResponse = PendingReportResponse<typeof CoordinatorReportRefer
 
 const NO_RESPONSES: readonly ReportResponse[] = [];
 
-/** Report responses sent from this client that the server does not show yet, by thread key. */
+/** Report responses sent from this client that the thread list does not reflect yet, by thread key. */
 export const pendingReportResponsesAtom = Atom.make<ReadonlyMap<string, readonly ReportResponse[]>>(
   new Map(),
 ).pipe(Atom.keepAlive, Atom.withLabel("report-responses:pending"));
@@ -58,8 +54,7 @@ export function withPendingReportResponses(
   pending: ReadonlyMap<string, readonly ReportResponse[]>,
   snapshotSequence?: number,
 ): ReadonlyArray<OrchestrationV2ThreadShell> {
-  // Failed responses stay for their message but no longer count.
-  if (![...pending.values()].some((list) => pendingReportResponseCount(list) > 0)) return threads;
+  if (pending.size === 0) return threads;
   let changed = false;
   const next = threads.map((thread) => {
     const open = thread.openReportQuestionCount ?? 0;
@@ -81,7 +76,7 @@ export function withPendingReportResponses(
 
 export interface ReportResponseHandle {
   /**
-   * Settles the response with its send's result. A refusal fails it; a success waits for the
+   * Settles the response with its send's result. A refusal reverts it; a success waits for the
    * thread to reach its commit. An interrupted send, or a success without a commit number, may or
    * may not have reached the server, so it waits for the thread's next full sync instead.
    */
@@ -106,29 +101,28 @@ const outcomeUnknown = (result: AtomCommandResult<unknown, unknown>) => {
 const sameRef = (a: Reference, b: Reference) =>
   a.messageId === b.messageId && a.key === b.key && a.version === b.version;
 
-/** The thread shows the report answered, dismissed or replaced by a newer version. */
-function reportClosed(
-  projection: NonNullable<Option.Option.Value<ReportResponseThreadState["data"]>>,
-  ref: Reference,
-) {
-  return (
-    projection.messages.some(
-      (message) =>
-        (message.reportAnswer !== undefined && sameRef(message.reportAnswer, ref)) ||
-        (message.report?.key === ref.key && message.report.version > ref.version),
-    ) || (projection.thread.reportDismissals ?? []).some((dismissal) => sameRef(dismissal, ref))
-  );
-}
+type ThreadProjection = NonNullable<Option.Option.Value<ReportResponseThreadState["data"]>>;
+
+/** The thread shows the answer message (tied to the report or not) or the dismissal. */
+const shows = (projection: ThreadProjection, response: ReportResponse) =>
+  response.kind === "answer"
+    ? projection.messages.some((message) => message.id === response.messageId)
+    : (projection.thread.reportDismissals ?? []).some((ref) => sameRef(ref, response.ref));
 
 /**
- * Keeps this client's report responses in `pendingReportResponsesAtom`. A pending one clears when
- * the thread shows it or its thread is deleted, and fails when its send is refused or the thread
- * has caught up without it. A failed one is forgotten once its report is no longer open.
+ * Keeps this client's report responses in `pendingReportResponsesAtom`. A response is dropped
+ * once the thread list reflects it or its thread is deleted, and dropped with `onFailed` when its
+ * send is refused or the thread has caught up without it.
  */
 export function createReportResponses(
   registry: AtomRegistry.AtomRegistry,
   threads: {
     readonly stateAtom: (ref: ScopedThreadRef) => Atom.Atom<ReportResponseThreadState>;
+    /** The thread list whose counts the pending responses lower. */
+    readonly snapshotAtom: (
+      environmentId: EnvironmentId,
+    ) => Atom.Atom<{ readonly snapshotSequence: number } | null>;
+    readonly onFailed: (response: ReportResponse, detail?: string) => void;
   },
 ) {
   const update = (
@@ -170,60 +164,65 @@ export function createReportResponses(
       return next ?? current;
     });
     if (!claimed) return null;
+    const remove = () =>
+      update(key, (current) => current.filter((entry) => !sameReportResponse(entry, response)));
     let stop: (() => void) | undefined;
     let finished = false;
-    let settled = false;
+    let acknowledgedAt: number | undefined;
     let unconfirmed = false;
     let resyncing = false;
     // The first check runs inside `subscribe`, before `stop` is assigned.
     const finish = () => {
-      if (finished) return;
       finished = true;
       queueMicrotask(() => stop?.());
     };
+    const fail = (detail?: string) => {
+      finish();
+      remove();
+      threads.onFailed(response, detail);
+    };
+    // The thread list arrives on its own stream, so it may not count the response yet.
+    const dropOnceListed = (sequence: number) => {
+      update(key, (current) => acknowledgeReportResponse(current, response, sequence));
+      const list = threads.snapshotAtom(thread.environmentId);
+      const listed = (snapshot: { readonly snapshotSequence: number } | null) =>
+        snapshot === null || snapshot.snapshotSequence >= sequence;
+      if (listed(registry.get(list))) return remove();
+      const stopList = registry.subscribe(list, (snapshot) => {
+        if (!listed(snapshot)) return;
+        remove();
+        queueMicrotask(stopList);
+      });
+    };
     const check = (state: ReportResponseThreadState) => {
+      if (finished) return;
+      if (state.status === "deleted") {
+        finish();
+        return remove();
+      }
       if (unconfirmed && state.status !== "live") resyncing = true;
-      const fullySynced = unconfirmed && resyncing && state.status === "live";
       const projection = Option.getOrNull(state.data);
-      if (state.status === "deleted") update(key, () => NO_RESPONSES);
-      else if (projection !== null)
-        update(key, (current) => {
-          const next = settleReportResponses(current, {
-            messageIds: projection.messages.map((message) => message.id),
-            dismissals: projection.thread.reportDismissals ?? [],
-            sequence: state.sequence,
-          });
-          const judged =
-            fullySynced && reportResponsePending(next, response)
-              ? failReportResponse(
-                  next,
-                  response.ref,
-                  reportResponseFailedMessage(response),
-                  "The server does not have it.",
-                )
-              : next;
-          return reportClosed(projection, response.ref)
-            ? judged.filter(
-                (entry) => entry.failed === undefined || !sameReportResponse(entry, response),
-              )
-            : judged;
-        });
-      const current = registry.get(pendingReportResponsesAtom).get(key) ?? NO_RESPONSES;
-      if (!current.some((entry) => sameReportResponse(entry, response))) finish();
+      if (projection === null) return;
+      if (shows(projection, response)) {
+        finish();
+        return dropOnceListed(Math.min(acknowledgedAt ?? state.sequence, state.sequence));
+      }
+      // A full sync is the server's whole view; one without the response means it did not arrive.
+      if (
+        (acknowledgedAt !== undefined && state.sequence >= acknowledgedAt) ||
+        (unconfirmed && resyncing && state.status === "live")
+      )
+        fail("The server did not receive it.");
     };
     stop = registry.subscribe(threads.stateAtom(thread), check, { immediate: true });
-    const fail = (detail?: string) =>
-      update(key, (current) =>
-        reportResponsePending(current, response)
-          ? failReportResponse(current, response.ref, reportResponseFailedMessage(response), detail)
-          : current,
-      );
+    let settled = false;
     return {
       settle: (result) => {
         settled = true;
+        if (finished) return;
         if (result._tag === "Success" && result.value.sequence !== undefined) {
-          const sequence = result.value.sequence;
-          update(key, (current) => acknowledgeReportResponse(current, response, sequence));
+          acknowledgedAt = result.value.sequence;
+          update(key, (current) => acknowledgeReportResponse(current, response, acknowledgedAt!));
         } else if (result._tag === "Success" || outcomeUnknown(result)) {
           unconfirmed = true;
           update(key, (current) =>
@@ -231,14 +230,12 @@ export function createReportResponses(
           );
         } else {
           const cause = squashAtomCommandFailure(result);
-          fail(cause instanceof Error ? cause.message : "The server did not accept it.");
+          return fail(cause instanceof Error ? cause.message : undefined);
         }
-        if (!finished) check(registry.get(threads.stateAtom(thread)));
+        check(registry.get(threads.stateAtom(thread)));
       },
       fail: (detail) => {
-        if (settled) return;
-        fail(detail);
-        if (!finished) check(registry.get(threads.stateAtom(thread)));
+        if (!settled && !finished) fail(detail);
       },
     };
   };

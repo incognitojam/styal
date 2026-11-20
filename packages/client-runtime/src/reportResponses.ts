@@ -2,14 +2,10 @@ import type { CoordinatorReport } from "@t3tools/contracts";
 
 type Reference = { readonly messageId: string; readonly key: string; readonly version: number };
 
-export const REPORT_ANSWER_FAILED = "Your answer was not sent.";
-export const REPORT_REPLY_FAILED = "Your reply was not sent.";
-const REPORT_DISMISS_FAILED = "The report was not dismissed.";
-
 /**
- * A response this client sent that the server does not show yet; one per report, so further
- * responses to it are refused. `failed` ones no longer count; `acknowledgedAt` is the commit
- * sequence the server answered the send with.
+ * A response this client sent that the thread list does not reflect yet; one per report, so
+ * further responses to it are refused. `acknowledgedAt` is the commit sequence that holds it,
+ * or infinity while its outcome is unknown.
  */
 export type PendingReportResponse<R extends Reference = Reference> = (
   | {
@@ -22,11 +18,7 @@ export type PendingReportResponse<R extends Reference = Reference> = (
       readonly reply?: string;
     }
   | { readonly ref: R; readonly kind: "dismiss" }
-) & {
-  readonly failed?: string;
-  readonly failedDetail?: string;
-  readonly acknowledgedAt?: number;
-};
+) & { readonly acknowledgedAt?: number };
 
 const sameReport = (a: Reference, b: Reference) =>
   a.messageId === b.messageId && a.key === b.key && a.version === b.version;
@@ -38,15 +30,6 @@ export function sameReportResponse(a: PendingReportResponse, b: PendingReportRes
     a.kind === b.kind &&
     (a.kind === "dismiss" || (b.kind === "answer" && a.messageId === b.messageId))
   );
-}
-
-/** What a failed `response` says. */
-export function reportResponseFailedMessage(response: PendingReportResponse): string {
-  return response.kind === "dismiss"
-    ? REPORT_DISMISS_FAILED
-    : response.reply
-      ? REPORT_REPLY_FAILED
-      : REPORT_ANSWER_FAILED;
 }
 
 /** Whether the server shows `response`: its answer message still tied to the report, or the dismissal. */
@@ -70,17 +53,22 @@ export function reportResponseDelivered(
   );
 }
 
-/** Whether `response` is still pending in `pending`: neither settled nor failed. */
+/** Whether `response` is still in `pending`. */
 export function reportResponsePending(
   pending: readonly PendingReportResponse[],
   response: PendingReportResponse,
 ): boolean {
-  return pending.some((entry) => entry.failed === undefined && sameReportResponse(entry, response));
+  return pending.some((entry) => sameReportResponse(entry, response));
+}
+
+/** Whether `response`'s send was cut off or unconfirmed, so the server may or may not have it. */
+export function reportResponseOutcomeUnknown(response: PendingReportResponse): boolean {
+  return response.acknowledgedAt === Number.POSITIVE_INFINITY;
 }
 
 /**
- * How many responses in `pending` are still on their way and missing from a view that reflects
- * commits up to `reflectedThrough`, when that is known.
+ * How many responses in `pending` are missing from a view that reflects commits up to
+ * `reflectedThrough`, when that is known.
  */
 export function pendingReportResponseCount(
   pending: readonly PendingReportResponse[],
@@ -88,7 +76,6 @@ export function pendingReportResponseCount(
 ): number {
   return pending.filter(
     (entry) =>
-      entry.failed === undefined &&
       !(
         reflectedThrough !== undefined &&
         entry.acknowledgedAt !== undefined &&
@@ -102,89 +89,18 @@ export function claimReportResponse<R extends Reference>(
   pending: readonly PendingReportResponse<R>[],
   response: PendingReportResponse<R>,
 ): readonly PendingReportResponse<R>[] | null {
-  if (pending.some((entry) => entry.failed === undefined && sameReport(entry.ref, response.ref)))
-    return null;
-  return [...pending.filter((entry) => !sameReport(entry.ref, response.ref)), response];
+  if (pending.some((entry) => sameReport(entry.ref, response.ref))) return null;
+  return [...pending, response];
 }
 
-/** Records the commit sequence the server acknowledged `response` with. */
+/** Records the commit sequence that holds `response`. */
 export function acknowledgeReportResponse<R extends Reference>(
   pending: readonly PendingReportResponse<R>[],
   response: PendingReportResponse<R>,
   sequence: number,
 ): readonly PendingReportResponse<R>[] {
   return pending.map((entry) =>
-    entry.failed === undefined && sameReportResponse(entry, response)
-      ? { ...entry, acknowledgedAt: sequence }
-      : entry,
-  );
-}
-
-/** Marks the report's pending response as failed, which leaves the report open again. */
-export function failReportResponse<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-  ref: Reference,
-  error: string,
-  detail?: string,
-): readonly PendingReportResponse<R>[] {
-  return pending.map((entry) =>
-    sameReport(entry.ref, ref)
-      ? { ...entry, failed: error, ...(detail === undefined ? {} : { failedDetail: detail }) }
-      : entry,
-  );
-}
-
-/** Why the report's last response failed, while nothing newer is pending for it. */
-export function reportResponseFailure(
-  pending: readonly PendingReportResponse[],
-  ref: Reference,
-): { readonly message: string; readonly detail?: string } | undefined {
-  const entry = pending.find((candidate) => sameReport(candidate.ref, ref));
-  return entry?.failed === undefined
-    ? undefined
-    : {
-        message: entry.failed,
-        ...(entry.failedDetail === undefined ? {} : { detail: entry.failedDetail }),
-      };
-}
-
-/**
- * Settles `pending` against the server's view of the thread: drops responses it shows (a queued
- * answer the user cancels stays as a message without its report reference, so it is dropped too),
- * and fails acknowledged ones it does not show once its view has reached their commit, since
- * they will not arrive. Returns `pending` when nothing changes.
- */
-export function settleReportResponses<R extends Reference>(
-  pending: readonly PendingReportResponse<R>[],
-  server: {
-    readonly messageIds: readonly string[];
-    readonly dismissals: readonly Reference[];
-    /** The commit sequence `messageIds` and `dismissals` reflect, when known. */
-    readonly sequence?: number;
-  },
-): readonly PendingReportResponse<R>[] {
-  const shown = (entry: PendingReportResponse<R>) =>
-    entry.kind === "answer"
-      ? server.messageIds.includes(entry.messageId)
-      : server.dismissals.some((ref) => sameReport(ref, entry.ref));
-  const lost = (entry: PendingReportResponse<R>) =>
-    entry.failed === undefined &&
-    entry.acknowledgedAt !== undefined &&
-    server.sequence !== undefined &&
-    server.sequence >= entry.acknowledgedAt;
-  if (!pending.some((entry) => shown(entry) || lost(entry))) return pending;
-  return pending.flatMap((entry) =>
-    shown(entry)
-      ? []
-      : lost(entry)
-        ? [
-            {
-              ...entry,
-              failed: reportResponseFailedMessage(entry),
-              failedDetail: "The server does not have it.",
-            },
-          ]
-        : [entry],
+    sameReportResponse(entry, response) ? { ...entry, acknowledgedAt: sequence } : entry,
   );
 }
 
@@ -193,7 +109,7 @@ export function pendingReportAnswers<R extends Reference>(
   pending: readonly PendingReportResponse<R>[],
 ) {
   return pending.flatMap((entry) =>
-    entry.kind === "answer" && entry.failed === undefined
+    entry.kind === "answer"
       ? [
           {
             id: entry.messageId,
@@ -212,7 +128,5 @@ export function pendingReportAnswers<R extends Reference>(
 export function pendingReportDismissals<R extends Reference>(
   pending: readonly PendingReportResponse<R>[],
 ): R[] {
-  return pending.flatMap((entry) =>
-    entry.kind === "dismiss" && entry.failed === undefined ? [entry.ref] : [],
-  );
+  return pending.flatMap((entry) => (entry.kind === "dismiss" ? [entry.ref] : []));
 }

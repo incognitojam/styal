@@ -1,8 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  formatReportAnswer,
-  reportResponseFailure,
-} from "@t3tools/client-runtime/coordinator-reports";
+import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -47,7 +44,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
-import { ReportAnswerOptions, ReportFailure } from "../chat/CoordinatorReports";
+import { ReportAnswerOptions } from "../chat/CoordinatorReports";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import {
@@ -73,7 +70,7 @@ const threadNeedsAtom = Atom.family((key: string) => {
       value = {
         requests,
         reports: openReports(projection, responses),
-        responding: responses.some((response) => response.failed === undefined),
+        responding: responses.length > 0,
       };
     }
     return value;
@@ -409,11 +406,9 @@ function ReportAnswer({
   const canOperate = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
-  const responses = useAtomValue(threadReportResponsesAtom(threadKey(thread)));
   const [reply, setReply] = useState("");
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
-  const failure = reportResponseFailure(responses, ref);
   const disabled = !canOperate;
   // The answer is the asking thread's next message, so it reaches that thread's agent.
   const send = (text: string) => {
@@ -462,7 +457,6 @@ function ReportAnswer({
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
-      {failure ? <ReportFailure failure={failure} /> : null}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"

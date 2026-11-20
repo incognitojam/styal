@@ -8,13 +8,11 @@ import {
   formatReportAnswer,
   reportAnswerDisplay,
   reportResponseDelivered,
-  reportResponseFailure,
   reportResponsePending,
   waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
-import { threadReportResponsesAtom, type ReportResponse } from "../../state/coordinatorReports";
+import { threadReportResponsesAtom } from "../../state/coordinatorReports";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -49,8 +47,6 @@ export type ReportAnswer = { messageId: MessageId; title: string; version: numbe
 export const CoordinatorReportsContext = createContext<{
   reports: readonly ReportState[];
   answers: ReadonlyMap<MessageId, ReportAnswer>;
-  /** Responses this client sent that the server does not show yet, and ones that failed. */
-  responses: readonly ReportResponse[];
   answer: (text: string, ref: ReportReference) => void;
   reply: (ref: ReportReference, title: string) => void;
   dismiss: (ref: ReportReference) => void;
@@ -59,28 +55,6 @@ export const CoordinatorReportsContext = createContext<{
   target: { messageId: MessageId } | null;
   clear: () => void;
 } | null>(null);
-/** What was not sent, and why when the server said; the full line on hover if it is cut off. */
-export function ReportFailure({
-  failure,
-}: {
-  failure: { readonly message: string; readonly detail?: string };
-}) {
-  const line =
-    failure.detail === undefined ? failure.message : `${failure.message} ${failure.detail}`;
-  const text = (
-    <p role="alert" className="min-w-0 truncate text-xs text-destructive">
-      {line}
-    </p>
-  );
-  if (failure.detail === undefined) return text;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={text} />
-      <TooltipPopup side="top">{line}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
 export function ReportAnswerBar({
   report,
   renderAnswer,
@@ -128,7 +102,6 @@ export function ReportAnswerBar({
   const tag = report.message.report!;
   const ref = { messageId: report.message.id, key: tag.key, version: tag.version };
   const disabled = !ctx.canOperate;
-  const failure = reportResponseFailure(ctx.responses, ref);
   return (
     <div className={panelClassName}>
       <span className="font-medium">{tag.question}</span>
@@ -137,7 +110,6 @@ export function ReportAnswerBar({
         disabled={disabled}
         onPick={(answer) => ctx.answer(formatReportAnswer(tag, answer), ref)}
       />
-      {failure ? <ReportFailure failure={failure} /> : null}
       <div className="flex items-center justify-between">
         <Button
           size="xs"

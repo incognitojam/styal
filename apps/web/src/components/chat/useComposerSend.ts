@@ -1578,7 +1578,11 @@ export function useComposerSend(input: ComposerSendInput) {
           );
         }
       }
-      if (!isAtomCommandInterrupted(failure)) {
+      // A report reply that is not sent says so in a toast.
+      if (
+        !isAtomCommandInterrupted(failure) &&
+        !(reportReply && !isUncertainComposerSendFailure(failureCause))
+      ) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,

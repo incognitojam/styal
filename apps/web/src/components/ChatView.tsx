@@ -7,6 +7,7 @@ import {
   pendingReportAnswers,
   pendingReportDismissals,
   reportAnswers,
+  reportResponseOutcomeUnknown,
 } from "@t3tools/client-runtime/coordinator-reports";
 import {
   dismissCoordinatorReport,
@@ -50,6 +51,7 @@ import {
   createOptimisticBlobPreviews,
   emptyOptimisticUserMessages,
   reconcileOptimisticUserMessages,
+  withTappedReportAnswers,
 } from "./chat/optimisticUserMessages";
 import { useTimelineRewind } from "./chat/useTimelineRewind";
 import { useThreadLifecycle } from "./chat/useThreadLifecycle";
@@ -434,6 +436,7 @@ import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplat
 const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
+const EMPTY_SERVER_MESSAGES: ReadonlyArray<{ readonly id: MessageId }> = [];
 const EMPTY_RUNS: ThreadStructure["runs"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
 const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
@@ -1109,6 +1112,7 @@ export default function ChatView(props: ChatViewProps) {
   const reportAnswerMessages = reportAnswers([
     ...(serverProjection?.messages ?? []),
     ...optimisticUserMessages,
+    ...sendingReportAnswers,
   ]);
   const reportStates = settings.coordinatorReportsEnabled
     ? coordinatorReports(
@@ -1134,8 +1138,7 @@ export default function ChatView(props: ChatViewProps) {
     ) ||
       reportResponses.some(
         (response) =>
-          response.failed === undefined &&
-          response.acknowledgedAt === Number.POSITIVE_INFINITY &&
+          reportResponseOutcomeUnknown(response) &&
           response.ref.messageId === reportReply.ref.messageId,
       ))
       ? reportReply
@@ -1753,8 +1756,14 @@ export default function ChatView(props: ChatViewProps) {
           { ...codexFeedbackMessage(submission, "assistant"), runId: null },
         ],
   );
+  const optimisticMessages = withTappedReportAnswers(
+    optimisticUserMessages,
+    reportResponses,
+    serverProjection?.messages ?? EMPTY_SERVER_MESSAGES,
+    phase === "running",
+  );
   const timelineEntriesInput = {
-    optimisticMessages: optimisticUserMessages,
+    optimisticMessages,
     anchoredMessages: anchoredTimelineMessages,
     attachmentUrlById: timelineAttachmentUrlById,
     ...(serverProjection === null
@@ -3380,7 +3389,7 @@ export default function ChatView(props: ChatViewProps) {
           })}
           environmentId={activeThread.environmentId}
           threadId={activeThread.id}
-          optimisticMessages={optimisticUserMessages}
+          optimisticMessages={optimisticMessages}
           editingRunId={queuedRunEdit.editingRunId}
           editBlockedReason={queuedRunEditBlockedReason({
             openQuestionCount: pendingUserInputs.length,
@@ -3451,7 +3460,7 @@ export default function ChatView(props: ChatViewProps) {
   // something, by its own rule: an optimistic message stops counting once the server has it.
   const hasQueuedTurns =
     queuedRunCount > 0 ||
-    optimisticUserMessages.some(
+    optimisticMessages.some(
       (message) =>
         message.inputIntent === "queued_turn" &&
         !serverProjection?.messages.some((committed) => committed.id === message.id),
@@ -3761,7 +3770,6 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           answers: reportAnswerMessages,
-                          responses: reportResponses,
                           answer: (text, ref) => {
                             if (activeThreadRef === null || activeThreadId === null) return;
                             const messageId = newMessageId();
