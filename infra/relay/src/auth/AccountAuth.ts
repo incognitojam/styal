@@ -11,7 +11,6 @@ import * as Schema from "effect/Schema";
 import * as RelayConfiguration from "../Config.ts";
 import * as Accounts from "./Accounts.ts";
 import * as AuthSessions from "./AuthSessions.ts";
-import * as ClerkDirectory from "./ClerkDirectory.ts";
 import * as EmailSender from "./EmailSender.ts";
 import * as EmailSignInCodes from "./EmailSignInCodes.ts";
 import * as RelayTokens from "./RelayTokens.ts";
@@ -55,20 +54,6 @@ export class AuthSessionInvalid extends Schema.TaggedError<AuthSessionInvalid>()
 ) {
   override get message(): string {
     return "Relay session is unknown, expired, or bound to another key";
-  }
-}
-
-/**
- * The identity provider could not be asked for the account's email. The
- * exchange fails rather than opening a session without one, so the client
- * keeps its old sign-in and tries again.
- */
-export class VerifiedEmailLookupFailed extends Schema.TaggedError<VerifiedEmailLookupFailed>()(
-  "VerifiedEmailLookupFailed",
-  {},
-) {
-  override get message(): string {
-    return "Could not look up the account's email";
   }
 }
 
@@ -142,24 +127,8 @@ export class AccountAuth extends Context.Service<
       | SignInCodeRejected
       | SignInRateLimited
       | SignInUnavailable
-      | VerifiedEmailLookupFailed
       | AccessTokenIssueFailed
       | PersistenceError
-    >;
-    /**
-     * Opens a session for an account already proven by another identity
-     * provider (a Clerk token during the migration away from Clerk).
-     */
-    readonly openVerifiedSession: (input: {
-      readonly userId: string;
-      /** Always refreshes the mapping from the identity provider before opening a session. */
-      readonly lookupEmail: Effect.Effect<Option.Option<string>, VerifiedEmailLookupFailed>;
-      readonly clientId: RelayPublicClientId;
-      readonly thumbprint: string;
-      readonly label?: string;
-    }) => Effect.Effect<
-      SessionGrant,
-      VerifiedEmailLookupFailed | AccessTokenIssueFailed | PersistenceError
     >;
     readonly refresh: (input: {
       readonly refreshToken: string;
@@ -179,7 +148,6 @@ const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
   const random = yield* SecureRandom.SecureRandom;
   const accounts = yield* Accounts.Accounts;
-  const directory = yield* ClerkDirectory.ClerkDirectory;
   const sessions = yield* AuthSessions.AuthSessions;
   const codes = yield* EmailSignInCodes.EmailSignInCodes;
   const sender = yield* EmailSender.EmailSender;
@@ -284,68 +252,10 @@ const make = Effect.gen(function* () {
       if (result !== "redeemed") {
         return yield* new SignInCodeRejected({ reason: result });
       }
-      // Redeem first so an unproven mailbox cannot change account mappings; a directory outage
-      // consumes the code and the caller must request another. Without Clerk, the stored mapping
-      // is the only record of an imported account's email, so it is kept.
-      let account = yield* accounts.getByEmail(email);
-      if (
-        directory.configured &&
-        Option.isSome(account) &&
-        account.value.userId.startsWith("user_")
-      ) {
-        const verified = yield* directory
-          .verifiedEmails(account.value.userId)
-          .pipe(Effect.mapError(() => new VerifiedEmailLookupFailed({})));
-        if (Option.isSome(verified) && verified.value.banned) {
-          return yield* new SignInUnavailable({ reason: "account_disabled" });
-        }
-        if (Option.isNone(verified) || !verified.value.all.includes(email)) {
-          // A nullable mapping preserves the account and its history even if
-          // Clerk has no verified primary or another account owns that primary.
-          yield* accounts.syncEmail(
-            account.value.userId,
-            Option.isSome(verified) ? verified.value.primary : null,
-          );
-          account = yield* accounts.getByEmail(email);
-        }
-      }
-      if (Option.isNone(account)) {
-        const clerkUser = directory.configured
-          ? yield* directory
-              .userIdForEmail(email)
-              .pipe(Effect.mapError(() => new VerifiedEmailLookupFailed({})))
-          : Option.none<ClerkDirectory.ClerkUserRef>();
-        if (Option.isSome(clerkUser) && clerkUser.value.banned) {
-          return yield* new SignInUnavailable({ reason: "account_disabled" });
-        }
-        account = Option.some(
-          Option.isSome(clerkUser)
-            ? yield* accounts.syncEmail(clerkUser.value.userId, email)
-            : yield* accounts.findOrCreateByEmail(email),
-        );
-      }
-      const resolved = Option.getOrThrow(account);
+      const resolved = yield* accounts.findOrCreateByEmail(email);
       return yield* openSession({
         userId: resolved.userId,
         email: resolved.email,
-        clientId: input.clientId,
-        thumbprint: input.thumbprint,
-        ...(input.label ? { label: input.label } : {}),
-      });
-    }),
-
-    openVerifiedSession: Effect.fn("relay.account_auth.open_verified_session")(function* (input) {
-      const email = yield* input.lookupEmail;
-      const account = yield* accounts.syncEmail(input.userId, Option.getOrNull(email));
-      if (Option.isSome(email) && account.email === null) {
-        yield* Effect.annotateCurrentSpan({ "relay.auth.imported_email_conflict": true });
-        yield* Effect.logWarning("Verified account's email belongs to another account", {
-          userId: input.userId,
-        });
-      }
-      return yield* openSession({
-        userId: input.userId,
-        email: account.email,
         clientId: input.clientId,
         thumbprint: input.thumbprint,
         ...(input.label ? { label: input.label } : {}),

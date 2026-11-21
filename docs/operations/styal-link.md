@@ -3,7 +3,7 @@
 > For maintainers. Using styal? See [docs/user](../user/).
 
 styal Link is the fork's deployment of T3 Connect. The relay owns email sign-in and sessions.
-[Sign-in setup](./connect-setup.md) owns email rollout and legacy relay compatibility;
+[Sign-in setup and Clerk retirement](./connect-setup.md) owns the rollout and deletion checklist;
 this page records the deployment's public configuration.
 
 ## Fixed values
@@ -23,16 +23,10 @@ consistent; release jobs without an environment cannot read environment variable
 The relay workflow deploys `prod` on main changes affecting it, then `dev`; client release channels
 share the production relay. A preview configured for production uses real production email sign-in.
 
-GUI clients do not read Clerk configuration or exchange old credentials. The server/CLI bundle
-retains the public `CLERK_PUBLISHABLE_KEY` and `CLERK_CLI_OAUTH_CLIENT_ID` repository variables
-for SDK-free startup adoption. Keep the deployed
-relay's Clerk configuration and both Clerk instances until every older device and server has
-converted; see [legacy compatibility](./connect-setup.md#legacy-client-compatibility).
-
 ## Deployment credentials
 
-The sensitive secrets — `CLOUDFLARE_API_TOKEN`, `NEON_API_KEY`, `CLERK_SECRET_KEY`, and `CLERK_DEV_SECRET_KEY` — live **only** in the `production` GitHub environment, which is
-restricted to deployments from `main`. The Clerk keys belong only to the compatible relay, not client builds. No PR or fork workflow can read them; repository-level
+The sensitive secrets — `CLOUDFLARE_API_TOKEN` and `NEON_API_KEY` — live **only** in the `production` GitHub environment, which is
+restricted to deployments from `main`. No PR or fork workflow can read them; repository-level
 secrets hold only Apple-signing and release plumbing. Two of them have non-obvious shape
 requirements:
 

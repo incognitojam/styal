@@ -7,7 +7,6 @@ import * as RelayDb from "./db.ts";
 import * as AccountAuth from "./auth/AccountAuth.ts";
 import * as AccountData from "./auth/AccountData.ts";
 import * as Accounts from "./auth/Accounts.ts";
-import * as ClerkDirectory from "./auth/ClerkDirectory.ts";
 import * as AuthSessions from "./auth/AuthSessions.ts";
 import * as EmailSignInCodes from "./auth/EmailSignInCodes.ts";
 import * as CloudMintSigner from "./auth/CloudMintSigner.ts";
@@ -41,7 +40,6 @@ const layerRelayApi = Layer.mergeAll(
   RelayHttpApi.layerMetadataApi,
   RelayHttpApi.layerMobileApi,
   RelayHttpApi.layerClientApi,
-  RelayHttpApi.layerTokenApi,
   RelayHttpApi.layerAuthApi,
   RelayHttpApi.layerDpopClientApi,
   RelayHttpApi.layerServerApi,
@@ -53,9 +51,7 @@ export const layerServices = Layer.empty.pipe(
       MobileRegistrations.layer,
       AccountData.layer,
       AccountAuth.layer.pipe(
-        Layer.provideMerge(
-          Layer.mergeAll(ClerkDirectory.layer, AuthSessions.layer, EmailSignInCodes.layer),
-        ),
+        Layer.provideMerge(Layer.mergeAll(AuthSessions.layer, EmailSignInCodes.layer)),
       ),
     ),
   ),

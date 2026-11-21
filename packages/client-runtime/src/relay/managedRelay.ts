@@ -3,6 +3,7 @@ import {
   type RelayAccountSessionRecord,
   type RelayAccountUser,
   RelayApi,
+  LegacyRelaySessionApi,
   type RelayAuthSessionResponse,
   type RelayClientEnvironmentRecord,
   type RelayClientDeviceRecord,
@@ -571,6 +572,8 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       (token) => token.clientId === options.clientId && token.sessionTokenHash !== undefined,
     ),
   );
+  const legacyClient = yield* HttpApiClient.make(LegacyRelaySessionApi, { baseUrl: relayUrl });
+  const legacyUrlBuilder = HttpApiClient.urlBuilder(LegacyRelaySessionApi, { baseUrl: relayUrl });
   const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;

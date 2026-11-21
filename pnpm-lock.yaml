@@ -1388,9 +1388,6 @@ importers:
       '@alchemy.run/neon':
         specifier: 'catalog:'
         version: 2.0.0-beta.85(@effect/platform-node@4.1.2(bufferutil@4.1.0)(effect@4.1.2)(redis@6.2.1)(utf-8-validate@6.0.6))(@effect/sql-pg@4.1.2(effect@4.1.2))(alchemy@2.0.0-beta.85(patch_hash=07cc8c7e14b3b9af143ddd40a059f117c27e55139fbf20bd5dde2eb30509cedd)(@effect/platform-bun@4.1.2(bufferutil@4.1.0)(effect@4.1.2)(utf-8-validate@6.0.6))(@effect/platform-node@4.1.2(bufferutil@4.1.0)(effect@4.1.2)(redis@6.2.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0))(effect@4.1.2)(react-devtools-core@6.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6))(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(effect@4.1.2)(hono@4.13.17)(pg@8.23.0)
-      '@clerk/backend':
-        specifier: 3.27.0
-        version: 3.27.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
         version: 1.0.0-rc.18(effect@4.1.2)
@@ -3416,22 +3413,6 @@ packages:
   '@clack/prompts@1.8.1':
     resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
-
-  '@clerk/backend@3.27.0':
-    resolution: {integrity: sha512-pmhVVP9EsAOL1rlRU4xR0XSL1BJczxGAJIqv8c+C9fRz7TYzCndGUMSSE/Zg7i2QOA24ExJbEJUiOjILdUL2EQ==}
-    engines: {node: '>=20.9.0'}
-
-  '@clerk/shared@4.44.1':
-    resolution: {integrity: sha512-c06U6GtlLJNOKj900rHDSqjVRz0/0zb3RZXVGKUqTulfQxr4Ym543JE6cbOnZVJZCbm0fGPhdRKvHq6fO/SvVw==}
-    engines: {node: '>=20.9.0'}
-    peerDependencies:
-      react: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
-      react-dom: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
-    peerDependenciesMeta:
-      react:
-        optional: true
-      react-dom:
-        optional: true
 
   '@cloudflare/unenv-preset@2.16.2':
     resolution: {integrity: sha512-JBP1+Z7ZSNG/d4mRP+y8VC5dka3tZVMLEZRvS+rzQ4DGV1EoxRFQckcJTTkXbHSQiTj0DtNI01Zwb/V2fX0mvQ==}
@@ -7002,9 +6983,6 @@ packages:
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
 
-  '@stablelib/base64@1.0.1':
-    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -7133,9 +7111,6 @@ packages:
   '@tanstack/pacer@0.18.0':
     resolution: {integrity: sha512-qhCRSFei0hokQr3xYcQXqxsRD/LKlgHCxHXtKHrQoImp4x2Zu6tUOpUGVH4y2qexIrzSu3aibQBNNfC3Eay6Mg==}
     engines: {node: '>=18'}
-
-  '@tanstack/query-core@5.104.0':
-    resolution: {integrity: sha512-JrC2r/JQlXt7khBSdUpsgxNvybzOg+aITa+ARRMlP2AFo93Y8vIqz077rp+e61mJetSZ0T6AJbwW1JHer1vrPQ==}
 
   '@tanstack/react-pacer@0.19.4':
     resolution: {integrity: sha512-coj8ULAuR0qFpjAKD44gTgRuZyjxU6Xu+IX5MwwYvr4e61OtZcJshaExoOBKpCGde0Edb12jDnzzj2Im13Qm9Q==}
@@ -9635,9 +9610,6 @@ packages:
   fast-safe-stringify@2.1.1:
     resolution: {integrity: sha512-W+KJc2dmILlPplD/H4K9l9LcAHAfPtP6BY84uVLXQ6Evcz9Lcg33Y2z1IVblT6xdY54PXYVHEv+0Wpq8Io6zkA==}
 
-  fast-sha256@1.3.0:
-    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
-
   fast-string-truncated-width@3.0.3:
     resolution: {integrity: sha512-0jjjIEL6+0jag3l2XWWizO64/aZVtpiGE3t0Zgqxv0DPuxiMjvB3M24fCyhZUO4KomJQPj3LTSUnDP3GpdwC0g==}
 
@@ -9854,9 +9826,6 @@ packages:
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
-
-  glob-to-regexp@0.4.1:
-    resolution: {integrity: sha512-lkX1HJXwyMcprw/5YUZc2s7DrpAiHB21/V+E1rHUrVNokkvB6bqMzT0VfV6/86ZNabt1k14YOIaT7nDvOX3Iiw==}
 
   glob@13.0.7:
     resolution: {integrity: sha512-wfsFgXQ8A3SEI9XGf7Nl3Y9l7ffSrGh7SUCT7vU/2CzYPep9kjxAn1S40F9OPKxAMGCVl7HtNlJhrCJUeUq83g==}
@@ -10239,9 +10208,6 @@ packages:
 
   js-base64@3.7.8:
     resolution: {integrity: sha512-hNngCeKxIUQiEUN3GPJOkz4wF/YvdUdbNL9hsBcMQTkKzboD7T/q3OYOuuPZLUE6dBxSGpwhk5mwuDud7JVAow==}
-
-  js-cookie@3.0.8:
-    resolution: {integrity: sha512-yeJd4aNAdYZQjaon2bpD/Gb0B/omw7HQOsynXXcOiWVCacbBcPlgn8S/d1X6blFSaHao7ozqtW7NZW19xpCtIw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -12201,9 +12167,6 @@ packages:
     resolution: {integrity: sha512-TyVbo7INUDWtsUWDFn8RR7kwR87U0S4xHfLfbbnyeC581TmmyqQ+eM+nPw8rQTSD8QitRVcYfPaSHr/QJiUy1g==}
     peerDependencies:
       react: '*'
-
-  standardwebhooks@1.0.0:
-    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
 
   stat-mode@1.0.0:
     resolution: {integrity: sha512-jH9EhtKIjuXZ2cWxmXS8ZP80XyC3iasQxMDV8jzhNJpfDb7VbQLVW4Wvsxz9QZvzV+G4YoSfBUVKDOyxLzi/sg==}
@@ -14223,24 +14186,6 @@ snapshots:
       fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
-
-  '@clerk/backend@3.27.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
-    dependencies:
-      '@clerk/shared': 4.44.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      standardwebhooks: 1.0.0
-    transitivePeerDependencies:
-      - react
-      - react-dom
-
-  '@clerk/shared@4.44.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
-    dependencies:
-      '@tanstack/query-core': 5.104.0
-      dequal: 2.0.3
-      glob-to-regexp: 0.4.1
-      js-cookie: 3.0.8
-    optionalDependencies:
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
 
   '@cloudflare/unenv-preset@2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261026.1)':
     dependencies:
@@ -17288,8 +17233,6 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
-  '@stablelib/base64@1.0.1': {}
-
   '@standard-schema/spec@1.1.0': {}
 
   '@statsig/client-core@3.31.0': {}
@@ -17386,8 +17329,6 @@ snapshots:
     dependencies:
       '@tanstack/devtools-event-client': 0.4.3
       '@tanstack/store': 0.8.1
-
-  '@tanstack/query-core@5.104.0': {}
 
   '@tanstack/react-pacer@0.19.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
@@ -20059,8 +20000,6 @@ snapshots:
 
   fast-safe-stringify@2.1.1: {}
 
-  fast-sha256@1.3.0: {}
-
   fast-string-truncated-width@3.0.3: {}
 
   fast-string-width@3.0.2:
@@ -20303,8 +20242,6 @@ snapshots:
   glob-parent@5.1.2:
     dependencies:
       is-glob: 4.0.3
-
-  glob-to-regexp@0.4.1: {}
 
   glob@13.0.7:
     dependencies:
@@ -20816,8 +20753,6 @@ snapshots:
 
   js-base64@3.7.8:
     optional: true
-
-  js-cookie@3.0.8: {}
 
   js-tokens@4.0.0: {}
 
@@ -23600,11 +23535,6 @@ snapshots:
   standard-navigation@0.0.8(react@19.3.0):
     dependencies:
       react: 19.3.0
-
-  standardwebhooks@1.0.0:
-    dependencies:
-      '@stablelib/base64': 1.0.1
-      fast-sha256: 1.3.0
 
   stat-mode@1.0.0: {}
 

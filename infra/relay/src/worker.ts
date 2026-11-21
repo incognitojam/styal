@@ -129,13 +129,6 @@ export const layer = Api.make(
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
     const fcmDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(fcmDeliveryQueue);
 
-    // Unset or empty turns off Clerk lookups: email sign-in then creates
-    // relay-owned accounts and account deletion skips Clerk.
-    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY").pipe(
-      Config.withDefault(Redacted.make("")),
-    );
-    const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY");
-    const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE");
     const t3ChatLinkSecret = Option.getOrUndefined(
       Option.filter(
         yield* Config.option(Config.Redacted("T3CHAT_LINK_SECRET")),
@@ -215,9 +208,6 @@ export const layer = Api.make(
         apnsDeliveryJobSigningSecret: yield* apnsDeliveryJobSigningSecret,
         signInCodeSecret: yield* signInCodeSecret,
         ...(emailSignIn.testSignInCode ? { testSignInCode: emailSignIn.testSignInCode } : {}),
-        clerkSecretKey,
-        clerkPublishableKey,
-        clerkJwtAudience,
         cloudMintPrivateKey: yield* cloudMintPrivateKey,
         cloudMintPublicKey: yield* cloudMintPublicKey,
         managedEndpointBaseDomain: yield* managedEndpointZoneName,

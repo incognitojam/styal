@@ -1,4 +1,3 @@
-import { createClerkClient, verifyToken } from "@clerk/backend";
 import { sql as drizzleSql } from "drizzle-orm";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -34,7 +33,6 @@ import {
   RelayAgentActivityPublishProofInvalidError,
   RelayClientAuth,
   RelayClientPrincipal,
-  RelayAccessTokenType,
   RelayDpopClientAuth,
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -68,7 +66,6 @@ import * as DeliveryAttempts from "../agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";
 import * as Devices from "../agentActivity/Devices.ts";
 import * as AccountAuth from "../auth/AccountAuth.ts";
-import * as ClerkDirectory from "../auth/ClerkDirectory.ts";
 import * as AccountData from "../auth/AccountData.ts";
 import * as Accounts from "../auth/Accounts.ts";
 import * as AuthSessions from "../auth/AuthSessions.ts";
@@ -324,47 +321,10 @@ export const withoutCapturedParentSpan = <A, E, R>(
 export const layerClientAuth = Layer.effect(
   RelayClientAuth,
   Effect.gen(function* () {
-    const config = yield* RelayConfiguration.RelayConfiguration;
     const relayTokens = yield* RelayTokens.RelayTokens;
     const authSessions = yield* AuthSessions.AuthSessions;
     const dpopProofs = yield* DpopProofs.DpopProofReplay;
     return {
-      clientBearer: Effect.fn("relay.auth.client.bearer")(function* (httpEffect, { credential }) {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        // Every scheme runs; without this check a DPoP request would also be
-        // sent to Clerk for verification.
-        if (!isBearerAuthorizationHeader(request.headers.authorization)) {
-          return yield* relayAuthInvalidError("invalid_bearer");
-        }
-        const token = readHttpAuthorizationCredential(credential);
-        const verified = yield* verifyRelayClientBearerToken(config, token).pipe(
-          Effect.tapError((error) =>
-            Effect.annotateCurrentSpan(
-              "relay.auth.clerk_verification_failure",
-              clerkVerificationFailureReason(error.cause),
-            ),
-          ),
-          Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
-        );
-        if (!verified.sub) {
-          yield* Effect.annotateCurrentSpan({
-            "relay.auth.clerk_verification_failure": "missing_subject",
-          });
-          return yield* relayAuthInvalidError("invalid_bearer");
-        }
-        yield* Effect.annotateCurrentSpan({
-          "relay.auth.mode": verified.mode,
-          "relay.auth.subject": verified.sub,
-        });
-
-        return yield* httpEffect.pipe(
-          withSpanAttributes({ "user.id": verified.sub }),
-          Effect.provideService(RelayClientPrincipal, {
-            userId: verified.sub,
-            token,
-          }),
-        );
-      }),
       accountDpop: Effect.fn("relay.auth.client.dpop")(function* (httpEffect, { credential }) {
         yield* appendRelayDpopChallengeHeader;
         const request = yield* HttpServerRequest.HttpServerRequest;
@@ -405,14 +365,13 @@ export const layerClientAuth = Layer.effect(
 
 /**
  * Access tokens issued from a relay session carry its id and stop working as
- * soon as the session is revoked or expires. Tokens from a Clerk sign-in have
- * no session and last until they expire.
+ * soon as the session is revoked or expires. Tokens without a session are refused.
  */
 const requireLiveSession = Effect.fnUntraced(function* (
   authSessions: AuthSessions.AuthSessions["Service"],
   verified: { readonly sub: string; readonly sid?: string | undefined },
 ) {
-  if (!verified.sid) return;
+  if (!verified.sid) return yield* relayAuthInvalidError("invalid_session");
   const live = yield* authSessions.isLive({ userId: verified.sub, sessionId: verified.sid }).pipe(
     Effect.catchTags({
       AuthSessionPersistenceError: () => relayInternalErrorResponse("persistence_failed"),
@@ -495,10 +454,6 @@ function isDpopAuthorizationHeader(value: string | undefined): boolean {
   return /^DPoP +/iu.test(value ?? "");
 }
 
-function isBearerAuthorizationHeader(value: string | undefined): boolean {
-  return /^Bearer +/iu.test(value ?? "");
-}
-
 function readHttpAuthorizationCredential(credential: Redacted.Redacted<string>): string {
   // Effect beta.73 leaves the scheme separator in decoded HTTP credentials.
   return Redacted.value(credential).trimStart();
@@ -519,8 +474,8 @@ export const layerMetadataApi = HttpApiBuilder.group(
       .handle("authorizationServer", () =>
         Effect.succeed({
           issuer,
-          token_endpoint: `${issuer}/v1/client/dpop-token`,
-          grant_types_supported: ["urn:ietf:params:oauth:grant-type:token-exchange"],
+          token_endpoint: `${issuer}/v1/auth/token`,
+          grant_types_supported: ["refresh_token"],
           token_endpoint_auth_methods_supported: ["none"],
           dpop_signing_alg_values_supported: ["ES256"],
           scopes_supported: scopes,
@@ -1150,7 +1105,7 @@ export const layerClientApi = HttpApiBuilder.group(
           const url = yield* t3Chat.createLinkUrl({ userId }).pipe(
             Effect.catchTags({
               T3ChatNotConfigured: () => relayInternalErrorResponse("internal_error"),
-              ClerkUserLookupFailed: () => relayInternalErrorResponse("upstream_unavailable"),
+              AccountEmailLookupFailed: () => relayInternalErrorResponse("upstream_unavailable"),
             }),
           );
           return { url };
@@ -1182,9 +1137,7 @@ export const layerClientApi = HttpApiBuilder.group(
         Effect.fn("relay.api.client.deleteAccount")(function* () {
           const { userId } = yield* RelayClientPrincipal;
           const account = yield* accounts.get(userId);
-          // Environments, then Clerk, then relay data; the account and sessions survive until the
-          // last step, so a failed step is retried by deleting again. Deleting the Clerk user before
-          // teardown succeeded would let an email sign-in open a new account and orphan environments.
+          // Keep the account and sessions until every environment has been torn down, so failures can retry.
           const environments = yield* accountData.listEnvironmentIds(userId);
           for (const environmentId of environments) {
             yield* unlinkEnvironmentRecord({
@@ -1201,8 +1154,6 @@ export const layerClientApi = HttpApiBuilder.group(
               }),
             );
           }
-          // A retry after successful Clerk deletion treats its 404 as success.
-          yield* deleteClerkUser(config, userId);
           yield* accountData.deleteForUser({
             userId,
             email: Option.isSome(account) ? account.value.email : null,
@@ -1252,7 +1203,6 @@ type AccountAuthError =
   | AccountAuth.SignInRateLimited
   | AccountAuth.SignInCodeRejected
   | AccountAuth.AuthSessionInvalid
-  | AccountAuth.VerifiedEmailLookupFailed
   | AccountAuth.AccessTokenIssueFailed;
 
 type MapAccountAuthError<E> =
@@ -1263,12 +1213,7 @@ type MapAccountAuthError<E> =
   | (Extract<E, AccountAuth.SignInRateLimited> extends never ? never : RelayAuthRateLimitedError)
   | (Extract<E, AccountAuth.SignInCodeRejected> extends never ? never : RelaySignInCodeInvalidError)
   | (Extract<E, AccountAuth.AuthSessionInvalid> extends never ? never : RelayAuthInvalidError)
-  | (Extract<
-      E,
-      AccountAuth.VerifiedEmailLookupFailed | AccountAuth.AccessTokenIssueFailed
-    > extends never
-      ? never
-      : RelayInternalError);
+  | (Extract<E, AccountAuth.AccessTokenIssueFailed> extends never ? never : RelayInternalError);
 
 const isAccountAuthError = Schema.is(
   Schema.Union([
@@ -1276,7 +1221,6 @@ const isAccountAuthError = Schema.is(
     AccountAuth.SignInRateLimited,
     AccountAuth.SignInCodeRejected,
     AccountAuth.AuthSessionInvalid,
-    AccountAuth.VerifiedEmailLookupFailed,
     AccountAuth.AccessTokenIssueFailed,
   ]),
 );
@@ -1305,12 +1249,6 @@ const toAccountAuthApiError = (error: AccountAuthError, traceId: string) => {
       return new RelayAuthInvalidError({
         code: "auth_invalid",
         reason: "invalid_session",
-        traceId,
-      });
-    case "VerifiedEmailLookupFailed":
-      return new RelayInternalError({
-        code: "internal_error",
-        reason: "upstream_unavailable",
         traceId,
       });
     case "AccessTokenIssueFailed":
@@ -1367,7 +1305,6 @@ export const layerAuthApi = HttpApiBuilder.group(
   RelayApi,
   "auth",
   Effect.fnUntraced(function* (handlers) {
-    const config = yield* RelayConfiguration.RelayConfiguration;
     const dpopProofs = yield* DpopProofs.DpopProofReplay;
     const accountAuth = yield* AccountAuth.AccountAuth;
     const proofKey = requireDpopProof().pipe(
@@ -1419,41 +1356,6 @@ export const layerAuthApi = HttpApiBuilder.group(
         ),
       )
       .handle(
-        "exchangeClerkSession",
-        Effect.fn("relay.api.auth.exchangeClerkSession")(
-          function* (args) {
-            yield* appendRelayCredentialResponseHeaders;
-            yield* Effect.annotateCurrentSpan({
-              "relay.auth.mode": "clerk_session_exchange",
-              "relay.oauth.client_id": args.payload.client_id,
-            });
-            const verified = yield* verifyRelayClientBearerToken(
-              config,
-              args.payload.subject_token,
-            ).pipe(Effect.catch(clerkExchangeVerificationError));
-            if (!verified.sub) {
-              return yield* relayAuthInvalidError("invalid_bearer");
-            }
-            const thumbprint = yield* proofKey;
-            const clerkUser = yield* fetchClerkUser(config, verified.sub);
-            // A token left over from a deleted or banned Clerk user must not open a session.
-            if (Option.isNone(clerkUser) || clerkUser.value.banned) {
-              return yield* relayAuthInvalidError("invalid_bearer");
-            }
-            const grant = yield* accountAuth.openVerifiedSession({
-              userId: verified.sub,
-              lookupEmail: Effect.succeed(Option.fromNullishOr(clerkUser.value.primary)),
-              clientId: args.payload.client_id,
-              thumbprint,
-              ...(args.payload.label ? { label: args.payload.label } : {}),
-            });
-            return sessionResponse(grant);
-          },
-          mapAccountAuthErrors,
-          mapRelayCommonApiErrors("invalid_dpop"),
-        ),
-      )
-      .handle(
         "refreshAuthToken",
         Effect.fn("relay.api.auth.refreshAuthToken")(
           function* (args) {
@@ -1478,66 +1380,6 @@ export const layerAuthApi = HttpApiBuilder.group(
           return { ok: true };
         }, mapRelayCommonApiErrors("invalid_dpop")),
       );
-  }),
-);
-
-export const layerTokenApi = HttpApiBuilder.group(
-  RelayApi,
-  "token",
-  Effect.fnUntraced(function* (handlers) {
-    const config = yield* RelayConfiguration.RelayConfiguration;
-    const random = yield* SecureRandom.SecureRandom;
-    const dpopProofs = yield* DpopProofs.DpopProofReplay;
-    const relayTokens = yield* RelayTokens.RelayTokens;
-    return handlers.handle(
-      "exchangeDpopAccessToken",
-      Effect.fn("relay.api.token.exchangeDpopAccessToken")(function* (args) {
-        yield* appendRelayCredentialResponseHeaders;
-        const issuer = normalizeRelayIssuer(config.relayIssuer);
-        const requestedScopes = relayTokens.resolveDpopAccessTokenScopes({
-          clientId: args.payload.client_id,
-          scope: args.payload.scope,
-        });
-        yield* Effect.annotateCurrentSpan({
-          "relay.auth.mode": "clerk_bearer_token_exchange",
-          "relay.oauth.client_id": args.payload.client_id,
-          "relay.oauth.scopes": args.payload.scope,
-        });
-        if (args.payload.resource !== issuer || requestedScopes === null) {
-          return yield* new HttpApiError.Unauthorized({});
-        }
-
-        const verified = yield* verifyClerkBearerToken(config, args.payload.subject_token).pipe(
-          Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
-        );
-        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
-          return yield* relayAuthInvalidError("invalid_bearer");
-        }
-        const proofKeyThumbprint = yield* requireDpopProof().pipe(
-          Effect.provideService(DpopProofs.DpopProofReplay, dpopProofs),
-        );
-        const now = yield* DateTime.now;
-        const expiresAt = DateTime.addDuration(now, RelayTokens.RELAY_DPOP_ACCESS_TOKEN_TTL);
-        const jti = yield* random.uuidV4();
-        return {
-          access_token: yield* relayTokens
-            .issueDpopAccessToken({
-              userId: verified.sub,
-              proofKeyThumbprint,
-              jti,
-              issuedAtEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
-              expiresAtEpochSeconds: Math.floor(expiresAt.epochMilliseconds / 1_000),
-              clientId: args.payload.client_id,
-              scopes: requestedScopes,
-            })
-            .pipe(Effect.catch(() => relayInternalErrorResponse("internal_error"))),
-          issued_token_type: RelayAccessTokenType,
-          token_type: "DPoP" as const,
-          expires_in: Duration.toSeconds(RelayTokens.RELAY_DPOP_ACCESS_TOKEN_TTL),
-          scope: encodeOAuthScope(requestedScopes),
-        };
-      }, mapRelayCommonApiErrors("invalid_dpop")),
-    );
   }),
 );
 
@@ -1897,17 +1739,6 @@ export const layerServerApi = HttpApiBuilder.group(
   }),
 );
 
-class ClerkTokenVerificationFailed extends Schema.TaggedError<ClerkTokenVerificationFailed>()(
-  "ClerkTokenVerificationFailed",
-  {
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return "Clerk token verification failed";
-  }
-}
-
 const isHttpUnauthorized = Schema.is(HttpApiError.Unauthorized);
 const isDpopProofRejected = Schema.is(DpopProofs.DpopProofRejected);
 
@@ -2095,205 +1926,6 @@ function resolveConnectClientKeyThumbprint(payload: RelayEnvironmentConnectReque
     return null;
   }
   return requestedThumbprint;
-}
-
-function safeAuthFailureReason(value: string): string {
-  return /^[a-z0-9._-]+$/i.test(value) ? value : "unknown";
-}
-
-function clerkVerificationFailureReason(cause: unknown): string {
-  if (
-    cause instanceof Error &&
-    (cause.message.startsWith("Invalid JWT audience claim ") ||
-      cause.message.startsWith("Invalid JWT audience claim array "))
-  ) {
-    return "audience_mismatch";
-  }
-  if (typeof cause === "object" && cause !== null && "reason" in cause) {
-    const reason = (cause as { readonly reason?: unknown }).reason;
-    if (typeof reason === "string" && reason.length > 0) {
-      return safeAuthFailureReason(reason);
-    }
-  }
-  if (cause instanceof Error && cause.name) {
-    return safeAuthFailureReason(cause.name);
-  }
-  return "unknown";
-}
-
-/** Clerk exposes transport errors both as exceptions and signed-out state reasons. */
-function isClerkUpstreamUnavailable(cause: unknown, depth = 0): boolean {
-  if (depth > 4 || typeof cause !== "object" || cause === null) return false;
-  if (
-    "status" in cause &&
-    typeof cause.status === "number" &&
-    (cause.status >= 500 || cause.status === 429)
-  )
-    return true;
-  if (
-    "reason" in cause &&
-    [
-      "jwk-remote-failed-to-load",
-      "jwk-remote-invalid",
-      "jwk-remote-missing",
-      "jwk-failed-to-resolve",
-      "unexpected-error",
-    ].includes(String(cause.reason))
-  )
-    return true;
-  if (
-    "code" in cause &&
-    ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "unexpected-error"].includes(
-      String(cause.code),
-    )
-  )
-    return true;
-  if (
-    cause instanceof Error &&
-    (cause.name === "AbortError" ||
-      cause.name === "TimeoutError" ||
-      /fetch failed|failed to fetch|network|socket|connection/i.test(cause.message))
-  )
-    return true;
-  return "cause" in cause && isClerkUpstreamUnavailable(cause.cause, depth + 1);
-}
-
-const clerkExchangeVerificationError = (
-  error: ClerkTokenVerificationFailed,
-): Effect.Effect<never, RelayInternalError | RelayAuthInvalidError> =>
-  isClerkUpstreamUnavailable(error.cause)
-    ? relayInternalErrorResponse("upstream_unavailable")
-    : relayAuthInvalidError("invalid_bearer");
-
-function hasExpectedClerkAudience(audience: unknown, expectedAudience: string): boolean {
-  return typeof audience === "string"
-    ? audience === expectedAudience
-    : Array.isArray(audience) &&
-        audience.some((entry) => typeof entry === "string" && entry === expectedAudience);
-}
-
-function verifyClerkBearerToken(
-  config: RelayConfiguration.RelayConfiguration["Service"],
-  token: string,
-) {
-  return Effect.tryPromise({
-    try: () =>
-      verifyToken(token, {
-        secretKey: Redacted.value(config.clerkSecretKey),
-        audience: config.clerkJwtAudience,
-      }),
-    catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
-  }).pipe(
-    Effect.withSpan("verify_clerk_bearer_token", {
-      attributes: { "relay.auth.token_length": token.length },
-    }),
-  );
-}
-
-function verifyClerkOAuthBearerToken(
-  config: RelayConfiguration.RelayConfiguration["Service"],
-  token: string,
-) {
-  return Effect.tryPromise({
-    try: async () => {
-      const client = createClerkClient({
-        secretKey: Redacted.value(config.clerkSecretKey),
-        publishableKey: config.clerkPublishableKey,
-      });
-      const state = await client.authenticateRequest(
-        new Request(config.relayIssuer, {
-          headers: { authorization: `Bearer ${token}` },
-        }),
-        { acceptsToken: "oauth_token" },
-      );
-      const auth = state.toAuth();
-      if (!state.isAuthenticated || !auth.userId) {
-        // Clerk returns network/API failures as a signed-out request state too.
-        throw { reason: state.reason ?? "not_authenticated" };
-      }
-      return { sub: auth.userId };
-    },
-    catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
-  });
-}
-
-export function verifyRelayClientBearerToken(
-  config: RelayConfiguration.RelayConfiguration["Service"],
-  token: string,
-) {
-  return verifyClerkBearerToken(config, token).pipe(
-    Effect.flatMap((verified) =>
-      verified.sub && hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
-        ? Effect.succeed({ sub: verified.sub, mode: "clerk_session_bearer" as const })
-        : Effect.fail(new ClerkTokenVerificationFailed({ cause: "missing_relay_audience" })),
-    ),
-    // Only a token that is not a usable session token may be an OAuth access token.
-    Effect.catchIf(
-      (error) =>
-        !isClerkUpstreamUnavailable(error.cause) &&
-        error.cause !== "missing_relay_audience" &&
-        ![
-          "audience_mismatch",
-          "token-expired",
-          "token-invalid-signature",
-          "token-not-active-yet",
-          "token-iat-in-the-future",
-        ].includes(clerkVerificationFailureReason(error.cause)),
-      () =>
-        verifyClerkOAuthBearerToken(config, token).pipe(
-          Effect.map((verified) => ({ ...verified, mode: "clerk_oauth_bearer" as const })),
-        ),
-    ),
-  );
-}
-
-/**
- * The verified emails of a Clerk user, for accounts first seen through a Clerk
- * session exchange. None when Clerk no longer has the user; a failed lookup
- * fails the exchange so the client retries with its Clerk sign-in.
- */
-function fetchClerkUser(config: RelayConfiguration.RelayConfiguration["Service"], userId: string) {
-  return ClerkDirectory.make(config)
-    .verifiedEmails(userId)
-    .pipe(
-      Effect.mapError(() => new AccountAuth.VerifiedEmailLookupFailed({})),
-      Effect.withSpan("fetch_clerk_user"),
-    );
-}
-
-class ClerkUserDeletionFailed extends Schema.TaggedError<ClerkUserDeletionFailed>()(
-  "ClerkUserDeletionFailed",
-  { cause: Schema.Defect() },
-) {}
-
-/**
- * Deletes the Clerk user behind an account that came from Clerk, so a Clerk
- * sign-in left on some device cannot recreate it. Runs after environment
- * teardown and before relay data deletion, so a Clerk outage leaves the
- * account and its refresh sessions available for a retry.
- */
-function deleteClerkUser(
-  config: RelayConfiguration.RelayConfiguration["Service"],
-  userId: string,
-): Effect.Effect<void, RelayInternalError> {
-  if (!userId.startsWith("user_") || !Redacted.value(config.clerkSecretKey).trim())
-    return Effect.void;
-  return Effect.tryPromise({
-    try: () =>
-      createClerkClient({
-        secretKey: Redacted.value(config.clerkSecretKey),
-        publishableKey: config.clerkPublishableKey,
-      }).users.deleteUser(userId),
-    catch: (cause) => new ClerkUserDeletionFailed({ cause }),
-  }).pipe(
-    Effect.catch(({ cause }) =>
-      typeof cause === "object" && cause !== null && "status" in cause && cause.status === 404
-        ? Effect.void
-        : relayInternalErrorResponse("upstream_unavailable"),
-    ),
-    Effect.asVoid,
-    Effect.withSpan("delete_clerk_user"),
-  );
 }
 
 const requireDpopPrincipalScope = Effect.fn("relay.api.require_dpop_principal_scope")(function* (

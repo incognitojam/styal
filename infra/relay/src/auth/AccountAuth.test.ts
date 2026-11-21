@@ -14,7 +14,6 @@ import * as RelayConfiguration from "../Config.ts";
 import * as AccountAuth from "./AccountAuth.ts";
 import * as Accounts from "./Accounts.ts";
 import * as AuthSessions from "./AuthSessions.ts";
-import * as ClerkDirectory from "./ClerkDirectory.ts";
 import * as EmailSender from "./EmailSender.ts";
 import * as EmailSignInCodes from "./EmailSignInCodes.ts";
 import * as CloudMintSigner from "./CloudMintSigner.ts";
@@ -29,9 +28,6 @@ const baseConfig = RelayConfiguration.RelayConfiguration.of({
   relayIssuer: "https://relay.example.test",
   apns: null,
   apnsDeliveryJobSigningSecret: Redacted.make("job-secret"),
-  clerkSecretKey: Redacted.make("clerk-secret"),
-  clerkPublishableKey: "pk_test_test",
-  clerkJwtAudience: "t3-code-relay",
   signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   cloudMintPrivateKey: Redacted.make(keyPair.privateKey),
   cloudMintPublicKey: keyPair.publicKey,
@@ -55,7 +51,6 @@ function makeLayer(input?: {
   readonly redeem?: EmailSignInCodes.RedeemResult;
   readonly accountRow?: Accounts.Account | null;
   readonly otherAccounts?: ReadonlyArray<Accounts.Account>;
-  readonly directory?: Partial<ClerkDirectory.ClerkDirectory["Service"]> | "production";
   readonly session?: AuthSessions.AuthSession | null;
 }) {
   const harness: Harness = {
@@ -91,14 +86,6 @@ function makeLayer(input?: {
         RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer)),
         sender,
         AccountAuth.layerSignInRateLimiterUnlimited,
-        input?.directory === "production"
-          ? ClerkDirectory.layer
-          : Layer.succeed(ClerkDirectory.ClerkDirectory, {
-              configured: true,
-              verifiedEmails: () => Effect.succeedNone,
-              userIdForEmail: () => Effect.succeedNone,
-              ...input?.directory,
-            }),
         Layer.mock(EmailSignInCodes.EmailSignInCodes, {
           issue: (request) =>
             Effect.sync(() => {
@@ -124,23 +111,7 @@ function makeLayer(input?: {
               rows.set(account.userId, account);
               return account;
             }),
-          getByEmail: (email) => Effect.succeed(byEmail(email)),
           get: (userId) => Effect.succeed(Option.fromNullishOr(rows.get(userId))),
-          syncEmail: (userId, email) =>
-            Effect.sync(() => {
-              const owner = email === null ? Option.none<Accounts.Account>() : byEmail(email);
-              const account = {
-                userId,
-                email: Option.isSome(owner) && owner.value.userId !== userId ? null : email,
-              };
-              rows.set(userId, account);
-              return account;
-            }),
-          importAccount: (account) =>
-            Effect.sync(() => {
-              rows.set(account.userId, account);
-              return true;
-            }),
         }),
         Layer.mock(AuthSessions.AuthSessions, {
           create: (request) =>
@@ -224,6 +195,27 @@ describe("AccountAuth.startEmailSignIn", () => {
 });
 
 describe("AccountAuth.verifyEmailSignIn", () => {
+  it.effect(
+    "keeps an imported account id when its email signs in, without an identity provider",
+    () => {
+      const { layer, harness } = makeLayer({
+        accountRow: { userId: "user_imported", email: "existing@example.test" },
+      });
+      return Effect.gen(function* () {
+        const auth = yield* AccountAuth.AccountAuth;
+        const grant = yield* auth.verifyEmailSignIn({
+          email: "existing@example.test",
+          code: "12345678",
+          clientId: "t3-web",
+          thumbprint: "key",
+          rateLimitKey: "ip",
+        });
+        expect(grant.user).toEqual({ id: "user_imported", email: "existing@example.test" });
+        expect(harness.createdSessions[0]?.userId).toBe("user_imported");
+      }).pipe(Effect.provide(layer));
+    },
+  );
+
   it.effect("opens a session whose access token carries the client's scopes and session", () => {
     const { harness, layer } = makeLayer();
     return Effect.gen(function* () {
@@ -272,234 +264,6 @@ describe("AccountAuth.verifyEmailSignIn", () => {
   });
 });
 
-describe("Clerk directory reconciliation", () => {
-  const verify = (auth: AccountAuth.AccountAuth["Service"], email = "old@example.com") =>
-    auth.verifyEmailSignIn({
-      email,
-      code: "12345678",
-      clientId: "t3-web",
-      thumbprint: "key",
-      rateLimitKey: "ip",
-    });
-
-  it.effect("a native account does not depend on Clerk", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "usr_native", email: "old@example.com" },
-      directory: {
-        verifiedEmails: () => Effect.die("must not consult Clerk"),
-        userIdForEmail: () => Effect.die("must not consult Clerk"),
-      },
-    });
-    return Effect.gen(function* () {
-      const grant = yield* verify(yield* AccountAuth.AccountAuth);
-      expect(grant.user.id).toBe("usr_native");
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect("a banned Clerk user cannot sign in to its imported account by email", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "user_imported", email: "old@example.com" },
-      directory: {
-        verifiedEmails: () =>
-          Effect.succeedSome({
-            primary: "old@example.com",
-            all: ["old@example.com"],
-            banned: true,
-          }),
-      },
-    });
-    return Effect.gen(function* () {
-      const error = yield* Effect.flip(verify(yield* AccountAuth.AccountAuth));
-      expect(error).toMatchObject({ _tag: "SignInUnavailable", reason: "account_disabled" });
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect("a banned Clerk user not yet imported cannot sign in by email", () => {
-    const { layer } = makeLayer({
-      directory: {
-        userIdForEmail: () => Effect.succeedSome({ userId: "user_banned", banned: true }),
-      },
-    });
-    return Effect.gen(function* () {
-      const error = yield* Effect.flip(verify(yield* AccountAuth.AccountAuth));
-      expect(error).toMatchObject({ _tag: "SignInUnavailable", reason: "account_disabled" });
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect("an imported address still verified by Clerk keeps its id", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "user_imported", email: "old@example.com" },
-      directory: {
-        verifiedEmails: () =>
-          Effect.succeedSome({
-            primary: "new@example.com",
-            all: ["old@example.com", "new@example.com"],
-            banned: false,
-          }),
-      },
-    });
-    return Effect.gen(function* () {
-      expect((yield* verify(yield* AccountAuth.AccountAuth)).user.id).toBe("user_imported");
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect.each(["new@example.com", null])(
-    "a removed imported address no longer signs into the Clerk account (primary %s)",
-    (primary) => {
-      const { layer } = makeLayer({
-        accountRow: { userId: "user_imported", email: "old@example.com" },
-        directory: {
-          verifiedEmails: () =>
-            Effect.succeedSome({ primary, all: primary ? [primary] : [], banned: false }),
-        },
-      });
-      return Effect.gen(function* () {
-        const accounts = yield* Accounts.Accounts;
-        const grant = yield* verify(yield* AccountAuth.AccountAuth);
-        expect(grant.user.id).toBe("usr_new");
-        expect(yield* accounts.get("user_imported")).toEqual(
-          Option.some({ userId: "user_imported", email: primary }),
-        );
-      }).pipe(Effect.provide(layer));
-    },
-  );
-
-  it.effect("a deleted Clerk user loses its imported email mapping", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "user_deleted", email: "old@example.com" },
-    });
-    return Effect.gen(function* () {
-      expect((yield* verify(yield* AccountAuth.AccountAuth)).user.id).toBe("usr_new");
-      expect(yield* (yield* Accounts.Accounts).get("user_deleted")).toEqual(
-        Option.some({ userId: "user_deleted", email: null }),
-      );
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect.each(["user_imported", null])(
-    "without a Clerk secret, imported accounts keep their mapping (existing %s)",
-    (existing) => {
-      const { harness, layer } = makeLayer({
-        config: { clerkSecretKey: Redacted.make("") },
-        directory: "production",
-        accountRow: existing ? { userId: existing, email: "old@example.com" } : null,
-        otherAccounts: [{ userId: "user_other", email: "other@example.com" }],
-      });
-      return Effect.gen(function* () {
-        const grant = yield* verify(yield* AccountAuth.AccountAuth);
-        const accounts = yield* Accounts.Accounts;
-        expect(grant.user).toEqual({ id: existing ?? "usr_new", email: "old@example.com" });
-        expect(yield* accounts.get("user_other")).toEqual(
-          Option.some({ userId: "user_other", email: "other@example.com" }),
-        );
-        expect(harness.createdSessions.map((session) => session.userId)).toEqual([
-          existing ?? "usr_new",
-        ]);
-      }).pipe(Effect.provide(layer));
-    },
-  );
-
-  it.effect(
-    "does not take a new primary from another account when clearing a stale mapping",
-    () => {
-      const { layer } = makeLayer({
-        accountRow: { userId: "user_imported", email: "old@example.com" },
-        otherAccounts: [{ userId: "usr_owner", email: "new@example.com" }],
-        directory: {
-          verifiedEmails: () =>
-            Effect.succeedSome({
-              primary: "new@example.com",
-              all: ["new@example.com"],
-              banned: false,
-            }),
-        },
-      });
-      return Effect.gen(function* () {
-        expect((yield* verify(yield* AccountAuth.AccountAuth)).user.id).toBe("usr_new");
-        const accounts = yield* Accounts.Accounts;
-        expect(yield* accounts.get("user_imported")).toEqual(
-          Option.some({ userId: "user_imported", email: null }),
-        );
-        expect(yield* accounts.getByEmail("new@example.com")).toEqual(
-          Option.some({ userId: "usr_owner", email: "new@example.com" }),
-        );
-      }).pipe(Effect.provide(layer));
-    },
-  );
-
-  it.effect.each([false, true])(
-    "an unmapped verified Clerk email uses the Clerk id (existing account %s)",
-    (existing) => {
-      const { layer } = makeLayer({
-        accountRow: existing ? { userId: "user_found", email: "primary@example.com" } : null,
-        directory: {
-          userIdForEmail: () => Effect.succeedSome({ userId: "user_found", banned: false }),
-        },
-      });
-      return Effect.gen(function* () {
-        expect((yield* verify(yield* AccountAuth.AccountAuth)).user).toEqual({
-          id: "user_found",
-          email: "old@example.com",
-        });
-      }).pipe(Effect.provide(layer));
-    },
-  );
-
-  it.effect.each([false, true])(
-    "a Clerk outage is retryable and opens no session (imported account %s)",
-    (existing) => {
-      const unavailable = () => Effect.fail(new ClerkDirectory.ClerkDirectoryUnavailable({}));
-      const { harness, layer } = makeLayer({
-        accountRow: existing ? { userId: "user_imported", email: "old@example.com" } : null,
-        directory: { verifiedEmails: unavailable, userIdForEmail: unavailable },
-      });
-      return Effect.gen(function* () {
-        const error = yield* Effect.flip(verify(yield* AccountAuth.AccountAuth));
-        expect(error._tag).toBe("VerifiedEmailLookupFailed");
-        expect(harness.createdSessions).toEqual([]);
-      }).pipe(Effect.provide(layer));
-    },
-  );
-
-  it.effect("Clerk exchange refreshes an existing email and clears it when Clerk has none", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "user_imported", email: "old@example.com" },
-    });
-    return Effect.gen(function* () {
-      const auth = yield* AccountAuth.AccountAuth;
-      const base = { userId: "user_imported", clientId: "t3-web" as const, thumbprint: "key" };
-      expect(
-        (yield* auth.openVerifiedSession({
-          ...base,
-          lookupEmail: Effect.succeedSome("new@example.com"),
-        })).user.email,
-      ).toBe("new@example.com");
-      expect(
-        (yield* auth.openVerifiedSession({ ...base, lookupEmail: Effect.succeedNone })).user.email,
-      ).toBeNull();
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect("Clerk exchange does not claim another account's email", () => {
-    const { layer } = makeLayer({
-      accountRow: { userId: "usr_owner", email: "owned@example.com" },
-    });
-    return Effect.gen(function* () {
-      const auth = yield* AccountAuth.AccountAuth;
-      const grant = yield* auth.openVerifiedSession({
-        userId: "user_imported",
-        clientId: "t3-web",
-        thumbprint: "key",
-        lookupEmail: Effect.succeedSome("owned@example.com"),
-      });
-      expect(grant.user).toEqual({ id: "user_imported", email: null });
-      expect(yield* (yield* Accounts.Accounts).getByEmail("owned@example.com")).toEqual(
-        Option.some({ userId: "usr_owner", email: "owned@example.com" }),
-      );
-    }).pipe(Effect.provide(layer));
-  });
-});
-
 describe("AccountAuth sessions", () => {
   it.effect("refresh fails as AuthSessionInvalid for an unknown or foreign-key session", () => {
     const { layer } = makeLayer({ session: null });
@@ -532,53 +296,6 @@ describe("AccountAuth sessions", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("a Clerk exchange keeps the Clerk id and refreshes the email on every exchange", () => {
-    const { harness, layer } = makeLayer({ accountRow: null });
-    return Effect.gen(function* () {
-      const auth = yield* AccountAuth.AccountAuth;
-      const lookupEmail = Effect.sync(() => {
-        harness.emailLookups.push("user_clerk");
-        return Option.some("someone@example.com");
-      });
-      const first = yield* auth.openVerifiedSession({
-        userId: "user_clerk",
-        lookupEmail,
-        clientId: "t3-mobile",
-        thumbprint: "t",
-      });
-      yield* auth.openVerifiedSession({
-        userId: "user_clerk",
-        lookupEmail,
-        clientId: "t3-web",
-        thumbprint: "t2",
-      });
-
-      expect(first.user).toEqual({ id: "user_clerk", email: "someone@example.com" });
-      expect(harness.emailLookups).toEqual(["user_clerk", "user_clerk"]);
-    }).pipe(Effect.provide(layer));
-  });
-});
-
-describe("AccountAuth.openVerifiedSession", () => {
-  it.effect("fails instead of opening an account without its email when the lookup fails", () => {
-    const { harness, layer } = makeLayer({ accountRow: null });
-    return Effect.gen(function* () {
-      const auth = yield* AccountAuth.AccountAuth;
-      const error = yield* Effect.flip(
-        auth.openVerifiedSession({
-          userId: "user_clerk",
-          lookupEmail: Effect.fail(new AccountAuth.VerifiedEmailLookupFailed({})),
-          clientId: "t3-web",
-          thumbprint: "t",
-        }),
-      );
-      expect(error._tag).toBe("VerifiedEmailLookupFailed");
-      expect(harness.createdSessions).toEqual([]);
-    }).pipe(Effect.provide(layer));
-  });
-});
-
-describe("sign-in primitives", () => {
   it("parses only well-formed session tokens", () => {
     const sessionId = "0123456789abcdef0123456789abcdef";
     const secret = "f".repeat(64);

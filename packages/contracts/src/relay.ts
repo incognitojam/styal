@@ -4,7 +4,6 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
-import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
 import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
 import * as OpenApi from "effect/http-api/OpenApi";
 
@@ -730,7 +729,7 @@ export class RelayClientPrincipal extends Context.Service<
     readonly token: string;
     readonly proofKeyThumbprint?: string;
     readonly dpopScopes?: ReadonlyArray<RelayDpopAccessTokenScope>;
-    /** Relay sign-in session behind a DPoP access token; absent for Clerk bearer tokens. */
+    /** Relay sign-in session behind a DPoP access token. */
     readonly sessionId?: string;
   }
 >()("@t3tools/contracts/relay/RelayClientPrincipal") {}
@@ -743,13 +742,6 @@ export class RelayEnvironmentPrincipal extends Context.Service<
   }
 >()("@t3tools/contracts/relay/RelayEnvironmentPrincipal") {}
 
-const RelayClientBearerAuthorization = HttpApiSecurity.http({ scheme: "bearer" }).pipe(
-  HttpApiSecurity.annotate(
-    OpenApi.Description,
-    "Clerk session or OAuth bearer token for the signed-in styal Link user.",
-  ),
-);
-
 const RelayClientDpopAuthorization = HttpApiSecurity.http({ scheme: "DPoP" }).pipe(
   HttpApiSecurity.annotate(
     OpenApi.Description,
@@ -757,20 +749,13 @@ const RelayClientDpopAuthorization = HttpApiSecurity.http({ scheme: "DPoP" }).pi
   ),
 );
 
-/**
- * Accepts a Clerk bearer token or a relay DPoP access token. Schemes run in
- * declaration order and the last failure is the one returned, so a request
- * that fails both reports the DPoP failure.
- *
- * @effect-expect-leaking HttpServerRequest | ParsedSearchParams | RouteContext
- */
+/** @effect-expect-leaking HttpServerRequest | ParsedSearchParams | RouteContext */
 export class RelayClientAuth extends HttpApiMiddleware.Service<
   RelayClientAuth,
   { provides: RelayClientPrincipal }
 >()("RelayClientAuth", {
   error: [RelayAuthInvalidError, RelayInternalError],
   security: {
-    clientBearer: RelayClientBearerAuthorization,
     accountDpop: RelayClientDpopAuthorization,
   },
 }) {}
@@ -850,46 +835,15 @@ export const RelayDpopAccessTokenScope = Schema.Literals([
 ]);
 export type RelayDpopAccessTokenScope = typeof RelayDpopAccessTokenScope.Type;
 
-const RelayDpopTokenExchangeGrantType = "urn:ietf:params:oauth:grant-type:token-exchange" as const;
-const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
-export const RelayAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
 export const RelayPublicClientId = Schema.Literals(["t3-mobile", "t3-web", "t3-cli"]);
 export type RelayPublicClientId = typeof RelayPublicClientId.Type;
 export const RelayMobileClientId = "t3-mobile" as const;
 export const RelayWebClientId = "t3-web" as const;
 export const RelayCliClientId = "t3-cli" as const;
 
-export const RelayDpopAccessTokenRequest = Schema.Struct({
-  grant_type: Schema.Literal(RelayDpopTokenExchangeGrantType),
-  subject_token: TrimmedNonEmptyString.annotate({
-    description: "Clerk bearer token for the signed-in cloud user.",
-  }),
-  subject_token_type: Schema.Literal(RelayJwtSubjectTokenType),
-  requested_token_type: Schema.Literal(RelayAccessTokenType),
-  resource: TrimmedNonEmptyString.annotate({
-    description: "Relay issuer URL that will receive the DPoP-bound access token.",
-  }),
-  scope: TrimmedNonEmptyString.annotate({
-    description: "Space-separated relay scopes requested by the client.",
-  }),
-  client_id: RelayPublicClientId,
-})
-  .annotate({ description: "OAuth token exchange request for a DPoP-bound relay access token." })
-  .pipe(HttpApiSchema.asFormUrlEncoded());
-export type RelayDpopAccessTokenRequest = typeof RelayDpopAccessTokenRequest.Type;
-
-export const RelayDpopAccessTokenResponse = Schema.Struct({
-  access_token: TrimmedNonEmptyString,
-  issued_token_type: Schema.Literal(RelayAccessTokenType),
-  token_type: Schema.Literal("DPoP"),
-  expires_in: Schema.Int.check(Schema.isGreaterThan(0)),
-  scope: TrimmedNonEmptyString,
-});
-export type RelayDpopAccessTokenResponse = typeof RelayDpopAccessTokenResponse.Type;
-
 export const RelayBearerRequestHeaders = Schema.Struct({
   authorization: TrimmedNonEmptyString,
-  // Sent with relay DPoP access tokens; Clerk bearer tokens omit it.
+  // Validated by the authentication middleware before decoding endpoint headers.
   dpop: Schema.optional(TrimmedNonEmptyString),
 });
 
@@ -905,7 +859,7 @@ export const RelayDpopRequestHeaders = Schema.Struct({
 export const RelayAuthorizationServerMetadata = Schema.Struct({
   issuer: TrimmedNonEmptyString,
   token_endpoint: TrimmedNonEmptyString,
-  grant_types_supported: Schema.Array(Schema.Literal(RelayDpopTokenExchangeGrantType)),
+  grant_types_supported: Schema.Array(Schema.Literal("refresh_token")),
   token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
   dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")),
   scopes_supported: Schema.Array(RelayDpopAccessTokenScope),
@@ -1367,7 +1321,6 @@ const RelayAuthGroup = HttpApiGroup.make("auth")
   .add(
     RelayStartEmailSignInEndpoint,
     RelayVerifyEmailSignInEndpoint,
-    RelayExchangeClerkSessionEndpoint,
     RelayRefreshAuthTokenEndpoint,
     RelaySignOutEndpoint,
   )
@@ -1471,26 +1424,6 @@ const RelayClientGroup = HttpApiGroup.make("client")
   )
   .annotate(OpenApi.Description, "Cloud-user environment links and registered devices.")
   .middleware(RelayClientAuth);
-
-const RelayExchangeDpopAccessTokenEndpoint = HttpApiEndpoint.post(
-  "exchangeDpopAccessToken",
-  "/v1/client/dpop-token",
-  {
-    headers: RelayDpopProofRequestHeaders,
-    payload: RelayDpopAccessTokenRequest,
-    success: RelayDpopAccessTokenResponse,
-    error: RelayAuthAndInternalErrors,
-  },
-)
-  .annotate(OpenApi.Summary, "Exchange a Clerk token for a DPoP access token")
-  .annotate(
-    OpenApi.Description,
-    "Bootstrap endpoint. Send the DPoP proof JWT in the dpop header and the Clerk token in subject_token. The returned access token is bound to the proof key.",
-  );
-
-const RelayTokenGroup = HttpApiGroup.make("token")
-  .add(RelayExchangeDpopAccessTokenEndpoint)
-  .annotate(OpenApi.Description, "OAuth token exchange for DPoP-bound client access.");
 
 export const RelayConnectEnvironmentEndpoint = HttpApiEndpoint.post(
   "connectEnvironment",
@@ -1616,7 +1549,6 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayMetadataGroup,
     RelayMobileGroup,
     RelayClientGroup,
-    RelayTokenGroup,
     RelayAuthGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
@@ -1629,3 +1561,8 @@ export const RelayApi = HttpApi.make("RelayApi")
     "Control-plane API for linking styal environments, connecting authorized clients, and publishing agent activity.",
   );
 export type RelayApi = typeof RelayApi;
+
+/** Client-only wire contract for the transition build; never mounted by the relay. */
+export class LegacyRelaySessionApi extends HttpApi.make("LegacyRelaySessionApi").add(
+  HttpApiGroup.make("auth").add(RelayExchangeClerkSessionEndpoint),
+) {}

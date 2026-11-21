@@ -1,5 +1,6 @@
 import {
   RelayApi,
+  LegacyRelaySessionApi,
   RelayAuthInvalidError,
   RelayAuthRateLimitedError,
   RelayCliClientId,
@@ -568,11 +569,16 @@ export const make = Effect.gen(function* () {
       }
       const relayUrl = yield* configuredRelayUrl;
       const key = yield* getOrCreateKey;
-      const client = yield* relayClient(relayUrl);
+      const client = yield* HttpApiClient.make(LegacyRelaySessionApi, {
+        baseUrl: relayUrl,
+        transformResponse: preserveHttpRefusal,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
       const dpop = yield* proofFor({
         key,
         method: "POST",
-        url: authUrls(relayUrl).auth.exchangeClerkSession(),
+        url: HttpApiClient.urlBuilder(LegacyRelaySessionApi, {
+          baseUrl: relayUrl,
+        }).auth.exchangeClerkSession(),
       });
       const exchanged = yield* client.auth
         .exchangeClerkSession({

@@ -66,9 +66,6 @@ export class RelayConfiguration extends Context.Service<
      */
     readonly apns: ApnsCredentials | null;
     readonly fcmServiceAccount?: Redacted.Redacted<string>;
-    readonly clerkSecretKey: Redacted.Redacted<string>;
-    readonly clerkPublishableKey: string;
-    readonly clerkJwtAudience: string;
     /** Keys the stored hashes of email sign-in codes. */
     readonly signInCodeSecret: Redacted.Redacted<string>;
     /** Non-production only: the code test accounts sign in with. */
