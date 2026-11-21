@@ -37,7 +37,6 @@ import * as T3ChatAccounts from "./t3chat/T3ChatAccounts.ts";
 
 const layerRelayApi = Layer.mergeAll(
   RelayHttpApi.layerHealthApi,
-  RelayHttpApi.layerMetadataApi,
   RelayHttpApi.layerMobileApi,
   RelayHttpApi.layerClientApi,
   RelayHttpApi.layerAuthApi,

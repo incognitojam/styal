@@ -73,7 +73,8 @@ profile, desktop install, store mobile build, nightly, spare phone and backgroun
    changes to main automatically deploys production, then development.** Review that plan before
    approval: expect Worker code and removal of Clerk bindings, no database, queue, DNS or tunnel
    destruction. Old Clerk bearer requests now fail authentication; `/v1/client/dpop-token` and
-   `/v1/auth/clerk-exchange` return 404, and signed sessionless legacy tokens are refused.
+   `/v1/auth/clerk-exchange` return 404, OAuth discovery is retired, and signed sessionless
+   legacy tokens are refused.
    Existing environment credentials and tunnels remain, but old clients cannot establish new
    authenticated control-plane connections. Servers with only a Clerk credential must use the email-only client build or the
    transition build's interactive email recovery; silent exchange no longer works.

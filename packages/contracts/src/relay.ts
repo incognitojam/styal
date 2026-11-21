@@ -856,23 +856,6 @@ export const RelayDpopRequestHeaders = Schema.Struct({
   dpop: TrimmedNonEmptyString,
 });
 
-export const RelayAuthorizationServerMetadata = Schema.Struct({
-  issuer: TrimmedNonEmptyString,
-  token_endpoint: TrimmedNonEmptyString,
-  grant_types_supported: Schema.Array(Schema.Literal("refresh_token")),
-  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
-  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")),
-  scopes_supported: Schema.Array(RelayDpopAccessTokenScope),
-});
-
-export const RelayProtectedResourceMetadata = Schema.Struct({
-  resource: TrimmedNonEmptyString,
-  authorization_servers: Schema.Array(TrimmedNonEmptyString),
-  scopes_supported: Schema.Array(RelayDpopAccessTokenScope),
-  dpop_bound_access_tokens_required: Schema.Boolean,
-  dpop_signing_alg_values_supported: Schema.Array(Schema.Literal("ES256")),
-});
-
 export const RelayEnvironmentUnlinkParams = Schema.Struct({
   environmentId: EnvironmentId,
 });
@@ -1068,17 +1051,6 @@ const RelayHealthGroup = HttpApiGroup.make("health")
     }).annotate(OpenApi.Summary, "Check relay health"),
   )
   .annotate(OpenApi.Description, "Service health and readiness.");
-
-const RelayMetadataGroup = HttpApiGroup.make("metadata")
-  .add(
-    HttpApiEndpoint.get("authorizationServer", "/.well-known/oauth-authorization-server", {
-      success: RelayAuthorizationServerMetadata,
-    }).annotate(OpenApi.Summary, "Read OAuth authorization-server metadata"),
-    HttpApiEndpoint.get("protectedResource", "/.well-known/oauth-protected-resource", {
-      success: RelayProtectedResourceMetadata,
-    }).annotate(OpenApi.Summary, "Read OAuth protected-resource metadata"),
-  )
-  .annotate(OpenApi.Description, "OAuth and DPoP discovery metadata.");
 
 export const RelayRegisterDeviceEndpoint = HttpApiEndpoint.post(
   "registerDevice",
@@ -1546,7 +1518,6 @@ const RelayHooksGroup = HttpApiGroup.make("hooks")
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
-    RelayMetadataGroup,
     RelayMobileGroup,
     RelayClientGroup,
     RelayAuthGroup,

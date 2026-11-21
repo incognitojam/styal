@@ -34,9 +34,6 @@ import {
   RelayClientAuth,
   RelayClientPrincipal,
   RelayDpopClientAuth,
-  RelayEnvironmentConnectScope,
-  RelayEnvironmentStatusScope,
-  RelayMobileRegistrationScope,
   RelayAuthInvalidError,
   type RelayAuthInvalidReason,
   type RelayDpopFailureReason,
@@ -458,40 +455,6 @@ function readHttpAuthorizationCredential(credential: Redacted.Redacted<string>):
   // Effect beta.73 leaves the scheme separator in decoded HTTP credentials.
   return Redacted.value(credential).trimStart();
 }
-
-export const layerMetadataApi = HttpApiBuilder.group(
-  RelayApi,
-  "metadata",
-  Effect.fnUntraced(function* (handlers) {
-    const settings = yield* RelayConfiguration.RelayConfiguration;
-    const issuer = normalizeRelayIssuer(settings.relayIssuer);
-    const scopes = [
-      RelayEnvironmentConnectScope,
-      RelayEnvironmentStatusScope,
-      RelayMobileRegistrationScope,
-    ] as const;
-    return handlers
-      .handle("authorizationServer", () =>
-        Effect.succeed({
-          issuer,
-          token_endpoint: `${issuer}/v1/auth/token`,
-          grant_types_supported: ["refresh_token"],
-          token_endpoint_auth_methods_supported: ["none"],
-          dpop_signing_alg_values_supported: ["ES256"],
-          scopes_supported: scopes,
-        }),
-      )
-      .handle("protectedResource", () =>
-        Effect.succeed({
-          resource: issuer,
-          authorization_servers: [issuer],
-          scopes_supported: scopes,
-          dpop_bound_access_tokens_required: true,
-          dpop_signing_alg_values_supported: ["ES256"],
-        }),
-      );
-  }),
-);
 
 export const layerHealthApi = HttpApiBuilder.group(
   RelayApi,
