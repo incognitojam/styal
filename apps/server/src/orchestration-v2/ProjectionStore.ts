@@ -5358,9 +5358,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     SELECT named.prefix FROM reply, named WHERE instr(reply.text, named.prefix) = 1
                     ORDER BY length(named.prefix) DESC LIMIT 1
                   )
-                  SELECT named.message_id FROM orchestration_v2_projection_threads AS t, pick, named
-                  WHERE t.thread_id = ${threadId} AND named.prefix = pick.prefix
-                    AND named.message_id IN (SELECT open.message_id FROM (${openReportQuestions}) AS open)
+                  SELECT named.message_id FROM pick, named
+                  WHERE named.prefix = pick.prefix
+                    -- The open set reads t, so it is listed once here; correlated with each named
+                    -- report it would be rebuilt per report, quadratic when many share a title.
+                    AND named.message_id IN (
+                      SELECT value FROM orchestration_v2_projection_threads AS t,
+                        json_each((SELECT json_group_array(message_id) FROM (${openReportQuestions})))
+                      WHERE t.thread_id = ${threadId}
+                    )
                 )
                 OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
                 -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
