@@ -527,7 +527,7 @@ function ConfiguredCloudLinkRow({
     cloudLinkState.data === null ||
     cloudLinkState.isPending ||
     isBusy;
-  // `isSignedIn` is undefined until Clerk loads. Signed out, one row shows a
+  // `isSignedIn` is undefined until the saved sign-in loads. Signed out, one row shows a
   // sign-in button instead of its switch; the onboarding dialog that opens after
   // a fresh sign-in offers both linking and publishing.
   const signedOut = isSignedIn === false;

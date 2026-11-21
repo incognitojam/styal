@@ -11,13 +11,9 @@ import { deleteRelayAccount, signOutOfRelay } from "../../cloud/relaySession";
 import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { runtime } from "../../lib/runtime";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import {
-  ClerkUserProfilePage as AccountSection,
-  ClerkUserProfileRefreshButton as AccountRefreshButton,
-  ClerkUserProfileRow as AccountRow,
-} from "../clerk/ClerkUserProfilePage";
-import { MobileClientsUserProfilePage } from "../clerk/MobileClientsUserProfilePage";
-import { T3ConnectUserProfilePage } from "../clerk/T3ConnectUserProfilePage";
+import { AccountPage as AccountSection, AccountRefreshButton, AccountRow } from "./AccountPage";
+import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
+import { T3ConnectUserProfilePage } from "./T3ConnectUserProfilePage";
 import {
   AlertDialog,
   AlertDialogClose,

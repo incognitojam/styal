@@ -74,7 +74,7 @@ const cleanUpCloudAccount = (accountId: string | null) =>
   });
 
 /**
- * The styal Link sign-in as the account service sees it. Loading, moving a Clerk sign-in over,
+ * The styal Link sign-in as the account service sees it. Loading
  * or a failed load is not a sign-out, so only a known sign-in state is reported.
  */
 export const relaySignInSource: CloudAccountSource = {

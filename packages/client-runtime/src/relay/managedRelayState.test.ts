@@ -61,7 +61,6 @@ function createClient(overrides?: Partial<ManagedRelay.ManagedRelayClient["Servi
     relayUrl: "https://relay.example.test",
     startEmailSignIn: () => Effect.die("unused"),
     verifyEmailSignIn: () => Effect.die("unused"),
-    exchangeClerkSession: () => Effect.die("unused"),
     signOut: () => Effect.die("unused"),
     getAccount: () => Effect.die("unused"),
     listSessions: () => Effect.die("unused"),

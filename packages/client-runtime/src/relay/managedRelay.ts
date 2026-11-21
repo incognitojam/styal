@@ -17,7 +17,6 @@ import {
   type RelayEnvironmentLinkRequest,
   type RelayEnvironmentLinkResponse,
   type RelayEnvironmentStatusResponse,
-  RelayExchangeClerkSessionEndpoint,
   RelayGetEnvironmentStatusEndpoint,
   type RelayAgentActivitySnapshotResponse,
   type RelayLiveActivityRegistrationRequest,
@@ -327,11 +326,6 @@ export class ManagedRelayClient extends Context.Service<
       readonly code: string;
       readonly label?: string;
     }) => Effect.Effect<ManagedRelaySignIn, ManagedRelayClientError>;
-    /** Moves a Clerk sign-in to a relay session for the same account. */
-    readonly exchangeClerkSession: (input: {
-      readonly clerkToken: string;
-      readonly label?: string;
-    }) => Effect.Effect<ManagedRelaySignIn, ManagedRelayClientError>;
     /** Ends the session at the relay and forgets its cached access tokens. */
     readonly signOut: (input: Credentialed) => Effect.Effect<void, ManagedRelayClientError>;
     readonly getAccount: (
@@ -524,7 +518,6 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
     relayUrl,
     startEmailSignIn: unavailable("clientRuntime.managedRelay.startEmailSignIn"),
     verifyEmailSignIn: unavailable("clientRuntime.managedRelay.verifyEmailSignIn"),
-    exchangeClerkSession: unavailable("clientRuntime.managedRelay.exchangeClerkSession"),
     signOut: unavailable("clientRuntime.managedRelay.signOut"),
     getAccount: unavailable("clientRuntime.managedRelay.getAccount"),
     listSessions: unavailable("clientRuntime.managedRelay.listSessions"),
@@ -590,8 +583,6 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       target(RelayStartEmailSignInEndpoint.method, urlBuilder.auth.startEmailSignIn()),
     verifyEmailSignIn: () =>
       target(RelayVerifyEmailSignInEndpoint.method, urlBuilder.auth.verifyEmailSignIn()),
-    exchangeClerkSession: () =>
-      target(RelayExchangeClerkSessionEndpoint.method, urlBuilder.auth.exchangeClerkSession()),
     refreshAuthToken: () =>
       target(RelayRefreshAuthTokenEndpoint.method, urlBuilder.auth.refreshAuthToken()),
     signOut: () => target(RelaySignOutEndpoint.method, urlBuilder.auth.signOut()),
@@ -932,27 +923,6 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* acceptSession(response);
       },
       Effect.withSpan("clientRuntime.managedRelay.verifyEmailSignIn"),
-      withRelayClientTracing,
-    ),
-    exchangeClerkSession: Effect.fnUntraced(
-      function* (input) {
-        const proof = yield* authProof(dpopProofTargets.exchangeClerkSession());
-        const response = yield* client.auth
-          .exchangeClerkSession({
-            headers: { dpop: proof },
-            payload: {
-              subject_token: input.clerkToken,
-              client_id: options.clientId,
-              ...(input.label ? { label: input.label } : {}),
-            },
-          })
-          .pipe(
-            Effect.mapError(relayRequestError("move styal Link sign-in from Clerk")),
-            timeoutRelayRequest("styal Link sign-in move from Clerk"),
-          );
-        return yield* acceptSession(response);
-      },
-      Effect.withSpan("clientRuntime.managedRelay.exchangeClerkSession"),
       withRelayClientTracing,
     ),
     signOut: Effect.fnUntraced(

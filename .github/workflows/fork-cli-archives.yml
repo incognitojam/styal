@@ -50,7 +50,6 @@ jobs:
       matrix: ${{ fromJSON(inputs.target == 'linux-x64' && '{"include":[{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04","rust_target":"x86_64-unknown-linux-gnu"}]}' || '{"include":[{"key":"darwin-arm64","platform":"mac","arch":"arm64","runner":"macos-15","rust_target":"aarch64-apple-darwin"},{"key":"linux-x64","platform":"linux","arch":"x64","runner":"ubuntu-24.04","rust_target":"x86_64-unknown-linux-gnu"},{"key":"linux-arm64","platform":"linux","arch":"arm64","runner":"ubuntu-24.04-arm","rust_target":"aarch64-unknown-linux-gnu"},{"key":"win32-x64","platform":"win","arch":"x64","runner":"windows-2025","rust_target":"x86_64-pc-windows-msvc"},{"key":"win32-arm64","platform":"win","arch":"arm64","runner":"windows-11-arm","rust_target":"aarch64-pc-windows-msvc"}]}') }}
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
       T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
       T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     steps:

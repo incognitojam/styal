@@ -5,9 +5,8 @@ import "@fontsource-variable/inter";
 import "./index.css";
 import "./fork-theme.css";
 
-import { hasCloudPublicConfig, hasLegacyClerkConfig } from "./cloud/publicConfig";
+import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
-import { isElectron } from "./env";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
 import { whenLocaleReady } from "./i18n/runtime";
@@ -17,8 +16,6 @@ import { cleanupAbandonedHostedBrowserStorage } from "./hostedStorageCleanup";
 void cleanupAbandonedHostedBrowserStorage();
 
 const router = startAppServices();
-
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 let chunkLoadFailed = false;
 let reloadScheduled = false;
@@ -38,32 +35,15 @@ const app = hasCloudPublicConfig() ? (
   <AppRoot router={router} />
 );
 
-// Clerk is mounted only to move existing Clerk sign-ins to relay sessions. Split by runtime to
-// keep Clerk out of local startup and clerk-js out of browser builds.
-const managedAuthShellModule =
-  clerkPublishableKey && hasLegacyClerkConfig()
-    ? isElectron
-      ? import("./components/clerk/ElectronManagedAuthShell")
-      : import("./components/clerk/BrowserManagedAuthShell")
-    : null;
-
-export const startup = Promise.all([
-  managedAuthShellModule?.then((module) => module.default) ?? null,
-  // Chained so settings have usually hydrated; English resolves without a chunk load.
-  router.load().then(whenLocaleReady),
-])
-  .then(([ManagedAuthShell]) => {
-    // Route chunk failures resolve router.load() and surface later through the error boundary.
+// Chained so settings have usually hydrated; English resolves without a chunk load.
+export const startup = router
+  .load()
+  .then(whenLocaleReady)
+  .then(() => {
     if (reloadScheduled) return;
     if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-      <React.StrictMode>
-        {ManagedAuthShell && clerkPublishableKey ? (
-          <ManagedAuthShell publishableKey={clerkPublishableKey}>{app}</ManagedAuthShell>
-        ) : (
-          app
-        )}
-      </React.StrictMode>,
+      <React.StrictMode>{app}</React.StrictMode>,
     );
   })
   .catch((error: unknown) => {

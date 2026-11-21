@@ -9,7 +9,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { RELAY_KEYCHAIN_OPTIONS } from "./relayKeychain";
 
 const RELAY_SESSION_STORAGE_KEY = "styal.cloud.relay-session";
-// Set once this install has had a relay session; Clerk sign-ins are never moved over after that.
+// Prevent a downgraded build from adopting a leftover credential after sign-out.
 const CLERK_RETIRED_STORAGE_KEY = "styal.cloud.clerk-retired";
 
 const sessionMutationLock = Semaphore.makeUnsafe(1);
@@ -86,6 +86,13 @@ export const saveStoredRelaySession = (record: StoredRelaySession) =>
         catch: (cause) => new RelaySessionStoreError({ operation: "write", cause }),
       }),
     ),
+    Effect.tap(() =>
+      fenceLegacyAdoption.pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not record the session upgrade.", { error }),
+        ),
+      ),
+    ),
   );
 
 export const clearStoredRelaySession = Effect.tryPromise({
@@ -93,29 +100,14 @@ export const clearStoredRelaySession = Effect.tryPromise({
   catch: (cause) => new RelaySessionStoreError({ operation: "clear", cause }),
 });
 
-/**
- * Whether an older Clerk sign-in may still be moved to a relay session. False
- * once this install has had a relay session, so a Clerk sign-out that failed
- * (offline, say) cannot sign the user back in on a later launch.
- */
-export const legacyClerkAdoptionAllowed = Effect.tryPromise({
-  try: () => SecureStore.getItemAsync(CLERK_RETIRED_STORAGE_KEY, RELAY_KEYCHAIN_OPTIONS),
-  catch: (cause) => new RelaySessionStoreError({ operation: "read", cause }),
-}).pipe(Effect.map((value) => value === null));
-
-export const retireLegacyClerk = Effect.tryPromise({
+const fenceLegacyAdoption = Effect.tryPromise({
   try: () => SecureStore.setItemAsync(CLERK_RETIRED_STORAGE_KEY, "1", RELAY_KEYCHAIN_OPTIONS),
   catch: (cause) => new RelaySessionStoreError({ operation: "write", cause }),
 });
 
-/**
- * "loading" reads the saved record; "adopting" checks for an older Clerk sign-in to move over;
- * "failed" retries on the next foreground. Only "ready" activates or ends a relay session, so a
- * pending move never looks like a sign-out.
- */
+/** Failed storage loads retry on the next foreground; only ready changes the active account. */
 export type RelaySignInState =
   | { readonly status: "loading" }
-  | { readonly status: "adopting" }
   | { readonly status: "failed" }
   | { readonly status: "ready"; readonly session: ManagedRelaySession | null };
 

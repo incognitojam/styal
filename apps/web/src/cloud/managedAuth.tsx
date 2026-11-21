@@ -13,7 +13,6 @@ import { runtime } from "../lib/runtime";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { useAtomCommand } from "../state/use-atom-command";
 import { restoreRelaySession } from "./relaySession";
-import { legacyClerkSettledAtom } from "./relaySessionStore";
 
 /**
  * Restores the saved styal Link sign-in and clears relay environments from
@@ -32,7 +31,6 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
 function ManagedRelayAuthLifecycle() {
   const session = useAtomValue(managedRelaySessionAtom);
   const loadState = useAtomValue(managedRelayAuthLoadAtom);
-  const legacyClerkSettled = useAtomValue(legacyClerkSettledAtom);
   const removeRelayEnvironments = useAtomCommand(environmentCatalog.removeRelayEnvironments, {
     reportFailure: false,
     reportDefect: false,
@@ -49,7 +47,6 @@ function ManagedRelayAuthLifecycle() {
   useEffect(() => {
     if (loadState !== "loaded") return;
     const previousAccount = observedAccountRef.current;
-    if (previousAccount === undefined && accountId === null && !legacyClerkSettled) return;
     observedAccountRef.current = accountId;
     if (previousAccount === undefined && accountId !== null) return;
     if (previousAccount === null || previousAccount === accountId) return;
@@ -68,7 +65,7 @@ function ManagedRelayAuthLifecycle() {
         reportAtomCommandResult(result, { label: "cloud account cleanup" });
       }
     })();
-  }, [accountId, loadState, legacyClerkSettled, removeRelayEnvironments]);
+  }, [accountId, loadState, removeRelayEnvironments]);
 
   return null;
 }

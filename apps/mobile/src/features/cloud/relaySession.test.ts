@@ -1,10 +1,8 @@
 import { ManagedRelay, managedRelayAuthLoadAtom } from "@t3tools/client-runtime/relay";
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
-import { RelayAuthInvalidError } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import * as Deferred from "effect/Deferred";
 import type * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Layer from "effect/Layer";
@@ -17,12 +15,8 @@ import {
   unregisterAgentAwarenessDeviceForCurrentUser,
 } from "../agent-awareness/remoteRegistration";
 import {
-  adoptClerkSession,
   deleteRelayAccount,
-  failClerkAdoption,
-  finishClerkAdoptionSignedOut,
   restoreRelaySession,
-  setLegacyClerkSignOut,
   signOutOfRelay,
   verifyEmailSignIn,
 } from "./relaySession";
@@ -124,14 +118,9 @@ function storedRecord(overrides: Record<string, unknown> = {}) {
   });
 }
 
-const exchangeClerkSession = vi.fn();
 const verify = vi.fn();
 const relaySignOut = vi.fn();
 const relayDeleteAccount = vi.fn();
-const clerkSignOut = vi.fn(() => {
-  calls.push("clerk-sign-out");
-  return Promise.resolve();
-});
 
 const provideFakes = <A, E>(
   effect: Effect.Effect<
@@ -182,7 +171,6 @@ beforeEach(() => {
   config.extra = { relay: { url: RELAY_URL } };
   appAtomRegistry.set(relaySignInAtom, { status: "loading" });
   appAtomRegistry.set(managedRelayAuthLoadAtom, "loading");
-  exchangeClerkSession.mockReset().mockReturnValue(Effect.succeed(signIn));
   verify.mockReset().mockReturnValue(Effect.succeed(signIn));
   relaySignOut.mockReset().mockImplementation(() =>
     Effect.sync(() => {
@@ -194,7 +182,6 @@ beforeEach(() => {
       calls.push("relay-delete-account");
     }),
   );
-  clerkSignOut.mockClear();
   vi.mocked(unregisterAgentAwarenessDeviceForCurrentUser)
     .mockReset()
     .mockImplementation(() =>
@@ -203,13 +190,11 @@ beforeEach(() => {
       }),
     );
   fakes.client = {
-    exchangeClerkSession,
     verifyEmailSignIn: verify,
     signOut: relaySignOut,
     deleteAccount: relayDeleteAccount,
   };
   fakes.signer = { thumbprint: Effect.succeed("key-thumbprint") };
-  setLegacyClerkSignOut(clerkSignOut);
 });
 
 describe("restoring the saved sign-in", () => {
@@ -260,112 +245,6 @@ describe("restoring the saved sign-in", () => {
   );
 });
 
-describe("moving a Clerk sign-in", () => {
-  beforeEach(() => {
-    config.extra = {
-      relay: { url: RELAY_URL },
-      clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
-    };
-  });
-
-  it.effect("waits for Clerk when nothing is saved, then saves the moved sign-in", () =>
-    Effect.gen(function* () {
-      yield* settle(restoreRelaySession());
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "adopting" });
-
-      yield* settle(adoptClerkSession(() => Promise.resolve("clerk-session-token")));
-
-      expect(exchangeClerkSession).toHaveBeenCalledWith({
-        clerkToken: "clerk-session-token",
-        label: "Test iPhone",
-      });
-      expect(JSON.parse(secureStore.get(SESSION_KEY) ?? "null")).toEqual(
-        JSON.parse(storedRecord()),
-      );
-      expect(appAtomRegistry.get(relaySignInAtom)).toMatchObject({
-        status: "ready",
-        session: { accountId: "account-1" },
-      });
-      expect(clerkSignOut).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect("settles as signed out when Clerk reports no sign-in as soon as adoption starts", () =>
-    Effect.gen(function* () {
-      // The adoption component can react to "adopting" before the restore
-      // that published it has finished.
-      const settled = yield* Deferred.make<{ readonly pending: Promise<void> }>();
-      const unsubscribe = appAtomRegistry.subscribe(relaySignInAtom, (state) => {
-        if (state.status === "adopting") {
-          Deferred.doneUnsafe(settled, Effect.succeed({ pending: finishClerkAdoptionSignedOut() }));
-        }
-      });
-      yield* Effect.gen(function* () {
-        yield* settle(restoreRelaySession());
-        yield* settle((yield* Deferred.await(settled)).pending);
-      }).pipe(Effect.ensuring(Effect.sync(unsubscribe)));
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
-    }),
-  );
-
-  it.effect("never moves a Clerk sign-in over once this install has had a relay session", () =>
-    Effect.gen(function* () {
-      secureStore.set("styal.cloud.clerk-retired", "1");
-      yield* settle(restoreRelaySession());
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
-      expect(exchangeClerkSession).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("keeps Clerk and retries later when the relay cannot be reached", () =>
-    Effect.gen(function* () {
-      yield* settle(restoreRelaySession());
-      exchangeClerkSession.mockReturnValue(
-        Effect.fail(
-          new ManagedRelay.ManagedRelayRequestFailedError({
-            action: "move styal Link sign-in from Clerk",
-            transportFailed: true,
-            cause: "offline",
-          }),
-        ),
-      );
-
-      yield* settle(adoptClerkSession(() => Promise.resolve("clerk-session-token")));
-
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "failed" });
-      expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("failed");
-      expect(clerkSignOut).not.toHaveBeenCalled();
-
-      yield* settle(restoreRelaySession());
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "adopting" });
-    }),
-  );
-
-  it.effect("signs out of Clerk when the relay rejects the Clerk session", () =>
-    Effect.gen(function* () {
-      yield* settle(restoreRelaySession());
-      exchangeClerkSession.mockReturnValue(
-        Effect.fail(
-          new ManagedRelay.ManagedRelayRequestFailedError({
-            action: "move styal Link sign-in from Clerk",
-            cause: "rejected",
-            relayError: new RelayAuthInvalidError({
-              code: "auth_invalid",
-              reason: "invalid_bearer",
-              traceId: "trace",
-            }),
-          }),
-        ),
-      );
-
-      yield* settle(adoptClerkSession(() => Promise.resolve("clerk-session-token")));
-
-      expect(clerkSignOut).toHaveBeenCalledTimes(1);
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
-    }),
-  );
-});
-
 describe("email sign-in and sign-out", () => {
   it.effect("saves and publishes a verified email sign-in", () =>
     Effect.gen(function* () {
@@ -400,7 +279,6 @@ describe("email sign-in and sign-out", () => {
           "unregister-device",
           "relay-sign-out",
           `delete:${SESSION_KEY}`,
-          "clerk-sign-out",
         ]);
         expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
       }),
@@ -445,147 +323,13 @@ function expectNextSignIn() {
   });
 }
 
-describe("retrying Clerk adoption", () => {
-  beforeEach(() => {
-    appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-  });
-
-  it.effect("keeps Clerk when saving the exchanged session fails, then retries", () =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("keychain unavailable"));
-      yield* Effect.promise(() => adoptClerkSession(() => Promise.resolve("clerk-token")));
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "failed" });
-      expect(clerkSignOut).not.toHaveBeenCalled();
-      expect(secureStore.has(SESSION_KEY)).toBe(false);
-
-      appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-      yield* Effect.promise(() => adoptClerkSession(() => Promise.resolve("clerk-token")));
-      expect(appAtomRegistry.get(relaySignInAtom)).toMatchObject({
-        status: "ready",
-        session: { accountId: signIn.credential.accountId },
-      });
-      expect(clerkSignOut).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect("keeps Clerk when the exchanged session's DPoP thumbprint cannot be loaded", () =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      fakes.signer = {
-        thumbprint: Effect.fail(
-          new ManagedRelay.ManagedRelayDpopKeyLoadError({
-            keyStore: "expo-secure-store",
-            cause: "locked",
-          }),
-        ),
-      };
-      yield* Effect.promise(() => adoptClerkSession(() => Promise.resolve("clerk-token")));
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "failed" });
-      expect(clerkSignOut).not.toHaveBeenCalled();
-      expect(secureStore.has(SESSION_KEY)).toBe(false);
-    }),
-  );
-
-  it.effect.each([
-    new ManagedRelay.ManagedRelayDpopKeyLoadError({
-      keyStore: "expo-secure-store",
-      cause: "locked",
-    }),
-    new ManagedRelay.ManagedRelayDpopProofCreationError({
-      method: "POST",
-      url: RELAY_URL,
-      cause: "unavailable",
-    }),
-    new ManagedRelay.ManagedRelayRequestFailedError({
-      action: "move styal Link sign-in from Clerk",
-      cause: "invalid proof",
-      relayError: new RelayAuthInvalidError({
-        code: "auth_invalid",
-        reason: "invalid_dpop",
-        traceId: "trace",
-      }),
-    }),
-  ])("retains Clerk on a retryable $_tag exchange failure", (error) =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      exchangeClerkSession.mockReturnValue(Effect.fail(error));
-      yield* Effect.promise(() => adoptClerkSession(() => Promise.resolve("clerk-token")));
-      expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "failed" });
-      expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("failed");
-      expect(clerkSignOut).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect.each([null, undefined])(
-    "does not infer sign-out from an unavailable Clerk token (%s)",
-    (token) =>
-      Effect.gen(function* () {
-        yield* startSessionRuntime;
-        yield* Effect.promise(() =>
-          adoptClerkSession(() =>
-            token === undefined
-              ? Promise.reject(new Error("Clerk unavailable"))
-              : Promise.resolve(token),
-          ),
-        );
-        expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "failed" });
-        expect(clerkSignOut).not.toHaveBeenCalled();
-        expect(exchangeClerkSession).not.toHaveBeenCalled();
-      }),
-  );
-});
-
 describe("superseded session operations", () => {
-  it.effect.each(["clerk-token", null])(
-    "discards a stale Clerk token read (%s) after email sign-in",
-    (token) =>
-      Effect.gen(function* () {
-        yield* startSessionRuntime;
-        appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-        const clerkToken = Promise.withResolvers<string | null>();
-        const adoption = adoptClerkSession(() => clerkToken.promise);
-        failClerkAdoption();
-        verify.mockReturnValue(Effect.succeed(nextSignIn));
-        yield* provideFakes(verifyEmailSignIn(emailInput));
-        clerkToken.resolve(token);
-        yield* Effect.promise(() => adoption);
-        expectNextSignIn();
-        expect(exchangeClerkSession).not.toHaveBeenCalled();
-      }),
-  );
-
-  it.effect("discards an exchanged Clerk session superseded by email sign-in", () =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-      const started = Promise.withResolvers<void>();
-      const exchange = Promise.withResolvers<typeof signIn>();
-      exchangeClerkSession.mockImplementation(() =>
-        Effect.promise(() => {
-          started.resolve();
-          return exchange.promise;
-        }),
-      );
-      const adoption = adoptClerkSession(() => Promise.resolve("clerk-token"));
-      yield* Effect.promise(() => started.promise);
-      verify.mockReturnValue(Effect.succeed(nextSignIn));
-      yield* provideFakes(verifyEmailSignIn(emailInput));
-      exchange.resolve(signIn);
-      yield* Effect.promise(() => adoption);
-      expectNextSignIn();
-      expect(SecureStore.setItemAsync).toHaveBeenCalledTimes(2);
-      expect(relaySignOut).toHaveBeenCalledWith({ credential: signIn.credential });
-      expect(clerkSignOut).toHaveBeenCalledTimes(1);
-    }),
-  );
-
   it.effect(
     "does not start a foreground adoption while explicit email verification is pending",
     () =>
       Effect.gen(function* () {
         yield* startSessionRuntime;
-        config.extra = { relay: { url: RELAY_URL }, clerk: { publishableKey: "pk_test_example" } };
+        config.extra = { relay: { url: RELAY_URL } };
         appAtomRegistry.set(relaySignInAtom, { status: "failed" });
         const started = Promise.withResolvers<void>();
         const verification = Promise.withResolvers<typeof nextSignIn>();
@@ -603,65 +347,6 @@ describe("superseded session operations", () => {
         yield* Fiber.join(signingIn);
         expectNextSignIn();
       }),
-  );
-
-  it.effect("ignores Clerk recovery callbacks while a newer email verification is pending", () =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-      const clerkToken = Promise.withResolvers<string | null>();
-      const adoption = adoptClerkSession(() => clerkToken.promise);
-      const started = Promise.withResolvers<void>();
-      const verification = Promise.withResolvers<typeof nextSignIn>();
-      verify.mockImplementation(() =>
-        Effect.promise(() => {
-          started.resolve();
-          return verification.promise;
-        }),
-      );
-      const signingIn = yield* Effect.forkChild(provideFakes(verifyEmailSignIn(emailInput)));
-      yield* Effect.promise(() => started.promise);
-      failClerkAdoption();
-      finishClerkAdoptionSignedOut();
-      verification.resolve(nextSignIn);
-      yield* Fiber.join(signingIn);
-      clerkToken.resolve(null);
-      yield* Effect.promise(() => adoption);
-      expectNextSignIn();
-    }),
-  );
-
-  it.effect("rechecks adoption after loading the thumbprint before saving", () =>
-    Effect.gen(function* () {
-      yield* startSessionRuntime;
-      appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-      const started = Promise.withResolvers<void>();
-      const thumbprint = Promise.withResolvers<string>();
-      fakes.signer = {
-        thumbprint: Effect.promise(() => {
-          started.resolve();
-          return thumbprint.promise;
-        }),
-      };
-      const adoption = adoptClerkSession(() => Promise.resolve("clerk-token"));
-      yield* Effect.promise(() => started.promise);
-      const verifying = Promise.withResolvers<void>();
-      verify.mockImplementation(() =>
-        Effect.sync(() => {
-          verifying.resolve();
-          return nextSignIn;
-        }),
-      );
-      const signingIn = yield* Effect.forkChild(provideFakes(verifyEmailSignIn(emailInput)));
-      yield* Effect.promise(() => verifying.promise);
-      fakes.signer = { thumbprint: Effect.succeed("key-thumbprint") };
-      thumbprint.resolve("key-thumbprint");
-      yield* Effect.promise(() => adoption);
-      yield* Fiber.join(signingIn);
-      expectNextSignIn();
-      expect(SecureStore.setItemAsync).toHaveBeenCalledTimes(2);
-      expect(relaySignOut).toHaveBeenCalledWith({ credential: signIn.credential });
-    }),
   );
 
   it.effect(
@@ -793,7 +478,6 @@ describe("superseded session operations", () => {
           "unregister-device",
           "relay-delete-account",
           `delete:${SESSION_KEY}`,
-          "clerk-sign-out",
         ]);
         expect(appAtomRegistry.get(relaySignInAtom)).toEqual({ status: "ready", session: null });
       }),
@@ -892,7 +576,7 @@ describe("session-ended callbacks during teardown", () => {
 });
 
 describe("discarding a superseded sign-in", () => {
-  it.effect.each(["email verification", "Clerk exchange"])(
+  it.effect.each(["email verification"])(
     "forgets the access token created by a late %s even when remote sign-out fails",
     (action) => {
       const started = Promise.withResolvers<void>();
@@ -912,11 +596,11 @@ describe("discarding a superseded sign-in", () => {
       return Effect.gen(function* () {
         yield* startSessionRuntime;
         fakes.client = yield* ManagedRelay.ManagedRelayClient;
-        appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
+        appAtomRegistry.set(relaySignInAtom, { status: "ready", session: null });
         const signingIn = yield* Effect.forkChild(
           action === "email verification"
             ? provideFakes(verifyEmailSignIn(emailInput))
-            : Effect.promise(() => adoptClerkSession(() => Promise.resolve("clerk-token"))),
+            : Effect.void,
         );
         yield* Effect.promise(() => started.promise);
         yield* provideFakes(signOutOfRelay);

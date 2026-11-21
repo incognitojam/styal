@@ -6,13 +6,9 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { BrowserDpopError, cloudAuthTransaction } from "./dpop";
-import { hasLegacyClerkConfig } from "./publicConfig";
-
-export const legacyClerkSettledAtom = Atom.make(!hasLegacyClerkConfig()).pipe(Atom.keepAlive);
 
 const RECORD_KEY = "relay-session";
 const CLERK_RETIRED_KEY = "relay-session-clerk-retired";
@@ -34,20 +30,17 @@ const isStoredRelaySession = Schema.is(StoredRelaySession);
 
 export interface RelaySessionState {
   readonly session: StoredRelaySession | null;
-  readonly clerkRetired: boolean;
   readonly revision: number;
   readonly generation: number;
 }
 
 function readState(store: IDBObjectStore, done: (state: RelaySessionState) => void): void {
   const session = store.get(RECORD_KEY);
-  const retired = store.get(CLERK_RETIRED_KEY);
   const revision = store.get(REVISION_KEY);
   const generation = store.get(GENERATION_KEY);
   generation.addEventListener("success", () =>
     done({
       session: isStoredRelaySession(session.result) ? session.result : null,
-      clerkRetired: retired.result === true,
       revision: typeof revision.result === "number" ? revision.result : 0,
       generation: typeof generation.result === "number" ? generation.result : 0,
     }),
@@ -64,9 +57,7 @@ export const readRelaySessionState = cloudAuthTransaction<RelaySessionState>("re
 export const updateRelaySessionState = (
   update: (
     state: RelaySessionState,
-  ) =>
-    | (Pick<RelaySessionState, "session" | "clerkRetired"> & { readonly generation?: number })
-    | null,
+  ) => (Pick<RelaySessionState, "session"> & { readonly generation?: number }) | null,
 ) =>
   cloudAuthTransaction<{ readonly state: RelaySessionState; readonly changed: boolean }>(
     "readwrite",
@@ -84,7 +75,8 @@ export const updateRelaySessionState = (
         };
         if (state.session === null) store.delete(RECORD_KEY);
         else store.put(state.session, RECORD_KEY);
-        store.put(state.clerkRetired, CLERK_RETIRED_KEY);
+        // Fence adoption in an older tab after this build changes the session.
+        store.put(true, CLERK_RETIRED_KEY);
         store.put(state.revision, REVISION_KEY);
         store.put(state.generation, GENERATION_KEY);
         done({ state, changed: true });
@@ -159,7 +151,6 @@ export const publishRelaySessionIfCurrent = (revision: number, onPublish?: () =>
     readState(store, (state) => {
       const current = state.revision === revision;
       if (current) {
-        if (state.clerkRetired) appAtomRegistry.set(legacyClerkSettledAtom, true);
         publishRelaySession(state.session);
         appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
         onPublish?.();
@@ -176,7 +167,7 @@ export const endRelaySession = (credential: ManagedRelay.ManagedRelayCredential)
         current.session !== null &&
         current.session.accountId === credential.accountId &&
         current.session.refreshToken === credential.refreshToken
-          ? { session: null, clerkRetired: true }
+          ? { session: null }
           : null,
       );
       yield* publishRelaySessionIfCurrent(state.revision);
@@ -216,8 +207,3 @@ export function watchOtherTabs(reload: () => void): void {
     });
   }
 }
-
-/** A failed Clerk sign-out must never undo an explicit relay sign-out. */
-export const legacyClerkAdoptionAllowed = readRelaySessionState.pipe(
-  Effect.map((state) => !state.clerkRetired && state.session === null),
-);

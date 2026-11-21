@@ -4,7 +4,7 @@ import { relaySignInAtom } from "./relaySessionStore";
 
 /**
  * The styal Link sign-in for screens. `isLoaded` is false only while the saved
- * sign-in or an older Clerk sign-in is still being read, so a failed load
+ * sign-in is still being read, so a failed load
  * still lets the user sign in again.
  */
 export function useRelayAuth() {

@@ -2648,7 +2648,6 @@ features:
       - infra/relay/src/Config.test.ts
       - infra/relay/src/apexRedirect.test.ts
       - packages/client-runtime/src/relay/managedRelayState.test.ts
-      - packages/shared/src/connectAuth.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -3694,42 +3693,6 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/blob/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e/apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
       retire_when: Upstream preserves HTML-looking user-message text on Android and iOS while retaining agent HTML handling.
-
-  - id: mobile-clerk-load-recovery
-    title: Recover and explain styal Link sign-in after a failed Clerk startup
-    status: maintained
-    tier: yield
-    prs: [436, 662, 680]
-    invariants:
-      - A Clerk GET request on mobile that has no caller abort signal is aborted after 15 seconds, so a stalled startup load fails instead of keeping the account in the loading state.
-      - Reading the saved Clerk client token on mobile times out after 15 seconds even before a network request starts. A timeout fails the load for retry without returning a signed-out client or deleting saved credentials and environments.
-      - A failed headless Clerk load is retried with backoff capped at 30 seconds, and a pending retry runs immediately when the app returns to the foreground, so the relay session activates without restarting the app.
-      - A failed or interrupted mobile relay signing-key read can be retried without clearing saved credentials or environments; successful reads keep using the saved key.
-      - On web and mobile, a relay connection without a cloud session reports whether the sign-in is still loading, Clerk could not be reached, or the user is signed out. Only the signed-out case asks the user to sign in, and each change of that state re-attempts blocked relay connections.
-      - The web composer shows no unavailable banner for a relay environment while the sign-in loads, offers Reload when Clerk failed to load, and offers Sign in only when the user is signed out.
-    implementation_paths:
-      - apps/mobile/src/features/cloud/clerkLoadRecovery.ts
-      - apps/mobile/src/features/cloud/cloudAccountService.ts
-    upstream_paths:
-      - apps/mobile/src/connection/platform.ts
-      - apps/mobile/src/features/cloud/CloudAuthProvider.tsx
-      - apps/web/src/cloud/managedAuth.tsx
-      - apps/web/src/components/ChatView.tsx
-      - apps/web/src/components/chat/useSystemComposerBanners.tsx
-      - apps/web/src/connection/platform.ts
-      - packages/client-runtime/src/authorization/service.ts
-      - packages/client-runtime/src/platform/capabilities.ts
-      - packages/client-runtime/src/relay/managedRelayState.ts
-    tests:
-      - apps/mobile/src/features/cloud/clerkLoadRecovery.test.ts
-      - apps/mobile/src/features/cloud/managedRelayLayer.test.ts
-      - packages/client-runtime/src/authorization/layer.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/11013
-        - https://github.com/pingdotgg/t3code/pull/15894
-      retire_when: Upstream or Clerk retries a failed headless Clerk load and bounds stalled Clerk requests on mobile.
 
   - id: mobile-message-image-grid
     title: Mobile folded, guest and assistant messages show several images as a grid
@@ -5906,20 +5869,18 @@ features:
       - Email sign-in stays off until a sender is configured, and production refuses log delivery and fixed test codes.
       - A Clerk user banned in Clerk cannot sign in by email or move a Clerk sign-in to the relay. A Live Activity can only be registered by the session that owns its device and is dropped when the device moves to another session, so revoking that session ends it. A session cannot be opened for an account that is deleted or being deleted.
       - Web, desktop, and mobile sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key.
-      - A client still signed in with Clerk moves to a relay session once without asking, then signs Clerk out so a later styal Link sign-out stays signed out.
       - Web, desktop, mobile, and the CLI sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key, and the CLI asks for the code in the terminal, including over SSH.
-      - Web, desktop, and mobile exchange a stored Clerk sign-in once for a relay session, then sign Clerk out locally so a later styal Link sign-out stays signed out.
+      - Web, desktop, and mobile ship no Clerk SDK or session exchange. Existing relay sessions restore offline; a device with only a Clerk credential asks for an emailed code and returns to the same imported account and machines after sign-in. A failed saved-session or DPoP-key read remains retryable rather than clearing credentials.
       - CLI adoption and credential updates use a cross-process lease. Startup skips absent credentials and retries only transient failures, including a busy lease; it forgets a rejected Clerk token only after a definitive grant rejection. Successful adoption or email verification retains cloud-cli-oauth-token for older processes until logout and writes cloud-cli-clerk-adopted so it is never adopted again.
       - CLI login offers email sign-in after permanent credential recovery failures, keeps prompting after temporary verify or resend failures, and treats a stored session for another relay as signed out. The CLI uses packages/shared/src/dpopProof.ts to sign proofs and sends authorization only to the session's relay origin. Email sign-in replaces upstream's CLI OAuth flow (apps/server/src/cloud/CliTokenManager.ts and cliAuthHtml.ts, deleted here), so intake must not restore those files.
       - A session the relay reports as ended signs the client out; a network failure does not.
       - Account deletion retries teardown for active links, revoked links, and outstanding allocations, clearing held-hook inboxes before removing allocation records. Teardown failure preserves cleanup state and account sessions for retry. Deletion queues Live Activity ends before removing registrations and removes activity content only for environment/key pairs with no other active account owner; signed removal ends remain deliverable after SQL removal without recreating account records. Deletion takes session row locks before device and Live Activity rows, the same order as registration and session revocation.
-    rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on.
+    rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on. Upstream still uses Clerk as of 1ffa099e7fbf0037dbffb6fb72b7585c933be24a; intake must drop SDK, provider, native auth, GUI build-variable and legacy adoption changes instead of restoring them.
     implementation_paths:
       - apps/mobile/src/features/cloud/relayKeychain.ts
       - apps/mobile/src/features/cloud/relaySession.ts
       - apps/mobile/src/features/cloud/relaySessionStore.ts
       - apps/server/src/cloud/CliSession.ts
-      - apps/web/src/cloud/legacyClerkSession.tsx
       - apps/web/src/cloud/relaySession.ts
       - apps/web/src/cloud/relaySessionStore.ts
       - apps/web/src/components/relay-auth/RelayAccountDialog.tsx
@@ -5970,8 +5931,9 @@ features:
       - packages/client-runtime/src/relay/managedRelay.test.ts
       - packages/contracts/src/relay.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/1ffa099e7fbf0037dbffb6fb72b7585c933be24a/apps/web/package.json
       retire_when: Upstream replaces Clerk with relay-owned sessions that stay valid while used, on every client.
 
   - id: relay-mobile-axiom-removal
