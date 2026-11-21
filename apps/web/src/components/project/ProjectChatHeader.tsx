@@ -19,9 +19,9 @@ import type { ProjectPageJob } from "./useProjectPages";
 
 const RUN_RESULT = {
   never: "Not run yet",
-  running: "Running",
-  succeeded: "Succeeded",
-  failed: "Failed",
+  running: "Dispatching",
+  succeeded: "Dispatched",
+  failed: "Dispatch failed",
 } as const;
 
 export interface ProjectChatHeaderProps {
@@ -85,15 +85,29 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
                 <CalendarClockIcon className="mt-1 size-3.5 shrink-0 self-start" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">{task.title}</span>
+                  {thread.title !== task.title ? (
+                    <span className="truncate text-xs text-muted-foreground">{thread.title}</span>
+                  ) : null}
                   <span className="text-xs text-muted-foreground">
-                    {thread.title !== task.title ? `${thread.title} · ` : null}
-                    {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
-                    {startedThreadState(thread) === "needs-you"
-                      ? "Needs you"
-                      : RUN_RESULT[task.lastRunStatus]}
-                    {task.lastRunAt
-                      ? ` · started ${formatRelativeTimeLabel(task.lastRunAt)}`
-                      : null}
+                    <span className="whitespace-nowrap">
+                      {scheduleLabel(task.schedule, timeZone, task.nextRunAt)}
+                    </span>
+                    {" · "}
+                    <span className="whitespace-nowrap">
+                      {startedThreadState(thread) === "needs-you"
+                        ? "Needs you"
+                        : startedThreadState(thread) === "working"
+                          ? "Working"
+                          : RUN_RESULT[task.lastRunStatus]}
+                    </span>
+                    {task.lastRunAt ? (
+                      <>
+                        {" · "}
+                        <span className="whitespace-nowrap">
+                          started {formatRelativeTimeLabel(task.lastRunAt)}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                 </span>
               </MenuItem>

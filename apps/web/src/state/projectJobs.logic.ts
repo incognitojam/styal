@@ -18,3 +18,14 @@ export function rememberProjectJobs(
     return current;
   }
 }
+
+export function clearProjectJobs(
+  environmentId: string,
+  storage: () => Pick<Storage, "removeItem"> = () => window.localStorage,
+): void {
+  try {
+    storage().removeItem(`styal:project-jobs:${environmentId}`);
+  } catch {
+    // Storage can be blocked in a private browser.
+  }
+}

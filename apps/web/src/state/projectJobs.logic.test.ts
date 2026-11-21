@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ScheduledTaskId, ThreadId, type ScheduledTaskThreadListResult } from "@t3tools/contracts";
 
-import { rememberProjectJobs } from "./projectJobs.logic";
+import { clearProjectJobs, rememberProjectJobs } from "./projectJobs.logic";
 import { jobThreadsSince } from "../components/project/projectPage.logic";
 
 describe("rememberProjectJobs", () => {
   it("keeps known jobs while a reload is unknown, then replaces them with the live answer", () => {
     const data = new Map<string, string>();
     const storage = () => ({
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
       getItem: (key: string) => data.get(key) ?? null,
       setItem: (key: string, value: string) => {
         data.set(key, value);
@@ -35,6 +38,9 @@ describe("rememberProjectJobs", () => {
     expect(rememberProjectJobs("other", null, storage)).toBeNull();
     rememberProjectJobs("workshop", { tasks: [] }, storage);
     expect(rememberProjectJobs("workshop", null, storage)).toEqual({ tasks: [] });
+    rememberProjectJobs("workshop", jobs, storage);
+    clearProjectJobs("workshop", storage);
+    expect(rememberProjectJobs("workshop", null, storage)).toBeNull();
     data.set("styal:project-jobs:workshop", "broken");
     expect(rememberProjectJobs("workshop", null, storage)).toBeNull();
     expect(
