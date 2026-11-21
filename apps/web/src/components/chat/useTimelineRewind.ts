@@ -11,6 +11,7 @@ import {
   type ThreadId,
   type RunId,
 } from "@t3tools/contracts";
+import { reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -135,6 +136,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     setThreadError(activeThread.id, null);
     const rewind = await rewindToMessage({
       message,
+      report: reportAnswers(timelineMessages).get(messageId),
       environmentId,
       routeThreadRef,
       threadId: activeThread.id,

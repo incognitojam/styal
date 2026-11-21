@@ -1,3 +1,4 @@
+import { formatReportAnswer, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -5,15 +6,13 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
-// A report reply's `[<title>, version <n>] ` prefix goes before the effort prefix.
-const CLAUDE_ULTRATHINK_PREFIX = /^(\[[\s\S]*?, version \d+\] )?Ultrathink:\n/;
+const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
 
-type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
-  readonly id: string;
-};
+type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] &
+  Parameters<typeof reportAnswers>[0][number];
 
 interface ComposerPromptHistoryEntry {
   readonly id: string;
@@ -74,8 +73,16 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
   return result;
 }
 
-export function recallableComposerPrompt(messageText: string): string {
-  let prompt = messageText.trim().replace(CLAUDE_ULTRATHINK_PREFIX, "$1");
+export function recallableComposerPrompt(
+  messageText: string,
+  // The report a reply names: its prefix goes before the effort prefix.
+  report?: { readonly title: string; readonly version: number },
+): string {
+  const reportPrefix = report ? formatReportAnswer(report, "") : "";
+  let prompt = messageText.trim();
+  if (prompt.startsWith(reportPrefix + CLAUDE_ULTRATHINK_PREFIX)) {
+    prompt = reportPrefix + prompt.slice(reportPrefix.length + CLAUDE_ULTRATHINK_PREFIX.length);
+  }
 
   while (prompt.length > 0) {
     const withoutReviewComments = stripTrailingReviewComments(prompt);
@@ -122,11 +129,12 @@ export function buildComposerPromptHistoryEntries(
   messages: ReadonlyArray<ComposerPromptHistoryMessage>,
 ): ComposerPromptHistoryEntry[] {
   const entries: ComposerPromptHistoryEntry[] = [];
+  const replies = reportAnswers(messages);
   for (const message of messages) {
     if (message.role !== "user") continue;
     // Automations and other agents send user-role messages; recall only what the user typed.
     if (resolveUserMessagePresentation(message).attribution !== null) continue;
-    const prompt = recallableComposerPrompt(message.text);
+    const prompt = recallableComposerPrompt(message.text, replies.get(message.id));
     if (prompt.length === 0) continue;
     const previous = entries[entries.length - 1];
     if (previous && previous.prompt === prompt) {

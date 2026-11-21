@@ -153,6 +153,7 @@ export async function startFanoutThread(input: {
  */
 export async function rewindToMessage(input: {
   readonly message: ChatMessage;
+  readonly report: Parameters<typeof recallableComposerPrompt>[1];
   readonly environmentId: EnvironmentId;
   readonly routeThreadRef: ScopedThreadRef;
   readonly threadId: ThreadId;
@@ -217,7 +218,7 @@ export async function rewindToMessage(input: {
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     });
     const currentPrompt = store.getComposerDraft(draftTarget)?.prompt ?? "";
-    const restoredPrompt = recallableComposerPrompt(message.text);
+    const restoredPrompt = recallableComposerPrompt(message.text, input.report);
     const nextPrompt =
       restoredPrompt.length === 0
         ? currentPrompt
