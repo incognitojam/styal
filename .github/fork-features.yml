@@ -2582,7 +2582,7 @@ features:
     tier: keep
     prs: [264, 265, 266, 269, 317, 352, 475]
     invariants:
-      - User-facing cloud connection surfaces target the styal-hosted app, relay, native schemes, and Clerk application while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
+      - User-facing cloud connection surfaces target the styal-hosted app, relay, and native schemes while protocol-level T3 Connect identifiers remain compatible with upstream clients and servers.
       - The user-facing CLI exposes styal Link as `styal link` and `styal up --link`; the upstream `connect` command spelling remains an unlisted compatibility alias.
       - Hosted, release, desktop preview, and mobile builds use one coherent production public configuration, while an incomplete or absent local configuration disables Link without breaking local connections.
       - Web previews deploy to per-PR Cloudflare Workers with a Workers-only token, never through the Alchemy state store that holds production state, and build without Link configuration.

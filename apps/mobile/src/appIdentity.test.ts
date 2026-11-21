@@ -33,10 +33,9 @@ describe("mobile app identity", () => {
     expect(config.extra?.eas?.projectId).not.toBe("d763fcb8-d37c-41ea-a773-b54a0ab4a454");
   });
 
-  it("does not use upstream Apple or Clerk identity", () => {
+  it("does not use upstream Apple identity or account-provider domains", () => {
     expect(config.ios?.appleTeamId).not.toBe("ARK85ZXQ4Z");
-    expect(config.ios?.associatedDomains).not.toContain("applinks:clerk.t3.codes");
-    expect(config.ios?.associatedDomains).not.toContain("webcredentials:clerk.t3.codes");
+    expect(config.ios).not.toHaveProperty("associatedDomains");
     expect(config.ios?.infoPlist?.NSLocalNetworkUsageDescription).toContain("styal");
   });
 });
