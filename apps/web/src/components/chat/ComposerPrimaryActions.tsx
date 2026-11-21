@@ -42,7 +42,6 @@ interface ComposerPrimaryActionsProps {
   canOperateThread: boolean;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
-  activityIsConfirmed?: boolean;
   canInterrupt: boolean;
   runId?: string | null;
   followUpBehavior?: "queue" | "steer";
@@ -103,7 +102,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   canOperateThread,
   pendingAction,
   isRunning,
-  activityIsConfirmed = true,
   canInterrupt,
   runId = null,
   followUpBehavior = "steer",
@@ -201,7 +199,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const withStopButton = (action: ReactNode) => (
     <>
       {action}
-      {(canInterrupt && !activityIsConfirmed) || stopPhase === "pending" || stopPhase === "timedOut"
+      {stopPhase === "pending" || stopPhase === "timedOut"
         ? renderStopGenerationButton(false)
         : null}
     </>
@@ -295,9 +293,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       ? "Update queued message"
       : compactsBeforeSend
         ? "Compact and send"
-        : isQueuing && activityIsConfirmed
+        : isQueuing
           ? "Queue message"
-          : isRunning && activityIsConfirmed
+          : isRunning
             ? "Steer message"
             : "Submit message";
   const submitStatus = isEnvironmentUnavailable
@@ -314,7 +312,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     submitStatus ??
     (compactsBeforeSend
       ? `Summarize ${compactTokens} tokens of history, then send`
-      : isRunning && activityIsConfirmed && !isEditingQueuedMessage && canSteer
+      : isRunning && !isEditingQueuedMessage && canSteer
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
@@ -356,9 +354,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <PlayIcon className="size-4 fill-current" aria-hidden="true" />
       ) : isEditingQueuedMessage ? (
         <CheckIcon className="size-4" aria-hidden="true" />
-      ) : isRunning && activityIsConfirmed && isQueuing ? (
+      ) : isRunning && isQueuing ? (
         <ListPlusIcon className="size-4" aria-hidden="true" />
-      ) : isRunning && activityIsConfirmed ? (
+      ) : isRunning ? (
         <CornerUpRightIcon className="size-4" aria-hidden="true" />
       ) : (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">

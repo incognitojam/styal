@@ -3441,8 +3441,7 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const shownThreadSyncPhase = activeEnvironmentUnavailable ? null : delayedThreadSyncPhase;
-  const threadNowWork =
-    threadActivityState !== "live" || workflowRunReviewIncludesBackgroundWork ? null : workNow;
+  const threadNowWork = workflowRunReviewIncludesBackgroundWork ? null : workNow;
   const hasThreadNow =
     attentionNow !== null ||
     threadNowWork !== null ||
@@ -3828,7 +3827,6 @@ export default function ChatView(props: ChatViewProps) {
                   draftEntries={isServerThread ? null : draftTimelineEntries}
                   activeThreadKey={activeThreadKey}
                   syncing={threadSyncPhase !== null}
-                  activityState={threadActivityState}
                   detailLoading={threadDetailLoading}
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
@@ -4091,8 +4089,7 @@ export default function ChatView(props: ChatViewProps) {
                                     ? "Ask about this project or hand out work"
                                     : undefined
                                 }
-                                phase={threadActivityState === "inactive" ? "ready" : phase}
-                                activityIsConfirmed={threadActivityState === "live"}
+                                phase={phase}
                                 canSteer={!compactionBlocksSteer}
                                 canInterrupt={canInterruptRunningThread}
                                 isSendBusy={
