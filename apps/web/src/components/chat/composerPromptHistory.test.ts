@@ -55,6 +55,9 @@ describe("recallableComposerPrompt", () => {
     expect(recallableComposerPrompt("[Merge?, version 1] Ultrathink:\nWait")).toBe(
       "[Merge?, version 1] Wait",
     );
+    expect(recallableComposerPrompt("[Merge\nfrontend?, version 2] Ultrathink:\nWait")).toBe(
+      "[Merge\nfrontend?, version 2] Wait",
+    );
   });
 
   it.each([

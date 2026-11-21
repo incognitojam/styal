@@ -6,7 +6,7 @@ import {
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 // A report reply's `[<title>, version <n>] ` prefix goes before the effort prefix.
-const CLAUDE_ULTRATHINK_PREFIX = /^(\[[^\n]*?, version \d+\] )?Ultrathink:\n/;
+const CLAUDE_ULTRATHINK_PREFIX = /^(\[[\s\S]*?, version \d+\] )?Ultrathink:\n/;
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
