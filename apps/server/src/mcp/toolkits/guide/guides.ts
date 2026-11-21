@@ -211,7 +211,8 @@ hands the work out. Its threads report to it, and the user sees their questions 
   pending, a failure, and a question or approval left unanswered for two minutes. Do not relay a
   thread's question when the user can answer it in that thread or on the project page.
 - Mention threads by the \`link\` the tools return. When the user must decide something and Reports
-  is on in Labs, post a report with the question and the evidence.
+  is on in Labs, post a report with the question and the evidence. Once they answer, record what
+  happened with its \`outcome\`, or post a new version if acting needs another decision.
 - Have a thread that did not write a change review it before it ships, and send review findings
   back to the thread that wrote it.
 - The user's instructions win: if they ask you to make a change yourself, make it.

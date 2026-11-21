@@ -4131,7 +4131,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ref.messageId === latest?.id &&
         ref.key === report?.key &&
         ref.version === report?.version;
-      // The person's own answer or dismissal stands; a resolve is for questions still open.
+      // The person's own answer or dismissal stands; a resolve is for questions still open. After
+      // an answer or its own resolve the agent can still record what happened; a later outcome
+      // replaces the earlier one.
       const closedBy = projection.messages.some(
         (message) => message.role === "user" && same(message.reportAnswer),
       )
@@ -4141,7 +4143,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : report?.resolved
             ? "resolved"
             : null;
-      if (!latest || !report?.question || closedBy !== null) {
+      const recordsOutcome =
+        command.outcome !== undefined && (closedBy === "answered" || closedBy === "resolved");
+      if (!latest || !report?.question || (closedBy !== null && !recordsOutcome)) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
@@ -4149,7 +4153,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ? `No report has key "${command.key}".`
             : !report.question
               ? `Version ${report.version} of report "${command.key}" asks no question.`
-              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.`,
+              : `Version ${report.version} of report "${command.key}" is already ${closedBy}.${closedBy === "dismissed" ? "" : " Record what happened with only `key` and `outcome`."}`,
         });
       }
       yield* emitEvent({
@@ -4166,6 +4170,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         },
       });
+      if (recordsOutcome) return;
       // Its own agent resolves a report, so the note names this thread.
       yield* Ref.update(effects, (existing) => [
         ...existing,

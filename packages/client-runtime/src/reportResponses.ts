@@ -111,6 +111,7 @@ export function pendingReportAnswers<R extends Reference>(
             report: undefined as CoordinatorReport | undefined,
             reportAnswer: entry.ref,
             createdAt: entry.createdAt,
+            pending: true as const,
           },
         ]
       : [],
