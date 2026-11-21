@@ -102,16 +102,18 @@ describe("buildComposerPromptHistoryEntries", () => {
   });
 
   it("drops the effort prefix after the prefix of the report a reply names, and only there", () => {
+    const report = (key: string, title: string) => ({ key, title, version: 2, question: "Ship?" });
     const recalled = buildComposerPromptHistoryEntries(
       [
         { id: "m1", role: "user", text: "[Merge?, version 2] Ultrathink:\nWait" },
         { id: "m2", role: "user", text: "[Merge\nfrontend?, version 2] Ultrathink:\nHold" },
         { id: "m3", role: "user", text: "[Notes]\nKeep:\n[Merge?, version 2] Ultrathink:\nAs is" },
       ],
-      new Map([
-        ["m1", { title: "Merge?", version: 2 }],
-        ["m2", { title: "Merge\nfrontend?", version: 2 }],
-      ]),
+      // The reports only, as when the replies were paged in after the server's snapshot.
+      [
+        { id: "r1", role: "assistant", text: "", report: report("pr:1", "Merge?") },
+        { id: "r2", role: "assistant", text: "", report: report("pr:2", "Merge\nfrontend?") },
+      ],
     );
     expect(recalled.map((entry) => entry.prompt)).toEqual([
       "[Merge?, version 2] Wait",

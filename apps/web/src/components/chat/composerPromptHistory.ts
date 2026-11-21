@@ -1,4 +1,4 @@
-import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
+import { formatReportAnswer, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -14,9 +14,8 @@ const TRAILING_LEGACY_CONTEXT =
 type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly id: string;
 };
-type RecalledReport = { readonly title: string; readonly version: number };
-/** By message id, the report each reply names, as `reportAnswers` finds it. */
-export type ComposerPromptHistoryReports = ReadonlyMap<string, RecalledReport>;
+/** Messages holding the thread's reports and tied answers, which recalled messages may lack. */
+export type ComposerPromptHistoryReportMessages = Parameters<typeof reportAnswers>[0];
 
 interface ComposerPromptHistoryEntry {
   readonly id: string;
@@ -80,7 +79,7 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
 export function recallableComposerPrompt(
   messageText: string,
   // The report a reply names: its prefix goes before the effort prefix.
-  report?: RecalledReport,
+  report?: { readonly title: string; readonly version: number },
 ): string {
   const reportPrefix = report ? formatReportAnswer(report, "") : "";
   let prompt = messageText.trim();
@@ -131,9 +130,11 @@ export function recallableComposerPrompt(
 
 export function buildComposerPromptHistoryEntries(
   messages: ReadonlyArray<ComposerPromptHistoryMessage>,
-  reports: ComposerPromptHistoryReports = new Map(),
+  reportMessages: ComposerPromptHistoryReportMessages = [],
 ): ComposerPromptHistoryEntry[] {
   const entries: ComposerPromptHistoryEntry[] = [];
+  // Later copies of a message win, so a tied answer keeps its tie.
+  const reports = reportAnswers([...messages, ...reportMessages]);
   for (const message of messages) {
     if (message.role !== "user") continue;
     // Automations and other agents send user-role messages; recall only what the user typed.
