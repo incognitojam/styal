@@ -70,6 +70,9 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("open-url", (event: { preventDefault: () => void }, url: string) => {
     if (handleOpenUrl(url)) event.preventDefault();
   });
+  yield* electronApp.setAsDefaultProtocolClient(
+    ElectronProtocol.getDesktopScheme(environment.installVariant),
+  );
 
   return DesktopAppLinks.of({
     configure: Effect.gen(function* () {

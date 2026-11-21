@@ -50,6 +50,7 @@ const layerDesktopAppLinks = (
     copyText: () => Effect.void,
   },
   listeners = new Map<string, (...args: unknown[]) => void>(),
+  appVersion = "0.0.45",
 ) => {
   const environmentLayer = Layer.effect(
     DesktopEnvironment.DesktopEnvironment,
@@ -67,7 +68,7 @@ const layerDesktopAppLinks = (
         homeDirectory: "/synthetic/home",
         platform,
         processArch: "x64",
-        appVersion: "0.0.45",
+        appVersion,
         appPath: "/synthetic/app",
         isPackaged: !isDevelopment,
         resourcesPath: "/synthetic/resources",
@@ -86,6 +87,11 @@ const layerDesktopAppLinks = (
   );
 
   const electronApp = {
+    setAsDefaultProtocolClient: (scheme: string) =>
+      Effect.sync(() => {
+        events.push(`registerProtocol:${scheme}`);
+        return true;
+      }),
     setPath: (name: string, value: string) =>
       Effect.sync(() => {
         events.push(`setPath:${name}:${value}`);
@@ -134,34 +140,54 @@ describe("DesktopAppLinks", () => {
       isDevelopment: false,
       platform: "darwin" as const,
       userData: "/tmp/app-data/styal",
+      scheme: "styal",
     },
     {
       name: "packaged Linux",
       isDevelopment: false,
       platform: "linux" as const,
       userData: "/tmp/app-data/styal",
+      scheme: "styal",
     },
     {
       name: "packaged Windows",
       isDevelopment: false,
       platform: "win32" as const,
       userData: "/tmp/app-data/styal",
+      scheme: "styal",
+    },
+    {
+      name: "Windows preview",
+      isDevelopment: false,
+      platform: "win32" as const,
+      appVersion: "0.0.45-pr.1703.1",
+      userData: "/tmp/app-data/styal-preview",
+      scheme: "styal-preview",
     },
     {
       name: "development",
       isDevelopment: true,
       platform: "win32" as const,
       userData: "/tmp/app-data/styal-dev",
+      scheme: "styal-dev",
     },
   ])(
     "sets the profile and lock before startup can yield to the event loop ($name)",
-    ({ isDevelopment, platform, userData }) => {
+    ({ isDevelopment, platform, userData, scheme, appVersion }) => {
       const events: string[] = [];
       // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- The assertion IS that the layer builds synchronously; it.effect would mask a regression to async.
       Effect.runSync(
         Effect.scoped(
           Layer.build(
-            layerDesktopAppLinks(isDevelopment, events, platform, DesktopPreReadyFileSystem.layer),
+            layerDesktopAppLinks(
+              isDevelopment,
+              events,
+              platform,
+              DesktopPreReadyFileSystem.layer,
+              undefined,
+              undefined,
+              appVersion,
+            ),
           ),
         ),
       );
@@ -171,6 +197,7 @@ describe("DesktopAppLinks", () => {
         "requestSingleInstanceLock",
         "on:second-instance",
         "on:open-url",
+        `registerProtocol:${scheme}`,
       ]);
     },
   );

@@ -24,36 +24,24 @@ Web, desktop, and mobile need only this public value. Process variables take pre
 `.env.local`, then `.env`. Client and bundled-server builds embed it; bundled servers also accept
 runtime overrides. The build loader supplies the web alias.
 
-Current clients, including the CLI/server, ignore Clerk credentials and ask for an emailed code
-when no relay session is stored. Signing in with the imported email restores the same machines.
-An existing relay session keeps working. No Clerk public build inputs are needed.
+Current clients, including the CLI/server, ignore Clerk credentials. Without a stored relay
+session, GUI clients show email sign-in; server operators run `styal link login` for an emailed
+code. Signing in with the imported email restores the same machines. An existing relay session
+keeps working. No Clerk public build inputs are needed.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
 The relay README owns provisioning; deployment's `PublishClientConfig` writes the relay URL to `.env`.
 
-## CLI OAuth application
+## Legacy client compatibility
 
-Current CLIs sign in with an emailed code and use this application only to move a Clerk sign-in
-they already hold to the relay. CLIs from before email sign-in still sign in through it, so keep it
-configured until Clerk is removed.
+Older transition builds can still exchange a Clerk sign-in for a relay session. Earlier binaries
+still use Clerk directly. Keep both Clerk instances, their existing JWT template and audience,
+OAuth application, and native callbacks configured until all devices and servers have converted
+and relay compatibility is retired. New client builds need none of these settings. Do not remove
+relay secrets or restrict existing users' access as part of a client release.
 
-In Clerk's OAuth applications settings:
-
-1. Create a public OAuth application for the T3 CLI, using authorization-code exchange with PKCE.
-2. Allow the redirect URI `http://127.0.0.1:34338/callback`.
-3. Enable the `openid`, `profile`, `email`, and `offline_access` scopes.
-4. Enable **Device authorization grant** on the application. Older CLIs use it for headless and
-   SSH authorization, and Clerk only advertises the device endpoint once it is on. The feature is in beta and
-   Clerk enables it per account on request.
-5. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
-   build environments.
-
-## Legacy relay tokens
-
-Keep `CLERK_JWT_AUDIENCE=t3-code-relay` and the existing Clerk JWT template for older clients
-until the relay compatibility retirement. Current GUI builds neither load the SDK nor request
-Clerk tokens. Desktop builds no longer need account-provider redirects, RP domains or associated
-domains. Their provisioning profile is still used for passkeys in the in-app browser.
+Desktop builds no longer need account-provider redirects, RP domains or associated domains. Their
+provisioning profile is still used for passkeys in the in-app browser.
 
 ## Restricting sign-ups
 
