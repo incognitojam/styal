@@ -136,7 +136,8 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     setThreadError(activeThread.id, null);
     const rewind = await rewindToMessage({
       message,
-      report: reportAnswers(timelineMessages).get(messageId),
+      // Reports are assistant messages, which timeline messages leave out.
+      report: reportAnswers(serverProjection?.messages ?? []).get(messageId),
       environmentId,
       routeThreadRef,
       threadId: activeThread.id,

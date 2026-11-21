@@ -1,4 +1,4 @@
-import { formatReportAnswer, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
+import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -11,8 +11,12 @@ const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_c
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
 
-type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] &
-  Parameters<typeof reportAnswers>[0][number];
+type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
+  readonly id: string;
+};
+type RecalledReport = { readonly title: string; readonly version: number };
+/** By message id, the report each reply names, as `reportAnswers` finds it. */
+export type ComposerPromptHistoryReports = ReadonlyMap<string, RecalledReport>;
 
 interface ComposerPromptHistoryEntry {
   readonly id: string;
@@ -76,7 +80,7 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
 export function recallableComposerPrompt(
   messageText: string,
   // The report a reply names: its prefix goes before the effort prefix.
-  report?: { readonly title: string; readonly version: number },
+  report?: RecalledReport,
 ): string {
   const reportPrefix = report ? formatReportAnswer(report, "") : "";
   let prompt = messageText.trim();
@@ -127,14 +131,14 @@ export function recallableComposerPrompt(
 
 export function buildComposerPromptHistoryEntries(
   messages: ReadonlyArray<ComposerPromptHistoryMessage>,
+  reports: ComposerPromptHistoryReports = new Map(),
 ): ComposerPromptHistoryEntry[] {
   const entries: ComposerPromptHistoryEntry[] = [];
-  const replies = reportAnswers(messages);
   for (const message of messages) {
     if (message.role !== "user") continue;
     // Automations and other agents send user-role messages; recall only what the user typed.
     if (resolveUserMessagePresentation(message).attribution !== null) continue;
-    const prompt = recallableComposerPrompt(message.text, replies.get(message.id));
+    const prompt = recallableComposerPrompt(message.text, reports.get(message.id));
     if (prompt.length === 0) continue;
     const previous = entries[entries.length - 1];
     if (previous && previous.prompt === prompt) {
