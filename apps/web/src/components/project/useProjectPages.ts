@@ -116,7 +116,6 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     ),
   ].toSorted();
   const jobLists = useAtomValue(projectJobListsAtom(environmentIdsKey(environmentIds)));
-  // A machine whose list has not loaded keeps no thread off the sidebar.
   const jobListByEnvironment = new Map(
     environmentIds.flatMap((id, index) => {
       const list = jobLists[index];

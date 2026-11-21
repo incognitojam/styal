@@ -6,6 +6,7 @@ import {
   SquarePenIcon,
 } from "lucide-react";
 
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
@@ -19,8 +20,8 @@ import type { ProjectPageJob } from "./useProjectPages";
 const RUN_RESULT = {
   never: "Not run yet",
   running: "Running",
-  succeeded: "Last run succeeded",
-  failed: "Last run failed",
+  succeeded: "Succeeded",
+  failed: "Failed",
 } as const;
 
 export interface ProjectChatHeaderProps {
@@ -73,7 +74,7 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
         <Menu>
           <MenuTrigger render={<Button variant="ghost-muted" size="compact" />}>
             <CalendarClockIcon aria-hidden />
-            Scheduled
+            <span className="max-sm:sr-only">Scheduled</span>
           </MenuTrigger>
           <MenuPopup align="end" sideOffset={6} className="max-w-80">
             {props.jobs.map(({ thread, task, timeZone }) => (
@@ -85,10 +86,14 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">{task.title}</span>
                   <span className="text-xs text-muted-foreground">
+                    {thread.title !== task.title ? `${thread.title} · ` : null}
                     {scheduleLabel(task.schedule, timeZone, task.nextRunAt)} ·{" "}
                     {startedThreadState(thread) === "needs-you"
                       ? "Needs you"
                       : RUN_RESULT[task.lastRunStatus]}
+                    {task.lastRunAt
+                      ? ` · started ${formatRelativeTimeLabel(task.lastRunAt)}`
+                      : null}
                   </span>
                 </span>
               </MenuItem>

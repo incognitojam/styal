@@ -28,6 +28,7 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentAtomList } from "./environmentAtomList";
 import { primaryEnvironmentIdAtom, themeEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
+import { rememberProjectJobs } from "./projectJobs.logic";
 import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";
 
 // Subscribe to every environment's themes; primary can change without reconnecting or updating the subscription.
@@ -43,19 +44,19 @@ export const environmentUpdateStatesAtom = environmentAtomList(
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
 const NO_TASK_THREADS: ScheduledTaskThreadListResult = { tasks: [] };
-/**
- * The tasks that run in one thread on a machine with project coordinators on, or null until the
- * list loads there. Subscribed only while the switch is on, and only from servers that serve it.
- */
+// Reuse the last seen bindings while the prompt-free subscription loads; off/older servers stay visible.
 export const projectJobListAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ScheduledTaskThreadListResult | null => {
     const config = get(serverEnvironment.configValueAtom(environmentId));
     return config?.settings.projectCoordinatorsEnabled !== true ||
       config.environment.capabilities.scheduledTaskThreads !== true
       ? NO_TASK_THREADS
-      : Option.getOrNull(
-          AsyncResult.value(
-            get(serverEnvironment.scheduledTaskThreadsLive({ environmentId, input: {} })),
+      : rememberProjectJobs(
+          environmentId,
+          Option.getOrNull(
+            AsyncResult.value(
+              get(serverEnvironment.scheduledTaskThreadsLive({ environmentId, input: {} })),
+            ),
           ),
         );
   }),
