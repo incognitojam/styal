@@ -3,6 +3,7 @@ import {
   CommandId,
   OrchestratorMcpFailure,
   type ProjectId,
+  type OrchestratorMcpThreadSendInput,
   type ProviderInstanceId,
   type ProviderInteractionMode,
   type RuntimeMode,
@@ -13,8 +14,10 @@ import {
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
+import { currentProjectCoordinator } from "../orchestration-v2/ProjectCoordinator.ts";
 import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
@@ -233,3 +236,39 @@ export const reportTargetFor = (
           }),
         )
       : Effect.succeed({ threadId: launcher.id });
+
+export const resolveThreadSendTarget = Effect.fn("mcp.resolveThreadSendTarget")(function* (
+  input: OrchestratorMcpThreadSendInput,
+) {
+  if (input.threadId !== "project-chat") return input;
+  const { caller, threads, scope } = yield* readCaller();
+  if (caller === undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "target_required",
+      message: "project-chat needs a calling thread in this project. Otherwise pass a threadId.",
+    });
+  }
+  const reportAdvice = scope.coordinatorReportsEnabled
+    ? "Post a project report with t3_report instead."
+    : "Enable Reports in Settings → Labs to post a report, or tell the user in this thread.";
+  const threadId = yield* currentProjectCoordinator(
+    {
+      settings: (yield* ServerSettingsService).getSettings,
+      getThreadShell: threads.getThreadShell,
+    },
+    caller.projectId,
+  );
+  if (threadId === null) {
+    return yield* new OrchestratorMcpFailure({
+      code: "target_required",
+      message: `This project has no chat. ${reportAdvice}`,
+    });
+  }
+  if (threadId === caller.id) {
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: `The project chat cannot send to itself. ${reportAdvice}`,
+    });
+  }
+  return { ...input, threadId };
+});

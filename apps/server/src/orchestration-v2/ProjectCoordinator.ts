@@ -23,7 +23,7 @@ export interface ProjectCoordinatorLookup<SettingsError, ShellError> {
 }
 
 /** The project's coordinator, only while it is a thread of that project that still exists. */
-const currentProjectCoordinator = Effect.fn("ProjectCoordinator.current")(function* <
+export const currentProjectCoordinator = Effect.fn("ProjectCoordinator.current")(function* <
   SettingsError,
   ShellError,
 >(lookup: ProjectCoordinatorLookup<SettingsError, ShellError>, projectId: ProjectId) {

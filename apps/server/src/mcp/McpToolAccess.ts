@@ -142,6 +142,16 @@ const requireThreadCaller = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) => McpInvocationContext.requireThreadScope(scope, "This tool")),
 );
 
+/** Resolve role targets before the destination's normal authorization checks. */
+export const mapInput = <P, A, E, R, R2>(
+  resolve: (params: P) => Effect.Effect<P, OrchestratorMcpFailure, R2>,
+  declaration: Declaration<(params: P) => Effect.Effect<A, E, R>>,
+) =>
+  declare<P, A, E | OrchestratorMcpFailure, R | R2>(
+    (params: P) => resolve(params).pipe(Effect.flatMap(checkedHandler(declaration))),
+    remoteCheckOf(declaration) as RemoteCheck<P> | undefined,
+  );
+
 export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare(
     (params: P) => handle(params),
@@ -348,7 +358,7 @@ export const afterForwarding = <P, A, E, R, E2, R2>(
   declaration: Declaration<(params: P) => Effect.Effect<A, E, R>>,
   forwarded: Forwarded<P, A, E2, R2>,
 ) =>
-  declare(
+  declare<P, A, E | E2, R | R2>(
     checkedHandler(declaration) as (params: P) => Effect.Effect<A, E | E2, R | R2>,
     remoteCheckOf(declaration) as RemoteCheck<P> | undefined,
     forwarded,
