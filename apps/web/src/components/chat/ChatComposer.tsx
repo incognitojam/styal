@@ -385,7 +385,6 @@ export interface ChatComposerProps {
   idlePlaceholder?: string | undefined;
 
   phase: SessionPhase;
-  activityIsConfirmed?: boolean;
   canInterrupt: boolean;
   isSendBusy: boolean;
   canResume: boolean;
@@ -547,7 +546,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired,
     idlePlaceholder,
     phase,
-    activityIsConfirmed = true,
     canInterrupt,
     isSendBusy,
     canResume,
@@ -3831,7 +3829,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     canOperateThread={canOperateThread}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running" || phase === "connecting"}
-                    activityIsConfirmed={activityIsConfirmed}
                     canInterrupt={canInterrupt}
                     runId={activeThread?.runtime?.activeRunId ?? null}
                     followUpBehavior={followUpBehavior}

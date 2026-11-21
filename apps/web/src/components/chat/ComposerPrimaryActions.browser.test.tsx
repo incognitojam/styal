@@ -62,14 +62,10 @@ function setup() {
   } satisfies ComponentProps<typeof ComposerPrimaryActions>;
 }
 
-it.each(["resume", "draft", "question", "catchup"] as const)(
+it.each(["resume", "draft", "question"] as const)(
   "keeps repeat Stop clicks from reaching the action that replaces it (%s)",
   async (mode) => {
-    const props = {
-      ...setup(),
-      activityIsConfirmed: mode !== "catchup",
-      hasSendableContent: mode === "catchup",
-    };
+    const props = setup();
     const submit = vi.fn();
     const pendingAction =
       mode === "question"
@@ -93,11 +89,6 @@ it.each(["resume", "draft", "question", "catchup"] as const)(
       </form>
     );
     await using screen = await render(view());
-    if (mode === "catchup") {
-      expect(
-        screen.getByRole("button", { name: "Submit message", exact: true }).element(),
-      ).toBeEnabled();
-    }
     using _timers = fakeTimers();
     const stop = screen
       .getByRole("button", { name: "Stop generation" })
@@ -121,12 +112,7 @@ it.each(["resume", "draft", "question", "catchup"] as const)(
         hasSendableContent: mode === "draft",
       }),
     );
-    const action = {
-      resume: "Resume thread",
-      draft: "Submit message",
-      question: "Submit",
-      catchup: "Resume thread",
-    }[mode];
+    const action = { resume: "Resume thread", draft: "Submit message", question: "Submit" }[mode];
     expect(screen.getByRole("button", { name: "Stop generation" }).query()).toBeNull();
     expect(screen.getByRole("button", { name: action, exact: true }).element()).toBeDisabled();
     await act(() => {
@@ -141,12 +127,7 @@ it.each(["resume", "draft", "question", "catchup"] as const)(
     expect(screen.getByRole("button", { name: action, exact: true }).element()).toBeEnabled();
     await act(() => target()?.click());
     expect(
-      {
-        resume: props.onResume,
-        draft: props.onSubmitMessage,
-        question: submit,
-        catchup: props.onResume,
-      }[mode],
+      { resume: props.onResume, draft: props.onSubmitMessage, question: submit }[mode],
     ).toHaveBeenCalledTimes(1);
     await screen.rerender(view());
     expect(screen.getByRole("button", { name: "Stop generation" }).element()).toBeEnabled();

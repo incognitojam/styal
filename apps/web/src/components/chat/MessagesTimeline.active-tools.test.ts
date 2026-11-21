@@ -4,55 +4,6 @@ import { deriveMessagesTimelineRows, liveWorkEntryLabel } from "./MessagesTimeli
 
 describe("long active tool groups", () => {
   it.each([false, true])(
-    "confirms activity only after synchronization, live=%s",
-    (isSynchronized) => {
-      const runId = RunId.make("cached-waiting-run");
-      const createdAt = "2026-10-12T00:00:00Z";
-      const input = {
-        timelineEntries: [
-          {
-            id: "cached-command",
-            kind: "work",
-            createdAt,
-            entry: {
-              id: "cached-command",
-              createdAt,
-              runId,
-              label: "Tool call",
-              command: "fixture-server",
-              itemType: "command_execution",
-              tone: "tool",
-              toolLifecycleStatus: "inProgress",
-            },
-          },
-        ],
-        latestRun: { runId, status: "waiting", startedAt: createdAt, completedAt: null },
-        isWorking: true,
-        activityState: isSynchronized ? "live" : "unconfirmed",
-        activeTurnStartedAt: createdAt,
-        turnDiffSummaries: [],
-        supportsConversationRollback: false,
-      } as const;
-      const rows = deriveMessagesTimelineRows(input);
-      const live = rows.find((row) => row.kind === "work-live");
-      expect(live).toMatchObject({ active: isSynchronized });
-      expect(live && liveWorkEntryLabel(live.entry, undefined, live.active, live.unconfirmed)).toBe(
-        isSynchronized ? "Running fixture-server" : "Last seen: Running fixture-server",
-      );
-      expect(rows.find((row) => row.kind === "working")?.unconfirmed === true).toBe(
-        !isSynchronized,
-      );
-      expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
-      const inactive = deriveMessagesTimelineRows({ ...input, activityState: "inactive" });
-      expect(
-        inactive.some(
-          (row) => row.kind === "working" || row.kind === "work-live" || row.kind === "thinking",
-        ),
-      ).toBe(false);
-      expect(inactive.some((row) => row.kind === "turn-fold")).toBe(false);
-    },
-  );
-  it.each([false, true])(
     "preserves chronological order and the latest activity, expanded=%s",
     (expanded) => {
       const runId = RunId.make("long-active-run");

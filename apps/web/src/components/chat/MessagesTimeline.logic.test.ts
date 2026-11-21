@@ -725,7 +725,7 @@ describe("deriveMessagesTimelineRows", () => {
         visibleTurnItems: [...fixture.visibleTurnItems.slice(0, -1), compact],
         optimisticMessages: [],
       });
-      const runningInput = {
+      const runningRows = deriveMessagesTimelineRows({
         ...input,
         runningRunId: runless ? null : fixture.runId,
         runlessWorkActive: runless,
@@ -734,22 +734,12 @@ describe("deriveMessagesTimelineRows", () => {
               entry.kind === "work" ? { ...entry, entry: { ...entry.entry, runId: null } } : entry,
             )
           : runningEntries,
-      };
-      const runningRows = deriveMessagesTimelineRows(runningInput);
+      });
       expect(runningRows.find((row) => row.kind === "standalone-activity")).toMatchObject({
         active: true,
         label: "Compacting context",
       });
       expect(runningRows.some((row) => row.kind === "thinking")).toBe(false);
-      expect(
-        deriveMessagesTimelineRows({ ...runningInput, activityState: "unconfirmed" }).find(
-          (row) => row.kind === "standalone-activity",
-        ),
-      ).toMatchObject({
-        active: false,
-        unconfirmed: true,
-        label: "Last seen: Compacting context",
-      });
 
       const completedRows = deriveMessagesTimelineRows({
         ...input,
