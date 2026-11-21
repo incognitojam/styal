@@ -1873,6 +1873,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
+  showLiveActivity?: boolean;
   /** Native subagent work has no app run; runless entries form the live response. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
@@ -2746,7 +2747,19 @@ export function deriveMessagesTimelineRows(input: {
     viewedPageRunIds(result),
   );
   const shownSearchKeysByRunId = new Map<string | null, Set<string>>();
+  const hiddenActivityDetails = new Set<string>();
   const visibleRows = result.flatMap<MessagesTimelineRow>((row) => {
+    if (
+      input.showLiveActivity === false &&
+      (row.kind === "working" ||
+        row.kind === "thinking" ||
+        row.kind === "work-live" ||
+        (row.kind === "standalone-activity" && row.active))
+    ) {
+      if ("groupId" in row && row.groupId) hiddenActivityDetails.add(`${row.groupId}:details`);
+      return [];
+    }
+    if (hiddenActivityDetails.has(row.id)) return [];
     if (row.kind !== "viewed-images") return [row];
     const paths = omitUserAttachmentImages(row.paths, attachmentIds);
     const shownSearchKeys = shownSearchKeysByRunId.get(row.runId) ?? new Set<string>();

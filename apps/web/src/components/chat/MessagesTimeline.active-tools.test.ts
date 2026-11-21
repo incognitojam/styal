@@ -1,8 +1,64 @@
 import { RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { deriveMessagesTimelineRows, liveWorkEntryLabel } from "./MessagesTimeline.logic";
+import {
+  deriveMessagesTimelineRows,
+  deriveMessagesTimelineRowsWithState,
+  liveWorkEntryLabel,
+} from "./MessagesTimeline.logic";
 
 describe("long active tool groups", () => {
+  it.each([false, true])(
+    "only shows a current-connection activity tail, reasoning=%s",
+    (reasoning) => {
+      const runId = RunId.make("unconfirmed-run");
+      const createdAt = "2026-10-12T00:00:00Z";
+      const input = {
+        timelineEntries: reasoning
+          ? [
+              {
+                id: "thought",
+                kind: "work" as const,
+                createdAt,
+                entry: {
+                  id: "thought",
+                  runId,
+                  createdAt,
+                  label: "Thinking",
+                  detail: "Inspecting the sample module.",
+                  itemType: "reasoning" as const,
+                  tone: "thinking" as const,
+                  toolLifecycleStatus: "inProgress" as const,
+                },
+              },
+            ]
+          : [],
+        latestRun: { runId, status: "running" as const, startedAt: createdAt, completedAt: null },
+        runningRunId: runId,
+        expandedWorkGroupIds: new Set(["work-group:thought"]),
+        isWorking: true,
+        activeTurnStartedAt: createdAt,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      };
+      const projection = deriveMessagesTimelineRowsWithState(input);
+      const live = projection.rows;
+      expect(live.some((row) => row.kind === "working")).toBe(true);
+      expect(live.some((row) => row.kind === "thinking" || row.kind === "work-live")).toBe(true);
+      const cachedProjection = deriveMessagesTimelineRowsWithState(
+        { ...input, showLiveActivity: false },
+        projection,
+      );
+      const cached = cachedProjection.rows;
+      expect(cached.some((row) => ["working", "thinking", "work-live"].includes(row.kind))).toBe(
+        false,
+      );
+      expect(cached.some((row) => row.kind === "turn-fold" || row.kind === "work")).toBe(false);
+      expect(
+        deriveMessagesTimelineRowsWithState({ ...input, showLiveActivity: true }, cachedProjection)
+          .rows,
+      ).toEqual(live);
+    },
+  );
   it.each([false, true])(
     "preserves chronological order and the latest activity, expanded=%s",
     (expanded) => {
