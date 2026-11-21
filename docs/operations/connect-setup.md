@@ -24,10 +24,9 @@ Web, desktop, and mobile need only this public value. Process variables take pre
 `.env.local`, then `.env`. Client and bundled-server builds embed it; bundled servers also accept
 runtime overrides. The build loader supplies the web alias.
 
-The CLI still needs `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` only to
-adopt a credential from before relay sign-in. Keep these public build values until the separate
-relay compatibility retirement. New GUI builds ignore Clerk credentials and ask for an emailed
-code when no relay session is stored. Signing in with the imported email restores the same machines.
+Current clients, including the CLI/server, ignore Clerk credentials and ask for an emailed code
+when no relay session is stored. Signing in with the imported email restores the same machines.
+An existing relay session keeps working. No Clerk public build inputs are needed.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
 The relay README owns provisioning; deployment's `PublishClientConfig` writes the relay URL to `.env`.
