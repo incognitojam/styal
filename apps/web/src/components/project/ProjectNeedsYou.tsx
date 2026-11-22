@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
@@ -46,6 +46,7 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
 import { ReportAnswerOptions } from "../chat/CoordinatorReports";
+import { followTimelineEnd } from "../chat/timelineScrollAnchoring";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -451,10 +452,14 @@ function ReportAnswer({
   // a conversation, which belongs in the thread, so the thread opens where the answer will come.
   const sendReply = async () => {
     setSending(true);
+    const sentFrom = window.location.href;
     const result = await sendTurn(newMessageId(), formatReportAnswer(report, reply.trim()));
     setSending(false);
     if (result._tag === "Success") {
       setReply("");
+      // A slow send must not pull back someone who has moved on.
+      if (window.location.href !== sentFrom) return;
+      followTimelineEnd(scopedThreadKey(thread));
       void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(thread) });
     } else if (!isAtomCommandInterrupted(result)) {
       const cause = squashAtomCommandFailure(result);
