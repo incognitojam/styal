@@ -767,10 +767,12 @@ function hasTeamReviewRequest(raw: ReadonlyArray<ReviewRequestFields> | undefine
 
 function toCheckStatus(raw: CheckFields): PullRequestCheckStatus {
   const status = raw.status?.trim().toUpperCase();
-  if (status !== undefined && status !== "COMPLETED" && status !== "") {
+  const conclusion = trimmed(raw.conclusion);
+  // GitHub can leave status IN_PROGRESS after publishing a terminal conclusion.
+  if (conclusion === null && status !== undefined && status !== "COMPLETED" && status !== "") {
     return "pending";
   }
-  switch ((raw.conclusion ?? raw.state)?.trim().toUpperCase()) {
+  switch ((conclusion ?? raw.state)?.trim().toUpperCase()) {
     case "SUCCESS":
       return "success";
     case "ACTION_REQUIRED":

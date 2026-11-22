@@ -629,6 +629,28 @@ describe("pull request detail decoding", () => {
     expect(detail.checksState).toBe("pending");
   });
 
+  it("uses a check's conclusion when GitHub leaves its status in progress", () => {
+    for (const [conclusion, status, checksState] of [
+      ["SUCCESS", "success", "passing"],
+      ["FAILURE", "failure", "failing"],
+      ["CANCELLED", "cancelled", "failing"],
+      ["SKIPPED", "skipped", null],
+      ["NEUTRAL", "neutral", null],
+      ["ACTION_REQUIRED", "action-required", "pending"],
+    ]) {
+      const detail = detailOf([
+        check({
+          name: "build",
+          status: "IN_PROGRESS",
+          conclusion,
+          completedAt: "2026-11-22T22:14:19Z",
+        }),
+      ]);
+      expect(detail.checks.map((check) => check.status)).toEqual([status]);
+      expect(detail.checksState).toBe(checksState);
+    }
+  });
+
   it("keeps only the head branch's pull_request runs that wait for approval", () => {
     const suite = (id: number, overrides: Record<string, unknown> = {}) => ({
       conclusion: "ACTION_REQUIRED",
