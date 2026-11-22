@@ -89,7 +89,7 @@ describe("buildShortcutsOverview", () => {
         command,
       }));
     expect(overview(jumps((digit) => `mod+${digit}`))[0]?.entries).toEqual([
-      { command: "thread.jump.1", label: "Thread: Jump: 1–9", shortcuts: ["Ctrl+1–9"] },
+      { command: "thread.jump.1", label: "Sidebar: Jump: 1–9", shortcuts: ["Ctrl+1–9"] },
     ]);
     const rebound = overview(jumps((digit) => (digit === 4 ? "mod+shift+x" : `mod+${digit}`)));
     expect(rebound[0]?.entries).toHaveLength(9);

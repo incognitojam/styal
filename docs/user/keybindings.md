@@ -142,8 +142,11 @@ open; the default `mod+t` uses it to open the panel's new-tab menu.
 the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
 desktop app. Unknown keys evaluate to `false`.
 
-`mod+1` through `mod+9` jump to the first nine threads, and to models while the
-model picker is open. The thread jumps do not run while the model picker is open.
+`mod+1` through `mod+9` jump to the first nine visible sidebar targets: threads
+and project headers with a project chat, from top to bottom. Collapsed project
+headers still count; headers without a chat do not. In the command palette, the
+numbers follow its own listed choices instead. With the model picker open, they
+jump to models instead of sidebar targets.
 Those defaults use `isDesktop` so they do not steal the
 browser's tab-switch shortcuts. Remove that condition in Settings if you want
 the same jumps in a browser.

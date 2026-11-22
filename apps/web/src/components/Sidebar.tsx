@@ -220,6 +220,7 @@ import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
+  sidebarJumpTargets,
   keptSidebarFolderKeys,
   orderSidebarFolderGroups,
   sidebarFolderExpansionKeys,
@@ -1737,17 +1738,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   ]);
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
 
-  const jumpLabelByKey = (() => {
-    const mapping = new Map<string, string>();
-    for (const [index, threadKey] of orderedThreadKeys.entries()) {
-      const jumpCommand = threadJumpCommandForIndex(index);
-      if (!jumpCommand) break;
-      const label = shortcutLabelForCommand(keybindings, jumpCommand);
-      if (label) mapping.set(threadKey, label);
-    }
-    return mapping;
-  })();
-
   const openProjectPage = (projectKey: string) => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2381,6 +2371,25 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : { ...current, targetSection: target?.section ?? null },
     );
   };
+  const jumpTargets = sidebarJumpTargets(
+    sidebarListItems,
+    new Set(
+      [...projectPages.values()].flatMap((page) =>
+        page.chatThreadKey === null ? [] : [page.group.projectKey],
+      ),
+    ),
+  );
+  const jumpLabelByKey = (() => {
+    const mapping = new Map<string, string>();
+    for (const [index, target] of jumpTargets.entries()) {
+      const jumpCommand = threadJumpCommandForIndex(index);
+      if (!jumpCommand) break;
+      const label = shortcutLabelForCommand(keybindings, jumpCommand);
+      if (label) mapping.set(sidebarListItemId(target), label);
+    }
+    return mapping;
+  })();
+
   const sortableIds = sidebarListItems.map(sidebarListItemId);
   // Archived folders stay below the rest.
   const archivedFolderGroups = new Set(
@@ -3477,7 +3486,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
       const jumpIndex = threadJumpIndexFromCommand(command ?? "");
       if (jumpIndex === null) return;
-      navigateToThreadKey(orderedThreadKeys[jumpIndex] ?? null);
+      const target = jumpTargets[jumpIndex];
+      if (target?.kind === "project-header") {
+        event.preventDefault();
+        event.stopPropagation();
+        void openProjectPage(target.group);
+      } else if (target?.kind === "thread") {
+        navigateToThreadKey(target.key);
+      }
     };
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
@@ -3485,6 +3501,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     keybindings,
     navigateToThread,
     openNextUnreadThread,
+    openProjectPage,
+    jumpTargets,
     orderedThreadKeys,
     routeRowThreadKey,
     routeThreadRef,
@@ -4085,6 +4103,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               collapsed={folder.collapsed}
                               hiddenThreads={folder.hiddenThreads}
                               chat={folder.chat}
+                              jumpLabel={
+                                showJumpHints
+                                  ? (jumpLabelByKey.get(sidebarListItemId(item)) ?? null)
+                                  : null
+                              }
                               {...(projectPages.has(folder.group.projectKey)
                                 ? {
                                     statusLine:
