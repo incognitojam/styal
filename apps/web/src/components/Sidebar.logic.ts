@@ -1223,6 +1223,17 @@ export function groupSidebarThreadsByProject<
   );
 }
 
+export function sidebarJumpTargets(
+  items: readonly SidebarListItem[],
+  projectsWithChats: ReadonlySet<string>,
+) {
+  return items.filter(
+    (item) =>
+      item.kind === "thread" ||
+      (item.kind === "project-header" && projectsWithChats.has(item.group)),
+  );
+}
+
 /**
  * Folders that stay while a drag moves their last visible row away: a closed folder's hidden
  * rows, its project chat (which has no row) or the setting that keeps an empty one hold it.

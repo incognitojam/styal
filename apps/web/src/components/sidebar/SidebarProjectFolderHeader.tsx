@@ -15,6 +15,7 @@ import {
   sidebarListItemId,
 } from "../Sidebar.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { Kbd } from "../ui/kbd";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -81,6 +82,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   onOpen?: ((group: SidebarProjectSnapshot) => void) | undefined;
   selected?: boolean | undefined;
   statusLine?: string | null | undefined;
+  jumpLabel: string | null;
   /** Set while the route is the chat's thread, which this header stands for. */
   revealRef?: ((row: HTMLElement, threadKey: string) => (() => void) | undefined) | undefined;
   pinned: boolean;
@@ -148,28 +150,38 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {group.displayName}
         </span>
-        {props.statusLine ? (
-          <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
-            {props.statusLine}
+        {props.jumpLabel ? (
+          <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end group-has-[[data-sidebar-toggle-for]:focus-visible]/project-folder:invisible group-has-[[data-sidebar-action-for]:focus-visible]/project-folder:invisible">
+            <Kbd aria-hidden data-jump-hint>
+              {props.jumpLabel}
+            </Kbd>
           </span>
-        ) : null}
-        {/* The New thread action takes this place on hover, as it does the count's. */}
-        <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
-          <SidebarFolderDot dot={dot} />
-        </span>
-        {collapsed && hiddenThreads.length > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
-            {hiddenThreads.length}
-          </span>
-        ) : null}
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
-            collapsed && "-rotate-90",
-            props.onOpen && "invisible",
-          )}
-        />
+        ) : (
+          <>
+            {props.statusLine ? (
+              <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+                {props.statusLine}
+              </span>
+            ) : null}
+            {/* The New thread action takes this place on hover, as it does the count's. */}
+            <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
+              <SidebarFolderDot dot={dot} />
+            </span>
+            {collapsed && hiddenThreads.length > 0 ? (
+              <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+                {hiddenThreads.length}
+              </span>
+            ) : null}
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
+                collapsed && "-rotate-90",
+                props.onOpen && "invisible",
+              )}
+            />
+          </>
+        )}
       </button>
       {props.onOpen ? (
         <button
@@ -178,7 +190,10 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           aria-expanded={!collapsed}
           aria-label={`${collapsed ? "Open" : "Close"} the ${group.displayName} folder`}
           onClick={() => props.onToggle(group)}
-          className="absolute right-0 bottom-0 flex h-8 w-6 cursor-pointer items-center justify-end rounded-(--control-radius) pr-(--sidebar-row-content-inset) outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className={cn(
+            "absolute right-0 bottom-0 flex h-8 w-6 cursor-pointer items-center justify-end rounded-(--control-radius) pr-(--sidebar-row-content-inset) outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            props.jumpLabel && "opacity-0 focus-visible:opacity-100",
+          )}
         >
           <ChevronDownIcon
             aria-hidden
@@ -190,7 +205,12 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         </button>
       ) : null}
       {/* Sits over the count, which hides on hover, and left of the chevron. */}
-      <span className="absolute right-6 bottom-0 flex h-8 items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
+      <span
+        className={cn(
+          "absolute right-6 bottom-0 flex h-8 items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100",
+          props.jumpLabel && "opacity-0! focus-within:opacity-100!",
+        )}
+      >
         <Tooltip>
           <TooltipTrigger
             render={

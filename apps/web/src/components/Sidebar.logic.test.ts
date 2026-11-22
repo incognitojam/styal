@@ -40,6 +40,7 @@ import {
   filterSidebarV2VisibleThreads,
   sortLogicalProjectsForSidebar,
   groupSidebarThreadsByProject,
+  sidebarJumpTargets,
   keptSidebarFolderKeys,
   orderSidebarFolderGroups,
   shouldCreateNewThreadInCurrentProject,
@@ -1933,5 +1934,45 @@ describe("resolveSidebarFolderDot", () => {
     expect(resolveSidebarFolderDot([idle, working])).toBe("working");
     expect(resolveSidebarFolderDot([working, unread])).toBe("unread");
     expect(resolveSidebarFolderDot([unread, limited])).toBe("attention");
+  });
+});
+
+describe("sidebarJumpTargets", () => {
+  it("numbers chat headers and thread rows in visible order, including collapsed and chat-only projects", () => {
+    const thread = (key: string, section: SidebarSection = "active"): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section,
+    });
+    const items: SidebarListItem[] = [
+      thread("pinned-chat", "pinned"),
+      { kind: "project-header", group: "expanded" },
+      thread("a"),
+      { kind: "project-header", group: "ordinary" },
+      thread("b"),
+      { kind: "project-header", group: "collapsed" },
+      thread("open-route-row"),
+      { kind: "project-header", group: "chat-only" },
+      { kind: "project-header", group: "pinned-chat-project" },
+      { kind: "marker", marker: "settled-header" },
+      thread("settled", "settled"),
+    ];
+    const chats = new Set(["expanded", "collapsed", "chat-only", "pinned-chat-project"]);
+    expect(sidebarJumpTargets(items, chats)).toEqual([
+      thread("pinned-chat", "pinned"),
+      { kind: "project-header", group: "expanded" },
+      thread("a"),
+      thread("b"),
+      { kind: "project-header", group: "collapsed" },
+      thread("open-route-row"),
+      { kind: "project-header", group: "chat-only" },
+      { kind: "project-header", group: "pinned-chat-project" },
+      thread("settled", "settled"),
+    ]);
+    expect(sidebarJumpTargets(items, new Set())).toEqual(
+      items.filter((item) => item.kind === "thread"),
+    );
+    const flat = [thread("chat-b"), thread("b"), thread("chat-a"), thread("settled", "settled")];
+    expect(sidebarJumpTargets(flat, chats)).toEqual(flat);
   });
 });
