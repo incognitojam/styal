@@ -1119,13 +1119,13 @@ export const layer: Layer.Layer<
         ? projection.messages.find((candidate) => candidate.id === message.reportAnswer?.messageId)
             ?.report
         : undefined;
-      // The context loads a report a reply names only while its question is open.
-      const repliedReport =
+      // The context loads the reports a reply names only while their questions are open.
+      const repliedReports =
         message === undefined || message.reportAnswer
-          ? undefined
-          : projection.messages.find(
-              (candidate) => candidate.role === "assistant" && candidate.report,
-            )?.report;
+          ? []
+          : projection.messages.flatMap((candidate) =>
+              candidate.role === "assistant" && candidate.report ? [candidate.report] : [],
+            );
       const turnNote = [
         sendForkNote ? FORK_NOTE : "",
         projection.thread.reportTo != null && reportsTo !== null
@@ -1133,7 +1133,7 @@ export const layer: Layer.Layer<
           : "",
         branchNote,
         answeredReport?.question === undefined ? "" : reportAnswerNote(answeredReport),
-        repliedReport === undefined ? "" : reportReplyNote(repliedReport),
+        repliedReports.length === 0 ? "" : reportReplyNote(repliedReports),
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),

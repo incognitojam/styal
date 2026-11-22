@@ -254,7 +254,10 @@ import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread } from "../../types";
-import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
+import {
+  type ComposerPromptHistoryPosition,
+  type ComposerPromptHistoryReportMessages,
+} from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
 import type { PendingApproval, PendingUserInput, TimelineEntry } from "../../session-logic";
 import {
@@ -379,6 +382,7 @@ export interface ChatComposerProps {
   activeThread: Thread | undefined;
   activeThreadRuns: ReadonlyArray<OrchestrationV2Run>;
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
+  promptHistoryReportMessages: ComposerPromptHistoryReportMessages;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
   /** Replaces the default placeholder, as the project chat's invitation. */
@@ -542,6 +546,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread,
     activeThreadRuns,
     promptHistoryEntries,
+    promptHistoryReportMessages,
     forceExpandedOnMobile,
     projectSelectionRequired,
     idlePlaceholder,
@@ -2457,6 +2462,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isLiteralPendingAnswer,
       pendingUserInputs,
       promptHistoryEntries,
+      promptHistoryReportMessages,
       promptHistoryPositionRef,
       composerDraftTarget,
       promptRef,

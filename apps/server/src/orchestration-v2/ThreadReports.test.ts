@@ -12,6 +12,7 @@ import * as Duration from "effect/Duration";
 import { withCreationProvenance } from "./ThreadManagementService.ts";
 import {
   launcherTakesReports,
+  reportReplyNote,
   requestReportKind,
   runReportKind,
   sentReport,
@@ -235,4 +236,12 @@ it.each(["user_input", "command"] as const)("a sent report routes pending %s inp
   assert.include(text, "t3_thread_send will not answer");
   assert.include(text, kind === "user_input" ? "action respond" : "only the user can");
   if (kind === "command") assert.notInclude(text, "action respond");
+});
+
+it("a reply's note names every report that shares its title and version", () => {
+  const report = (key: string) => ({ key, title: "Ship it?", version: 1 });
+  assert.include(reportReplyNote([report("a")]), 'close it with t3_report {key: "a", outcome: "');
+  const shared = reportReplyNote([report("a"), report("b"), report("c")]);
+  assert.include(shared, 'Reports "a", "b" and "c" share that title and version');
+  assert.include(shared, 'close it with t3_report {key: "<its key>", outcome: "');
 });

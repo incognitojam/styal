@@ -21,6 +21,7 @@ import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/clie
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { feedbackReportFromApproval } from "@t3tools/client-runtime/feedback-report";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
+import { type ComposerPromptHistoryReportMessages } from "./chat/composerPromptHistory";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
@@ -436,6 +437,7 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
 const EMPTY_SERVER_MESSAGES: ReadonlyArray<{ readonly id: MessageId }> = [];
+const EMPTY_REPORT_MESSAGES: ComposerPromptHistoryReportMessages = [];
 const EMPTY_RUNS: ThreadStructure["runs"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
 const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
@@ -4078,6 +4080,9 @@ export default function ChatView(props: ChatViewProps) {
                                 activeThread={activeThread}
                                 activeThreadRuns={serverProjection?.runs ?? EMPTY_RUNS}
                                 promptHistoryEntries={timelineEntries}
+                                promptHistoryReportMessages={
+                                  serverProjection?.messages ?? EMPTY_REPORT_MESSAGES
+                                }
                                 forceExpandedOnMobile={
                                   forceExpandedMobileComposer && isDraftHeroState
                                 }

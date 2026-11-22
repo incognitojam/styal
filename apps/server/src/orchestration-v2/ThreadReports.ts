@@ -663,9 +663,21 @@ export function sentReport(input: {
 export const reportAnswerNote = (report: Pick<CoordinatorReport, "title" | "version">) =>
   `Note: this message answers your report "${report.title}" (version ${report.version}), which closes its question.`;
 
-/** For a turn started by a person's typed reply to a report whose question is still open. */
-export const reportReplyNote = (report: Pick<CoordinatorReport, "key" | "title" | "version">) =>
-  `Note: this message is about your report "${report.title}" (version ${report.version}), whose question is still open. If it settles the question, act on it, then close it with t3_report {key: "${report.key}", outcome: "<one line: what happened>"}. If it asks something, answer and leave the question open.`;
+/**
+ * For a turn started by a person's typed reply to reports whose questions are still open: one
+ * report, or several that share its title and version.
+ */
+export const reportReplyNote = (
+  reports: ReadonlyArray<Pick<CoordinatorReport, "key" | "title" | "version">>,
+) => {
+  const [report] = reports;
+  const keys = reports.map((each) => `"${each.key}"`);
+  const shared =
+    keys.length > 1
+      ? ` Reports ${keys.slice(0, -1).join(", ")} and ${keys.at(-1)} share that title and version, so work out which one it means.`
+      : "";
+  return `Note: this message is about your report "${report!.title}" (version ${report!.version}), whose question is still open.${shared} If it settles the question, act on it, then close it with t3_report {key: ${keys.length > 1 ? '"<its key>"' : keys[0]}, outcome: "<one line: what happened>"}. If it asks something, answer and leave the question open.`;
+};
 
 export const threadReportNote = (
   target: Pick<OrchestrationV2ThreadReportTarget, "source">,
