@@ -348,6 +348,74 @@ describe("DesktopBackendManager", () => {
     }),
   );
 
+  it.effect("keeps packaged backend startup alive past three minutes of copy progress", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const probe = yield* Deferred.make<void>();
+        const becameReady = yield* Deferred.make<void>();
+        const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+        let ready = false;
+        let copiedBytes = 0;
+        let startupFailures = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.acquireRelease(
+                Effect.succeed(
+                  makeProcess({
+                    exitCode: Deferred.await(exit),
+                    kill: () =>
+                      Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0)).pipe(Effect.asVoid),
+                  }),
+                ),
+                () => Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0)),
+              ),
+            ),
+          ),
+          httpClientLayer: Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Deferred.succeed(probe, undefined).pipe(
+                Effect.as(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    new Response(
+                      JSON.stringify({
+                        copy: {
+                          phase: "copying",
+                          copiedBytes: ++copiedBytes,
+                          totalBytes: 1000000,
+                          leaseMs: 60000,
+                        },
+                      }),
+                      { status: ready ? 200 : 503 },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          onReady: Deferred.succeed(becameReady, undefined).pipe(Effect.asVoid),
+          onStartupFailure: () =>
+            Effect.sync(() => {
+              startupFailures += 1;
+            }),
+        });
+        yield* instance.start;
+        yield* Deferred.await(probe);
+        yield* TestClock.adjust("4 minutes");
+        assert.isFalse(yield* Deferred.isDone(becameReady));
+        assert.equal(startupFailures, 0);
+        assert.isAbove(copiedBytes, 1);
+        ready = true;
+        yield* TestClock.adjust("1 second");
+        yield* Deferred.await(becameReady);
+        yield* instance.stop();
+      }),
+    ),
+  );
+
   it.effect("reports a SIGKILL exit without an exit code", () =>
     Effect.gen(function* () {
       const exitCause = PlatformError.systemError({

@@ -298,6 +298,7 @@ const REMOTE_WAIT_READY_SCRIPT = `const http = require("node:http");
 const port = Number.parseInt(process.argv[2] ?? "", 10);
 const timeoutMs = Number.parseInt(process.argv[3] ?? "", 10);
 const probeTimeoutMs = Number.parseInt(process.argv[4] ?? "", 10);
+const acceptCopy = process.argv[5] !== "ready-only";
 if (!Number.isInteger(port) || !Number.isInteger(timeoutMs) || !Number.isInteger(probeTimeoutMs)) {
   process.exit(1);
 }
@@ -317,9 +318,15 @@ function probe() {
         timeout: probeTimeoutMs,
       },
       (response) => {
-        response.resume();
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { if (body.length < 4096) body += chunk; });
         response.once("end", () => {
-          resolve(response.statusCode >= 200 && response.statusCode < 300);
+          if (response.statusCode >= 200 && response.statusCode < 300) return resolve(true);
+          try {
+            const copy = JSON.parse(body).copy;
+            resolve(acceptCopy && response.statusCode === 503 && copy?.phase === "copying" && Number.isFinite(copy.leaseMs) && copy.leaseMs > 0);
+          } catch { resolve(false); }
         });
       },
     );
@@ -654,11 +661,13 @@ pick_port() {
 NODE
 }
 wait_ready() {
+  READY_ONLY_OPTION=""
+  if [ "\${2:-}" = "ready-only" ]; then READY_ONLY_OPTION="--ready-only"; fi
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@"
+    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@" $READY_ONLY_OPTION
     return
   fi
-  node - "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@" <<'NODE'
+  node - "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@" "\${2:-}" <<'NODE'
 @@T3_WAIT_READY_SCRIPT@@
 NODE
 }
@@ -724,7 +733,7 @@ if [ -n "$DEFAULT_REMOTE_PORT" ] && [ "$REMOTE_MANAGED" = "managed" ] && [ "$DEF
   printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
 elif [ -n "$DEFAULT_REMOTE_PORT" ]; then
   REMOTE_PORT="$DEFAULT_REMOTE_PORT"
-  if wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
+  if wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@" ready-only; then
     ADOPTED_PID="$DEFAULT_RUNTIME_PID"
     if [ "$REMOTE_MANAGED" = "managed" ]; then
       if managed_server_running "$REMOTE_PID"; then
@@ -1152,7 +1161,7 @@ const waitForHttpReady = (input: {
     ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
     ...(input.intervalMs === undefined ? {} : { intervalMs: input.intervalMs }),
     probeTimeoutMs: input.probeTimeoutMs ?? SSH_READY_PROBE_TIMEOUT_MS,
-    makeError: ({ requestUrl, probeTimeoutMs, cause }) => {
+    makeError: ({ requestUrl, probeTimeoutMs, startupCopy, cause }) => {
       if (typeof cause === "object" && cause !== null && "kind" in cause) {
         const kind = (cause as { readonly kind?: unknown }).kind;
         if (kind === "probe-timeout") {
@@ -1168,7 +1177,9 @@ const waitForHttpReady = (input: {
             readonly lastFailure: unknown;
           };
           return new SshReadinessError({
-            message: `Timed out waiting ${overall.timeoutMs}ms for backend readiness at ${overall.baseUrl}.`,
+            message: startupCopy
+              ? `Backend readiness failed at ${overall.baseUrl}; a safety copy was in progress (${Math.floor((startupCopy.copiedBytes / startupCopy.totalBytes) * 100)}%). The server stopped responding or its copy-progress lease expired. Check the server log before retrying.`
+              : `Timed out waiting ${overall.timeoutMs}ms for backend readiness at ${overall.baseUrl}.`,
             cause: overall.lastFailure,
           });
         }
