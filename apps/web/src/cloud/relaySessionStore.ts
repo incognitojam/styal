@@ -48,14 +48,14 @@ function readState(store: IDBObjectStore, done: (state: RelaySessionState) => vo
 }
 
 export function removeLegacyClerkStorage(local: Storage, session: Storage): void {
-  if (local.getItem("styal:clerk-storage-removed") === "1") return;
   for (const storage of [local, session]) {
+    if (storage.getItem("styal:clerk-storage-removed") === "1") continue;
     const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
     for (const key of keys) {
       if (key?.startsWith("__clerk") || key?.startsWith("clerk_")) storage.removeItem(key);
     }
+    storage.setItem("styal:clerk-storage-removed", "1");
   }
-  local.setItem("styal:clerk-storage-removed", "1");
 }
 
 export const readRelaySessionState = cloudAuthTransaction<RelaySessionState>(

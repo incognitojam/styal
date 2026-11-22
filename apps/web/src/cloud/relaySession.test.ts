@@ -345,6 +345,19 @@ it("removes only Clerk browser storage once and preserves relay state", () => {
   expect(session.getItem("clerk_cache")).toBeNull();
   expect(local.getItem("relay-session")).toBe("synthetic current session");
   expect(session.getItem("unrelated")).toBe("keep");
+  const otherTab = memory({ __clerk_other_tab: "synthetic other tab token", unrelated: "keep" });
+  removeLegacyClerkStorage(local, otherTab);
+  expect(otherTab.getItem("__clerk_other_tab")).toBeNull();
+  expect(otherTab.getItem("unrelated")).toBe("keep");
+  const locked = memory({ __clerk_retry: "synthetic retry token" });
+  vi.spyOn(locked, "removeItem").mockImplementationOnce(() => {
+    throw new Error("storage blocked");
+  });
+  expect(() => removeLegacyClerkStorage(local, locked)).toThrow("storage blocked");
+  expect(locked.getItem("styal:clerk-storage-removed")).toBeNull();
+  expect(locked.getItem("__clerk_retry")).toBe("synthetic retry token");
+  removeLegacyClerkStorage(local, locked);
+  expect(locked.getItem("__clerk_retry")).toBeNull();
   local.setItem("__clerk_after_cleanup", "synthetic sentinel");
   removeLegacyClerkStorage(local, session);
   expect(local.getItem("__clerk_after_cleanup")).toBe("synthetic sentinel");

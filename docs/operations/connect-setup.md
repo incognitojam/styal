@@ -111,7 +111,8 @@ restored by reverting code; older Clerk builds may require a fresh Clerk sign-in
 
 When refreshing this draft after the client PR lands, carry the cleanup from `DesktopClerk` into
 `DesktopAppLinks`, keep the SecureStore migration and browser storage cleanup, and delete the
-now-unused client exchange contract and adapters. Do not reintroduce an SDK or exchange handler.
+now-unused client exchange contract/adapters, the server-only refresh build inputs/examples, and
+the shared publishable-key URL helper. Do not reintroduce an SDK or exchange handler.
 
 Choose the rollback window and whether abandoned devices must be recovered or deliberately retired
 before approving the relay PR. Clerk bans, sign-up restrictions and email edits no longer control
