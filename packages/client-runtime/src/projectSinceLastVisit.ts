@@ -40,6 +40,8 @@ export type SinceLastVisitThreadShell = Pick<
   | "runtime"
   | "lastVisitedAt"
   | "pullRequests"
+  | "reportTo"
+  | "source"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
   | "openReportQuestionCount"
@@ -70,11 +72,18 @@ interface LineBase extends ThreadRef {
   readonly at: number;
 }
 
+type PullRequestLine = LineBase & {
+  readonly kind: "merged" | "opened";
+  readonly number: number;
+  readonly url: string;
+};
+
 export type SinceLastVisitThreadLine =
   | (LineBase & { readonly kind: "failed"; readonly error: string | null })
   | (LineBase & { readonly kind: "limited"; readonly resetAt: string | null })
-  | (LineBase & { readonly kind: "finished" })
-  | (LineBase & { readonly kind: "merged"; readonly number: number; readonly url: string });
+  /** A turn ended without a pull request, in a thread whose results do not reach the chat. */
+  | (LineBase & { readonly kind: "ended" })
+  | PullRequestLine;
 
 export interface SinceLastVisitReportLine {
   readonly kind: "report";
@@ -84,6 +93,12 @@ export interface SinceLastVisitReportLine {
   readonly reportKey: string;
   readonly version: number;
   readonly at: number;
+  /** The pull requests the report is about, when the summary would otherwise list them too. */
+  readonly pullRequests?: ReadonlyArray<{
+    readonly number: number;
+    readonly state: "merged" | "opened";
+    readonly url: string;
+  }>;
 }
 
 export type SinceLastVisitLine = SinceLastVisitThreadLine | SinceLastVisitReportLine;
@@ -107,9 +122,9 @@ export function sinceLastVisitWindow(chat: MarkerShell, now: number): SinceLastV
 }
 
 /**
- * What changed in the project's threads after `since`, newest first. The threads are a snapshot
- * taken when the page opened, so nothing later is in it. A shell carries only its latest run: an
- * earlier run that ended in the window and was followed by another is not listed.
+ * What changed in the project's threads after `since`, newest first; a shell carries only its
+ * latest run. A turn that opened a pull request is that pull request's line, and a turn an agent
+ * started in a thread that reports to the chat is left to the report the chat receives.
  */
 export function sinceLastVisitThreadLines(
   threads: ReadonlyArray<SinceLastVisitThreadShell>,
@@ -125,39 +140,67 @@ export function sinceLastVisitThreadLines(
     const ref = { environmentId: thread.environmentId, threadId: thread.id };
     const run = thread.latestRun;
     const completedAt = parse(run?.completedAt);
-    // Opening the thread after it ended is seeing it; archiving it is putting it away.
-    const seen = parse(thread.lastVisitedAt) >= completedAt || thread.archivedAt !== null;
-    if (run && completedAt > since && !seen && !needsYou(thread)) {
-      const base = { ...ref, id: `thread:${thread.environmentId}:${thread.id}` };
-      const line = { ...base, title: thread.title, at: completedAt };
-      if (run.status === "failed") {
-        lines.push(
-          thread.runtime?.lastErrorClass === "usage_limit"
-            ? { ...line, kind: "limited", resetAt: thread.runtime.usageLimitResetAt ?? null }
-            : {
-                ...line,
-                kind: "failed",
-                error: thread.runtime?.lastError?.trim().split("\n")[0]?.trim() || null,
-              },
-        );
-      } else if (run.status === "completed") {
-        lines.push({ ...line, kind: "finished" });
-      }
-    }
+    let openedInRun = false;
     for (const pullRequest of thread.pullRequests) {
       const mergedAt = parse(pullRequest.snapshot?.mergedAt);
+      // Linking a pull request that already existed is not opening it.
+      const openedAt = pullRequest.source === "created" ? parse(pullRequest.linkedAt) : Number.NaN;
+      const kind =
+        mergedAt > since
+          ? "merged"
+          : pullRequest.snapshot?.state === "open" && openedAt > since
+            ? "opened"
+            : null;
+      if (kind === null) continue;
+      if (
+        kind === "opened" &&
+        openedAt >= parse(run?.startedAt ?? run?.completedAt) &&
+        openedAt <= completedAt
+      )
+        openedInRun = true;
       const key = `${pullRequest.host}/${pullRequest.repository}#${pullRequest.number}`;
-      if (!(mergedAt > since) || pullRequests.has(key)) continue;
+      if (pullRequests.has(key)) continue;
       pullRequests.add(key);
       lines.push({
         ...ref,
-        kind: "merged",
+        kind,
         id: `pr:${key}`,
         title: pullRequest.snapshot?.title ?? `#${pullRequest.number}`,
-        at: mergedAt,
+        at: kind === "merged" ? mergedAt : openedAt,
         number: pullRequest.number,
         url: pullRequest.url,
       });
+    }
+    // Opening the thread after it ended is seeing it; archiving it is putting it away.
+    const seen = parse(thread.lastVisitedAt) >= completedAt || thread.archivedAt !== null;
+    if (!run || !(completedAt > since) || seen || needsYou(thread)) continue;
+    const line = {
+      ...ref,
+      id: `thread:${thread.environmentId}:${thread.id}`,
+      title: thread.title,
+      at: completedAt,
+    };
+    if (run.status === "failed") {
+      lines.push(
+        thread.runtime?.lastErrorClass === "usage_limit"
+          ? { ...line, kind: "limited", resetAt: thread.runtime.usageLimitResetAt ?? null }
+          : {
+              ...line,
+              kind: "failed",
+              error: thread.runtime?.lastError?.trim().split("\n")[0]?.trim() || null,
+            },
+      );
+    } else if (
+      run.status === "completed" &&
+      !openedInRun &&
+      // The server reports an agent's turn to the chat; a turn you started is not reported.
+      !(
+        thread.source?.latestRunStartedByAgent === true &&
+        thread.environmentId === chat.environmentId &&
+        thread.reportTo?.threadId === chat.threadId
+      )
+    ) {
+      lines.push({ ...line, kind: "ended" });
     }
   }
   return lines.sort(newestFirst);
@@ -262,6 +305,17 @@ export interface CapturedSinceLastVisit {
 }
 
 /**
+ * Where the list may be missing changes: threads that settled before `unloadedBefore` were not on
+ * the client, so only a window reaching back past it can miss their turns. A late merge on one of
+ * them is rare enough to leave unsaid. Null when nothing in the window was left out.
+ */
+export function sinceLastVisitMissingBefore(captured: CapturedSinceLastVisit): number | null {
+  return captured.unloadedBefore !== null && captured.window.since < captured.unloadedBefore
+    ? captured.unloadedBefore
+    : null;
+}
+
+/**
  * Taken once per page view from the chat's live shell, before the page records the visit. Null
  * when the chat was never visited or the user was away under 30 minutes.
  */
@@ -319,7 +373,7 @@ export function addSinceLastVisitEnvironment(
   };
 }
 
-export type SinceLastVisitGroup = "failed" | "reports" | "finished" | "merged";
+export type SinceLastVisitGroup = "failed" | "reports" | "pullRequests" | "ended";
 
 export interface SinceLastVisitSection<Line> {
   readonly group: SinceLastVisitGroup;
@@ -331,18 +385,21 @@ export interface SinceLastVisitSection<Line> {
 }
 
 /**
- * Up to six changes are one list. More are grouped: every failure, the three newest reports, and
- * finished threads and merged pull requests as one row of names, each until expanded.
+ * Up to six changes are one list, newest first. More are grouped, each group newest first: every
+ * failure, the three newest reports, and pull requests and turn ends as one row of names, each
+ * until expanded.
  */
-export function sinceLastVisitLayout<Line>(
+export function sinceLastVisitLayout<Line extends { readonly at: number }>(
   groups: Readonly<Record<SinceLastVisitGroup, ReadonlyArray<Line>>>,
   expanded: ReadonlySet<SinceLastVisitGroup>,
 ): {
   readonly total: number;
   readonly grouped: boolean;
   readonly sections: ReadonlyArray<SinceLastVisitSection<Line>>;
+  /** Every line, newest first, for the ungrouped list. */
+  readonly lines: ReadonlyArray<Line>;
 } {
-  const order = ["failed", "reports", "finished", "merged"] as const;
+  const order = ["failed", "reports", "pullRequests", "ended"] as const;
   const total = order.reduce((sum, group) => sum + groups[group].length, 0);
   const grouped = total > SINCE_LAST_VISIT_FLAT_LIMIT;
   const sections = order.flatMap((group): SinceLastVisitSection<Line>[] => {
@@ -360,18 +417,57 @@ export function sinceLastVisitLayout<Line>(
       },
     ];
   });
-  return { total, grouped, sections };
+  return {
+    total,
+    grouped,
+    sections,
+    lines: order.flatMap((group) => groups[group]).sort(newestFirst),
+  };
 }
 
-/** Splits the window's lines into the card's groups. */
+/** The pull request numbers a report names: a `pr:<number>` key, or `#<number>` in its title. */
+function namedPullRequests(line: SinceLastVisitReportLine): number[] {
+  const byKey = /^pr:(\d+)$/.exec(line.reportKey);
+  const byTitle = [...line.title.matchAll(/#(\d+)\b/g)].map((match) => Number(match[1]));
+  return [...(byKey ? [Number(byKey[1])] : []), ...byTitle];
+}
+
+/**
+ * Splits the window's lines into the card's groups. A report about a pull request that has its own
+ * line is one line, the report's, carrying the pull request's number and state.
+ */
 export function sinceLastVisitGroups(
   threadLines: ReadonlyArray<SinceLastVisitThreadLine>,
   reportLines: ReadonlyArray<SinceLastVisitReportLine>,
 ): Record<SinceLastVisitGroup, ReadonlyArray<SinceLastVisitLine>> {
+  const pullRequestLines = threadLines.filter(
+    (line): line is PullRequestLine => line.kind === "merged" || line.kind === "opened",
+  );
+  // A number shared by pull requests in two repositories does not say which one a report means.
+  const byNumber = new Map<number, PullRequestLine | null>();
+  for (const line of pullRequestLines)
+    byNumber.set(line.number, byNumber.has(line.number) ? null : line);
+  const absorbed = new Set<string>();
+  const reports = reportLines.map((report) => {
+    const matches = [...new Set(namedPullRequests(report))].flatMap((number) => {
+      const line = byNumber.get(number);
+      return line && !absorbed.has(line.id) ? [line] : [];
+    });
+    if (matches.length === 0) return report;
+    for (const line of matches) absorbed.add(line.id);
+    return {
+      ...report,
+      pullRequests: matches.map((line) => ({
+        number: line.number,
+        state: line.kind,
+        url: line.url,
+      })),
+    };
+  });
   return {
     failed: threadLines.filter((line) => line.kind === "failed" || line.kind === "limited"),
-    reports: reportLines,
-    finished: threadLines.filter((line) => line.kind === "finished"),
-    merged: threadLines.filter((line) => line.kind === "merged"),
+    reports,
+    pullRequests: pullRequestLines.filter((line) => !absorbed.has(line.id)),
+    ended: threadLines.filter((line) => line.kind === "ended"),
   };
 }
