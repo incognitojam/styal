@@ -30,7 +30,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
 import {
@@ -412,6 +412,14 @@ function ReportAnswer({
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const navigate = useNavigate();
+  const shown = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a reply still sending when the card leaves the screen must not open its thread later
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
   const disabled = !canOperate;
@@ -452,13 +460,11 @@ function ReportAnswer({
   // a conversation, which belongs in the thread, so the thread opens where the answer will come.
   const sendReply = async () => {
     setSending(true);
-    const sentFrom = window.location.href;
     const result = await sendTurn(newMessageId(), formatReportAnswer(report, reply.trim()));
     setSending(false);
     if (result._tag === "Success") {
       setReply("");
-      // A slow send must not pull back someone who has moved on.
-      if (window.location.href !== sentFrom) return;
+      if (!shown.current) return;
       followTimelineEnd(scopedThreadKey(thread));
       void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(thread) });
     } else if (!isAtomCommandInterrupted(result)) {
