@@ -42,6 +42,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
+      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
       T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
     outputs:
       dmg_name: ${{ steps.build.outputs.dmg_name }}

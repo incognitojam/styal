@@ -24,27 +24,31 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { SecretStoreLockError, withSecretStoreLock } from "../auth/SecretStoreLock.ts";
-import { relayUrlConfig } from "./publicConfig.ts";
+import { legacyClerkCliConfig, relayUrlConfig } from "./publicConfig.ts";
 
 /** The CLI's P-256 DPoP key. Relay sessions only accept proofs from it. */
 export const CLOUD_CLI_DPOP_KEY_SECRET = "cloud-cli-dpop-key";
 /** The relay session `styal link login` stores, shared with the server on this machine. */
 export const CLOUD_RELAY_SESSION_SECRET = "cloud-relay-session";
 /** Clerk OAuth token retained for older CLIs until explicit logout. */
-const LEGACY_CLERK_CLI_TOKEN_SECRET = "cloud-cli-oauth-token";
+export const LEGACY_CLERK_CLI_TOKEN_SECRET = "cloud-cli-oauth-token";
 /** Prevents retained Clerk credentials from re-adopting an ended relay session. */
 const LEGACY_CLERK_ADOPTED_SECRET = "cloud-cli-clerk-adopted";
 
 // Access tokens live 30 minutes; refresh a little early so a proof never
 // carries a token that expires in flight.
 const ACCESS_TOKEN_REFRESH_EARLY_MS = Duration.toMillis(Duration.minutes(2));
+const LEGACY_CLERK_REFRESH_EARLY_MS = Duration.toMillis(Duration.minutes(5));
 const SESSION_LABEL_MAX_LENGTH = 120;
 
 const PersistedRelaySession = Schema.Struct({
@@ -62,6 +66,24 @@ const encodePersistedRelaySession = Schema.encodeSync(PersistedRelaySessionJson)
 const DpopPrivateJwkJson = Schema.fromJsonString(DpopPrivateJwk);
 const decodeDpopPrivateJwk = Schema.decodeUnknownOption(DpopPrivateJwkJson);
 const encodeDpopPrivateJwk = Schema.encodeSync(DpopPrivateJwkJson);
+
+const LegacyClerkToken = Schema.Struct({
+  accessToken: Schema.String,
+  refreshToken: Schema.String,
+  expiresAtEpochMs: Schema.Number,
+  identity: Schema.optional(Schema.String),
+});
+type LegacyClerkToken = typeof LegacyClerkToken.Type;
+const LegacyClerkTokenJson = Schema.fromJsonString(LegacyClerkToken);
+const decodeLegacyClerkToken = Schema.decodeUnknownOption(LegacyClerkTokenJson);
+const encodeLegacyClerkToken = Schema.encodeSync(LegacyClerkTokenJson);
+
+const ClerkTokenResponse = Schema.Struct({
+  access_token: Schema.String,
+  refresh_token: Schema.optional(Schema.String),
+  expires_in: Schema.Number,
+});
+const ClerkTokenError = Schema.Struct({ error: Schema.String });
 
 export interface CloudCliIdentity {
   readonly userId: string;
@@ -104,6 +126,15 @@ export class CloudCliRelayRejectedError extends Schema.TaggedError<CloudCliRelay
 ) {
   override get message(): string {
     return `The styal Link relay refused the request: ${this.description}`;
+  }
+}
+
+export class CloudCliClerkRefreshRejectedError extends Schema.TaggedError<CloudCliClerkRefreshRejectedError>()(
+  "CloudCliClerkRefreshRejectedError",
+  { status: Schema.Number },
+) {
+  override get message(): string {
+    return `Clerk refused to refresh the stored sign-in (HTTP ${this.status}). Sign in again with an emailed code.`;
   }
 }
 
@@ -162,15 +193,26 @@ export class CloudCliRelayConfigError extends Schema.TaggedError<CloudCliRelayCo
   }
 }
 
+export class CloudCliLegacyClerkConfigError extends Schema.TaggedError<CloudCliLegacyClerkConfigError>()(
+  "CloudCliLegacyClerkConfigError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "The stored Clerk sign-in needs the legacy Clerk configuration to migrate. Restore T3CODE_CLERK_PUBLISHABLE_KEY and T3CODE_CLERK_CLI_OAUTH_CLIENT_ID, then retry.";
+  }
+}
+
 export const CloudCliSessionError = Schema.Union([
   CloudCliSessionStorageError,
   CloudCliRelayUnavailableError,
   CloudCliRelayRejectedError,
+  CloudCliClerkRefreshRejectedError,
   CloudCliDpopKeyError,
   CloudCliSignInCodeError,
   CloudCliSignInRateLimitedError,
   CloudCliEmailSignInUnavailableError,
   CloudCliRelayConfigError,
+  CloudCliLegacyClerkConfigError,
 ]);
 export type CloudCliSessionError = typeof CloudCliSessionError.Type;
 
@@ -195,7 +237,7 @@ export class CloudCliSession extends Context.Service<
     readonly currentIdentity: Effect.Effect<Option.Option<CloudCliIdentity>, CloudCliSessionError>;
     /** The stored account without contacting the relay. */
     readonly storedIdentity: Effect.Effect<Option.Option<CloudCliIdentity>, CloudCliSessionError>;
-    /** Whether a relay session is stored for this relay. */
+    /** Whether a relay session or a not-yet-adopted Clerk credential is stored. */
     readonly hasCredential: Effect.Effect<boolean, CloudCliSessionError>;
     /** Headers for one relay request. None when signed out. */
     readonly authorize: (
@@ -313,6 +355,15 @@ export const make = Effect.gen(function* () {
     withSecretStoreLock(secrets.directory, "cloud-cli-session", task).pipe(
       Effect.mapError((cause) => (isSecretStoreLockError(cause) ? storageError(cause) : cause)),
     );
+  // Older versions do not take our lease. Do not remove a token they replaced
+  // while our refresh or relay request was in flight.
+  const forgetLegacyCredential = Effect.fnUntraced(function* (rejected: string) {
+    const current = yield* readSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET);
+    if (Option.isSome(current) && current.value === rejected) {
+      yield* removeSecret(LEGACY_CLERK_CLI_TOKEN_SECRET);
+    }
+  });
+
   const importKey = Effect.fn("cloud.cli_session.import_key")(function* (encoded: string) {
     if (cachedKey?.encoded === encoded) return Option.some(cachedKey.key);
     const jwk = decodeDpopPrivateJwk(encoded);
@@ -409,7 +460,8 @@ export const make = Effect.gen(function* () {
       relayUrl,
     };
     yield* persistSession(session);
-    // Fence a downgraded server from re-adopting a leftover credential after sign-out.
+    // Older servers sharing this home still need Clerk, including its rotated
+    // refresh token. Retain it until logout, but never adopt it a second time.
     yield* writeSecretString(LEGACY_CLERK_ADOPTED_SECRET, "1");
     yield* rememberAccessToken(session.refreshToken, response);
     return session;
@@ -419,6 +471,147 @@ export const make = Effect.gen(function* () {
     userId: session.userId,
     email: session.email,
     relayUrl: session.relayUrl,
+  });
+
+  /** A Clerk access token for the legacy credential, refreshed at Clerk when it is stale. */
+  const legacyClerkAccessToken = Effect.fn("cloud.cli_session.legacy_clerk_access_token")(
+    function* (legacy: LegacyClerkToken, encoded: string) {
+      const now = yield* Clock.currentTimeMillis;
+      if (legacy.expiresAtEpochMs - LEGACY_CLERK_REFRESH_EARLY_MS > now) {
+        return Option.some({ accessToken: legacy.accessToken, encoded });
+      }
+      const config = yield* legacyClerkCliConfig.pipe(
+        Effect.mapError((cause) => new CloudCliLegacyClerkConfigError({ cause })),
+      );
+      const body = yield* Effect.gen(function* () {
+        const response = yield* HttpClientRequest.post(config.tokenEndpoint).pipe(
+          HttpClientRequest.bodyUrlParams({
+            grant_type: "refresh_token",
+            refresh_token: legacy.refreshToken,
+            client_id: config.clientId,
+          }),
+          httpClient.execute,
+        );
+        if (response.status >= 400 && response.status < 500) {
+          const refusal = yield* HttpClientResponse.schemaBodyJson(ClerkTokenError)(response).pipe(
+            Effect.option,
+          );
+          if (response.status !== 408 && response.status !== 429) {
+            if (
+              Option.isSome(refusal) &&
+              (refusal.value.error === "invalid_grant" || refusal.value.error === "revoked")
+            ) {
+              return Option.none();
+            }
+            return yield* new CloudCliClerkRefreshRejectedError({
+              status: response.status,
+            });
+          }
+          return yield* new CloudCliRelayUnavailableError({ cause: response });
+        }
+        return yield* HttpClientResponse.filterStatusOk(response).pipe(
+          Effect.flatMap(HttpClientResponse.schemaBodyJson(ClerkTokenResponse)),
+          Effect.asSome,
+        );
+      }).pipe(Effect.timeout("15 seconds"), Effect.mapError(relayAuthFailure));
+      if (Option.isNone(body)) return Option.none();
+      // Clerk rotates refresh tokens. Keep the new one in case the exchange
+      // below fails and adoption has to run again.
+      const refreshedAt = yield* Clock.currentTimeMillis;
+      const refreshed = encodeLegacyClerkToken({
+        ...legacy,
+        accessToken: body.value.access_token,
+        refreshToken: body.value.refresh_token ?? legacy.refreshToken,
+        expiresAtEpochMs: refreshedAt + body.value.expires_in * 1_000,
+      });
+      const current = yield* readSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET);
+      if (Option.isNone(current) || current.value !== encoded) {
+        return yield* storageError(
+          new Error("The legacy Clerk credential changed during refresh."),
+        );
+      }
+      yield* writeSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET, refreshed);
+      return Option.some({ accessToken: body.value.access_token, encoded: refreshed });
+    },
+    Effect.uninterruptible,
+  );
+
+  /**
+   * Converts a Clerk credential stored by an older CLI into a relay session,
+   * so background services keep their link across the upgrade without a
+   * prompt. Only definitive grant rejections remove the rejected credential.
+   */
+  const adoptLegacyClerkCredential = Effect.fn("cloud.cli_session.adopt_legacy_clerk_credential")(
+    function* () {
+      // Another CLI/server may have completed adoption while we waited for
+      // the cross-process lease. Re-read both sources inside that lease.
+      const session = yield* readSession;
+      if (Option.isSome(session)) return session;
+      if (Option.isSome(yield* readSecretString(LEGACY_CLERK_ADOPTED_SECRET))) {
+        return Option.none<PersistedRelaySession>();
+      }
+      const encoded = yield* readSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET);
+      if (Option.isNone(encoded)) return Option.none<PersistedRelaySession>();
+      const legacy = decodeLegacyClerkToken(encoded.value);
+      if (Option.isNone(legacy)) {
+        return yield* storageError(
+          new Error("The stored legacy Clerk credential could not be read."),
+        );
+      }
+      const clerkAccessToken = yield* legacyClerkAccessToken(legacy.value, encoded.value);
+      if (Option.isNone(clerkAccessToken)) {
+        yield* Effect.logWarning(
+          "The stored styal Link CLI credential could not be refreshed; run `styal link login`.",
+        );
+        yield* forgetLegacyCredential(encoded.value);
+        return Option.none<PersistedRelaySession>();
+      }
+      const relayUrl = yield* configuredRelayUrl;
+      const key = yield* getOrCreateKey;
+      const client = yield* relayClient(relayUrl);
+      const dpop = yield* proofFor({
+        key,
+        method: "POST",
+        url: authUrls(relayUrl).auth.exchangeClerkSession(),
+      });
+      const exchanged = yield* client.auth
+        .exchangeClerkSession({
+          headers: { dpop },
+          payload: {
+            subject_token: clerkAccessToken.value.accessToken,
+            client_id: RelayCliClientId,
+            label: yield* label,
+          },
+        })
+        .pipe(
+          Effect.timeout("15 seconds"),
+          Effect.asSome,
+          Effect.catchTags({
+            RelayAuthInvalidError: (error) =>
+              error.reason === "invalid_bearer"
+                ? Effect.logWarning("The relay refused the stored styal Link CLI credential.", {
+                    reason: error.reason,
+                  }).pipe(Effect.as(Option.none()))
+                : Effect.fail(error),
+          }),
+          Effect.mapError(relayAuthFailure),
+        );
+      if (Option.isNone(exchanged)) {
+        yield* forgetLegacyCredential(clerkAccessToken.value.encoded);
+        return Option.none<PersistedRelaySession>();
+      }
+      const adopted = yield* storeSignedInSession(relayUrl, exchanged.value);
+      yield* Effect.logInfo("Moved the stored styal Link CLI credential to a relay session.");
+      return Option.some(adopted);
+    },
+    withCredentialLock,
+  );
+
+  const loadSession = Effect.gen(function* () {
+    const session = yield* readSession;
+    if (Option.isSome(session)) return session;
+    if (!(yield* hasCredential)) return Option.none<PersistedRelaySession>();
+    return yield* adoptLegacyClerkCredential();
   });
 
   /** Removes the session, unless another process already replaced it. */
@@ -486,7 +679,7 @@ export const make = Effect.gen(function* () {
 
   /** The session with a valid access token and its proof key, or None when signed out. */
   const activeSession = Effect.gen(function* () {
-    const session = yield* readSession;
+    const session = yield* loadSession;
     if (Option.isNone(session)) return Option.none();
     if (session.value.relayUrl !== (yield* configuredRelayUrl)) return Option.none();
     const key = yield* readKey;
@@ -595,7 +788,8 @@ export const make = Effect.gen(function* () {
   const hasCredential = Effect.gen(function* () {
     const session = yield* readSession;
     if (Option.isSome(session)) return session.value.relayUrl === (yield* configuredRelayUrl);
-    return false;
+    if (Option.isSome(yield* readSecretString(LEGACY_CLERK_ADOPTED_SECRET))) return false;
+    return Option.isSome(yield* readSecretString(LEGACY_CLERK_CLI_TOKEN_SECRET));
   });
 
   const authorize = Effect.fn("cloud.cli_session.authorize")(function* (
@@ -658,3 +852,35 @@ export const canRetryCredentialRecovery = (error: CloudCliSessionError | Cause.T
   (error._tag === "CloudCliSessionStorageError" &&
     isSecretStoreLockError(error.cause) &&
     error.cause.reason === "busy");
+
+/** Noninteractive migration, independent of tunnel reconciliation and local startup. */
+export const layerStartupAdoption = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const session = yield* CloudCliSession;
+    yield* Effect.gen(function* () {
+      if (!(yield* session.hasCredential)) return;
+      if (Option.isSome(yield* session.storedIdentity)) return;
+      yield* session.currentIdentity;
+    }).pipe(
+      Effect.timeout("45 seconds"),
+      Effect.tapError((error) =>
+        Effect.logWarning(
+          canRetryCredentialRecovery(error)
+            ? "Stored styal Link sign-in adoption will retry in the background."
+            : "Stored styal Link sign-in adoption stopped; run `styal link login` to sign in again.",
+          { reason: error._tag },
+        ),
+      ),
+      Effect.retry({
+        while: canRetryCredentialRecovery,
+        schedule: Schedule.exponential("1 second").pipe(
+          Schedule.modifyDelay(({ duration }) =>
+            Effect.succeed(Duration.min(duration, Duration.minutes(5))),
+          ),
+        ),
+      }),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+  }),
+);

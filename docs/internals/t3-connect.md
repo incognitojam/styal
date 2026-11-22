@@ -209,9 +209,9 @@ row would get a new id and lose their links.
 
 ## Moving off Clerk
 
-Current web, desktop, mobile and CLI builds use relay sessions only. Without a stored relay
-session, GUI clients show email sign-in and server operators must run `styal link login`, including
-when an older build left a Clerk credential. The imported email restores the original user id
+Current web, desktop and mobile GUIs use relay sessions only. Without a stored relay
+session they show email sign-in. The server/CLI retains SDK-free startup adoption of an older
+Clerk credential until relay retirement. The imported email restores the original user id
 and environment links. Stored relay sessions,
 proof keys, cross-process credential leases and logout fences retain their existing formats.
 

@@ -6,8 +6,6 @@ import tailwindColors from "tailwindcss/colors";
 import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@t3tools/shared/themePalettes";
 
 import {
-  createMobileThemeVariables,
-  getMobileThemeColors,
   getMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
   type MobileThemeAppearance,
@@ -171,44 +169,7 @@ const adaptiveVariablesFor = (appearance: MobileThemeAppearance) =>
 const variablesFor = (themeId: BuiltInThemeId, appearance: MobileThemeAppearance) => ({
   ...getMobileThemeVariables(themeId, appearance),
   ...adaptiveVariablesFor(appearance),
-  ...accountVariablesFor(appearance),
 });
-
-// Account pages use the default palette even with a named app theme.
-const accountColorsFor = (appearance: MobileThemeAppearance) => {
-  const variables = createMobileThemeVariables(
-    getMobileThemeColors(DEFAULT_MOBILE_THEME_ID, appearance),
-    appearance,
-  );
-  return {
-    primary: variables["--color-primary"],
-    background: variables["--color-sheet-solid"],
-    input: variables["--color-input"],
-    danger: variables["--color-danger-foreground"],
-    success: appearance === "dark" ? "#34d399" : "#059669",
-    warning: variables["--color-warning-foreground"],
-    foreground: variables["--color-foreground"],
-    mutedForeground: variables["--color-foreground-muted"],
-    primaryForeground: variables["--color-primary-foreground"],
-    inputForeground: variables["--color-foreground"],
-    neutral: variables["--color-secondary"],
-    border: variables["--color-border"],
-    ring: variables["--color-focus"],
-    muted: variables["--color-subtle"],
-    shadow: variables["--color-primary-shadow"],
-  };
-};
-
-const accountVariablesFor = (appearance: MobileThemeAppearance) => {
-  const colors = accountColorsFor(appearance);
-  return {
-    "--color-account-page": colors.background.toLowerCase(),
-    "--color-account-foreground": colors.foreground.toLowerCase(),
-    "--color-account-foreground-muted": colors.mutedForeground.toLowerCase(),
-    "--color-account-border": colors.border,
-    "--color-account-danger": colors.danger.toLowerCase(),
-  };
-};
 
 const renderVariant = (name: string, variables: Readonly<Record<string, string>>) => {
   const declarations = Object.entries(variables)
@@ -223,7 +184,6 @@ export const renderUniwindThemesCSS = () => {
       renderVariant(appearance, {
         ...getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance),
         ...adaptiveVariablesFor(appearance),
-        ...accountVariablesFor(appearance),
       }),
     ),
     ...BUILT_IN_THEME_IDS.flatMap((themeId) =>

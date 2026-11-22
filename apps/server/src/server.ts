@@ -879,7 +879,10 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   ),
 );
 
-const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+const layerRuntimeDependencies = CloudCliSession.layerStartupAdoption.pipe(
+  // Credential adoption runs even when an already-linked tunnel needs no
+  // account authorization. Its scoped retry fiber never gates local startup.
+  Layer.provideMerge(layerRuntimeCoreDependencies),
   Layer.provideMerge(DeviceSharing.layer.pipe(Layer.provide(layerRuntimeCoreDependencies))),
   Layer.provideMerge(layerUsage.pipe(traceShutdown("usage"))),
   Layer.provideMerge(layerBackground.pipe(traceShutdown("background"))),

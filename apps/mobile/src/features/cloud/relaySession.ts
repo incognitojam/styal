@@ -126,7 +126,6 @@ const saveSignIn = Effect.fnUntraced(function* (
       };
       yield* saveStoredRelaySession(record);
       if (!isCurrentRelaySessionOperation(generation)) return false;
-      if (!isCurrentRelaySessionOperation(generation)) return false;
       resumeAgentAwarenessRegistration();
       publishRelaySignIn(record);
       return true;

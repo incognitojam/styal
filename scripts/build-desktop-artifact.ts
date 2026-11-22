@@ -1190,7 +1190,7 @@ export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedErro
   {},
 ) {
   override get message(): string {
-    return "T3CODE_MACOS_PROVISIONING_PROFILE must point to an browser passkeys provisioning profile.";
+    return "T3CODE_MACOS_PROVISIONING_PROFILE must point to a browser passkeys provisioning profile.";
   }
 }
 

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { customThemeNames, renderUniwindThemesCSS } from "./generate-uniwind-themes.mts";
 
 describe("generate mobile Uniwind themes", () => {
-  it("gives every theme the same variables and a fixed account palette for its appearance", () => {
+  it("gives every theme the same variables", () => {
     const css =
       NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8") +
       renderUniwindThemesCSS();
@@ -22,19 +22,6 @@ describe("generate mobile Uniwind themes", () => {
     const lightVariables = themes.get("light")!;
     for (const [name, variables] of themes) {
       expect([...variables.keys()].sort(), name).toEqual([...lightVariables.keys()].sort());
-      const isDark = name === "dark" || name.endsWith("-dark");
-      expect(
-        Object.fromEntries(
-          [...variables].filter(([variable]) => variable.startsWith("--color-account-")),
-        ),
-        name,
-      ).toEqual({
-        "--color-account-page": isDark ? "#0a0a0a" : "#fcfcfc",
-        "--color-account-foreground": isDark ? "#f5f5f5" : "#27272a",
-        "--color-account-foreground-muted": isDark ? "#818181" : "#71717b",
-        "--color-account-border": isDark ? "#191919" : "#e4e4e7",
-        "--color-account-danger": isDark ? "#ff6467" : "#c10007",
-      });
     }
   });
 });

@@ -24,10 +24,12 @@ Web, desktop, and mobile need only this public value. Process variables take pre
 `.env.local`, then `.env`. Client and bundled-server builds embed it; bundled servers also accept
 runtime overrides. The build loader supplies the web alias.
 
-Current clients, including the CLI/server, ignore Clerk credentials. Without a stored relay
-session, GUI clients show email sign-in; server operators run `styal link login` for an emailed
-code. Signing in with the imported email restores the same machines. An existing relay session
-keeps working. No Clerk public build inputs are needed.
+GUI clients ignore Clerk credentials and show email sign-in without a stored relay session.
+The server/CLI still adopts a stored Clerk credential at startup without a prompt. Its bundled
+build retains `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` solely to
+refresh an expired legacy credential; no SDK is needed. Server operators can use `styal link login`
+for email sign-in. Signing in with the imported email restores the same machines. An existing relay session
+keeps working. GUI bundles need no Clerk public build inputs.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
 The relay README owns provisioning; deployment's `PublishClientConfig` writes the relay URL to `.env`.
@@ -37,7 +39,7 @@ The relay README owns provisioning; deployment's `PublishClientConfig` writes th
 Older transition builds can still exchange a Clerk sign-in for a relay session. Earlier binaries
 still use Clerk directly. Keep both Clerk instances, their existing JWT template and audience,
 OAuth application, and native callbacks configured until all devices and servers have converted
-and relay compatibility is retired. New client builds need none of these settings. Do not remove
+and relay compatibility is retired. New GUI builds need none of these settings. Do not remove
 relay secrets or restrict existing users' access as part of a client release.
 
 Desktop builds no longer need account-provider redirects, RP domains or associated domains. Their

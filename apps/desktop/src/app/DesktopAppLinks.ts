@@ -70,9 +70,17 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("open-url", (event: { preventDefault: () => void }, url: string) => {
     if (handleOpenUrl(url)) event.preventDefault();
   });
-  yield* electronApp.setAsDefaultProtocolClient(
-    ElectronProtocol.getDesktopScheme(environment.installVariant),
-  );
+  const scheme = ElectronProtocol.getDesktopScheme(environment.installVariant);
+  if (!environment.isPackaged && environment.platform !== "darwin") {
+    const argv = yield* HostProcess.Arguments;
+    const executable = yield* HostProcess.ExecutablePath;
+    const cwd = yield* HostProcess.WorkingDirectory;
+    yield* electronApp.setAsDefaultProtocolClient(scheme, executable, [
+      environment.path.resolve(cwd, argv[1] ?? environment.appPath),
+    ]);
+  } else {
+    yield* electronApp.setAsDefaultProtocolClient(scheme);
+  }
 
   return DesktopAppLinks.of({
     configure: Effect.gen(function* () {

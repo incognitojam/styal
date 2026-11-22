@@ -1892,7 +1892,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.instanceOf(missingProfileError, MissingMacPasskeyProvisioningProfileError);
     assert.equal(
       missingProfileError.message,
-      "T3CODE_MACOS_PROVISIONING_PROFILE must point to an browser passkeys provisioning profile.",
+      "T3CODE_MACOS_PROVISIONING_PROFILE must point to a browser passkeys provisioning profile.",
     );
   });
 

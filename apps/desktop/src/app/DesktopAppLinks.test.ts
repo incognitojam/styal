@@ -87,9 +87,9 @@ const layerDesktopAppLinks = (
   );
 
   const electronApp = {
-    setAsDefaultProtocolClient: (scheme: string) =>
+    setAsDefaultProtocolClient: (scheme: string, executable?: string, args?: readonly string[]) =>
       Effect.sync(() => {
-        events.push(`registerProtocol:${scheme}`);
+        events.push(`registerProtocol:${scheme}:${executable ?? ""}:${JSON.stringify(args ?? [])}`);
         return true;
       }),
     setPath: (name: string, value: string) =>
@@ -120,6 +120,9 @@ const layerDesktopAppLinks = (
     Layer.provide(
       Layer.mergeAll(
         NodePathLayer.layerPosix,
+        Layer.succeed(HostProcess.ExecutablePath, "/synthetic/electron"),
+        Layer.succeed(HostProcess.Arguments, ["/synthetic/electron", "./entry.cjs"]),
+        Layer.succeed(HostProcess.WorkingDirectory, "/synthetic/app"),
         environmentLayer,
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
         Layer.succeed(ElectronShell.ElectronShell, shell),
@@ -165,6 +168,13 @@ describe("DesktopAppLinks", () => {
       scheme: "styal-preview",
     },
     {
+      name: "Linux development",
+      isDevelopment: true,
+      platform: "linux" as const,
+      userData: "/tmp/app-data/styal-dev",
+      scheme: "styal-dev",
+    },
+    {
       name: "development",
       isDevelopment: true,
       platform: "win32" as const,
@@ -197,7 +207,7 @@ describe("DesktopAppLinks", () => {
         "requestSingleInstanceLock",
         "on:second-instance",
         "on:open-url",
-        `registerProtocol:${scheme}`,
+        `registerProtocol:${scheme}:${isDevelopment && platform !== "darwin" ? '/synthetic/electron:["/synthetic/app/entry.cjs"]' : ":[]"}`,
       ]);
     },
   );

@@ -2,7 +2,11 @@ import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 
-import { makeRelayUrlConfig, resolveRelayClientTracingConfig } from "./publicConfig.ts";
+import {
+  makeLegacyClerkCliConfig,
+  makeRelayUrlConfig,
+  resolveRelayClientTracingConfig,
+} from "./publicConfig.ts";
 
 const provideEnv = (env: Readonly<Record<string, string>>) =>
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
@@ -12,6 +16,20 @@ it.effect("rejects an insecure runtime relay URL override", () =>
     provideEnv({ T3CODE_RELAY_URL: "http://runtime.example.test" }),
     Effect.flip,
   ),
+);
+
+it.effect("derives the legacy Clerk token endpoint from statically injected public config", () =>
+  Effect.gen(function* () {
+    const config = yield* makeLegacyClerkCliConfig({
+      clerkPublishableKeyFallback: "pk_test_Y2xlcmsuZXhhbXBsZS50ZXN0JA==",
+      clerkCliOAuthClientIdFallback: "oauth_client_embedded",
+    }).pipe(provideEnv({}));
+
+    assert.deepEqual(config, {
+      tokenEndpoint: "https://clerk.example.test/oauth/token",
+      clientId: "oauth_client_embedded",
+    });
+  }),
 );
 
 it("product opt-out disables relay tracing with either built-in or runtime credentials", () => {

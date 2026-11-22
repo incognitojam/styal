@@ -23,7 +23,9 @@ consistent; release jobs without an environment cannot read environment variable
 The relay workflow deploys `prod` on main changes affecting it, then `dev`; client release channels
 share the production relay. A preview configured for production uses real production email sign-in.
 
-Current clients do not read Clerk configuration or exchange old credentials. Keep the deployed
+GUI clients do not read Clerk configuration or exchange old credentials. The server/CLI bundle
+retains the public `CLERK_PUBLISHABLE_KEY` and `CLERK_CLI_OAUTH_CLIENT_ID` repository variables
+for SDK-free startup adoption. Keep the deployed
 relay's Clerk configuration and both Clerk instances until every older device and server has
 converted; see [legacy compatibility](./connect-setup.md#legacy-client-compatibility).
 
