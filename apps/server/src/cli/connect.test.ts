@@ -349,11 +349,9 @@ const scriptedTerminal = (answers: ReadonlyArray<string>, output: Array<string>)
 };
 
 it.effect.each([
-  new CliSession.CloudCliClerkRefreshRejectedError({ status: 400 }),
   new CliSession.CloudCliRelayRejectedError({ description: "HTTP 404." }),
   new CliSession.CloudCliRelayRejectedError({ description: "invalid_dpop" }),
   new CliSession.CloudCliSessionStorageError({ cause: new Error("invalid legacy token") }),
-  new CliSession.CloudCliLegacyClerkConfigError({ cause: new Error("missing config") }),
 ])("offers email sign-in after permanent credential recovery failure %j", (error) => {
   const harness = makeSignInHarness({ resendAfterSeconds: 30, codeFailures: [] });
   const output: Array<string> = [];

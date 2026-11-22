@@ -54,6 +54,7 @@ import {
   verifyEmailSignIn,
 } from "./relaySession";
 import {
+  removeLegacyClerkStorage,
   endRelaySession,
   publishRelaySession,
   updateRelaySessionState,
@@ -314,4 +315,37 @@ describe("relay session lifecycle", () => {
       expectCurrent(null);
     }),
   );
+});
+
+it("removes only Clerk browser storage once and preserves relay state", () => {
+  const memory = (values: Record<string, string>) => {
+    const data = new Map(Object.entries(values));
+    return {
+      get length() {
+        return data.size;
+      },
+      key: (index: number) => [...data.keys()][index] ?? null,
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        data.set(key, value);
+      },
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
+      clear: () => data.clear(),
+    };
+  };
+  const local = memory({
+    __clerk_client_jwt: "synthetic old token",
+    "relay-session": "synthetic current session",
+  });
+  const session = memory({ clerk_cache: "synthetic old cache", unrelated: "keep" });
+  removeLegacyClerkStorage(local, session);
+  expect(local.getItem("__clerk_client_jwt")).toBeNull();
+  expect(session.getItem("clerk_cache")).toBeNull();
+  expect(local.getItem("relay-session")).toBe("synthetic current session");
+  expect(session.getItem("unrelated")).toBe("keep");
+  local.setItem("__clerk_after_cleanup", "synthetic sentinel");
+  removeLegacyClerkStorage(local, session);
+  expect(local.getItem("__clerk_after_cleanup")).toBe("synthetic sentinel");
 });

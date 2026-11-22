@@ -100,6 +100,19 @@ profile, desktop install, store mobile build, nightly, spare phone and backgroun
    API keys. Rotate the two separately identified cutover secrets as their own reviewed operation;
    never delete or rotate relay signing keys as part of this cleanup.
 
+The client build that includes this retirement also removes old on-device credentials once:
+only the desktop's named `clerk-tokens.json` files, Expo SecureStore's `__clerk_client_jwt`,
+and same-origin browser storage keys starting with `__clerk` or `clerk_`. Current relay sessions,
+DPoP keys, device registrations and unrelated storage are preserved. A failed deletion retries;
+the preceding client-only release deliberately retains this data for downgrade compatibility.
+HttpOnly or cross-origin Clerk cookies cannot be removed by this JavaScript cleanup; retire
+those sessions through Clerk when the rollback window ends. Deleted local credentials cannot be
+restored by reverting code; older Clerk builds may require a fresh Clerk sign-in.
+
+When refreshing this draft after the client PR lands, carry the cleanup from `DesktopClerk` into
+`DesktopAppLinks`, keep the SecureStore migration and browser storage cleanup, and delete the
+now-unused client exchange contract and adapters. Do not reintroduce an SDK or exchange handler.
+
 Choose the rollback window and whether abandoned devices must be recovered or deliberately retired
 before approving the relay PR. Clerk bans, sign-up restrictions and email edits no longer control
 relay accounts after retirement; use the relay's session/account controls. T3 Chat keeps its existing
