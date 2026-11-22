@@ -1,9 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
-// @effect-diagnostics globalTimers:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
-import * as NodeWorkerThreads from "node:worker_threads";
+import { inspect, type CopySnapshot } from "./startupDatabaseInspection.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
@@ -15,13 +14,12 @@ import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import { cloneDatabaseFile, databaseCopyHeadroom } from "./databaseFileCopy.ts";
 import * as Context from "effect/Context";
 import { STARTUP_COPY_MESSAGE, type ServerStartupCopyProgress } from "@t3tools/contracts";
-import { streamDatabaseFile, withCopyBudget, type StartupCopyLimit } from "./startupFileCopy.ts";
+import { streamDatabaseFile, withCopyBudget } from "./startupFileCopy.ts";
 
 export interface PreparationOptions {
   readonly clone?: typeof cloneDatabaseFile;
   readonly freeBytes?: (directory: string) => Promise<number>;
   readonly stream?: typeof streamDatabaseFile;
-  readonly inspect?: typeof inspect;
 }
 export class Preparation extends Context.Reference<PreparationOptions>(
   "styal/PrePrunePreparation",
@@ -36,6 +34,24 @@ export class Progress extends Context.Reference<
 class SafetyCopyError extends Schema.TaggedError<SafetyCopyError>()("SafetyCopyError", {
   cause: Schema.Defect(),
 }) {}
+
+class SafetyCopyVerificationError extends Schema.TaggedError<SafetyCopyVerificationError>()(
+  "SafetyCopyVerificationError",
+  {
+    reason: Schema.Literals(["size-or-wal", "snapshot-mismatch", "unreadable"]),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
+class SafetyCopyTimeout extends Schema.TaggedError<SafetyCopyTimeout>()("SafetyCopyTimeout", {
+  phase: Schema.Literals(["inspection", "preparation"]),
+}) {
+  override get message() {
+    return this.phase === "inspection"
+      ? "Safety copy inspection exceeded the 60-second startup budget; row counting or WAL checkpoint did not finish"
+      : "Safety copy checkpoint, clone and verification exceeded 120 seconds; startup continues without pruning";
+  }
+}
 
 const isSafetyCopyError = Schema.is(SafetyCopyError);
 const GENERATION = "pre-event-prune-generation";
@@ -60,11 +76,6 @@ interface Manifest {
   threadCount: number;
   firstDeleteStartedAt?: number;
   firstDeleteCompletedAt?: number;
-}
-export interface CopySnapshot {
-  readonly eventCount: number;
-  readonly eventHead: number;
-  readonly threadCount: number;
 }
 export const copyIsConsistent = (before: CopySnapshot, copy: CopySnapshot, after: CopySnapshot) =>
   before.eventHead === copy.eventHead &&
@@ -129,64 +140,6 @@ const writeManifest = async (database: string, manifest: Manifest, signal?: Abor
   await syncDirectory(paths(database).directory);
 };
 
-// Bound startup I/O independently of the synchronous writer and desktop readiness.
-const inspect = (
-  database: string,
-  checkpoint = false,
-  signal?: AbortSignal,
-): Promise<CopySnapshot> =>
-  new Promise((resolve, reject) => {
-    const worker = new NodeWorkerThreads.Worker(
-      `
-      const {parentPort,workerData}=require('node:worker_threads');
-      const {DatabaseSync}=require('node:sqlite');
-      try {
-        const db=new DatabaseSync(workerData.database,{readOnly:!workerData.checkpoint});
-        db.exec('PRAGMA busy_timeout=5000');
-        if(workerData.checkpoint){
-          const result=db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
-          if(result.busy!==0 || result.log!==0 || result.checkpointed!==0) throw new Error('WAL did not fully truncate');
-        }
-        db.exec("BEGIN");
-        const result={
-          eventCount:db.prepare('SELECT COUNT(*) AS n FROM orchestration_events').get().n,
-          eventHead:db.prepare('SELECT COALESCE(MAX(sequence),0) AS n FROM orchestration_events').get().n,
-          threadCount:db.prepare('SELECT COUNT(*) AS n FROM orchestration_v2_projection_threads').get().n
-        };
-        db.exec("COMMIT");db.close();parentPort.postMessage({result});
-      } catch(error){parentPort.postMessage({error:String(error)});}
-    `,
-      { eval: true, workerData: { database, checkpoint } },
-    );
-    let finished = false;
-    const complete = async (error: Error | undefined, result?: CopySnapshot) => {
-      if (finished) return;
-      finished = true;
-      if (timer !== undefined) clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      await worker.terminate();
-      if (error !== undefined) reject(error);
-      else if (result !== undefined) resolve(result);
-    };
-    const timer = setTimeout(() => {
-      void complete(new Error("Safety copy inspection exceeded 60 seconds"));
-    }, 60000);
-    const abort = () => {
-      void complete(new Error("Safety copy interrupted"));
-    };
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-    worker.once("message", (message) => {
-      void complete(message.error ? new Error(message.error) : undefined, message.result);
-    });
-    worker.once("error", (error) => {
-      void complete(error);
-    });
-    worker.once("exit", (code) => {
-      void complete(new Error(`Safety copy worker exited before completion: ${code}`));
-    });
-  });
-
 const databasePath = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const databases = yield* sql<{
@@ -213,8 +166,7 @@ const deletionRecorded = Effect.gen(function* () {
   return rows.length > 0;
 });
 const matchesCopy = Effect.fn("PreEventPruneSafety.matchesCopy")(function* (manifest: Manifest) {
-  // Legacy copies predate the database's first prune, so their deletion-boundary check remains valid.
-  if (manifest.copyId === undefined) return true;
+  if (manifest.copyId === undefined) return false;
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql<{
     readonly updated_at: string;
@@ -226,11 +178,47 @@ const matchesCopy = Effect.fn("PreEventPruneSafety.matchesCopy")(function* (mani
 const restoredWarning = Effect.logWarning(
   "Restored database detected: history pruning is paused and the recovery copy will not expire. After verifying the restored history, remove backups/pre-event-prune/ and restart to resume pruning.",
 );
+const legacyRecoveryMessage = (database: string) =>
+  `Legacy recovery copy identity cannot be verified in ${paths(database).directory}. Unused copies are adopted at startup; otherwise pruning is paused and the copy will not expire. Verify the thread history, stop styal, move backups/pre-event-prune/ somewhere safe, and restart to make a new verified copy.`;
+
+export const legacyRecoveryNotice = Effect.fn("PreEventPruneSafety.legacyRecoveryNotice")(
+  function* (database: string) {
+    const manifest = yield* attempt(() => readManifest(database));
+    return manifest !== undefined && manifest.copyId === undefined
+      ? legacyRecoveryMessage(database)
+      : undefined;
+  },
+);
+const retryCopyWarning = Effect.logWarning(
+  "Unpublished recovery copy is missing; making a new safety copy before pruning.",
+);
 const missingCopyWarning = Effect.logWarning(
   "Recovery copy is missing; history pruning is disabled. Restore the copy or remove backups/pre-event-prune/ and restart to make a new one.",
 );
 const attempt = <A>(run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new SafetyCopyError({ cause }) });
+export const cleanupInterruptedCopy = Effect.fn("PreEventPruneSafety.cleanupInterruptedCopy")(
+  function* (database: string) {
+    if (database === "") return;
+    const target = paths(database);
+    yield* attempt(async () => {
+      await Promise.all(
+        ["", "-journal", "-wal", "-shm"].map((suffix) =>
+          NodeFSP.rm(`${target.copy}.staging${suffix}`, { force: true }),
+        ),
+      );
+      await NodeFSP.rm(`${target.manifest}.staging`, { force: true });
+    }).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning(
+          "Could not remove an interrupted safety-copy staging file; cleanup will retry at the next startup.",
+          { cause },
+        ),
+      ),
+    );
+  },
+);
+
 const warn = (cause: unknown) =>
   Effect.logWarning(
     "Pre-pruning safety copy failed; history pruning is disabled until the next successful startup",
@@ -280,28 +268,42 @@ const createCopyIdentity = Effect.fn("PreEventPruneSafety.createCopyIdentity")(f
 });
 
 export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
+  const database = yield* databasePath;
+  if (database === "") return;
+  const cleanup = cleanupInterruptedCopy(database);
+  yield* cleanup;
   if (!(yield* eventPruningEnabled)) return;
   if ((yield* resolveServiceLauncherMode()).isUpdateTrial) return;
   const options = yield* Preparation;
   const report = yield* Progress;
-  const database = yield* databasePath;
-  if (database === "") return;
+  const cleanupPrevious = attempt(async () => {
+    await NodeFSP.rm(`${paths(database).copy}.previous`, { force: true });
+    await NodeFSP.rm(`${paths(database).manifest}.previous`, { force: true });
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning(
+        "Safety copy is ready, but an unused previous copy could not be removed; the next startup will retry cleanup.",
+        { cause },
+      ),
+    ),
+  );
   const inspectWithinBudget = Effect.fn("PreEventPruneSafety.inspect")(function* <A>(
     work: (signal: AbortSignal) => Promise<A>,
+    verification = false,
   ) {
-    return yield* attempt(work).pipe(
+    const signal = yield* Effect.abortSignal;
+    return yield* attempt(() => work(signal)).pipe(
+      Effect.mapError((error) =>
+        verification
+          ? new SafetyCopyVerificationError({ reason: "unreadable", cause: error })
+          : error,
+      ),
       Effect.timeoutOrElse({
         duration: 60_000,
-        orElse: () =>
-          Effect.fail(
-            new SafetyCopyError({
-              cause:
-                "Safety copy inspection exceeded the 60-second startup budget; row counting or WAL checkpoint did not finish",
-            }),
-          ),
+        orElse: () => Effect.fail(new SafetyCopyTimeout({ phase: "inspection" })),
       }),
     );
-  });
+  }, Effect.scoped);
   const sql = yield* SqlClient.SqlClient;
   let id = yield* generation;
   if (id === undefined) {
@@ -316,31 +318,45 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
         "Recovery manifest missing after deletion; preserving the existing copy and disabling pruning",
     });
   }
-  if (existing?.generation === id) {
-    if (
-      existing.copyId === undefined &&
-      !deleted &&
-      existing.firstDeleteStartedAt === undefined &&
-      existing.firstDeleteCompletedAt === undefined &&
-      (yield* attempt(() => copyExists(database)))
-    ) {
+  if (
+    existing?.generation === id &&
+    existing.copyId === undefined &&
+    !deleted &&
+    existing.firstDeleteStartedAt === undefined &&
+    existing.firstDeleteCompletedAt === undefined
+  ) {
+    if (yield* attempt(() => copyExists(database))) {
       const copyId = yield* createCopyIdentity();
       const adopted = { ...existing, copyId };
       yield* attempt((signal) => writeManifest(database, adopted, signal));
       existing = adopted;
+    } else {
+      yield* retryCopyWarning;
+      yield* attempt(() => NodeFSP.rm(paths(database).manifest));
+      existing = undefined;
     }
+  }
+  if (existing?.generation === id) {
     if (!(yield* matchesCopy(existing))) {
-      yield* restoredWarning;
+      yield* existing.copyId === undefined
+        ? Effect.logWarning(legacyRecoveryMessage(database))
+        : restoredWarning;
       return;
     }
+    if (
+      (yield* attempt(() => copyExists(database))) ||
+      (deleted &&
+        existing.firstDeleteCompletedAt !== undefined &&
+        (yield* Clock.currentTimeMillis) - existing.firstDeleteCompletedAt >= RETENTION_MS)
+    )
+      yield* cleanupPrevious;
     // A manifest published before the copy rename cannot have authorized any deletion.
     if (
-      existing.copyId !== undefined &&
       existing.firstDeleteStartedAt === undefined &&
       existing.firstDeleteCompletedAt === undefined &&
       !(yield* attempt(() => copyExists(database)))
     ) {
-      yield* missingCopyWarning;
+      yield* retryCopyWarning;
       yield* attempt(() => NodeFSP.rm(paths(database).manifest));
       existing = undefined;
     }
@@ -359,8 +375,7 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
         yield* missingCopyWarning;
       return;
     }
-    if (yield* attempt(() => copyExists(database))) return;
-    yield* missingCopyWarning;
+    return;
   }
   if (
     existing !== undefined &&
@@ -376,10 +391,13 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
   const staging = `${target.copy}.staging`;
   let sourceSize = (yield* attempt(() => NodeFSP.stat(database))).size;
   yield* attempt(() => NodeFSP.mkdir(target.directory, { recursive: true, mode: 0o700 }));
-  const finish = Effect.fn("PreEventPruneSafety.finish")(function* (
-    method: "clone" | "copy",
-    before: CopySnapshot,
-  ) {
+  const verify = Effect.fn("PreEventPruneSafety.verify")(function* (before: CopySnapshot) {
+    yield* report({
+      phase: "copying",
+      copiedBytes: sourceSize,
+      totalBytes: sourceSize,
+      leaseMs: 60_000,
+    });
     const [size, wal] = yield* attempt(() =>
       Promise.all([
         NodeFSP.stat(staging),
@@ -390,21 +408,24 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
       ]),
     );
     if (size.size !== sourceSize || (wal?.size ?? 0) !== 0) {
-      return yield* new SafetyCopyError({
-        cause: "Source WAL changed or staging size differs from source",
-      });
+      return yield* new SafetyCopyVerificationError({ reason: "size-or-wal" });
     }
-    const [after, copy] = yield* inspectWithinBudget((signal) =>
-      Promise.all([
-        (options.inspect ?? inspect)(database, false, signal),
-        (options.inspect ?? inspect)(staging, false, signal),
-      ]),
+    const [after, copy] = yield* Effect.all(
+      [
+        inspectWithinBudget((signal) => inspect(database, false, signal), true),
+        inspectWithinBudget((signal) => inspect(staging, false, signal), true),
+      ],
+      { concurrency: "unbounded" },
     );
     if (!copyIsConsistent(before, copy, after)) {
-      return yield* new SafetyCopyError({
-        cause: "Safety copy is inconsistent with the source snapshots",
-      });
+      return yield* new SafetyCopyVerificationError({ reason: "snapshot-mismatch" });
     }
+    return copy;
+  });
+  const publish = Effect.fn("PreEventPruneSafety.publish")(function* (
+    method: "clone" | "copy",
+    copy: CopySnapshot,
+  ) {
     if (
       existing !== undefined &&
       (existing.firstDeleteStartedAt !== undefined ||
@@ -444,26 +465,17 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
         await syncDirectory(target.directory);
       } catch (cause) {
         if (replacing) {
-          await NodeFSP.rename(previous, target.copy);
+          // Remove the new identity before restoring either half of the previous pair.
+          await NodeFSP.rm(target.manifest, { force: true });
           if (existing !== undefined) await NodeFSP.rename(previousManifest, target.manifest);
-          else await NodeFSP.rm(target.manifest, { force: true });
+          await NodeFSP.rename(previous, target.copy);
           await syncDirectory(target.directory);
         }
         throw cause;
       }
-      await NodeFSP.rm(previous, { force: true });
-      await NodeFSP.rm(previousManifest, { force: true });
     });
+    yield* cleanupPrevious;
   });
-  const cleanup = attempt(async () => {
-    await Promise.all(
-      ["", "-journal", "-wal", "-shm"].map((suffix) =>
-        NodeFSP.rm(`${staging}${suffix}`, { force: true }),
-      ),
-    );
-    await NodeFSP.rm(`${target.manifest}.staging`, { force: true });
-  }).pipe(Effect.ignore);
-  yield* cleanup;
   const attemptRecord = NodePath.join(target.directory, "last-attempt.json");
   const lastAttempt = yield* attempt(async () => {
     try {
@@ -485,90 +497,103 @@ export const prepare = Effect.fn("PreEventPruneSafety.prepare")(function* () {
     );
     return;
   }
-  const startedAt = yield* Clock.currentTimeMillis;
-  const checkpoint = yield* inspectWithinBudget((signal) =>
-    (options.inspect ?? inspect)(database, true, signal),
-  );
-  sourceSize = (yield* attempt(() => NodeFSP.stat(database))).size;
-  const cloned = yield* Effect.gen(function* () {
-    if (
-      !(yield* attempt((signal) => (options.clone ?? cloneDatabaseFile)(database, staging, signal)))
-    )
-      return false;
-    yield* finish("clone", checkpoint);
-    return true;
+  const recordGiveUp = Effect.fn("PreEventPruneSafety.recordGiveUp")(function* (reason: string) {
+    const gaveUpAt = yield* Clock.currentTimeMillis;
+    yield* attempt(async () => {
+      const stagingRecord = `${attemptRecord}.staging`;
+      await NodeFSP.writeFile(stagingRecord, JSON.stringify({ gaveUpAt, reason }), {
+        mode: 0o600,
+      });
+      await sync(stagingRecord);
+      await NodeFSP.rename(stagingRecord, attemptRecord);
+      await syncDirectory(target.directory);
+    });
+    yield* Effect.logWarning("Safety copy gave up; history pruning is disabled for seven days.", {
+      reason,
+    });
+  });
+  return yield* Effect.gen(function* () {
+    yield* Effect.addFinalizer(() => report(null));
+    yield* report({ phase: "copying", copiedBytes: 0, totalBytes: sourceSize, leaseMs: 60_000 });
+    const startedAt = yield* Clock.currentTimeMillis;
+    const checkpoint = yield* inspectWithinBudget((signal) => inspect(database, true, signal));
+    sourceSize = (yield* attempt(() => NodeFSP.stat(database))).size;
+    yield* report({ phase: "copying", copiedBytes: 0, totalBytes: sourceSize, leaseMs: 60_000 });
+    const cloned = yield* Effect.gen(function* () {
+      if (
+        !(yield* attempt((signal) =>
+          (options.clone ?? cloneDatabaseFile)(database, staging, signal),
+        ))
+      )
+        return false;
+      return yield* verify(checkpoint);
+    }).pipe(
+      // Each inspection gets 60 s; cap checkpoint + clone + verification at 120 s, leaving desktop headroom.
+      Effect.timeoutOrElse({
+        duration: Math.max(0, 120_000 - ((yield* Clock.currentTimeMillis) - startedAt)),
+        orElse: () => Effect.fail(new SafetyCopyTimeout({ phase: "preparation" })),
+      }),
+      Effect.onError(() => cleanup),
+    );
+    if (cloned !== false) return yield* publish("clone", cloned).pipe(Effect.ensuring(cleanup));
+    yield* cleanup;
+    const freeBytes = yield* attempt(() =>
+      options.freeBytes !== undefined
+        ? options.freeBytes(target.directory)
+        : NodeFSP.statfs(target.directory).then((free) => free.bavail * free.bsize),
+    );
+    if (freeBytes < sourceSize + databaseCopyHeadroom(sourceSize)) {
+      return yield* new SafetyCopyError({
+        cause:
+          "Not enough free space for the pre-pruning safety copy; startup continues without pruning",
+      });
+    }
+    yield* Effect.logInfo(STARTUP_COPY_MESSAGE, { totalBytes: sourceSize });
+    let lastLogAt = now;
+    const copy = withCopyBudget(
+      sourceSize,
+      (progress) => (options.stream ?? streamDatabaseFile)(database, staging, progress),
+      (progress) =>
+        Effect.gen(function* () {
+          yield* report(progress);
+          const time = yield* Clock.currentTimeMillis;
+          if (time - lastLogAt >= 10_000) {
+            lastLogAt = time;
+            yield* Effect.logInfo("Safety copy progress", {
+              percent: Math.floor((progress.copiedBytes / sourceSize) * 100),
+              copiedBytes: progress.copiedBytes,
+              totalBytes: sourceSize,
+            });
+          }
+        }),
+    ).pipe(Effect.scoped);
+    yield* copy.pipe(
+      Effect.andThen(verify(checkpoint)),
+      Effect.flatMap((snapshot) => publish("copy", snapshot)),
+      Effect.tap(() =>
+        Effect.logInfo("Safety copy verified and saved", { totalBytes: sourceSize }),
+      ),
+      Effect.catchTags({
+        StartupCopyLimit: (limit) => recordGiveUp(limit.reason),
+        SafetyCopyVerificationError: (failure) =>
+          Effect.logWarning("Safety copy verification failed", {
+            reason: failure.reason,
+            cause: failure.cause,
+          }).pipe(Effect.andThen(recordGiveUp(failure.reason))),
+      }),
+      Effect.onInterrupt(() =>
+        Effect.logInfo("Safety copy interrupted; the next startup will retry immediately"),
+      ),
+      Effect.ensuring(cleanup),
+    );
   }).pipe(
-    // Each inspection gets 60 s; cap checkpoint + clone + verification at 120 s, leaving desktop headroom.
-    Effect.timeoutOrElse({
-      duration: Math.max(0, 120_000 - ((yield* Clock.currentTimeMillis) - startedAt)),
-      orElse: () =>
-        Effect.fail(
-          new SafetyCopyError({
-            cause:
-              "Safety copy checkpoint, clone and verification exceeded 120 seconds; startup continues without pruning",
-          }),
+    Effect.catchTags({
+      SafetyCopyTimeout: (failure) =>
+        Effect.logWarning(failure.message).pipe(
+          Effect.andThen(recordGiveUp(`${failure.phase}-timeout`)),
         ),
     }),
-    Effect.ensuring(cleanup),
-  );
-  if (cloned) return;
-  const freeBytes = yield* attempt(() =>
-    options.freeBytes !== undefined
-      ? options.freeBytes(target.directory)
-      : NodeFSP.statfs(target.directory).then((free) => free.bavail * free.bsize),
-  );
-  if (freeBytes < sourceSize + databaseCopyHeadroom(sourceSize)) {
-    return yield* new SafetyCopyError({
-      cause:
-        "Not enough free space for the pre-pruning safety copy; startup continues without pruning",
-    });
-  }
-  yield* Effect.logInfo(STARTUP_COPY_MESSAGE, { totalBytes: sourceSize });
-  let lastLogAt = now;
-  const copy = withCopyBudget(
-    sourceSize,
-    (progress) => (options.stream ?? streamDatabaseFile)(database, staging, progress),
-    (progress) =>
-      Effect.gen(function* () {
-        yield* report(progress);
-        const time = yield* Clock.currentTimeMillis;
-        if (time - lastLogAt >= 10_000) {
-          lastLogAt = time;
-          yield* Effect.logInfo("Safety copy progress", {
-            percent: Math.floor((progress.copiedBytes / sourceSize) * 100),
-            copiedBytes: progress.copiedBytes,
-            totalBytes: sourceSize,
-          });
-        }
-      }),
-  ).pipe(Effect.scoped);
-  yield* copy.pipe(
-    Effect.andThen(finish("copy", checkpoint)),
-    Effect.tap(() => Effect.logInfo("Safety copy verified and saved", { totalBytes: sourceSize })),
-    Effect.catchTags({
-      StartupCopyLimit: Effect.fn("PreEventPruneSafety.recordGiveUp")(function* (
-        limit: StartupCopyLimit,
-      ) {
-        const gaveUpAt = yield* Clock.currentTimeMillis;
-        yield* attempt(async () => {
-          const stagingRecord = `${attemptRecord}.staging`;
-          await NodeFSP.writeFile(
-            stagingRecord,
-            JSON.stringify({ gaveUpAt, reason: limit.reason }),
-            { mode: 0o600 },
-          );
-          await sync(stagingRecord);
-          await NodeFSP.rename(stagingRecord, attemptRecord);
-          await syncDirectory(target.directory);
-        });
-        yield* warn(limit);
-      }),
-    }),
-    Effect.onInterrupt(() =>
-      Effect.logInfo("Safety copy interrupted; the next startup will retry immediately"),
-    ),
-    Effect.ensuring(cleanup),
-    Effect.ensuring(report(null)),
+    Effect.scoped,
   );
 }, Effect.catch(warn));
 
@@ -581,7 +606,9 @@ export const canPrune = Effect.fn("PreEventPruneSafety.canPrune")(
     const manifest = yield* attempt(() => readManifest(database));
     if (manifest === undefined || manifest.generation !== (yield* generation)) return false;
     if (!(yield* matchesCopy(manifest))) {
-      yield* restoredWarning;
+      yield* manifest.copyId === undefined
+        ? Effect.logWarning(legacyRecoveryMessage(database))
+        : restoredWarning;
       return false;
     }
     if (
@@ -601,7 +628,16 @@ export const canPrune = Effect.fn("PreEventPruneSafety.canPrune")(
       return true;
     }
     const exists = yield* attempt(() => copyExists(database));
-    if (!exists) yield* missingCopyWarning;
+    if (!exists) {
+      const retryable =
+        manifest.firstDeleteStartedAt === undefined &&
+        manifest.firstDeleteCompletedAt === undefined;
+      yield* retryable
+        ? Effect.logWarning(
+            "Recovery copy is missing; history pruning is disabled until the next startup retries the safety copy.",
+          )
+        : missingCopyWarning;
+    }
     return exists;
   },
   Effect.catch((cause) => warn(cause).pipe(Effect.as(false))),
