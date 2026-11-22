@@ -387,7 +387,7 @@ provider does not offer is refused, and an inherited or default one steps down
 to the broadest mode it offers. Launch has no retry key, so inspect existing threads after a failed or lost response before
 launching again. `create_threads` remains the batch option for a shared checkout.
 
-`reportBack: true`, also on each `create_threads` item, makes the launched thread wake its launcher when it fails, when an approval or question stays unanswered for two minutes, and when a turn ends with nothing else pending. A turn a person started and a turn with a watch still on stay quiet. A thread launched on another machine cannot report back yet, so `environmentId` with `reportBack` is refused. Stop reports from either side with `t3_thread_update` action `stop_reports`.
+`reportBack: true`, also on each `create_threads` item, makes the launched thread wake its launcher when it fails, when an approval or question stays unanswered for two minutes, and when a turn ends with no runnable turn or awaited work left. Pull request and workflow watches do not hold reports: they include the last non-empty assistant text of the turn, or an explicit empty-text notice, and what the thread is waiting on. Identical consecutive reports stay quiet. A thread launched on another machine cannot report back yet, so `environmentId` with `reportBack` is refused. Stop reports from either side with `t3_thread_update` action `stop_reports`.
 
 ### `t3_thread_list`
 

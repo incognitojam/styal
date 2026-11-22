@@ -37,6 +37,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     type: Schema.Literal("thread-report.check"),
     trigger: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("run"), runId: RunId }),
+      Schema.Struct({ kind: Schema.Literal("idle") }),
       Schema.Struct({ kind: Schema.Literal("request"), requestId: RuntimeRequestId }),
       /** Someone outside the recipient answered or dismissed a request or report here. */
       Schema.Struct({

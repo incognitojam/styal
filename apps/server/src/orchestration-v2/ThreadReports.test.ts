@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  CommandId,
+  MessageId,
   ProviderSessionId,
   RunId,
   RuntimeRequestId,
@@ -8,9 +10,12 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 
 import { withCreationProvenance } from "./ThreadManagementService.ts";
 import {
+  checkThreadReport,
   launcherTakesReports,
   reportReplyNote,
   requestReportKind,
@@ -35,7 +40,7 @@ const base = {
 describe("runReportKind", () => {
   it.each([
     ["a finished agent turn with nothing pending", {}, "result"],
-    ["a turn a person started", { startedByPerson: true }, null],
+    ["a turn a person started in a launched thread", { startedByPerson: true }, "result"],
     [
       "the first turn of a thread a person started under a coordinator",
       { startedByPerson: true, toCoordinator: true },
@@ -181,6 +186,7 @@ it("delays only what someone may still answer or continue", () => {
   assert.equal(delayOf("failed"), 0);
   assert.equal(delayOf("interrupted"), 30);
   assert.equal(delayOf("running"), null);
+  assert.equal(delayOf("cancelled"), 0);
 });
 
 it("a report keeps the launched agent's text as bounded data, so it cannot start a command", () => {
@@ -245,3 +251,143 @@ it("a reply's note names every report that shares its title and version", () => 
   assert.include(shared, 'Reports "a", "b" and "c" share that title and version');
   assert.include(shared, 'close it with t3_report {key: "<its key>", outcome: "');
 });
+
+it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "command"] as const)(
+  "%s settling delivers the deferred result once",
+  (pendingKind) =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:worker");
+      const launcherId = ThreadId.make("thread:launcher");
+      const now = yield* DateTime.now;
+      const run = {
+        ...base.run,
+        status:
+          pendingKind === "failure"
+            ? "failed"
+            : pendingKind === "interrupted"
+              ? "interrupted"
+              : "completed",
+        completedAt: now,
+        userMessageId: MessageId.make("message:start"),
+        modelSelection: { model: "test" },
+      };
+      let pending = true;
+      const delivered: unknown[] = [];
+      const threads = {
+        getThreadRecords: () =>
+          Effect.succeed({
+            thread: { id: threadId, title: "Builder", reportTo: { threadId: launcherId } },
+            runs: [
+              run,
+              ...(pendingKind === "queue" ||
+              pendingKind === "failure" ||
+              pendingKind === "interrupted"
+                ? [
+                    {
+                      id: RunId.make("run:queued"),
+                      ordinal: 2,
+                      status: pending ? "queued" : "cancelled",
+                    },
+                  ]
+                : []),
+            ],
+            subagents:
+              pendingKind === "subagent"
+                ? [
+                    {
+                      origin: "app_owned",
+                      status: "completed",
+                      completionDelivery: { state: pending ? "claimed" : "delivered" },
+                    },
+                  ]
+                : [],
+            runtimeRequests: [],
+            providerTurns: [],
+            turnItems: [],
+            messages: [
+              {
+                id: MessageId.make("message:report"),
+                role: "assistant",
+                runId,
+                text: "Published the change.",
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+          }),
+        getThreadShell: () =>
+          Effect.succeed({
+            archivedAt: null,
+            deletedAt: null,
+            settledOverride: null,
+            pendingBackgroundTasks:
+              pending && (pendingKind === "background" || pendingKind === "command")
+                ? [
+                    {
+                      taskId: "build",
+                      kind: pendingKind === "command" ? "command" : "background_task",
+                      awaited: true,
+                    },
+                  ]
+                : [],
+          }),
+        reportRecipient: () => Effect.succeed(launcherId),
+        dispatch: (command: unknown) =>
+          Effect.sync(() => {
+            delivered.push(command);
+          }),
+      } as unknown as Parameters<typeof checkThreadReport>[0];
+      yield* checkThreadReport(threads, {
+        threadId,
+        environmentId: undefined,
+        trigger: { kind: "run", runId },
+      });
+      assert.equal(delivered.length, 0);
+      pending = false;
+      const effect = threadReportEffect(
+        {
+          id: "event:settled",
+          type:
+            pendingKind === "queue" || pendingKind === "failure" || pendingKind === "interrupted"
+              ? "run.updated"
+              : pendingKind === "subagent"
+                ? "subagent.updated"
+                : pendingKind === "command"
+                  ? "turn-item.updated"
+                  : "provider-thread.updated",
+          threadId,
+          payload:
+            pendingKind === "queue" || pendingKind === "failure" || pendingKind === "interrupted"
+              ? { id: "run:queued", status: "cancelled" }
+              : pendingKind === "subagent"
+                ? { status: "completed" }
+                : pendingKind === "command"
+                  ? { type: "command_execution", status: "completed" }
+                  : { pendingBackgroundTasks: [{ taskId: "dev-server", kind: "command" }] },
+        } as never,
+        now,
+      );
+      assert.isNotNull(effect, "settling work must owe a fresh check");
+      if (effect?.request.type !== "thread-report.check") return;
+      yield* checkThreadReport(threads, {
+        threadId,
+        environmentId: undefined,
+        trigger: effect.request.trigger,
+      });
+      if (pendingKind === "interrupted") {
+        assert.equal(delivered.length, 0, "idle checks preserve restart grace");
+        yield* TestClock.adjust("30 seconds");
+        yield* checkThreadReport(threads, {
+          threadId,
+          environmentId: undefined,
+          trigger: effect.request.trigger,
+        });
+      }
+      assert.equal(delivered.length, 1);
+      assert.include((delivered[0] as { text: string }).text, "Published the change.");
+      assert.equal(
+        (delivered[0] as { commandId: string }).commandId,
+        CommandId.make(`server:thread-report:${threadId}:${runId}`),
+      );
+    }),
+);

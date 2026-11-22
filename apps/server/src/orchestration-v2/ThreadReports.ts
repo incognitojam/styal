@@ -19,6 +19,11 @@ import {
 } from "@t3tools/contracts";
 import { subagentResultForRun } from "@t3tools/provider-core/server/subagentProjection";
 import { reportLabel } from "@t3tools/provider-core/server/notification";
+import {
+  backgroundWorkHoldsCompletion,
+  isWatchTask,
+  turnItemUpdateCanEndBackgroundWork,
+} from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -83,12 +88,29 @@ export function threadReportEffect(
   });
   if (event.type === "run.updated") {
     const { id, status } = event.payload;
+    if (
+      status === "cancelled" ||
+      status === "rolled_back" ||
+      (status === "queued" && event.payload.queueHeld === true)
+    ) {
+      return make(`${id}:${event.id}`, { kind: "idle" });
+    }
     if (status === "completed" || status === "failed") {
       return make(id, { kind: "run", runId: id });
     }
     return status === "interrupted"
       ? make(id, { kind: "run", runId: id }, INTERRUPTED_REPORT_DELAY)
       : null;
+  }
+  if (
+    (event.type === "provider-thread.updated" &&
+      event.payload.pendingBackgroundTasks !== undefined &&
+      !backgroundWorkHoldsCompletion(event.payload.pendingBackgroundTasks)) ||
+    (event.type === "subagent.updated" &&
+      ["completed", "failed", "cancelled", "interrupted"].includes(event.payload.status)) ||
+    (event.type === "turn-item.updated" && turnItemUpdateCanEndBackgroundWork(event.payload))
+  ) {
+    return make(event.id, { kind: "idle" });
   }
   if (event.type !== "runtime-request.updated" || event.payload.kind === "dynamic_tool_call") {
     return null;
@@ -124,12 +146,7 @@ export const startedByPerson = (
   message: Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource"> | undefined,
 ) => message?.createdBy === "user" && message.creationSource !== "server";
 
-/**
- * What a finished run owes the launcher. A result needs a thread with nothing else on the way,
- * which is what keeps routine turns in a long thread quiet; a person who started the turn is
- * already in the conversation, so it is theirs, except for the first turn of a thread a person
- * started under a coordinator, which has not heard of it yet. A failure always counts.
- */
+/** A later runnable turn speaks next; watches and unawaited commands do not hold a result. */
 export function runReportKind(input: {
   readonly run: Pick<OrchestrationV2Run, "id" | "status" | "ordinal">;
   readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "ordinal" | "queueHeld">>;
@@ -157,7 +174,7 @@ export function runReportKind(input: {
   if (
     input.run.status !== "completed" ||
     input.reportedInRunId === input.run.id ||
-    (input.startedByPerson && !(input.toCoordinator && input.run.ordinal === 1)) ||
+    (input.toCoordinator && input.startedByPerson && input.run.ordinal !== 1) ||
     input.hasOpenDelegatedTask ||
     input.pendingBackgroundTasks > 0
   ) {
@@ -334,9 +351,6 @@ const withdrawBlockedReport = Effect.fnUntraced(function* (
   });
 });
 
-const hasPendingWork = (shell: Pick<OrchestrationV2ThreadShell, "pendingBackgroundTasks"> | null) =>
-  shell?.pendingBackgroundTasks?.length ?? 0;
-
 /**
  * Runs in the effect worker after the run or request's commit. It decides from current state, so a
  * retry or a restart re-reads what is true now, and the fixed command id delivers a report once.
@@ -438,9 +452,25 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     return { kind: "blocked", outcome: "delivered" } as const;
   }
 
-  const runId = input.trigger.runId;
-  const run = records.runs.find((candidate) => candidate.id === runId);
-  if (run === undefined) return undefined;
+  const trigger = input.trigger;
+  const run =
+    trigger.kind === "idle"
+      ? records.runs
+          .filter((candidate) => !["queued", "cancelled", "rolled_back"].includes(candidate.status))
+          .toSorted((a, b) => b.ordinal - a.ordinal)[0]
+      : records.runs.find((candidate) => candidate.id === trigger.runId);
+  if (run === undefined || !["completed", "failed", "interrupted"].includes(run.status))
+    return undefined;
+  if (
+    trigger.kind === "idle" &&
+    run.status === "interrupted" &&
+    run.completedAt !== null &&
+    DateTime.isLessThan(
+      yield* DateTime.now,
+      DateTime.addDuration(run.completedAt, INTERRUPTED_REPORT_DELAY),
+    )
+  )
+    return undefined;
   const launcherId = yield* recipient();
   if (launcherId === null) return undefined;
   const history = yield* threads.getThreadRecords(
@@ -451,9 +481,11 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       messageRunIds: [run.id],
       turnItemRunId: run.id,
       turnItemTypes: ["assistant_message", "error"],
+      providerTurnAttemptIds: run.activeAttemptId == null ? [] : [run.activeAttemptId],
     },
   );
   const startedBy = history.messages.find((message) => message.id === run.userMessageId);
+  const pending = (yield* threads.getThreadShell(thread.id))?.pendingBackgroundTasks ?? [];
   const kind = runReportKind({
     run,
     runs: records.runs,
@@ -464,28 +496,57 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     hasOpenDelegatedTask: records.subagents.some(
       (task) =>
         task.origin === "app_owned" &&
-        !["completed", "failed", "cancelled", "interrupted"].includes(task.status),
+        (!["completed", "failed", "cancelled", "interrupted"].includes(task.status) ||
+          task.completionDelivery?.state === "pending" ||
+          task.completionDelivery?.state === "claimed"),
     ),
-    pendingBackgroundTasks: hasPendingWork(yield* threads.getThreadShell(thread.id)),
+    pendingBackgroundTasks: backgroundWorkHoldsCompletion(
+      pending.filter((task) => !isWatchTask(task)),
+    )
+      ? 1
+      : 0,
   });
   if (kind === null) return undefined;
   if (!launcherTakesReports(yield* threads.getThreadShell(launcherId))) {
     return { kind, outcome: "dropped" } as const;
   }
   const copy = reportCopy[kind];
+  const result = subagentResultForRun(history, run);
+  const waiting = [
+    ...(thread.pullRequests ?? [])
+      .filter((link) => link.watch !== undefined)
+      .map((link) => `Watching pull request ${link.url}.`),
+    ...(thread.workflowRuns ?? []).map((watch) => `Watching workflow run ${watch.url}.`),
+    ...pending.filter((task) => !isWatchTask(task)).map((task) => task.description ?? task.kind),
+  ];
+  const text = reportMessage({
+    environmentId,
+    thread,
+    source,
+    situation:
+      kind === "result" && waiting.length > 0
+        ? "ended a turn and is waiting on background work."
+        : copy.situation,
+    body:
+      kind === "result" && result.messageId === null && result.turnItemId === null
+        ? "The turn ended without assistant text."
+        : result.text,
+    next: [...waiting, copy.next].join("\n\n"),
+    pendingRequests: records.runtimeRequests,
+  });
+  if (kind === "result") {
+    const prior = yield* threads.getThreadRecords(launcherId, ["messages"], {
+      messageIds: records.runs
+        .filter((candidate) => candidate.ordinal < run.ordinal)
+        .map((candidate) => reportMessageId(thread.id, candidate.id)),
+    });
+    if (prior.messages.at(-1)?.text === text) return undefined;
+  }
   yield* deliver(threads, {
     key: run.id,
     thread,
     launcherId,
-    text: reportMessage({
-      environmentId,
-      thread,
-      source,
-      situation: copy.situation,
-      body: subagentResultForRun(history, run).text,
-      next: copy.next,
-      pendingRequests: records.runtimeRequests,
-    }),
+    text,
     notification: reportNotification(thread, source, copy.outcome, copy.ending),
   });
   return { kind, outcome: "delivered" } as const;
@@ -687,4 +748,4 @@ export const threadReportNote = (
     target.source === "project-coordinator"
       ? `this project's coordinator thread (${recipientId}) hears from threads started here.`
       : `the thread that launched this one (${recipientId}) asked to hear back.`
-  } styal tells it when a turn ends with nothing else pending, when this thread fails, or when it stays blocked on an approval or question, so do not report those yourself. While a pull request or workflow watch is on, turn ends stay quiet: when you reach a result it should hear, such as a pull request ready for review, send it one short message with \`t3_thread_send\` to that thread id.`;
+  } styal tells it when this thread stops working, including a turn ending with a pull request or workflow watch on, when it fails, or when it stays blocked on an approval or question. Reports include the last assistant text and what it is waiting on. Do not repeat these reports with \`t3_thread_send\`.`;
