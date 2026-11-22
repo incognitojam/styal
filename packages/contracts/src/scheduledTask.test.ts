@@ -102,6 +102,24 @@ it("lists tasks that run in one thread without their prompts", () => {
     ],
     timeZone: "Europe/London",
   });
+  for (const [status, error, failed] of [
+    ["failed", "Could not dispatch", true],
+    ["running", "Could not dispatch", true],
+    ["running", null, false],
+    ["succeeded", null, false],
+  ] as const) {
+    const summary = scheduledTaskThreads({
+      tasks: [
+        task("retry", {
+          threadId: "thread-1" as never,
+          lastRunStatus: status,
+          lastRunError: error,
+        }),
+      ],
+    }).tasks[0];
+    expect(summary?.dispatchFailed === true).toBe(failed);
+    expect(summary).not.toHaveProperty("lastRunError");
+  }
   expect(result).toEqual({
     tasks: [
       {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ScheduledTaskId, ThreadId, type ScheduledTaskThreadListResult } from "@t3tools/contracts";
 
 import { clearProjectJobs, rememberProjectJobs } from "./projectJobs.logic";
-import { jobThreadsSince } from "../components/project/projectPage.logic";
+import { jobThreadStates } from "../components/project/projectPage.logic";
 
 describe("rememberProjectJobs", () => {
   it("keeps known jobs while a reload is unknown, then replaces them with the live answer", () => {
@@ -34,7 +34,7 @@ describe("rememberProjectJobs", () => {
     expect(rememberProjectJobs("workshop", null, storage)).toBeNull();
     rememberProjectJobs("workshop", jobs, storage);
     const restored = rememberProjectJobs("workshop", null, storage);
-    expect(jobThreadsSince(restored?.tasks ?? []).has(ThreadId.make("thread:triage"))).toBe(true);
+    expect(jobThreadStates(restored?.tasks ?? []).has(ThreadId.make("thread:triage"))).toBe(true);
     expect(rememberProjectJobs("other", null, storage)).toBeNull();
     rememberProjectJobs("workshop", { tasks: [] }, storage);
     expect(rememberProjectJobs("workshop", null, storage)).toEqual({ tasks: [] });

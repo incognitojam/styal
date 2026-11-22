@@ -288,6 +288,8 @@ it.effect("keeps one queued occurrence of a recurring task while its bound threa
       expect(yield* queuedOccurrences).toBe(1);
       // Skipped intervals still move the schedule forward.
       const [listed] = (yield* service.list()).tasks;
+      expect(listed?.lastRunStatus).toBe("succeeded");
+      expect(listed?.lastRunError).toBeNull();
       expect(Date.parse(listed?.nextRunAt ?? "")).toBeGreaterThan(
         Date.parse("2026-07-01T09:03:03.000Z"),
       );

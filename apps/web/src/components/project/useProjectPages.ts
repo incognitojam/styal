@@ -23,7 +23,12 @@ import {
   type ProjectChatHost,
   resolveProjectChatHost,
 } from "@t3tools/client-runtime/project-page";
-import { isProjectPageJob, jobRunsAgain, jobThreadsSince } from "./projectPage.logic";
+import {
+  type JobThreadState,
+  isProjectPageJob,
+  jobRunsAgain,
+  jobThreadStates,
+} from "./projectPage.logic";
 
 /** A task that runs in a thread the project page keeps. */
 export interface ProjectPageJob {
@@ -43,8 +48,8 @@ export interface ProjectPage {
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
   /** Tasks whose threads the page keeps (`isProjectPageJob`), latest thread activity first. */
   readonly jobs: ReadonlyArray<ProjectPageJob>;
-  /** `jobThreadsSince` of those threads, by `environmentId:threadId`. */
-  readonly jobsSince: ReadonlyMap<string, number>;
+  /** `jobThreadStates` of those threads, by `environmentId:threadId`. */
+  readonly jobThreads: ReadonlyMap<string, JobThreadState>;
 }
 
 /** Every project with a page (project coordinators on in Labs), by its logical project key. */
@@ -105,7 +110,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       statusLine: null,
       needYou: [],
       jobs: [],
-      jobsSince: new Map(),
+      jobThreads: new Map(),
     });
   }
   const environmentIds = [
@@ -119,7 +124,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
   const jobListByEnvironment = new Map(
     environmentIds.flatMap((id, index) => {
       const list = jobLists[index];
-      return list ? [[id, { ...list, since: jobThreadsSince(list.tasks) }] as const] : [];
+      return list ? [[id, { ...list, states: jobThreadStates(list.tasks) }] as const] : [];
     }),
   );
   if (pages.size === 0) return pages;
@@ -135,23 +140,23 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     const pageThreads = threadsByPage.get(projectKey) ?? [];
     const counts = countProjectThreads(pageThreads, page.chatThreadKey);
     const jobs: ProjectPageJob[] = [];
-    const jobsSince = new Map<string, number>();
+    const jobThreads = new Map<string, JobThreadState>();
     for (const thread of pageThreads) {
       const list = jobListByEnvironment.get(thread.environmentId);
-      const since = list?.since.get(thread.id);
+      const state = list?.states.get(thread.id);
       if (
         list === undefined ||
-        since === undefined ||
+        state === undefined ||
         !isProjectPageJob(
           thread,
-          list.since,
+          list.states,
           serverConfigs.get(thread.environmentId)?.settings,
           page.group,
         )
       ) {
         continue;
       }
-      jobsSince.set(`${thread.environmentId}:${thread.id}`, since);
+      jobThreads.set(`${thread.environmentId}:${thread.id}`, state);
       for (const task of list.tasks) {
         if (task.threadId === thread.id && jobRunsAgain(task)) {
           jobs.push({ thread, task, timeZone: list.timeZone });
@@ -167,7 +172,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
           getThreadSortTimestamp(right.thread, "updated_at") -
           getThreadSortTimestamp(left.thread, "updated_at"),
       ),
-      jobsSince,
+      jobThreads,
     });
   }
   return pages;

@@ -6,7 +6,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatedProjectKey,
   isProjectPageJob,
-  jobThreadsSince,
+  jobThreadStates,
+  projectJobStatus,
   staysOnProjectPage,
   isProjectChatDraftId,
   projectChatDraftId,
@@ -35,7 +36,7 @@ function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
 
 const running = { status: "running" } as EnvironmentThreadShell["runtime"];
 
-describe("jobThreadsSince", () => {
+describe("jobThreadStates", () => {
   const task = (id: string, overrides: Partial<ScheduledTaskThread> = {}): ScheduledTaskThread => ({
     id: id as ScheduledTaskThread["id"],
     title: id,
@@ -53,21 +54,24 @@ describe("jobThreadsSince", () => {
   it("counts from a thread's latest run, or before any run from when its latest task was made", () => {
     const shared = ThreadId.make("thread-shared");
     expect(
-      jobThreadsSince([
+      jobThreadStates([
         task("new"),
         task("daily", { threadId: shared, lastRunAt: "2026-11-19T09:00:00.000Z" }),
         task("hourly", { threadId: shared, lastRunAt: "2026-11-20T08:00:00.000Z" }),
       ]),
     ).toEqual(
       new Map([
-        [ThreadId.make("thread-new"), Date.parse("2026-11-01T09:00:00.000Z")],
-        [shared, Date.parse("2026-11-20T08:00:00.000Z")],
+        [
+          ThreadId.make("thread-new"),
+          { since: Date.parse("2026-11-01T09:00:00.000Z"), dispatchFailed: false },
+        ],
+        [shared, { since: Date.parse("2026-11-20T08:00:00.000Z"), dispatchFailed: false }],
       ]),
     );
   });
 
   it("leaves out paused, blocked and finished one-time tasks, but not webhooks or a run in progress", () => {
-    const since = jobThreadsSince([
+    const since = jobThreadStates([
       task("paused", { enabled: false }),
       task("blocked", { blockedByPolicy: "Webhooks are off." }),
       task("ran-once", { schedule: once, nextRunAt: null, lastRunStatus: "succeeded" }),
@@ -75,6 +79,62 @@ describe("jobThreadsSince", () => {
       task("webhook", { schedule: { type: "webhook", signature: null }, nextRunAt: null }),
     ]);
     expect([...since.keys()]).toEqual(["thread-running-once", "thread-webhook"]);
+  });
+
+  it("shows a genuine dispatch failure until success, including a retry or another bound task", () => {
+    const job = shell("thread-dispatch", {
+      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
+      reportTo: null,
+    });
+    for (const [status, retryFailure, visible] of [
+      ["failed", undefined, true],
+      ["running", true, true],
+      ["succeeded", false, false],
+      ["never", undefined, false],
+    ] as const) {
+      const tasks = [
+        task("dispatch", {
+          lastRunStatus: status,
+          ...(retryFailure === undefined ? {} : { dispatchFailed: retryFailure }),
+        }),
+      ];
+      const states = new Map(
+        [...jobThreadStates(tasks)].map(([id, state]) => [`${local}:${id}`, state]),
+      );
+      expect([status, staysOnProjectPage(job, new Set(), states)]).toEqual([status, !visible]);
+    }
+    const shared = ThreadId.make("thread-dispatch");
+    for (const overrides of [
+      {},
+      { enabled: false },
+      { blockedByPolicy: "Webhooks off" },
+      { schedule: once, nextRunAt: null },
+    ]) {
+      const broken = task("broken", { threadId: shared, lastRunStatus: "failed", ...overrides });
+      const healthy = task("healthy", { threadId: shared, lastRunStatus: "succeeded" });
+      for (const tasks of [[broken], [broken, healthy], [healthy, broken]]) {
+        const states = jobThreadStates(tasks);
+        const scoped = new Map([...states].map(([id, state]) => [`${local}:${id}`, state]));
+        const launched = {
+          ...job,
+          source: { createdBy: "agent" } as EnvironmentThreadShell["source"],
+          reportTo: { threadId: chatId },
+        };
+        expect(staysOnProjectPage(job, new Set(), scoped)).toBe(false);
+        expect(staysOnProjectPage(launched, new Set([`${local}:${chatId}`]), scoped)).toBe(false);
+      }
+    }
+  });
+
+  it("shows a failed agent run rather than only its accepted dispatch", () => {
+    for (const status of ["completed", "failed"] as const) {
+      const thread = shell("thread-dispatch", {
+        latestRun: { status } as EnvironmentThreadShell["latestRun"],
+      });
+      expect(projectJobStatus(thread, task("dispatch", { lastRunStatus: "succeeded" }))).toBe(
+        status === "failed" ? "Run failed" : "Dispatched",
+      );
+    }
   });
 });
 
@@ -85,8 +145,8 @@ describe("isProjectPageJob", () => {
   };
   const page = { archived: false };
   const jobs = new Map([
-    [ThreadId.make("job"), 0],
-    [chatId, 0],
+    [ThreadId.make("job"), { since: 0, dispatchFailed: false }],
+    [chatId, { since: 0, dispatchFailed: false }],
   ]);
 
   it("keeps a scheduled task's thread in a project with a page, but not the chat or other threads", () => {
@@ -126,8 +186,20 @@ describe("staysOnProjectPage", () => {
       source: { createdBy: "user" } as EnvironmentThreadShell["source"],
       runtime: running,
     });
-    expect(staysOnProjectPage(job, new Set(), new Map([[`${local}:job`, 0]]))).toBe(true);
-    expect(staysOnProjectPage(job, new Set(), new Map([[`${remote}:job`, 0]]))).toBe(false);
+    expect(
+      staysOnProjectPage(
+        job,
+        new Set(),
+        new Map([[`${local}:job`, { since: 0, dispatchFailed: false }]]),
+      ),
+    ).toBe(true);
+    expect(
+      staysOnProjectPage(
+        job,
+        new Set(),
+        new Map([[`${remote}:job`, { since: 0, dispatchFailed: false }]]),
+      ),
+    ).toBe(false);
   });
 
   it("keeps a scheduled task's thread despite what the person wrote before its latest run", () => {
@@ -136,7 +208,12 @@ describe("staysOnProjectPage", () => {
       source: { createdBy: "user" } as EnvironmentThreadShell["source"],
       latestUserAuthoredMessageAt: "2026-11-01T10:00:00.000Z",
     });
-    const latestRun = new Map([[`${local}:hand-made`, Date.parse("2026-11-19T09:00:00.000Z")]]);
+    const latestRun = new Map([
+      [
+        `${local}:hand-made`,
+        { since: Date.parse("2026-11-19T09:00:00.000Z"), dispatchFailed: false },
+      ],
+    ]);
     expect(staysOnProjectPage(handMade, new Set(), latestRun)).toBe(true);
   });
 
@@ -145,7 +222,8 @@ describe("staysOnProjectPage", () => {
       reportTo: null,
       latestUserAuthoredMessageAt: "2026-11-19T10:00:00.000Z",
     });
-    const since = (at: string) => new Map([[`${local}:written`, Date.parse(at)]]);
+    const since = (at: string) =>
+      new Map([[`${local}:written`, { since: Date.parse(at), dispatchFailed: false }]]);
     expect(staysOnProjectPage(written, new Set(), since("2026-11-19T09:00:00.000Z"))).toBe(false);
     expect(staysOnProjectPage(written, new Set(), since("2026-11-19T11:00:00.000Z"))).toBe(true);
   });
@@ -165,7 +243,7 @@ describe("staysOnProjectPage", () => {
     ]) {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
       const job = { ...thread, reportTo: null };
-      const jobs = new Map([[`${local}:${thread.id}`, 0]]);
+      const jobs = new Map([[`${local}:${thread.id}`, { since: 0, dispatchFailed: false }]]);
       expect([thread.id, staysOnProjectPage(job, new Set(), jobs)]).toEqual([thread.id, false]);
     }
   });

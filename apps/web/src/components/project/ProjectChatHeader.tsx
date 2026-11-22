@@ -10,19 +10,12 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { startedThreadState } from "../chat/startedThreads.logic";
+import { projectJobStatus } from "./projectPage.logic";
 import { scheduleLabel } from "../settings/scheduledTasksSettings.logic";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ProjectPageJob } from "./useProjectPages";
-
-const RUN_RESULT = {
-  never: "Not run yet",
-  running: "Dispatching",
-  succeeded: "Dispatched",
-  failed: "Dispatch failed",
-} as const;
 
 export interface ProjectChatHeaderProps {
   readonly project: ProjectFaviconProject;
@@ -93,13 +86,7 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
                       {scheduleLabel(task.schedule, timeZone, task.nextRunAt)}
                     </span>
                     {" · "}
-                    <span className="whitespace-nowrap">
-                      {startedThreadState(thread) === "needs-you"
-                        ? "Needs you"
-                        : startedThreadState(thread) === "working"
-                          ? "Working"
-                          : RUN_RESULT[task.lastRunStatus]}
-                    </span>
+                    <span className="whitespace-nowrap">{projectJobStatus(thread, task)}</span>
                     {task.lastRunAt ? (
                       <>
                         {" · "}

@@ -55,8 +55,9 @@ import {
   type ThreadListStatus,
 } from "@t3tools/client-runtime/state/thread-list-status";
 import {
+  type JobThreadState,
   isProjectPageJob,
-  jobThreadsSince,
+  jobThreadStates,
   projectChatTakesReports,
   staysOnProjectPage,
 } from "./project/projectPage.logic";
@@ -68,7 +69,7 @@ import {
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
 
-const NO_JOBS: ReadonlyMap<string, number> = new Map();
+const NO_JOBS: ReadonlyMap<string, JobThreadState> = new Map();
 
 // A workflow run's deployment review outlives the agent run that was latest when it
 // appeared, so keying it by run would alert again on every message sent while it waits.
@@ -317,14 +318,16 @@ export function startThreadNotifications(
     // A thread the project chat launched, or a scheduled task's thread its project page keeps,
     // finishes quietly while it stays off the sidebar.
     const settings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
-    const jobsSince = jobThreadsSince(registry.get(projectJobListAtom(environmentId))?.tasks ?? []);
-    const jobThreadKeys = (thread: EnvironmentThreadShell): ReadonlyMap<string, number> => {
+    const jobThreads = jobThreadStates(
+      registry.get(projectJobListAtom(environmentId))?.tasks ?? [],
+    );
+    const jobThreadKeys = (thread: EnvironmentThreadShell): ReadonlyMap<string, JobThreadState> => {
       const group = projectGroup(environmentId, thread.projectId);
-      const since = jobsSince.get(thread.id);
+      const since = jobThreads.get(thread.id);
       return since !== undefined &&
         isProjectPageJob(
           thread,
-          jobsSince,
+          jobThreads,
           settings,
           group && { isScratch: group.representative.isScratch, archived: group.archived },
         )
@@ -394,7 +397,7 @@ export function startThreadNotifications(
       const quietCompletion =
         completed &&
         ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
-          jobsSince.has(rawThread.id)) &&
+          jobThreads.has(rawThread.id)) &&
         staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread));
       const settled = completed && !monitorHoldsWakeCompletion(rawThread) && !quietCompletion;
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");

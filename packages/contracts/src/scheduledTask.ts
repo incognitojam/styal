@@ -287,6 +287,8 @@ export const ScheduledTaskThread = Schema.Struct({
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunAt: Schema.NullOr(IsoDateTime),
   lastRunStatus: ScheduledTaskRunStatus,
+  /** A failed dispatch remains unresolved while its retry is still being dispatched. */
+  dispatchFailed: Schema.optional(Schema.Boolean),
   blockedByPolicy: Schema.optionalKey(Schema.String),
 });
 export type ScheduledTaskThread = typeof ScheduledTaskThread.Type;
@@ -316,6 +318,10 @@ export function scheduledTaskThreads(
               nextRunAt: task.nextRunAt,
               lastRunAt: task.lastRunAt,
               lastRunStatus: task.lastRunStatus,
+              ...(task.lastRunStatus === "failed" ||
+              (task.lastRunStatus === "running" && task.lastRunError != null)
+                ? { dispatchFailed: true }
+                : {}),
               ...(task.blockedByPolicy === undefined
                 ? {}
                 : { blockedByPolicy: task.blockedByPolicy }),
