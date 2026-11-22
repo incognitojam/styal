@@ -1,3 +1,5 @@
+import { hasNewThreadAttention } from "@t3tools/shared/agentAwareness";
+
 export type ThreadNotificationKind = "input" | "completion";
 
 export interface ThreadNotificationObservation {
@@ -5,6 +7,7 @@ export interface ThreadNotificationObservation {
   readonly attention: string | null;
   /** The pending request's id, when it has one; null whenever attention is. */
   readonly requestId: string | null;
+  readonly requestIds?: readonly string[];
   /** The thread is idle and its latest run completed. */
   readonly settled: boolean;
   /** When the latest run completed, if it did. */
@@ -51,6 +54,9 @@ export function createThreadNotificationGate<Key>(
     if (next.attention === null) {
       attended.delete(key);
       return false;
+    }
+    if (next.requestIds && next.requestIds.length > 0) {
+      return hasNewThreadAttention(prior?.requestIds ?? [], next.requestIds);
     }
     if (next.requestId === null) return next.attention !== prior?.attention;
     const seen = attended.get(key);

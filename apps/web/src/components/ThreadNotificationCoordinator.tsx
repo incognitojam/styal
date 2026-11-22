@@ -17,6 +17,7 @@ import {
   type ThreadId,
   threadDisplayName,
 } from "@t3tools/contracts";
+import { threadAttentionSubjects } from "@t3tools/shared/agentAwareness";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
@@ -63,18 +64,12 @@ import {
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
 
-// A workflow run's deployment review outlives the agent run that was latest when it
-// appeared, so keying it by run would alert again on every message sent while it waits.
-function attentionSubject(thread: OrchestrationV2ThreadShell): string | null {
-  if (thread.pendingRuntimeRequest) return thread.pendingRuntimeRequest.id;
-  const reviews = (thread.workflowRuns ?? []).filter((run) => run.review !== undefined);
-  if (reviews.length === 0) return null;
-  return reviews.map((run) => `${run.host}/${run.repository}#${run.runId}`).join(",");
-}
-
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
-  readonly subagentRequest: PendingSubagentRequest | null;
+  readonly subagentRequest: {
+    readonly kind: PendingSubagentRequest;
+    readonly ids: readonly string[];
+  } | null;
   readonly thread: EnvironmentThreadShell;
   readonly status: ThreadListStatus;
 }
@@ -304,7 +299,7 @@ export function startThreadNotifications(
     const next = new Map<ThreadId, NotificationState>();
     // A parent here also hears of what its tasks on linked environments ask.
     const subagentRequests = registry.get(
-      environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
+      environmentThreadShells.pendingSubagentAttentionAtom(environmentId),
     );
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
     // A thread the project chat launched finishes quietly while the chat hears its result. Read
@@ -348,7 +343,7 @@ export function startThreadNotifications(
         next.set(rawThread.id, prior);
         continue;
       }
-      const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
+      const thread = presentThreadShell(environmentId, rawThread, subagentRequest?.kind ?? null);
       let status = resolveThreadListStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const needsAttention =
@@ -360,14 +355,16 @@ export function startThreadNotifications(
       const requestId = needsAttention ? resolveBackgroundThreadRequest(thread).requestId : null;
       // Queued messages become the latest run while a request stays pending, so a request
       // with an id is keyed by that id alone and announces once.
-      const subject =
-        status === "approval" || status === "input" ? attentionSubject(rawThread) : null;
+      const subjects =
+        status === "approval" || status === "input"
+          ? [...threadAttentionSubjects(rawThread), ...(subagentRequest?.ids ?? [])]
+          : [];
       const attention = !needsAttention
         ? null
         : requestId !== null
           ? `${status}:${requestId}`
-          : subject !== null
-            ? `${status}:${subject}`
+          : subjects.length > 0
+            ? `${status}:${subjects.join(",")}`
             : `${thread.latestRun?.runId ?? ""}:${status}`;
       const completed = status === "ready" && thread.latestRun?.status === "completed";
       const settled =
@@ -396,6 +393,7 @@ export function startThreadNotifications(
         status,
         attention,
         requestId,
+        requestIds: subjects,
         settled,
         completedAt: settled ? completedAt : null,
         backgroundWake: rawThread.latestRunBackgroundWake === true,
@@ -445,7 +443,7 @@ export function startThreadNotifications(
       if (threads !== null) observeThreads(environmentId, entry, threads);
     };
     const unsubscribeRequests = registry.subscribe(
-      environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
+      environmentThreadShells.pendingSubagentAttentionAtom(environmentId),
       reobserve,
     );
     const unsubscribeDelegated = registry.subscribe(

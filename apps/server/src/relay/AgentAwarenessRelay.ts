@@ -136,6 +136,11 @@ export function shouldPublishAgentAwarenessEvent(
     case "turn-item.updated":
       return isTurnItemPayload(event.payload) && turnItemUpdateCanEndBackgroundWork(event.payload);
     case "message.updated":
+      return (
+        typeof event.payload === "object" &&
+        event.payload !== null &&
+        ("report" in event.payload || "reportAnswer" in event.payload)
+      );
     case "message.mentioned-times-checked":
     case "legacy-usage.imported":
     case "plan.updated":
@@ -808,6 +813,7 @@ export const make = Effect.gen(function* () {
   // The map can miss a child's update while publishing is off or the relay is
   // unlinked, so each waiting child is re-read before its parent is published.
   const currentSubagentRequestFor = Effect.fnUntraced(function* (topLevelThreadId: ThreadId) {
+    const requestIds: RuntimeRequestId[] = [];
     let pending: SubagentRequestAwareness | null = null;
     for (const [childId, entry] of subagentRequests) {
       if (entry.topLevelThreadId !== topLevelThreadId) continue;
@@ -818,12 +824,13 @@ export const make = Effect.gen(function* () {
         continue;
       }
       if (requestId !== entry.requestId) subagentRequests.set(childId, { ...entry, requestId });
+      requestIds.push(requestId);
       // The newest wait is the one to announce.
       if (pending === null || DateTime.isGreaterThan(child.updatedAt, pending.updatedAt)) {
         pending = { requestId, updatedAt: child.updatedAt };
       }
     }
-    return pending;
+    return pending === null ? null : { ...pending, requestIds: requestIds.sort() };
   });
 
   const processThreadPublish = Effect.fnUntraced(function* (threadId: ThreadId) {

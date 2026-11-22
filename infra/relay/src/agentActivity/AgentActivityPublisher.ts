@@ -60,12 +60,13 @@ export function delayedAlertTrigger(
   previous: RelayAgentActivityState | null,
   next: RelayAgentActivityState | null,
 ): RelayAgentActivityState | null {
-  return next !== null &&
-    next.attended === true &&
-    isAlertPhase(next.phase) &&
-    previous?.phase !== next.phase
-    ? next
-    : null;
+  if (next === null || next.attended !== true || !isAlertPhase(next.phase)) return null;
+  if (previous === null) return next;
+  if (next.attentionIds === undefined) return previous.phase !== next.phase ? next : null;
+  const attentionIds = (next.attentionIds ?? []).filter(
+    (id) => !previous.attentionIds?.includes(id),
+  );
+  return attentionIds.length > 0 ? { ...next, attentionIds } : null;
 }
 
 export type AgentActivityPublishError =
