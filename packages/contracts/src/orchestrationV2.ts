@@ -2493,7 +2493,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestVisibleMessage: Schema.NullOr(OrchestrationV2LatestVisibleMessageSummary),
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtc),
   latestMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
-  /** Excludes wakes and agent messages that advance latestUserMessageAt through the user role. */
+  /** Excludes wakes, scheduled runs and agent messages that advance latestUserMessageAt as the user. */
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   hasActionableProposedPlan: Schema.Boolean,
   pendingBackgroundTasks: Schema.optional(Schema.Array(OrchestrationV2PendingBackgroundTask)).pipe(

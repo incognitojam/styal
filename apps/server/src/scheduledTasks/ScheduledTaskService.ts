@@ -752,14 +752,14 @@ export const layer = Layer.effect(
           ),
         );
 
+    // A retry keeps the previous failure visible until its dispatch succeeds.
     const markRunning = (id: ScheduledTaskId, startedAtIso: string, webhookDeliveryId?: string) =>
       sql<{ task_id: string }>`
         UPDATE scheduled_tasks
         SET updated_at = ${startedAtIso},
             last_run_at = ${startedAtIso},
             last_run_webhook_delivery_id = ${webhookDeliveryId ?? null},
-            last_run_status = 'running',
-            last_run_error = NULL
+            last_run_status = 'running'
         WHERE task_id = ${id}
         RETURNING task_id
       `.pipe(

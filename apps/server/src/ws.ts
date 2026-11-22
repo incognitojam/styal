@@ -105,6 +105,7 @@ import {
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
+  scheduledTaskThreads,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -2322,6 +2323,13 @@ export const layerWsRpc = (
           providerSessionManager.subscribePromptSuggestion(input.threadId),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
           scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
+        [WS_METHODS.scheduledTasksSubscribeThreads]: (_input) =>
+          scheduledTasks.subscribeList().pipe(
+            Stream.map(scheduledTaskThreads),
+            Stream.changesWith(
+              (previous, next) => JSON.stringify(previous) === JSON.stringify(next),
+            ),
+          ),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),
         [WS_METHODS.scheduledTasksSetEnabled]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(

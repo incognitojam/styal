@@ -625,6 +625,11 @@ it.effect.each(queuedDeliveryCases)(
             assert.equal(delivery.outcome, "dispatch_failed");
             assert.equal(delivery.error, reason);
             assert.equal(yield* Queue.size(launches), 0);
+            const recorded = (yield* service.list()).tasks.find(
+              (candidate) => candidate.id === task.id,
+            );
+            assert.equal(recorded?.lastRunStatus, "succeeded");
+            assert.equal(recorded?.lastRunError, null);
           }),
         { gate },
       ).pipe(Effect.withTracer(tracer));

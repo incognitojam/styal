@@ -1,3 +1,4 @@
+import { clearProjectJobs } from "../state/projectJobs.logic";
 import {
   ClientCapabilities,
   PlatformConnectionSource,
@@ -786,6 +787,7 @@ const layerEnvironmentOwnedDataCleanup = Layer.succeed(
     clear: Effect.fn("Persistence.EnvironmentOwnedDataCleanup.clear")(function (environmentId) {
       return Effect.sync(() => {
         clearComposerDraftsEnvironment(environmentId);
+        clearProjectJobs(environmentId);
       });
     }),
   }),
