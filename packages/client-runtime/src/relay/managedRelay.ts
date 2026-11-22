@@ -3,7 +3,6 @@ import {
   type RelayAccountSessionRecord,
   type RelayAccountUser,
   RelayApi,
-  LegacyRelaySessionApi,
   type RelayAuthSessionResponse,
   type RelayClientEnvironmentRecord,
   type RelayClientDeviceRecord,
@@ -98,7 +97,6 @@ export const ManagedRelayRequestAction = Schema.Literals([
   "refresh relay access token",
   "send styal Link sign-in code",
   "verify styal Link sign-in code",
-  "move styal Link sign-in from Clerk",
   "sign out of styal Link",
   "read styal Link account",
   "list styal Link sessions",
@@ -125,7 +123,6 @@ export const ManagedRelayRequestActivity = Schema.Literals([
   "Relay access token refresh",
   "styal Link sign-in code request",
   "styal Link sign-in code verification",
-  "styal Link sign-in move from Clerk",
   "styal Link sign-out",
   "styal Link account request",
   "styal Link session listing",
@@ -572,8 +569,6 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       (token) => token.clientId === options.clientId && token.sessionTokenHash !== undefined,
     ),
   );
-  const legacyClient = yield* HttpApiClient.make(LegacyRelaySessionApi, { baseUrl: relayUrl });
-  const legacyUrlBuilder = HttpApiClient.urlBuilder(LegacyRelaySessionApi, { baseUrl: relayUrl });
   const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;

@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off -- These tests assert real POSIX modes on a temporary directory.
+// @effect-diagnostics nodeBuiltinImport:off -- These tests remove only synthetic token files and exercise directory symlinks.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -23,13 +23,18 @@ describe("RetiredSignInData", () => {
       const token = NodePath.join(directory, "clerk-tokens.json");
       const legacy = NodePath.join(stateDir, "clerk-tokens.json");
       const current = NodePath.join(stateDir, "relay-session.json");
+      const profile = NodePath.join(stateDir, "profile");
+      NodeFS.mkdirSync(NodePath.join(profile, "clerk"), { recursive: true });
+      const profileToken = NodePath.join(profile, "clerk/clerk-tokens.json");
+      NodeFS.writeFileSync(profileToken, "synthetic profile credential");
       NodeFS.writeFileSync(token, "synthetic legacy credential");
       NodeFS.writeFileSync(legacy, "synthetic older credential");
       NodeFS.writeFileSync(current, "synthetic current session");
-      removeClerkTokenStorage(stateDir, stateDir);
-      removeClerkTokenStorage(stateDir, stateDir);
+      removeClerkTokenStorage(stateDir, profile);
+      removeClerkTokenStorage(stateDir, profile);
       assert.isFalse(NodeFS.existsSync(token));
       assert.isFalse(NodeFS.existsSync(legacy));
+      assert.isFalse(NodeFS.existsSync(profileToken));
       assert.equal(NodeFS.readFileSync(current, "utf8"), "synthetic current session");
     });
   });
@@ -45,5 +50,4 @@ describe("RetiredSignInData", () => {
       assert.equal(NodeFS.readFileSync(token, "utf8"), "synthetic unrelated credential");
     });
   });
-
 });

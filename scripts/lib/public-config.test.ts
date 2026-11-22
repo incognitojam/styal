@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe("loadRepoEnv", () => {
-  it("pairs the default source-build relay with its production legacy refresh inputs", () => {
+  it("pairs the default source-build relay with production", () => {
     const example = NodeUtil.parseEnv(
       NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../../.env.example"), "utf8"),
     );
@@ -26,14 +26,8 @@ describe("loadRepoEnv", () => {
         "utf8",
       ),
     );
-    for (const key of [
-      "T3CODE_RELAY_URL",
-      "T3CODE_CLERK_PUBLISHABLE_KEY",
-      "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
-    ]) {
-      expect(example[key], key).toBeTruthy();
-      expect(example[key], key).toBe(production[key]);
-    }
+    expect(example.T3CODE_RELAY_URL).toBeTruthy();
+    expect(example.T3CODE_RELAY_URL).toBe(production.T3CODE_RELAY_URL);
   });
 
   it("applies process, root local, and root precedence in that order", () => {

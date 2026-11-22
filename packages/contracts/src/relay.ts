@@ -1150,15 +1150,6 @@ export const RelayEmailSignInVerifyRequest = Schema.Struct({
 });
 export type RelayEmailSignInVerifyRequest = typeof RelayEmailSignInVerifyRequest.Type;
 
-export const RelayClerkSessionExchangeRequest = Schema.Struct({
-  subject_token: TrimmedNonEmptyString.annotate({
-    description: "Clerk session or OAuth token for the signed-in user.",
-  }),
-  client_id: RelayPublicClientId,
-  label: Schema.optional(RelaySessionLabel),
-});
-export type RelayClerkSessionExchangeRequest = typeof RelayClerkSessionExchangeRequest.Type;
-
 const RelayAccessTokenFields = {
   access_token: TrimmedNonEmptyString,
   token_type: Schema.Literal("DPoP"),
@@ -1253,22 +1244,6 @@ export const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
   .annotate(
     OpenApi.Description,
     "Signs in, creating the account on first sign-in, and returns a session credential bound to the proof key plus an access token.",
-  );
-
-const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
-  "exchangeClerkSession",
-  "/v1/auth/clerk-exchange",
-  {
-    headers: RelayDpopProofRequestHeaders,
-    payload: RelayClerkSessionExchangeRequest,
-    success: RelayAuthSessionResponse,
-    error: RelayAuthAndInternalErrors,
-  },
-)
-  .annotate(OpenApi.Summary, "Exchange a Clerk session for a relay session")
-  .annotate(
-    OpenApi.Description,
-    "Migration path for clients signed in with Clerk. Keeps the Clerk user id as the account id.",
   );
 
 export const RelayRefreshAuthTokenEndpoint = HttpApiEndpoint.post(
@@ -1532,8 +1507,3 @@ export const RelayApi = HttpApi.make("RelayApi")
     "Control-plane API for linking styal environments, connecting authorized clients, and publishing agent activity.",
   );
 export type RelayApi = typeof RelayApi;
-
-/** Client-only wire contract for the transition build; never mounted by the relay. */
-export class LegacyRelaySessionApi extends HttpApi.make("LegacyRelaySessionApi").add(
-  HttpApiGroup.make("auth").add(RelayExchangeClerkSessionEndpoint),
-) {}

@@ -69,8 +69,9 @@ profile, desktop install, store mobile build, nightly, spare phone and backgroun
    any owner who cannot account for a device. Legacy mobile registration rows with null session
    ids are historical data, not evidence of a currently active Clerk client; keep them.
 
-4. Only after every device/server is accounted for, merge the relay retirement. **Merging relay
-   changes to main automatically deploys production, then development.** Review that plan before
+4. Only after every device/server is accounted for, merge the relay retirement. **Merging this change to main automatically deploys the production relay, then the development
+   relay. It also triggers hosted web deployment and mobile production reconciliation; successful
+   main CI can publish a desktop/CLI nightly.** Review that plan before
    approval: expect Worker code and removal of Clerk bindings, no database, queue, DNS or tunnel
    destruction. Old Clerk bearer requests now fail authentication; `/v1/client/dpop-token` and
    `/v1/auth/clerk-exchange` return 404, OAuth discovery is retired, and signed sessionless
@@ -108,11 +109,6 @@ the preceding client-only release deliberately retains this data for downgrade c
 HttpOnly or cross-origin Clerk cookies cannot be removed by this JavaScript cleanup; retire
 those sessions through Clerk when the rollback window ends. Deleted local credentials cannot be
 restored by reverting code; older Clerk builds may require a fresh Clerk sign-in.
-
-When refreshing this draft after the client PR lands, carry the cleanup from `DesktopClerk` into
-`DesktopAppLinks`, keep the SecureStore migration and browser storage cleanup, and delete the
-now-unused client exchange contract/adapters, the server-only refresh build inputs/examples, and
-the shared publishable-key URL helper. Do not reintroduce an SDK or exchange handler.
 
 Choose the rollback window and whether abandoned devices must be recovered or deliberately retired
 before approving the relay PR. Clerk bans, sign-up restrictions and email edits no longer control
