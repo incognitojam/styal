@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
@@ -30,7 +30,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
 import {
@@ -46,8 +46,10 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
 import { ReportAnswerOptions } from "../chat/CoordinatorReports";
+import { followTimelineEnd } from "../chat/timelineScrollAnchoring";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   listProjectNeeds,
   openReports,
@@ -408,7 +410,16 @@ function ReportAnswer({
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const dismiss = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const [reply, setReply] = useState("");
-  const { sending, run, alert } = useAnswerCommand();
+  const [sending, setSending] = useState(false);
+  const navigate = useNavigate();
+  const shown = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a reply still sending when the card leaves the screen must not open its thread later
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
   const { messageId, report } = need.report;
   const ref = { messageId, key: report.key, version: report.version };
   const disabled = !canOperate;
@@ -445,13 +456,28 @@ function ReportAnswer({
       () => onAnswered(text, { need, response }),
     );
   };
-  // A typed reply names the report but does not answer it, so the question stays open.
-  const sendReply = () =>
-    void run(
-      () => sendTurn(newMessageId(), formatReportAnswer(report, reply.trim())),
-      "Failed to send your reply.",
-      () => setReply(""),
-    );
+  // A typed reply names the report but does not answer it, so the question stays open. It starts
+  // a conversation, which belongs in the thread, so the thread opens where the answer will come.
+  const sendReply = async () => {
+    setSending(true);
+    const result = await sendTurn(newMessageId(), formatReportAnswer(report, reply.trim()));
+    setSending(false);
+    if (result._tag === "Success") {
+      setReply("");
+      if (!shown.current) return;
+      followTimelineEnd(scopedThreadKey(thread));
+      void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(thread) });
+    } else if (!isAtomCommandInterrupted(result)) {
+      const cause = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not send your reply",
+          description: cause instanceof Error ? cause.message : "Failed to send message.",
+        }),
+      );
+    }
+  };
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <ReportAnswerOptions answers={report.answers ?? []} disabled={disabled} onPick={answer} />
@@ -464,7 +490,6 @@ function ReportAnswer({
         value={reply}
         onChange={(event) => setReply(event.target.value)}
       />
-      {alert}
       <div className="flex justify-end gap-2">
         <Button
           size="xs"
@@ -486,7 +511,11 @@ function ReportAnswer({
         >
           Dismiss
         </Button>
-        <Button size="xs" disabled={disabled || sending || reply.trim() === ""} onClick={sendReply}>
+        <Button
+          size="xs"
+          disabled={disabled || sending || reply.trim() === ""}
+          onClick={() => void sendReply()}
+        >
           Send
         </Button>
       </div>

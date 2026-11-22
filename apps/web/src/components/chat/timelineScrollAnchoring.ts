@@ -134,6 +134,13 @@ export function readTimelinePosition(threadKey: string) {
   return rememberedTimelinePositions.get(threadKey);
 }
 
+/** The thread opens at its end next time, where a message just sent to it from elsewhere is. */
+export function followTimelineEnd(threadKey: string) {
+  const position = rememberedTimelinePositions.get(threadKey);
+  if (position !== undefined)
+    rememberedTimelinePositions.set(threadKey, { ...position, atEnd: true });
+}
+
 export function rememberTimelinePosition(
   threadKey: string,
   position: RememberedTimelinePosition,
