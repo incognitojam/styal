@@ -7,6 +7,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSetupError,
+  type RuntimeMode,
   type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -135,8 +136,10 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly enabled?: boolean;
     readonly safe?: boolean;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+    readonly rememberedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   } = {},
 ) {
+  const savedRuntimeModes = yield* Ref.make<ReadonlyArray<ReadonlyArray<RuntimeMode>>>([]);
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
   const probeCalls = yield* Ref.make(0);
   const safetyCalls = yield* Ref.make(0);
@@ -150,6 +153,10 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.auth ? { auth: options.auth } : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
+      ...(options.rememberedRuntimeModes
+        ? { rememberedRuntimeModes: options.rememberedRuntimeModes }
+        : {}),
+      rememberRuntimeModes: (modes) => Ref.update(savedRuntimeModes, (saved) => [...saved, modes]),
       probe: Ref.update(probeCalls, (count) => count + 1).pipe(
         Effect.andThen(Ref.get(probe)),
         Effect.flatten,
@@ -184,6 +191,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     initialUpdate,
     initialize,
     nextPublish,
+    savedRuntimeModes,
   };
 });
 
@@ -435,6 +443,26 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* harness.provider.onSignedOut;
       expect(yield* supportedModes).toEqual(withoutAuto);
       expect((yield* harness.provider.snapshot.getSnapshot).reviewsAutoMode).not.toBe(true);
+      const withAuto: ReadonlyArray<RuntimeMode> = [
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+      ];
+      expect(yield* Ref.get(harness.savedRuntimeModes)).toEqual([
+        withAuto,
+        withoutAuto,
+        withAuto,
+        withoutAuto,
+      ]);
+
+      // A restart offers what the last session advertised before any session starts.
+      const restarted = yield* makeHarness({ rememberedRuntimeModes: withAuto });
+      yield* restarted.initialize;
+      expect(yield* restarted.provider.snapshot.getSnapshot).toMatchObject({
+        supportedRuntimeModes: withAuto,
+        reviewsAutoMode: true,
+      });
     }),
   );
 
