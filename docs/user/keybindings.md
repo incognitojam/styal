@@ -197,8 +197,10 @@ answer, threads stopped by a usage limit or a failed run that you have not opene
 are still working but have asked an optional question, and threads that woke from a snooze. It opens
 the most urgent first, in that order: approval, answer, usage limit or failure, optional question, woke, then
 unread. Among threads of the same kind, the one that has waited longest opens first, so older work is
-cleared before newer work. The open thread is skipped, so pressing it again moves on. Snoozed and
-settled threads are left out. It is also in the command palette as **Go to next unread thread**.
+cleared before newer work. The open thread is skipped, so pressing it again moves on; on a project
+page, that is the project's chat. Snoozed and settled threads are left out, and so are threads the
+project's chat started, since its page shows what they need, until you pin one or write to it. It is
+also in the command palette as **Go to next unread thread**.
 While another thread is waiting, a button above the composer shows how many are waiting and the
 status of the next one; clicking it does the same thing.
 

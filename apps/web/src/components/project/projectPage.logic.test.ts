@@ -6,6 +6,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatedProjectKey,
   staysOnProjectPage,
+  managedByProjectChat,
+  projectChatTakesReports,
   isProjectChatDraftId,
   projectChatDraftId,
   resolveProjectChatView,
@@ -51,19 +53,27 @@ describe("staysOnProjectPage", () => {
   });
 
   it("brings it back when it needs you, fails, is pinned or you write to it", () => {
-    for (const thread of [
-      started("approval", { hasPendingApprovals: true }),
-      started("question", { hasPendingUserInput: true }),
-      started("report", { openReportQuestionCount: 1 }),
-      started("guest", { pendingGuestMessageCount: 1 }),
-      started("failed", { runtime: { status: "failed" } as EnvironmentThreadShell["runtime"] }),
-      started("failed-run", {
-        latestRun: { status: "failed" } as EnvironmentThreadShell["latestRun"],
-      }),
-      started("pinned", { pinnedAt: "2026-11-18T10:00:00.000Z" }),
-      started("written", { latestUserAuthoredMessageAt: "2026-11-18T10:00:00.000Z" }),
-    ]) {
+    for (const [thread, managed] of [
+      [started("approval", { hasPendingApprovals: true }), true],
+      [started("question", { hasPendingUserInput: true }), true],
+      [started("report", { openReportQuestionCount: 1 }), true],
+      [started("guest", { pendingGuestMessageCount: 1 }), true],
+      [
+        started("failed", { runtime: { status: "failed" } as EnvironmentThreadShell["runtime"] }),
+        true,
+      ],
+      [
+        started("failed-run", {
+          latestRun: { status: "failed" } as EnvironmentThreadShell["latestRun"],
+        }),
+        true,
+      ],
+      [started("pinned", { pinnedAt: "2026-11-18T10:00:00.000Z" }), false],
+      [started("written", { latestUserAuthoredMessageAt: "2026-11-18T10:00:00.000Z" }), false],
+    ] as const) {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
+      // Back on the sidebar, it is still the chat's to read until you pin it or write to it.
+      expect([thread.id, managedByProjectChat(thread, chats)]).toEqual([thread.id, managed]);
     }
   });
 
@@ -82,6 +92,41 @@ describe("staysOnProjectPage", () => {
     expect(staysOnProjectPage(elsewhere, chats)).toBe(false);
     expect(staysOnProjectPage(otherMachine, chats)).toBe(false);
     expect(staysOnProjectPage(started("no-chat"), new Set())).toBe(false);
+    for (const thread of [inProject, person, elsewhere, otherMachine]) {
+      expect([thread.id, managedByProjectChat(thread, chats)]).toEqual([thread.id, false]);
+    }
+  });
+
+  // Managed threads are the chat's to handle, so the chat itself must stay reachable.
+  it("never counts the chat as managed, even when it failed or asks you something", () => {
+    for (const chat of [
+      shell("thread-chat", { latestRun: { status: "failed" } } as Partial<EnvironmentThreadShell>),
+      shell("thread-chat", { openReportQuestionCount: 1 }),
+    ]) {
+      expect(managedByProjectChat(chat, chats)).toBe(false);
+    }
+  });
+
+  it("stops counting a thread as managed once its chat is replaced, unassigned or stops taking reports", () => {
+    const thread = started("orphan");
+    expect(managedByProjectChat(thread, chats)).toBe(true);
+    // Another thread became the project's chat.
+    expect(managedByProjectChat(thread, new Set([`${local}:thread-new-chat`]))).toBe(false);
+    // The chat was unassigned, or project coordinators were turned off: the project has no chat.
+    expect(managedByProjectChat(thread, new Set())).toBe(false);
+    const chat = { archivedAt: null, deletedAt: null, settledOverride: null, settleReason: null };
+    expect(projectChatTakesReports(chat)).toBe(true);
+    expect(projectChatTakesReports({ ...chat, archivedAt: "2026-11-18T10:00:00.000Z" })).toBe(
+      false,
+    );
+    expect(projectChatTakesReports({ ...chat, deletedAt: "2026-11-18T10:00:00.000Z" })).toBe(false);
+    expect(
+      projectChatTakesReports({
+        ...chat,
+        settledOverride: "settled",
+        settleReason: { kind: "user" },
+      }),
+    ).toBe(false);
   });
 });
 

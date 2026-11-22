@@ -111,7 +111,11 @@ import {
 } from "react";
 import { type AnyRouter, useParams, useRouter } from "@tanstack/react-router";
 import { useProjectPages } from "./project/useProjectPages";
-import { projectChatTakesReports, staysOnProjectPage } from "./project/projectPage.logic";
+import {
+  managedByProjectChat,
+  projectChatTakesReports,
+  staysOnProjectPage,
+} from "./project/projectPage.logic";
 
 import {
   isAtomCommandInterrupted,
@@ -3375,9 +3379,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   // What each pinned, active and Working thread needs from the user, as its
   // row status shows it, and how long it has waited. Snoozed and settled
-  // threads are left out: they come back on their own.
+  // threads are left out: they come back on their own. So are threads a
+  // project chat manages: its page shows what they need.
   const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const unreadSourceThreads = [...pinnedThreads, ...activeThreads, ...workingThreads];
+  const unreadSourceThreads = [...pinnedThreads, ...activeThreads, ...workingThreads].filter(
+    (thread) => !managedByProjectChat(thread, reportingChatKeys),
+  );
   const unreadCandidates = unreadSourceThreads.map((thread) => {
     const key = threadShellKey(thread);
     const lastVisitedAt = resolveThreadLastVisitedAt(
@@ -3406,9 +3413,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
     return { key, attention, waitingSince };
   });
-  const nextUnread = resolveNextAttentionThread(unreadCandidates, routeThreadKey);
+  // A project page shows its chat, so the chat is the open thread there.
+  const openThreadKey =
+    routeThreadKey ??
+    (routeProjectKey === null ? null : (projectPages.get(routeProjectKey)?.chatThreadKey ?? null));
+  const nextUnread = resolveNextAttentionThread(unreadCandidates, openThreadKey);
   const unreadCount = unreadCandidates.filter(
-    (candidate) => candidate.attention !== null && candidate.key !== routeThreadKey,
+    (candidate) => candidate.attention !== null && candidate.key !== openThreadKey,
   ).length;
   const nextUnreadAttention = nextUnread?.attention ?? null;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes unread thread counts to the shared command palette summary registry
