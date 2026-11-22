@@ -51,6 +51,7 @@ try {
       XDG_DATA_HOME: NodePath.join(home, ".local/share"),
       STYAL_HOME: t3Home,
       T3CODE_TELEMETRY_ENABLED: "false",
+      T3CODE_EVENT_PRUNING: "0",
       T3CODE_DISABLE_AUTO_UPDATE: "true",
     },
     timeout: STEP_TIMEOUT_MS,
