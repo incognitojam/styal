@@ -478,25 +478,25 @@ it.effect("a finished turn with nothing pending wakes the launcher once", () =>
   ),
 );
 
-it.effect("a turn a person started stays quiet, but its failure still reports", () =>
+it.effect("a launched thread reports person-started turns and failures", () =>
   harness("report-person", ({ send, endTurn, reports }) =>
     Effect.gen(function* () {
       const quiet = yield* send(launchedId, "Tweak the copy", { sender: "user" });
       yield* endTurn(quiet, "completed");
-      assert.equal((yield* reports()).length, 0);
+      assert.equal((yield* reports()).length, 1);
 
       const failed = yield* send(launchedId, "Try again", { sender: "user" });
       yield* endTurn(failed, "failed");
       const delivered = yield* reports();
-      assert.equal(delivered.length, 1);
-      assert.equal(delivered[0]?.outcome, "failed");
-      assert.include(delivered[0]?.text ?? "", "Sign-in expired.");
+      assert.equal(delivered.length, 2);
+      assert.equal(delivered[1]?.outcome, "failed");
+      assert.include(delivered[1]?.text ?? "", "Sign-in expired.");
     }),
   ),
 );
 
-it.effect("a turn with a pull request watch on stays quiet", () =>
-  harness("report-watch", ({ orchestrator, send, endTurn, reports }) =>
+it.effect("a turn with a pull request watch reports its published work once", () =>
+  harness("report-watch", ({ orchestrator, send, endTurn, reports, worker }) =>
     Effect.gen(function* () {
       const turn = yield* send(launchedId, "Open the PR");
       yield* orchestrator.dispatch({
@@ -510,7 +510,15 @@ it.effect("a turn with a pull request watch on stays quiet", () =>
         link: { url: "https://github.com/acme/app/pull/7", source: "agent" },
       });
       yield* endTurn(turn, "completed");
-      assert.equal((yield* reports()).length, 0);
+      const delivered = yield* reports();
+      assert.equal(delivered.length, 1);
+      assert.include(delivered[0]!.text, "https://github.com/acme/app/pull/7");
+      assert.include(delivered[0]!.text, "without assistant text");
+      yield* worker.drain();
+      assert.equal((yield* reports()).length, 1);
+      const unchanged = yield* send(launchedId, "A routine wake with no new result");
+      yield* endTurn(unchanged, "completed");
+      assert.equal((yield* reports()).length, 1, "an identical stop stays quiet");
     }),
   ),
 );

@@ -184,11 +184,9 @@ watch pull requests.
 When the user asks for a new thread, use a top-level thread for work that continues independently,
 especially work that needs a pull request or workflow watch. If you need to hear back, opt in with
 \`reportBack\`. styal reports failures, unanswered blocking approvals or questions, and results when
-nothing else is pending. Routine turn ends while a watch is active stay quiet.
-
-While watching, send the launcher one short explicit report with \`t3_thread_send\` when you reach
-the requested milestone, such as a PR ready for review. Include the result and a link; do not repeat
-automatic failure or blocked reports. End your turn after starting a watch and let it wake you.
+the thread stops working. A pull request or workflow watch does not hold a report: it includes
+the last assistant text and what the thread waits on. Do not repeat automatic reports with
+\`t3_thread_send\`. End your turn after starting a watch and let it wake you.
 
 A thread launched on another linked machine cannot report back yet. Use a delegated task when its
 automatic cross-machine result is sufficient; it still cannot watch PRs.
