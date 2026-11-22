@@ -1,3 +1,4 @@
+import { formatReportAnswer, reportAnswers } from "@t3tools/client-runtime/coordinator-reports";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -13,6 +14,8 @@ const TRAILING_LEGACY_CONTEXT =
 type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly id: string;
 };
+/** Messages holding the thread's reports and tied answers, which recalled messages may lack. */
+export type ComposerPromptHistoryReportMessages = Parameters<typeof reportAnswers>[0];
 
 interface ComposerPromptHistoryEntry {
   readonly id: string;
@@ -73,10 +76,15 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
   return result;
 }
 
-export function recallableComposerPrompt(messageText: string): string {
+export function recallableComposerPrompt(
+  messageText: string,
+  // The report a reply names: its prefix goes before the effort prefix.
+  report?: { readonly title: string; readonly version: number },
+): string {
+  const reportPrefix = report ? formatReportAnswer(report, "") : "";
   let prompt = messageText.trim();
-  if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
-    prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);
+  if (prompt.startsWith(reportPrefix + CLAUDE_ULTRATHINK_PREFIX)) {
+    prompt = reportPrefix + prompt.slice(reportPrefix.length + CLAUDE_ULTRATHINK_PREFIX.length);
   }
 
   while (prompt.length > 0) {
@@ -122,13 +130,16 @@ export function recallableComposerPrompt(messageText: string): string {
 
 export function buildComposerPromptHistoryEntries(
   messages: ReadonlyArray<ComposerPromptHistoryMessage>,
+  reportMessages: ComposerPromptHistoryReportMessages = [],
 ): ComposerPromptHistoryEntry[] {
   const entries: ComposerPromptHistoryEntry[] = [];
+  // Later copies of a message win, so a tied answer keeps its tie.
+  const reports = reportAnswers([...messages, ...reportMessages]);
   for (const message of messages) {
     if (message.role !== "user") continue;
     // Automations and other agents send user-role messages; recall only what the user typed.
     if (resolveUserMessagePresentation(message).attribution !== null) continue;
-    const prompt = recallableComposerPrompt(message.text);
+    const prompt = recallableComposerPrompt(message.text, reports.get(message.id));
     if (prompt.length === 0) continue;
     const previous = entries[entries.length - 1];
     if (previous && previous.prompt === prompt) {

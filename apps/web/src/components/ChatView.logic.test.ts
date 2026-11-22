@@ -1490,6 +1490,34 @@ it("keeps a free-text report reply's identity in the text sent to the agent", ()
     }),
   ).toBe("[#214 Search results keep their scroll position, version 3] Wait");
   expect(formatOutgoingPrompt(input)).toBe("Wait");
+  const claude = {
+    ...input,
+    provider: ProviderDriverKind.make("claudeAgent"),
+    model: "claude-opus",
+    models: [
+      {
+        slug: "claude-opus",
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Effort",
+              type: "select",
+              options: [
+                { id: "high", label: "High" },
+                { id: "ultrathink", label: "Ultrathink" },
+              ],
+              promptInjectedValues: ["ultrathink"],
+            },
+          ],
+        },
+      },
+    ] as never,
+    effort: "ultrathink",
+  };
+  expect(formatOutgoingPrompt({ ...claude, reportReply: { title: "Merge?", version: 1 } })).toBe(
+    "[Merge?, version 1] Ultrathink:\nWait",
+  );
 });
 
 describe("Open in for the host environment", () => {
