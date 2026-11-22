@@ -76,14 +76,3 @@ function parseClerkFrontendApi(publishableKey: string): {
 export function clerkFrontendApiUrlFromPublishableKey(publishableKey: string): string {
   return parseClerkFrontendApi(publishableKey).url;
 }
-
-export function clerkFrontendApiHostnameFromPublishableKey(publishableKey: string): string {
-  return parseClerkFrontendApi(publishableKey).hostname;
-}
-
-export function relayClerkTokenOptions(template: string) {
-  return {
-    template,
-    skipCache: true,
-  } as const;
-}

@@ -14,128 +14,36 @@ repository-root example:
 cp .env.example .env
 ```
 
-For another deployment, set these values in the repository-root `.env` or `.env.local`:
+For another deployment, set the relay origin in the repository-root `.env` or `.env.local`:
 
 ```dotenv
-T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
-T3CODE_CLERK_JWT_TEMPLATE=<JWT template name>
-T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=<public OAuth application client ID>
 T3CODE_RELAY_URL=https://relay.example.com
 ```
 
-Process variables take precedence over `.env.local`, then `.env`. Use these canonical names;
-the build loader supplies framework-specific aliases. These values are public identifiers.
-`CLERK_SECRET_KEY` belongs only in the relay's secrets, never in client configuration.
+Web, desktop, and mobile need only this public value. Process variables take precedence over
+`.env.local`, then `.env`. Client and bundled-server builds embed it; bundled servers also accept
+runtime overrides. The build loader supplies the web alias.
 
-Client and bundled-server builds embed the public values, so set them before building.
-EAS preview and production environments need the publishable key, JWT template name, and relay URL.
-Bundled servers also accept runtime overrides for operator-managed deployments.
+GUI clients ignore Clerk credentials and show email sign-in without a stored relay session.
+The server/CLI still adopts a stored Clerk credential at startup without a prompt. Its bundled
+build retains `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` solely to
+refresh an expired legacy credential; no SDK is needed. Server operators can use `styal link login`
+for email sign-in. Signing in with the imported email restores the same machines. An existing relay session
+keeps working. GUI bundles need no Clerk public build inputs.
 
 Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
-Deploy `prod` before personal stages because it owns the retained database that their branches
-depend on. The stack's `PublishClientConfig` action writes the resulting relay URL back to the root `.env`.
+The relay README owns provisioning; deployment's `PublishClientConfig` writes the relay URL to `.env`.
 
-## CLI OAuth application
+## Legacy client compatibility
 
-Current CLIs sign in with an emailed code and use this application only to move a Clerk sign-in
-they already hold to the relay. CLIs from before email sign-in still sign in through it, so keep it
-configured until Clerk is removed.
+Older transition builds can still exchange a Clerk sign-in for a relay session. Earlier binaries
+still use Clerk directly. Keep both Clerk instances, their existing JWT template and audience,
+OAuth application, and native callbacks configured until all devices and servers have converted
+and relay compatibility is retired. New GUI builds need none of these settings. Do not remove
+relay secrets or restrict existing users' access as part of a client release.
 
-In Clerk's OAuth applications settings:
-
-1. Create a public OAuth application for the T3 CLI, using authorization-code exchange with PKCE.
-2. Allow the redirect URI `http://127.0.0.1:34338/callback`.
-3. Enable the `openid`, `profile`, `email`, and `offline_access` scopes.
-4. Enable **Device authorization grant** on the application. Older CLIs use it for headless and
-   SSH authorization, and Clerk only advertises the device endpoint once it is on. The feature is in beta and
-   Clerk enables it per account on request.
-5. Set `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` to the generated public client ID in local and release
-   build environments.
-
-## JWT template
-
-Create a Clerk JWT template named `t3-relay` with claims:
-
-```json
-{ "aud": "t3-code-relay" }
-```
-
-Set `T3CODE_CLERK_JWT_TEMPLATE=t3-relay` for clients and
-`CLERK_JWT_AUDIENCE=t3-code-relay` for the relay. The production relay deployment environment
-also defines `CLERK_JWT_TEMPLATE`. The audience stays the same across relay stages; the relay
-URL selects the deployment.
-
-## Desktop OAuth redirects
-
-Enable Clerk's Native API and add the desktop redirects to its SSO redirect allowlist:
-
-```text
-styal-dev://app/
-styal-preview://app/
-styal://app/
-```
-
-Add the corresponding origin to the Clerk instance's Backend API `allowed_origins` array.
-Development uses `styal-dev://app`; production uses `styal://app` and, for pull request preview
-builds, `styal-preview://app`. Update the array with
-`PATCH https://api.clerk.com/v1/instance` using the Clerk secret key, preserving existing entries.
-The Clerk Electron integration handles token
-persistence and system-browser callback delivery.
-
-## Android native sign-in redirects
-
-Clerk's native Android SDK uses `clerk://<applicationId>.callback`. In the Clerk instance selected by the app's publishable key, add each supported package to **Native applications > Allowlist for mobile SSO redirect**:
-
-| Variant     | Callback                                   |
-| ----------- | ------------------------------------------ |
-| Development | `clerk://build.styal.app.dev.callback`     |
-| Preview     | `clerk://build.styal.app.preview.callback` |
-| Production  | `clerk://build.styal.app.callback`         |
-
-Preserve existing entries. These callbacks are separate from the `styal-dev` / `styal-preview` / `styal` navigation schemes. A private development build using the production Clerk key still needs its development callback allowed by that instance's administrator; rebuilding the same package does not change the allowlist.
-
-## Desktop passkeys
-
-For a production macOS app with bundle ID `build.styal.app`:
-
-1. Create an explicit macOS App ID in the Apple Developer portal with **Associated Domains**.
-2. Create a provisioning profile for that App ID and the distribution signing certificate.
-3. In Clerk's Native API settings, add an iOS app with the same Apple Team ID and bundle ID.
-   This setting also configures Electron/macOS passkeys.
-4. Check `https://<frontend-api>/.well-known/apple-app-site-association`. Its
-   `webcredentials.apps` must include `<TEAM_ID>.build.styal.app`.
-5. Configure signing as described in the [release runbook](./release.md#2-apple-signing--notarization-setup-macos).
-
-Local signed builds additionally use:
-
-```dotenv
-T3CODE_APPLE_TEAM_ID=ABC1234567
-T3CODE_MACOS_PROVISIONING_PROFILE=/absolute/path/to/t3code.provisionprofile
-# Override only when the RP domain differs from the Clerk Frontend API hostname.
-T3CODE_CLERK_PASSKEY_RP_DOMAINS=example.clerk.accounts.dev,clerk.example.com
-```
-
-Without the override, the build derives the RP domain from the Clerk publishable key.
-After changing Associated Domains, bump the build version before rebuilding. macOS can otherwise
-reuse stale Shared Web Credentials metadata for the same app/version pair.
-
-The ordinary `dev:desktop` launcher is unsigned and cannot exercise macOS passkeys. For renderer
-HMR, install a signed build, start `vp run dev:web`, and launch the installed executable with the
-actual web and server ports. For example, with the default ports:
-
-```sh
-VITE_DEV_SERVER_URL=http://127.0.0.1:5733 \
-T3CODE_PORT=13773 \
-  "/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)"
-```
-
-Rebuild the signed app after native dependency, main-process, preload, entitlement, provisioning,
-or signing changes. Renderer edits can reuse it. Verify the installed bundle before testing:
-
-```sh
-codesign --verify --deep --strict "/Applications/T3 Code (Alpha).app"
-codesign -d --entitlements :- "/Applications/T3 Code (Alpha).app"
-```
+Desktop builds no longer need account-provider redirects, RP domains or associated domains. Their
+provisioning profile is still used for passkeys in the in-app browser.
 
 ## Restricting sign-ups
 
@@ -175,7 +83,7 @@ account id and data when they sign in by email:
 3. Restrict Clerk sign-ups, then run the import again.
 4. Set `RELAY_EMAIL_FROM_ADDRESS` and redeploy.
 
-Users without a verified Clerk email are not imported. Clients that still hold a Clerk session move
+Users without a verified Clerk email are not imported. Older transition builds that still hold a Clerk session move
 over through `/v1/auth/clerk-exchange`, which keeps the Clerk user id either way.
 
 During the transition, email sign-in checks Clerk's current verified addresses before using an
@@ -184,7 +92,7 @@ refreshes the account's email each time. A stale email is cleared if no verified
 available or its replacement belongs to another account. A Clerk outage fails with
 `upstream_unavailable`; after email-code redemption, request a new code before retrying.
 
-Ship the relay before the clients that use it. A client with email sign-in signs out of Clerk once
+Ship the relay before the clients that use it. The transition build signs out of Clerk once
 it has a relay session, so it cannot fall back to an older relay, and a signed-out user can only
 sign in once email delivery works. Deploy and verify the relay, finish the steps above on `prod`,
 and confirm a real sign-in email arrives before releasing web, desktop, mobile, or the CLI.

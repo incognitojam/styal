@@ -2,126 +2,37 @@
 
 > For maintainers. Using styal? See [docs/user](../user/).
 
-styal Link is the fork's deployment of upstream's T3 Connect. Users sign in with an emailed code
-that the relay checks itself ([email sign-in](./connect-setup.md#email-sign-in)); Clerk remains
-only so clients signed in before that can move over, and its setup below stays in place until it is
-removed. The Clerk mechanics are documented in [T3 Connect setup](./connect-setup.md). This page is the styal-specific configuration:
-the values our deployment uses and where each one has to be set. It describes the intended
-configuration; when reality drifts from it, fix reality.
-
-Product copy says **styal Link**. The fork exposes it as `styal link`; the old `connect` spelling is
-an unlisted compatibility alias. Protocol and code identifiers stay upstream-named on purpose so the fork
-stays mergeable: `T3CODE_*` environment variables, `T3Connect*`
-component names, the `t3-connect` Clerk profile page URL, `[t3-connect]` log tags, the `t3-relay`
-JWT template, and the `t3-code-relay` audience.
+styal Link is the fork's deployment of T3 Connect. The relay owns email sign-in and sessions.
+[Sign-in setup](./connect-setup.md) owns email rollout and legacy relay compatibility;
+this page records the deployment's public configuration.
 
 ## Fixed values
 
-| Value                   | styal                                                                                                                                    | Decided in                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Hosted app origin       | `https://app.styal.build`                                                                                                                | `DEFAULT_HOSTED_APP_URL`, `packages/shared/src/connectAuth.ts`           |
-| CLI OAuth redirect URIs | `http://127.0.0.1:34338/callback`                                                                                                        | `CLOUD_CLI_OAUTH_LOOPBACK_PORT`, `apps/server/src/cloud/publicConfig.ts` |
-| Desktop redirect URIs   | `styal-dev://app/` (dev), `styal-preview://app/` (PR previews), `styal://app/` (packaged)                                                | `apps/desktop`, see connect-setup.md                                     |
-| macOS bundle ID         | `build.styal.app`, `build.styal.app.preview` (PR previews)                                                                               | `DESKTOP_APP_ID`, `scripts/build-desktop-artifact.ts`                    |
-| Clerk application       | `styal` (`app_3IPih12l7JcyeHP2MlqFOESKdGN`)                                                                                              | Clerk Dashboard                                                          |
-| Relay                   | `https://relay.styal.build`, deployed by `deploy-relay.yml` on relay changes to main                                                     | `infra/relay/README.md`                                                  |
-| Development relay       | `https://relay-dev.styal.build` (stage `dev`, development Clerk), deployed after the production relay                                    | `deploy-relay.yml`                                                       |
-| Relay database          | Neon project `styal-relay` (`divine-frog-52827132`, `aws-eu-west-2`): prod adopts its `production` branch, dev stages fork Neon branches | `infra/relay/src/db.ts`                                                  |
-| Relay API zone          | `styal.build` (`RELAY_API_ZONE_NAME`), so the relay serves `relay.styal.build`                                                           | `production` environment variable                                        |
-| Managed tunnel zone     | `styal.link` (`RELAY_TUNNEL_ZONE_NAME`)                                                                                                  | `production` environment variable                                        |
-
-Tunnel endpoints (`prod-<digest>.styal.link`) terminate at servers that styal users control, so they
-live on a registrable domain of their own, never under `styal.build`: the production Clerk instance
-sets cookies on the product root domain, and a shared eTLD+1 would send those session cookies to any
-tunnel host a browser touches. Keep it that way.
-The tunnel zone apex redirects visitors to the styal GitHub repository; managed tunnel hostnames do not redirect.
-
-## Clerk
-
-One Clerk application, `styal`, with a development and a production instance. Following upstream's
-model, production backs everything CI builds — the hosted app, releases, macOS previews — plus
-mobile; development backs local source builds and `styal-dev://` desktop dev builds only. Configure both instances identically except where noted. The
-[`clerk` CLI](https://clerk.com/docs/cli) (`bunx clerk@latest`) is the fastest route; pass
-`--app app_3IPih12l7JcyeHP2MlqFOESKdGN --instance dev|prod` explicitly and `--dry-run` every
-mutation first.
-
-1. **Email sign-up must be required.** The instances use email-code sign-in with no social
-   providers, and Clerk renders an empty sign-up card unless `email_address` is also _required_
-   (Dashboard: User & authentication → Email). Enabled-but-optional looks configured and is not.
-2. **JWT template** named `t3-relay` with claims `{ "aud": "t3-code-relay" }`
-   ([connect-setup.md § JWT template](./connect-setup.md#jwt-template)). Check with
-   `clerk api /jwt_templates`.
-3. **CLI OAuth application** named `styal CLI`
-   ([connect-setup.md § CLI OAuth application](./connect-setup.md#cli-oauth-application)):
-   public client (PKCE), scopes `openid profile email offline_access`, the redirect URI from the
-   table above, and `device_authorization_grant_enabled`. Only CLIs from before email sign-in use
-   it, for `styal link --headless` and SSH; current CLIs need the client ID and publishable key
-   to refresh a stale stored Clerk sign-in before moving it to the relay. Its client ID is
-   `CLERK_CLI_OAUTH_CLIENT_ID`. Check with
-   `clerk api /oauth_applications`.
-4. **Native API** for desktop
-   ([connect-setup.md § Desktop OAuth redirects](./connect-setup.md#desktop-oauth-redirects)):
-   enabled, with `styal-dev://app/` allowlisted on dev and `styal://app/` and
-   `styal-preview://app/` on prod, and the instance's `allowed_origins` set to the same schemes:
-
-   ```sh
-   clerk api /instance -X PATCH --instance dev -d '{"allowed_origins":["styal-dev://app"]}' --dry-run
-   clerk api /instance -X PATCH --instance prod -d '{"allowed_origins":["styal://app","styal-preview://app"]}' --dry-run
-   ```
-
-5. **Passkeys** (production only,
-   [connect-setup.md § Desktop passkeys](./connect-setup.md#desktop-passkeys)): an iOS app entry in Clerk's
-   Native API with our Apple Team ID and `build.styal.app`, and the AASA served from the production
-   Frontend API. The RP domain derives from the production publishable key, so the
-   `CLERK_PASSKEY_RP_DOMAINS` repository variable is only set when Clerk reports a different RP ID.
+- Hosted app: `https://app.styal.build`.
+- Production relay: `https://relay.styal.build`; development: `https://relay-dev.styal.build`.
+- API zone: `styal.build`; managed tunnel zone: `styal.link`. Keep user-controlled tunnel hosts
+  on their own registrable domain, away from product cookies.
+- Desktop bundle ids: `build.styal.app` and `build.styal.app.preview`.
 
 ## GitHub Actions configuration
 
-The four public identifiers are read as `vars.*`; they are not secrets. They are consumed at two
-scopes:
+Release and preview builds use the repository variable `RELAY_URL`, passed as `T3CODE_RELAY_URL`.
+The hosted web deployment reads its relay URL from the `production` environment. Keep both scopes
+consistent; release jobs without an environment cannot read environment variables.
+`STYAL_WEB_DOMAIN` lives on `production`. The relay README lists deployment variables and secrets.
+The relay workflow deploys `prod` on main changes affecting it, then `dev`; client release channels
+share the production relay. A preview configured for production uses real production email sign-in.
 
-| Variable                    | `deploy-web.yml` (`production` env) | Release builds and previews (no environment) |
-| --------------------------- | :---------------------------------: | :------------------------------------------: |
-| `CLERK_PUBLISHABLE_KEY`     |                  ✓                  |                      ✓                       |
-| `CLERK_JWT_TEMPLATE`        |                  ✓                  |                      ✓                       |
-| `CLERK_CLI_OAUTH_CLIENT_ID` |                  ✓                  |                      ✓                       |
-| `RELAY_URL`                 |                  ✓                  |                      ✓                       |
-| `STYAL_WEB_DOMAIN`          |   ✓ (also `VITE_HOSTED_APP_URL`)    |                                              |
-
-Release builds and previews are `fork-js-bundle.yml`, `fork-desktop-build.yml`,
-`fork-cli-archives.yml`, `fork-cli-build.yml`, and `desktop-macos-preview.yml`.
-
-Every CI build uses the **production** instance — a single relay trusts a single Clerk instance,
-so artifacts that talk to the production relay must all sign into production Clerk. Set the
-production values (`pk_live_…`, `CLERK_JWT_TEMPLATE=t3-relay`, the prod OAuth client ID, and
-`RELAY_URL` once the relay is deployed) as **repository variables**: jobs without an `environment:`
-declaration, such as the release builds and previews, see only that scope. `STYAL_WEB_DOMAIN` and the relay deployment
-values live on the `production` environment, which can also shadow the Clerk variables when they
-ever need to diverge. The preview job treats the three Clerk values as all-or-nothing (a partial
-set fails the build) and builds Link-disabled with a notice while `RELAY_URL` is unset.
-
-No client build in CI uses the development instance. It exists for local development: the
-repository-root `.env` carries its identifiers (`.env.development.example`), paired with the shared
-`dev` relay stage so dev-Clerk tokens are verified by a dev-Clerk relay. `deploy-relay.yml` deploys
-that stage after production, reusing the production environment's
-deployment and push credentials with the development instance's `CLERK_DEV_SECRET_KEY`. One APNs
-key and one Firebase service account serve both relays, because each device registers its own
-bundle ID and APNs environment. To try relay changes
-before they merge, deploy a personal stage with any stage name other than `prod` or `dev`, as
-described in [infra/relay/README.md](../../infra/relay/README.md). Personal stages, including
-`dev`, cap their Neon compute at 1 CU.
-
-Relay deployment (`deploy-relay.yml`) has its own set of variables and secrets — Cloudflare, Neon,
-optional APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
-[infra/relay/README.md § Deployment CI](../../infra/relay/README.md#deployment-ci). The hosted web
-app (`deploy-web.yml`) needs `CLOUDFLARE_ACCOUNT_ID`, `STYAL_WEB_DOMAIN`, and the
-`CLOUDFLARE_API_TOKEN` secret; see [infra/web/README.md](../../infra/web/README.md).
+GUI clients do not read Clerk configuration or exchange old credentials. The server/CLI bundle
+retains the public `CLERK_PUBLISHABLE_KEY` and `CLERK_CLI_OAUTH_CLIENT_ID` repository variables
+for SDK-free startup adoption. Keep the deployed
+relay's Clerk configuration and both Clerk instances until every older device and server has
+converted; see [legacy compatibility](./connect-setup.md#legacy-client-compatibility).
 
 ## Deployment credentials
 
-The sensitive secrets — `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `CLERK_DEV_SECRET_KEY`,
-`NEON_API_KEY` — live **only** in the `production` GitHub environment, which is
-restricted to deployments from `main`. No PR or fork workflow can read them; repository-level
+The sensitive secrets — `CLOUDFLARE_API_TOKEN`, `NEON_API_KEY`, `CLERK_SECRET_KEY`, and `CLERK_DEV_SECRET_KEY` — live **only** in the `production` GitHub environment, which is
+restricted to deployments from `main`. The Clerk keys belong only to the compatible relay, not client builds. No PR or fork workflow can read them; repository-level
 secrets hold only Apple-signing and release plumbing. Two of them have non-obvious shape
 requirements:
 
@@ -145,22 +56,14 @@ that still carries one queues forever.
 
 ## Local source builds
 
-Connect is disabled in a fresh clone. Copy `.env.development.example` to the ignored repository-root
-`.env` (or `.env.local`). It carries the development instance's identifiers and the shared
-development relay; a personal relay stage deploy overwrites the relay URL. `.env.production.example`
-holds the values CI builds with, for local builds of release artifacts only: production Clerk
-rejects sign-ins from `localhost`.
-
-Do not `cp .env.example .env`: the tracked example is upstream's and points a styal-branded build at
-T3's production Clerk instance and relay. It is left untouched so upstream picks stay clean.
-
-In styal-managed worktrees the `t3.json` setup script symlinks `$T3CODE_PROJECT_ROOT/.env` (and
-`infra/relay/.env`) into each worktree, so populate the file once in the original checkout rather
-than replacing the symlink.
+Copy `.env.development.example` to `.env.local` to build against the development relay.
+Only `T3CODE_RELAY_URL` is needed for email sign-in. Existing worktree setup may symlink env files;
+edit their original checkout rather than replacing a symlink. See the development runbook for
+isolated state. Production credentials never belong in client build files.
 
 ## Verifying a build
 
-- `styal link status` reports the expected exposure state instead of "missing public configuration".
-- `styal link login` sends a code to the email you enter and signs in once you type it.
-- The web sidebar shows **Sign in to styal Link** on `app.styal.build`, and the code from the email
-  signs in there and in the desktop app.
+Sign in with an emailed code, confirm the same machines, relaunch and confirm the session persists,
+then sign out and verify reconnect requires sign-in. CLI users run `styal link login` and
+`styal link status`. Verify against development with the agent test account and configured fixed
+code before using a released build in the production checklist.

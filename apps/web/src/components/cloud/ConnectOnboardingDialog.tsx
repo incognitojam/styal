@@ -37,7 +37,7 @@ import { WizardSteps, WizardPopup, WizardHeader, WizardPanel, WizardFooter } fro
 
 /**
  * Opens on every interactive sign-in because sign-out removes the connected relay environments.
- * Restoring a saved sign-in and silently moving a Clerk sign-in over do not count.
+ * Restoring a saved sign-in does not count.
  */
 export function ConnectOnboardingDialog() {
   if (!hasCloudPublicConfig()) return null;

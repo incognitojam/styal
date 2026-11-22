@@ -33,17 +33,17 @@ vi.mock(import("../../lib/runtime"), async (original) => ({
 }));
 // Not spread from the original: loading these pages' real modules alongside the runtime mock
 // makes vitest fail to resolve the mocks for this file.
-vi.mock(import("../clerk/T3ConnectUserProfilePage"), () => ({
+vi.mock(import("./T3ConnectUserProfilePage"), () => ({
   T3ConnectUserProfilePage: (() => null) as never,
 }));
-vi.mock(import("../clerk/MobileClientsUserProfilePage"), () => ({
+vi.mock(import("./MobileClientsUserProfilePage"), () => ({
   MobileClientsUserProfilePage: (() => null) as never,
 }));
 // The real refresh button is disabled while a load is pending; this one stays clickable so a
 // second load can start before the first finishes.
-vi.mock(import("../clerk/ClerkUserProfilePage"), async (original) => ({
+vi.mock(import("./AccountPage"), async (original) => ({
   ...(await original()),
-  ClerkUserProfileRefreshButton: (({ onClick }: { onClick: () => void }) => (
+  AccountRefreshButton: (({ onClick }: { onClick: () => void }) => (
     <button type="button" onClick={onClick}>
       Refresh
     </button>

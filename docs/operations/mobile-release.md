@@ -26,17 +26,11 @@ receive over-the-air updates through EAS Update.
 4. Configure styal Link's public settings in the Expo project's production and
    preview environments, using the existing production GitHub variables:
 
-   | GitHub variable         | EAS variable                   |
-   | ----------------------- | ------------------------------ |
-   | `CLERK_PUBLISHABLE_KEY` | `T3CODE_CLERK_PUBLISHABLE_KEY` |
-   | `CLERK_JWT_TEMPLATE`    | `T3CODE_CLERK_JWT_TEMPLATE`    |
-   | `RELAY_URL`             | `T3CODE_RELAY_URL`             |
-
-   Both distributed variants use production styal Link; local development uses
-   the development configuration described in [styal Link](./styal-link.md).
-   Register `build.styal.app` with the signing team in Clerk's production Native
-   API settings. Verify that its Apple association file includes the app under
-   `webcredentials.apps` before testing native passkeys.
+   Set EAS `T3CODE_RELAY_URL` from GitHub `RELAY_URL`. Both distributed variants use
+   production styal Link; local development uses the development configuration described in
+   [styal Link](./styal-link.md). Sign-in uses an emailed code and needs no Clerk SDK,
+   public key, native callback registration, or associated domain. Removing the SDK requires a
+   new native binary; an OTA update cannot remove native code.
    Notification delivery needs separate push credentials and relay configuration;
    enabling the iOS push entitlement alone does not configure delivery.
 
@@ -55,8 +49,7 @@ eas credentials:configure-build --platform android --profile production
 
 The iOS app and its two extensions can share one distribution certificate, but
 each needs its own App Store provisioning profile. Verify that all three contain
-`group.build.styal.app`; the main app also needs production push notifications
-and Sign in with Apple entitlements.
+`group.build.styal.app`; the main app also needs production push notifications.
 
 Configure upload credentials separately with `eas credentials --platform ios`.
 Select `production`, then **App Store Connect → Set up your project to use an API

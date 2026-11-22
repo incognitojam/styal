@@ -33,7 +33,6 @@ vi.mock("./dpop", async (original) => ({
   ) => Effect.suspend(() => state.storage!.transaction(mode, run)),
 }));
 vi.mock("./publicConfig", () => ({
-  hasLegacyClerkConfig: () => false,
   resolveCloudPublicConfig: () => ({ relayUrl: "https://relay.example.test" }),
 }));
 vi.mock("../lib/runtime", () => ({
@@ -49,10 +48,8 @@ vi.mock("../lib/runtime", () => ({
 }));
 
 import {
-  adoptClerkSession,
   deleteRelayAccount,
   restoreRelaySession,
-  setLegacyClerkSignOut,
   signOutOfRelay,
   verifyEmailSignIn,
 } from "./relaySession";
@@ -80,14 +77,12 @@ function signIn(id: string) {
     email: `${id}@example.test`,
   };
 }
-const exchange = vi.fn(() => Effect.succeed(signIn("old-account")));
 const verify = vi.fn(() => Effect.succeed(signIn("new-account")));
 const revoke = vi.fn(() => Effect.void);
 const remove = vi.fn(() => Effect.void);
 const thumbprint = vi.fn(() => Effect.succeed("synthetic-key"));
 const client = {
   verifyEmailSignIn: verify,
-  exchangeClerkSession: exchange,
   signOut: revoke,
   deleteAccount: remove,
 };
@@ -134,61 +129,16 @@ beforeEach(() => {
   watchOtherTabs(() => undefined);
   // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Exercise the real Promise-based startup entry point using the same test services.
   state.runExit = (effect) => Effect.runPromiseExit(provide(effect));
-  exchange.mockImplementation(() => Effect.succeed(signIn("old-account")));
   verify.mockImplementation(() => Effect.succeed(signIn("new-account")));
   revoke.mockClear();
   remove.mockImplementation(() => Effect.void);
   thumbprint.mockImplementation(() => Effect.succeed("synthetic-key"));
-  setLegacyClerkSignOut(null);
   publishRelaySession(null);
   appAtomRegistry.set(interactiveRelaySignInAtom, null);
   appAtomRegistry.set(managedRelayAuthLoadAtom, "loading");
 });
 
 describe("relay session lifecycle", () => {
-  it.effect("discards and signs out a delayed adoption after an email sign-in wins", () =>
-    Effect.gen(function* () {
-      const pending = barrier();
-      exchange.mockImplementation(() =>
-        Effect.promise(async () => {
-          await pending.wait();
-          return signIn("old-account");
-        }),
-      );
-      const adoption = yield* provide(adoptClerkSession("synthetic-clerk-token")).pipe(
-        Effect.forkChild,
-      );
-      yield* Effect.promise(() => pending.entered);
-      expect(yield* emailSignIn()).toBe(true);
-      pending.release();
-      yield* Fiber.join(adoption);
-      expectCurrent("new-account");
-      expect(revoke).toHaveBeenCalledWith({ credential: signIn("old-account").credential });
-    }),
-  );
-
-  it.effect("cannot resurrect an exchanged session after explicit sign-out", () =>
-    Effect.gen(function* () {
-      const pending = barrier();
-      exchange.mockImplementation(() =>
-        Effect.promise(async () => {
-          await pending.wait();
-          return signIn("old-account");
-        }),
-      );
-      const adoption = yield* provide(adoptClerkSession("synthetic-clerk-token")).pipe(
-        Effect.forkChild,
-      );
-      yield* Effect.promise(() => pending.entered);
-      yield* emailSignIn();
-      yield* provide(signOutOfRelay);
-      pending.release();
-      yield* Fiber.join(adoption);
-      expectCurrent(null);
-      expect(state.storage!.records.get("relay-session-clerk-retired")).toBe(true);
-    }),
-  );
-
   it.effect("does not publish a stale restore after resolving its key", () =>
     Effect.gen(function* () {
       state.storage!.records.set("relay-session", record("old-account"));
@@ -234,7 +184,6 @@ describe("relay session lifecycle", () => {
       publishRelaySession(record("old-account"));
       yield* updateRelaySessionState(() => ({
         session: record("new-account"),
-        clerkRetired: true,
       }));
       yield* endRelaySession(signIn("old-account").credential);
       expectCurrent("new-account");
@@ -346,42 +295,6 @@ describe("relay session lifecycle", () => {
       expect(yield* emailSignIn()).toBe(false);
       expectCurrent(null);
       expect(appAtomRegistry.get(interactiveRelaySignInAtom)).toBeNull();
-    }),
-  );
-
-  it.effect("rejects an adoption superseded by a different tab's persisted generation", () =>
-    Effect.gen(function* () {
-      const pending = barrier();
-      exchange.mockImplementation(() =>
-        Effect.promise(async () => {
-          await pending.wait();
-          return signIn("old-account");
-        }),
-      );
-      const adoption = yield* provide(adoptClerkSession("synthetic-clerk-token")).pipe(
-        Effect.forkChild,
-      );
-      yield* Effect.promise(() => pending.entered);
-      yield* updateRelaySessionState(() => ({
-        session: record("new-account"),
-        clerkRetired: true,
-      }));
-      publishRelaySession(record("new-account"));
-      pending.release();
-      yield* Fiber.join(adoption);
-      expectCurrent("new-account");
-      expect(revoke).toHaveBeenCalledWith({ credential: signIn("old-account").credential });
-    }),
-  );
-
-  it.effect("adopts silently and retires Clerk without requesting onboarding", () =>
-    Effect.gen(function* () {
-      const clerkSignOut = vi.fn(async () => undefined);
-      setLegacyClerkSignOut(clerkSignOut);
-      yield* provide(adoptClerkSession("synthetic-clerk-token"));
-      expectCurrent("old-account");
-      expect(appAtomRegistry.get(interactiveRelaySignInAtom)).toBeNull();
-      expect(clerkSignOut).toHaveBeenCalledOnce();
     }),
   );
 

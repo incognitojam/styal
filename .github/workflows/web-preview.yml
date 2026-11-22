@@ -13,7 +13,7 @@ name: Web Preview
 # Account > Workers Scripts: Edit, stored as CLOUDFLARE_API_TOKEN on the
 # `web-preview` environment.
 #
-# The build omits the styal Link configuration (Clerk keys, relay URL), so
+# The build omits the styal Link configuration (relay URL), so
 # previews boot as the hosted app with manual pairing only. Pair a server with
 # `styal pair --tailscale` (or any reachable HTTPS backend) and open the
 # pairing URL against the preview origin. Vite bakes the preview URL in as the

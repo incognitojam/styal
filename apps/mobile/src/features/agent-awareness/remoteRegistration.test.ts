@@ -966,7 +966,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
           relayUrl: "https://relay.example.test",
           startEmailSignIn: unexpected,
           verifyEmailSignIn: unexpected,
-          exchangeClerkSession: unexpected,
           signOut: unexpected,
           getAccount: unexpected,
           listSessions: unexpected,

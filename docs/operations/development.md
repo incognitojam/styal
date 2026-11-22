@@ -425,7 +425,7 @@ see the [release runbook](./release.md#windows-payload-topology-and-update-valid
 
 Add `--signed` after configuring the platform credentials in the
 [release runbook](./release.md). macOS passkeys need a signed, provisioned app; follow the
-[Connect setup](./connect-setup.md#desktop-passkeys) for local signing and renderer HMR.
+[release runbook](./release.md#2-apple-signing--notarization-setup-macos) for signing capabilities.
 
 ## PR previews
 

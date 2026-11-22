@@ -37,11 +37,6 @@ catalog:
   "@alchemy.run/neon": 2.0.0-beta.85
   "@alchemy.run/test": 2.0.0-beta.85
   "@clerk/backend": 3.27.0
-  "@clerk/clerk-js": 6.42.3
-  "@clerk/electron": 0.1.10
-  "@clerk/electron-passkeys": 0.0.3
-  "@clerk/expo": 4.15.1
-  "@clerk/react": 6.18.6
   "@clerk/shared": 4.44.1
   # Must match the version alchemy depends on: the relay overrides its
   # Cloudflare retry policy through this package's Retry service.
@@ -105,7 +100,7 @@ catalog:
 overrides:
   # Pin every patched package, including transitive dependencies, so lockfile-free
   # release installs cannot drift past the patch. Update these with patchedDependencies.
-  # Catalog packages pin through the catalog; @clerk/expo, @effect/vitest,
+  # Catalog packages pin through the catalog; @effect/vitest,
   # @expo/metro-config and expo-modules-core are pinned below.
   micromark: 4.0.2
   mdast-util-to-hast: 13.2.1
@@ -160,15 +155,6 @@ overrides:
   "@posthog/rollup-plugin>@posthog/cli": "-"
   "@posthog/rollup-plugin>rollup": "-"
   "@clerk/backend": "catalog:"
-  "@clerk/clerk-js": "catalog:"
-  "@clerk/clerk-js>@base-org/account": "-"
-  "@clerk/clerk-js>@coinbase/wallet-sdk": "-"
-  "@clerk/clerk-js>@wallet-standard/core": "-"
-  "@clerk/electron": "catalog:"
-  "@clerk/electron-passkeys": "catalog:"
-  "@clerk/expo": "catalog:"
-  "@clerk/expo-native-components": 0.4.4
-  "@clerk/react": "catalog:"
   "@clerk/shared": "catalog:"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
@@ -233,12 +219,6 @@ overrides:
   "@vercel/config>zod": 4.6.7
 
 packageExtensions:
-  "@clerk/expo@*":
-    dependencies:
-      "@expo/config-plugins": 58.0.12
-  "@clerk/expo-native-components@*":
-    dependencies:
-      "@expo/config-plugins": 58.0.12
   # Our patch makes @effect/vitest import vite-plus/test. A catalog: spec here
   # resolves through the vite-plus override above.
   "@effect/vitest@*":
@@ -255,7 +235,6 @@ patchedDependencies:
   expo-audio@58.0.11: patches/expo-audio@58.0.11.patch
   expo-video@58.0.13: patches/expo-video@58.0.13.patch
   expo-network@58.0.4: patches/expo-network@58.0.4.patch
-  "@clerk/expo-native-components@0.4.4": patches/@clerk__expo-native-components@0.4.4.patch
   # Staple retries never ran: the promise-retry callback ignored `retry`. Fixed in @electron/notarize 3.x, but electron-builder pins 2.5.0.
   "@electron/notarize@2.5.0": patches/@electron__notarize@2.5.0.patch
   "@alchemy.run/test@2.0.0-beta.85": patches/@alchemy.run__test@2.0.0-beta.85.patch

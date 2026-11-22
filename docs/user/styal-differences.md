@@ -16,7 +16,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   the code into the terminal. A sign-in lasts while you keep using it, up to 90 days without use,
   and your account lists every signed-in device so you can sign any of them out. T3 Code signs in
   through Clerk, so a sign-in ends when Clerk's maximum session lifetime runs out, as of
-  [revision 9c16146](https://github.com/pingdotgg/t3code/tree/9c161462c94f7d9d6d9169da5c841457cbadf213).
+  [revision 1ffa099](https://github.com/pingdotgg/t3code/tree/1ffa099e7fbf0037dbffb6fb72b7585c933be24a).
+  The web, desktop, and mobile apps no longer include Clerk. Updating a device that has not
+  converted asks you to sign in by email; use the same address to see your machines again.
   [styal Link](./remote-access.md#styal-link).
 
 ## Agent permissions
@@ -39,7 +41,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Physical Android phones stay awake, with the screen dark, while in use.** A phone plugged into an environment stays awake while a thread holds it, so its stream never goes black from the phone sleeping, and its screen stays off unless you turn that setting off. Streaming and input keep working, and the phone returns to normal when no thread holds it. T3 Code leaves the phone's screen on and lets it sleep as of [revision 9826dbb](https://github.com/pingdotgg/t3code/tree/9826dbb9904b2591bfbf60d1317486b59132f56b), checked October 28, 2026. [Physical Android devices](./devices.md#physical-android-devices).
 
-- **Agents lease network hardware one thread at a time.** Register a device with an HTTP API, such as a microcontroller, and agents read it freely, need a lease to change it, and wait for your approval before actions its repository marks as risky, even in full-access threads. Leases survive between turns, show who holds them, and always run the device's cleanup when they end; scripts reach the leased device through a local proxy. T3 Code has no hardware leases as of [revision 9c16146](https://github.com/pingdotgg/t3code/tree/9c161462c94f7d9d6d9169da5c841457cbadf213). [Hardware](./hardware.md).
+- **Agents lease network hardware one thread at a time.** Register a device with an HTTP API, such as a microcontroller, and agents read it freely, need a lease to change it, and wait for your approval before actions its repository marks as risky, even in full-access threads. Leases survive between turns, show who holds them, and always run the device's cleanup when they end; scripts reach the leased device through a local proxy. T3 Code has no hardware leases as of [revision 1ffa099](https://github.com/pingdotgg/t3code/tree/1ffa099e7fbf0037dbffb6fb72b7585c933be24a). [Hardware](./hardware.md).
 
 ## Mobile
 

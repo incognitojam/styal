@@ -1,6 +1,5 @@
 import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
-import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
@@ -16,10 +15,6 @@ const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const appleTeamId = repoEnv.APPLE_TEAM_ID?.trim();
 const easProjectId = repoEnv.EXPO_PROJECT_ID?.trim();
 const expoOwner = repoEnv.EXPO_OWNER?.trim();
-const clerkPublishableKey = repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
-const clerkFrontendApiHostname = clerkPublishableKey
-  ? clerkFrontendApiHostnameFromPublishableKey(clerkPublishableKey)
-  : undefined;
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
@@ -258,11 +253,6 @@ const config: ExpoConfig = {
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
     ...(appleTeamId ? { appleTeamId } : {}),
-    // This follows the configured Clerk instance, but it only validates once
-    // that instance's AASA includes styal's build.styal.app bundle IDs.
-    associatedDomains: clerkFrontendApiHostname
-      ? [`applinks:${clerkFrontendApiHostname}`, `webcredentials:${clerkFrontendApiHostname}`]
-      : [],
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
     },
@@ -357,8 +347,6 @@ const config: ExpoConfig = {
         mode: APP_VARIANT === "development" ? "development" : "production",
       },
     ],
-    // Gate Clerk here: withoutIosPersonalTeamCapabilities runs too early to strip its entitlement.
-    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],
     "expo-web-browser",
     [
       "expo-quick-actions",
@@ -457,15 +445,6 @@ const config: ExpoConfig = {
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
     },
-    clerk: {
-      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
-    },
-    // Clerk reads these exact names at prebuild. Omit unset values: manifest null becomes truthy {}.
-    EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
     observability: {
       tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? null,
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,

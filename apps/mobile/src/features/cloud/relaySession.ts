@@ -1,7 +1,5 @@
-import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import { ManagedRelay, managedRelayAuthLoadAtom } from "@t3tools/client-runtime/relay";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 
 import { runtime } from "../../lib/runtime";
@@ -12,7 +10,7 @@ import {
   stopAgentAwarenessRegistration,
   unregisterAgentAwarenessDeviceForCurrentUser,
 } from "../agent-awareness/remoteRegistration";
-import { hasLegacyClerkConfig, resolveCloudPublicConfig } from "./publicConfig";
+import { resolveCloudPublicConfig } from "./publicConfig";
 import { migrateRelayKeychainAccessibility } from "./relayKeychain";
 import {
   beginRelaySessionOperation,
@@ -20,12 +18,10 @@ import {
   finishRelaySessionOperation,
   hasPendingRelaySessionOperation,
   isCurrentRelaySessionOperation,
-  legacyClerkAdoptionAllowed,
   loadStoredRelaySession,
   publishRelaySignIn,
   readRelaySignInSession,
   relaySignInAtom,
-  retireLegacyClerk,
   saveStoredRelaySession,
   withRelaySessionMutation,
   RelaySessionStoreError,
@@ -54,23 +50,18 @@ const restore = Effect.fn("relaySession.restore")(function* (generation: number)
   );
   if (!isCurrentRelaySessionOperation(generation)) return null;
   const relayUrl = resolveCloudPublicConfig().relay.url;
-  if (relayUrl === null) return { stored: null, adoptClerk: false };
+  if (relayUrl === null) return { stored: null };
   const stored = yield* loadStoredRelaySession;
   if (!isCurrentRelaySessionOperation(generation)) return null;
-  if (stored === null) {
-    return {
-      stored: null,
-      adoptClerk: hasLegacyClerkConfig() && (yield* legacyClerkAdoptionAllowed),
-    };
-  }
+  if (stored === null) return { stored: null };
   const thumbprint = yield* currentThumbprint;
   if (!isCurrentRelaySessionOperation(generation)) return null;
   if (stored.relayUrl !== relayUrl || stored.thumbprint !== thumbprint) {
     // Signed in against another relay, or the key it was bound to is gone.
     yield* clearStoredRelaySession;
-    return { stored: null, adoptClerk: false };
+    return { stored: null };
   }
-  return { stored, adoptClerk: false };
+  return { stored };
 });
 
 function markFailed(): void {
@@ -82,9 +73,7 @@ let restoring: Promise<void> | null = null;
 
 /**
  * Loads the saved sign-in. Runs at startup and again on foreground after a
- * failure. It only reads local storage, so it works offline. Without a saved
- * sign-in, a build that still has Clerk settings moves to "adopting" so an
- * older Clerk sign-in can be moved over first.
+ * failure. It only reads local storage, so it works offline.
  */
 export function restoreRelaySession(): Promise<void> {
   if (restoring !== null) return restoring;
@@ -107,13 +96,6 @@ export function restoreRelaySession(): Promise<void> {
         return;
       }
       if (exit.value === null) return;
-      if (exit.value.adoptClerk) {
-        // Adoption starts its own operation and skips while one is pending, and
-        // it can react to "adopting" right away, so finish this one first.
-        finishRelaySessionOperation(generation);
-        appAtomRegistry.set(relaySignInAtom, { status: "adopting" });
-        return;
-      }
       publishRelaySignIn(exit.value.stored);
     })
     .finally(() => {
@@ -144,26 +126,11 @@ const saveSignIn = Effect.fnUntraced(function* (
       };
       yield* saveStoredRelaySession(record);
       if (!isCurrentRelaySessionOperation(generation)) return false;
-      yield* retireLegacyClerk.pipe(
-        Effect.catch((error) => Effect.logWarning("Could not record the Clerk move.", { error })),
-      );
-      if (!isCurrentRelaySessionOperation(generation)) return false;
       resumeAgentAwarenessRegistration();
       publishRelaySignIn(record);
       return true;
     }),
   );
-});
-
-let legacyClerkSignOut: (() => Promise<void>) | null = null;
-
-/** Registered while Clerk is mounted, so leaving styal Link also leaves Clerk. */
-export function setLegacyClerkSignOut(signOut: (() => Promise<void>) | null): void {
-  legacyClerkSignOut = signOut;
-}
-
-const signOutOfLegacyClerk = Effect.promise(async () => {
-  await legacyClerkSignOut?.().catch(() => undefined);
 });
 
 export const startEmailSignIn = (email: string) =>
@@ -188,7 +155,6 @@ export const verifyEmailSignIn = (input: { readonly email: string; readonly code
         yield* discardSignIn(signIn);
         return;
       }
-      yield* signOutOfLegacyClerk;
     }).pipe(
       Effect.tapError(() =>
         Effect.sync(() => {
@@ -202,109 +168,6 @@ export const verifyEmailSignIn = (input: { readonly email: string; readonly code
       Effect.ensuring(Effect.sync(() => finishRelaySessionOperation(generation))),
     );
   });
-
-/** Only an explicit rejection of the Clerk bearer establishes that it cannot be moved. */
-const isRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
-
-function isClerkCredentialRejected(error: unknown): boolean {
-  if (!isRelayRequestFailedError(error)) return false;
-  return (
-    error.transportFailed !== true &&
-    error.relayError?._tag === "RelayAuthInvalidError" &&
-    error.relayError.reason === "invalid_bearer"
-  );
-}
-
-let adoptingGeneration: number | null = null;
-
-/** Moves an older Clerk sign-in, retaining it when local or relay work can be retried. */
-export async function adoptClerkSession(readClerkToken: () => Promise<string | null>) {
-  if (
-    appAtomRegistry.get(relaySignInAtom).status !== "adopting" ||
-    hasPendingRelaySessionOperation()
-  )
-    return;
-  const generation = beginRelaySessionOperation();
-  adoptingGeneration = generation;
-  try {
-    const clerkToken = await readClerkToken().catch(() => undefined);
-    if (!isCurrentRelaySessionOperation(generation)) return;
-    if (clerkToken == null) {
-      markFailed();
-      return;
-    }
-    const exit = await runtime.runPromiseExit(
-      relayClient.pipe(
-        Effect.flatMap((client) =>
-          isCurrentRelaySessionOperation(generation)
-            ? client.exchangeClerkSession({ clerkToken, label: sessionLabel() })
-            : Effect.succeed(null),
-        ),
-        Effect.flatMap((signIn) =>
-          Effect.gen(function* () {
-            if (signIn === null) return;
-            const saved = yield* saveSignIn(signIn, generation);
-            if (!saved || !isCurrentRelaySessionOperation(generation)) yield* discardSignIn(signIn);
-          }),
-        ),
-      ),
-    );
-    if (!isCurrentRelaySessionOperation(generation)) return;
-    if (exit._tag === "Success") {
-      await runtime.runPromise(signOutOfLegacyClerk);
-      return;
-    }
-    console.warn("[styal-link] Could not move the Clerk sign-in to the relay", exit.cause);
-    if (!isClerkCredentialRejected(Cause.squash(exit.cause))) {
-      markFailed();
-      return;
-    }
-    await runtime.runPromise(signOutOfLegacyClerk);
-    if (!isCurrentRelaySessionOperation(generation)) return;
-    await runtime.runPromise(
-      withRelaySessionMutation(
-        Effect.sync(() => {
-          if (isCurrentRelaySessionOperation(generation)) publishRelaySignIn(null);
-        }),
-      ),
-    );
-  } finally {
-    if (adoptingGeneration === generation) adoptingGeneration = null;
-    finishRelaySessionOperation(generation);
-  }
-}
-
-/** Settles adoption when Clerk has confirmed there is no sign-in to move. */
-export function finishClerkAdoptionSignedOut(): Promise<void> {
-  if (appAtomRegistry.get(relaySignInAtom).status !== "adopting") return Promise.resolve();
-  if (
-    hasPendingRelaySessionOperation() &&
-    (adoptingGeneration === null || !isCurrentRelaySessionOperation(adoptingGeneration))
-  )
-    return Promise.resolve();
-  const generation = beginRelaySessionOperation();
-  return runtime
-    .runPromise(
-      withRelaySessionMutation(
-        Effect.sync(() => {
-          if (isCurrentRelaySessionOperation(generation)) publishRelaySignIn(null);
-        }),
-      ),
-    )
-    .finally(() => finishRelaySessionOperation(generation));
-}
-
-/** Cancels a pending move when Clerk cannot load, allowing explicit email sign-in. */
-export function failClerkAdoption(): void {
-  if (appAtomRegistry.get(relaySignInAtom).status !== "adopting") return;
-  if (
-    hasPendingRelaySessionOperation() &&
-    (adoptingGeneration === null || !isCurrentRelaySessionOperation(adoptingGeneration))
-  )
-    return;
-  finishRelaySessionOperation(beginRelaySessionOperation());
-  markFailed();
-}
 
 /** Stops registration before removing the device and ending this device's session. */
 export const signOutOfRelay = Effect.suspend(() => {
@@ -338,7 +201,6 @@ export const signOutOfRelay = Effect.suspend(() => {
         publishRelaySignIn(null);
       }),
     );
-    if (isCurrentRelaySessionOperation(generation)) yield* signOutOfLegacyClerk;
   }).pipe(Effect.ensuring(Effect.sync(() => finishRelaySessionOperation(generation))));
 });
 
@@ -365,7 +227,6 @@ export const deleteRelayAccount = Effect.suspend(() => {
         publishRelaySignIn(null);
       }),
     );
-    if (isCurrentRelaySessionOperation(generation)) yield* signOutOfLegacyClerk;
   }).pipe(
     Effect.tapError(() =>
       Effect.sync(() => {

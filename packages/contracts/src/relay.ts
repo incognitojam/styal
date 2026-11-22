@@ -1329,7 +1329,7 @@ export const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
     "Signs in, creating the account on first sign-in, and returns a session credential bound to the proof key plus an access token.",
   );
 
-export const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
+const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
   "exchangeClerkSession",
   "/v1/auth/clerk-exchange",
   {

@@ -40,7 +40,7 @@ const restore = Effect.gen(function* () {
           current.session !== null &&
           (current.session.relayUrl !== relayUrl || current.session.thumbprint !== thumbprint)
         )
-          return { session: null, clerkRetired: true };
+          return { session: null };
         return null;
       });
       // A restore from before a new intent must not publish its old snapshot.
@@ -66,7 +66,6 @@ export function restoreRelaySession(): Promise<void> {
 const beginInteractiveChange = withRelaySessionLock(
   updateRelaySessionState((state) => ({
     session: state.session,
-    clerkRetired: true,
     generation: state.generation + 1,
   })),
 ).pipe(Effect.map(({ state }) => state));
@@ -74,7 +73,6 @@ const beginInteractiveChange = withRelaySessionLock(
 const saveSignIn = Effect.fnUntraced(function* (
   signIn: ManagedRelay.ManagedRelaySignIn,
   generation: number,
-  interactive: boolean,
 ) {
   const relayUrl = resolveCloudPublicConfig().relayUrl;
   if (relayUrl === null) return false;
@@ -89,15 +87,11 @@ const saveSignIn = Effect.fnUntraced(function* (
   return yield* withRelaySessionLock(
     Effect.gen(function* () {
       const { changed, state } = yield* updateRelaySessionState((state) =>
-        state.generation === generation &&
-        (interactive || (!state.clerkRetired && state.session === null))
-          ? { session: record, clerkRetired: true }
-          : null,
+        state.generation === generation ? { session: record } : null,
       );
       if (!changed) return false;
       return yield* publishRelaySessionIfCurrent(state.revision, () => {
-        if (interactive)
-          appAtomRegistry.set(interactiveRelaySignInAtom, { accountId: record.accountId });
+        appAtomRegistry.set(interactiveRelaySignInAtom, { accountId: record.accountId });
       });
     }),
   );
@@ -119,40 +113,16 @@ export const verifyEmailSignIn = Effect.fn("relaySession.verifyEmailSignIn")(fun
   const { generation } = yield* beginInteractiveChange;
   const client = yield* relayClient;
   const signIn = yield* client.verifyEmailSignIn({ ...input, label: sessionLabel() });
-  const saved = yield* saveSignIn(signIn, generation, true);
-  if (saved) yield* signOutOfLegacyClerk;
-  else yield* discardSignIn(signIn);
+  const saved = yield* saveSignIn(signIn, generation);
+  if (!saved) yield* discardSignIn(signIn);
   return saved;
-});
-
-let legacyClerkSignOut: (() => Promise<void>) | null = null;
-
-/** Registered while Clerk is mounted, so leaving styal Link also leaves Clerk. */
-export function setLegacyClerkSignOut(signOut: (() => Promise<void>) | null): void {
-  legacyClerkSignOut = signOut;
-}
-
-const signOutOfLegacyClerk = Effect.promise(async () => {
-  await legacyClerkSignOut?.().catch(() => undefined);
-});
-
-/** Moves a Clerk sign-in silently, provided no newer lifecycle intent won. */
-export const adoptClerkSession = Effect.fn("relaySession.adoptClerkSession")(function* (
-  clerkToken: string,
-) {
-  const snapshot = yield* withRelaySessionLock(readRelaySessionState);
-  if (snapshot.session !== null || snapshot.clerkRetired) return;
-  const client = yield* relayClient;
-  const signIn = yield* client.exchangeClerkSession({ clerkToken, label: sessionLabel() });
-  if (yield* saveSignIn(signIn, snapshot.generation, false)) yield* signOutOfLegacyClerk;
-  else yield* discardSignIn(signIn);
 });
 
 const clearIfCurrent = (generation: number) =>
   withRelaySessionLock(
     Effect.gen(function* () {
       const { state, changed } = yield* updateRelaySessionState((current) =>
-        current.generation === generation ? { session: null, clerkRetired: true } : null,
+        current.generation === generation ? { session: null } : null,
       );
       if (changed) {
         yield* publishRelaySessionIfCurrent(state.revision);
@@ -163,7 +133,6 @@ const clearIfCurrent = (generation: number) =>
 /** Removes the local sign-in even when remote sign-out fails. */
 export const signOutOfRelay = Effect.gen(function* () {
   const { session, generation } = yield* beginInteractiveChange;
-  yield* signOutOfLegacyClerk;
   yield* clearIfCurrent(generation);
   if (session !== null) {
     const client = yield* relayClient;
@@ -185,6 +154,5 @@ export const deleteRelayAccount = Effect.gen(function* () {
   yield* client.deleteAccount({
     credential: { accountId: session.accountId, refreshToken: session.refreshToken },
   });
-  yield* signOutOfLegacyClerk;
   yield* clearIfCurrent(generation);
 });

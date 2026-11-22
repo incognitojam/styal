@@ -46,8 +46,6 @@ describe("hostedPairing", () => {
     vi.stubEnv("VITE_HOSTED_APP_URL", "");
     vi.stubEnv("VITE_HTTP_URL", "");
     vi.stubEnv("VITE_WS_URL", "");
-    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
-    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
     vi.stubEnv("VITE_T3CODE_RELAY_URL", "");
 
     expect(isHostedStaticApp(new URL("https://app.styal.build/"))).toBe(true);

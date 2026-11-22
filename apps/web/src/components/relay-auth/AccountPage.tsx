@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
-export function ClerkUserProfilePage({
+export function AccountPage({
   action,
   children,
   className,
@@ -37,7 +37,7 @@ export function ClerkUserProfilePage({
   );
 }
 
-export function ClerkUserProfileRefreshButton({
+export function AccountRefreshButton({
   className,
   disabled = false,
   isPending,
@@ -62,7 +62,7 @@ export function ClerkUserProfileRefreshButton({
   );
 }
 
-export function ClerkUserProfileRow({
+export function AccountRow({
   children,
   className,
   icon,

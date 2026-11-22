@@ -1,7 +1,7 @@
 # T3 Connect
 
 The relay is the identity provider for cloud accounts: users sign in with an
-emailed code, and Clerk remains only for clients that have not moved over yet
+emailed code, and Clerk remains only for older client binaries that have not moved over yet
 (see [Relay sessions](#relay-sessions)). The relay manages environment links,
 credentials for reaching environments, and managed tunnel allocations. After
 bootstrap, clients send application traffic through the environment's tunnel
@@ -40,7 +40,7 @@ read-once bodies of up to 1 MiB that need per-link order, caps, and retry
 timing. Queues cap messages at 128 KB and cannot hold one link's requests back
 while its environment is away.
 
-Clerk, deployment, and native authentication setup live in the
+Deployment and email sign-in setup live in the
 [Connect setup runbook](../operations/connect-setup.md).
 
 ## The relay is a trusted broker
@@ -209,23 +209,14 @@ row would get a new id and lose their links.
 
 ## Moving off Clerk
 
-Clients that still hold a Clerk sign-in exchange it once at
-`/v1/auth/clerk-exchange` for a relay session under the same user id. Web,
-desktop, and mobile then sign Clerk out locally so a later styal Link sign-out
-sticks. The CLI retains `cloud-cli-oauth-token` for older processes until logout
-and writes `cloud-cli-clerk-adopted` after adoption or email verification to
-prevent another adoption. CLI credential updates use a cross-process lease;
-startup skips absent credentials and retries only transient failures, including
-a busy lease. Failed adoption forgets the Clerk token only on definitive grant
-rejection; permanent recovery failures let interactive login offer email sign-in.
+Current web, desktop and mobile GUIs use relay sessions only. Without a stored relay
+session they show email sign-in. The server/CLI retains SDK-free startup adoption of an older
+Clerk credential until relay retirement. The imported email restores the original user id
+and environment links. Stored relay sessions,
+proof keys, cross-process credential leases and logout fences retain their existing formats.
 
-The relay keeps accepting Clerk tokens on the `client` group meanwhile, which is why the Bearer
-scheme there must reject non-Bearer headers before calling Clerk: every scheme
-of a multi-scheme middleware runs, and DPoP requests would otherwise reach
-Clerk's network verification.
-
-The relay accepts both Clerk session-template JWTs and CLI OAuth tokens for the
-exchange; requiring a JWT template would reject a stored CLI credential. CLIs
-from before this change still sign in through the hosted `/connect` page and
-Clerk's device grant until they update, so both stay configured until Clerk is
-removed.
+Older transition builds can still exchange Clerk session-template JWTs or CLI OAuth tokens at
+`/v1/auth/clerk-exchange`. The relay also accepts Clerk bearer tokens on its compatibility routes.
+Its Bearer scheme rejects other authorization schemes before calling Clerk, so DPoP requests do
+not cause Clerk verification. Keep the deployed relay compatible until every device and server
+has converted; see [legacy client compatibility](../operations/connect-setup.md#legacy-client-compatibility).

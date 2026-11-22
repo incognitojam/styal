@@ -22,11 +22,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { toastManager } from "../ui/toast";
 import { stackedThreadToast } from "../ui/toastHelpers";
-import {
-  ClerkUserProfilePage,
-  ClerkUserProfileRefreshButton,
-  ClerkUserProfileRow,
-} from "./ClerkUserProfilePage";
+import { AccountPage, AccountRefreshButton, AccountRow } from "./AccountPage";
 
 const linkedAtFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -52,7 +48,7 @@ function T3ConnectEnvironmentRow(props: {
 }) {
   const { environment } = props;
   return (
-    <ClerkUserProfileRow icon={<ServerIcon className="size-4" />}>
+    <AccountRow icon={<ServerIcon className="size-4" />}>
       <Collapsible open={props.confirmationOpen} onOpenChange={props.onConfirmationChange}>
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
@@ -111,7 +107,7 @@ function T3ConnectEnvironmentRow(props: {
           </div>
         </CollapsiblePanel>
       </Collapsible>
-    </ClerkUserProfileRow>
+    </AccountRow>
   );
 }
 
@@ -219,11 +215,11 @@ export function T3ConnectUserProfilePage() {
     !environmentsState.accountId || (environmentsState.data === null && !environmentsState.error);
 
   return (
-    <ClerkUserProfilePage
+    <AccountPage
       title="styal Link"
       description="Environments registered to your account. Connections on this device are managed in Settings."
       action={
-        <ClerkUserProfileRefreshButton
+        <AccountRefreshButton
           disabled={deregisteringEnvironmentId !== null}
           isPending={environmentsState.isPending}
           onClick={refreshAll}
@@ -277,6 +273,6 @@ export function T3ConnectUserProfilePage() {
           </div>
         )}
       </div>
-    </ClerkUserProfilePage>
+    </AccountPage>
   );
 }
