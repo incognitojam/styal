@@ -583,6 +583,8 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
 it.effect("a fresh-session task launches one thread, then starts each later run fresh in it", () =>
   Effect.gen(function* () {
     const launches = yield* Ref.make(0);
+    const sql = yield* SqlClient.SqlClient;
+    const retryError = yield* Ref.make<string | null>(null);
     const sends = yield* Ref.make<Array<{ threadId: ThreadId; freshContext?: boolean }>>([]);
     const launched = ThreadId.make("thread:fresh-session-task");
     const layer = ScheduledTaskService.layer.pipe(
@@ -604,7 +606,17 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
                   threadId: input.threadId,
                   ...(input.freshContext === undefined ? {} : { freshContext: input.freshContext }),
                 },
-              ]).pipe(Effect.as({} as never)),
+              ]).pipe(
+                Effect.andThen(
+                  sql<{
+                    last_run_error: string | null;
+                  }>`SELECT last_run_error FROM scheduled_tasks WHERE task_id = 'task:fresh-session'`.pipe(
+                    Effect.orDie,
+                  ),
+                ),
+                Effect.flatMap((rows) => Ref.set(retryError, rows[0]?.last_run_error ?? null)),
+                Effect.as({} as never),
+              ),
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
@@ -645,7 +657,13 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       const legacy = yield* service.upsert({ ...input, threadId: null });
       assert.equal(legacy.task.threadId, launched);
       assert.equal(legacy.task.threadMode, "fresh_session");
+      yield* sql`UPDATE scheduled_tasks SET last_run_status = 'failed', last_run_error = 'Could not dispatch' WHERE task_id = ${input.id}`;
       yield* service.runNow({ id: input.id });
+      assert.equal(yield* Ref.get(retryError), "Could not dispatch");
+      assert.equal(
+        (yield* service.list()).tasks.find((candidate) => candidate.id === input.id)?.lastRunError,
+        null,
+      );
 
       assert.equal(yield* Ref.get(launches), 1);
       assert.deepEqual(yield* Ref.get(sends), [{ threadId: launched, freshContext: true }]);

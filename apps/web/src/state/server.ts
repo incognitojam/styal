@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   type EnvironmentTheme,
+  type ScheduledTaskThreadListResult,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleLegacyThreadMigrationPayload,
@@ -27,6 +28,7 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentAtomList } from "./environmentAtomList";
 import { primaryEnvironmentIdAtom, themeEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
+import { rememberProjectJobs } from "./projectJobs.logic";
 import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";
 
 // Subscribe to every environment's themes; primary can change without reconnecting or updating the subscription.
@@ -41,6 +43,25 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   serverEnvironment.updateStateAtom,
 );
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
+const NO_TASK_THREADS: ScheduledTaskThreadListResult = { tasks: [] };
+// Reuse the last seen bindings while the prompt-free subscription loads; off/older servers stay visible.
+export const projectJobListAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ScheduledTaskThreadListResult | null => {
+    const config = get(serverEnvironment.configValueAtom(environmentId));
+    return config?.settings.projectCoordinatorsEnabled !== true ||
+      config.environment.capabilities.scheduledTaskThreads !== true
+      ? NO_TASK_THREADS
+      : rememberProjectJobs(
+          environmentId,
+          Option.getOrNull(
+            AsyncResult.value(
+              get(serverEnvironment.scheduledTaskThreadsLive({ environmentId, input: {} })),
+            ),
+          ),
+        );
+  }),
+);
+export const projectJobListsAtom = environmentAtomList("web-project-job-lists", projectJobListAtom);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

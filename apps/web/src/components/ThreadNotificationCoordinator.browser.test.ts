@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   latestRunId: "run-1",
   workflowReview: false,
   launchedByChat: null as "chat-live" | "chat-archived" | null,
+  job: null as "kept" | "pinned" | "written" | "paused" | null,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -45,6 +46,7 @@ const atoms = await vi.hoisted(async () => {
   return {
     shell: Atom.make<unknown>(null),
     environmentIds: Atom.make<ReadonlyArray<string>>(["env-1"]),
+    jobList: Atom.make<unknown>(null),
     projects: Atom.make<ReadonlyArray<unknown>>([
       {
         environmentId: "env-1",
@@ -134,6 +136,8 @@ function mockThreadShell() {
     settledAt: null,
     lastVisitedAt: null,
     deletedAt: null,
+    pinnedAt: state.job === "pinned" ? SHELL_NOW : null,
+    latestUserAuthoredMessageAt: state.job === "written" ? SHELL_NOW : null,
   };
 }
 
@@ -196,6 +200,7 @@ vi.mock(import("../state/projects"), async (original) => {
 vi.mock(import("../state/server"), async (original) => ({
   ...(await original()),
   environmentServerConfigsAtom: atoms.serverConfigs as never,
+  projectJobListAtom: (() => atoms.jobList) as never,
 }));
 vi.mock(import("../hooks/useSettings"), async (original) => ({
   ...(await original()),
@@ -249,6 +254,7 @@ function setup() {
     latestRunId: "run-1",
     workflowReview: false,
     launchedByChat: null,
+    job: null,
   });
   stableParent = null;
   state.settingsListeners.clear();
@@ -266,6 +272,20 @@ function setup() {
   );
   let started = false;
   const renderCoordinator = async () => {
+    registry.set(atoms.jobList, {
+      tasks:
+        state.job === null
+          ? []
+          : [
+              {
+                threadId: "thread-1",
+                enabled: state.job !== "paused",
+                schedule: { type: "webhook" },
+                createdAt: "2000-01-01T00:00:00.000Z",
+                lastRunAt: null,
+              },
+            ],
+    });
     registry.set(atoms.shell, {
       status: state.live ? "live" : "disconnected",
       snapshot: Option.some({ threads: mockThreads() }),
@@ -328,6 +348,30 @@ describe("thread notifications", () => {
     await app.render();
     await app.complete();
     expect(state.sound).toHaveBeenCalledTimes(count);
+  });
+
+  it.each([
+    ["finishes quietly while its project page keeps it", "kept", 0],
+    ["sounds once pinned", "pinned", 1],
+    ["sounds once the user writes to it", "written", 1],
+  ] as const)("a scheduled task's thread %s", async (_label, job, count) => {
+    await using app = setup();
+    state.mode = "sound";
+    state.job = job;
+    await app.render();
+    await app.complete();
+    expect(state.sound).toHaveBeenCalledTimes(count);
+    if (job === "kept") {
+      state.job = "paused";
+      await app.render();
+      expect(state.sound).not.toHaveBeenCalled();
+      state.completedAt = null;
+      state.latestRunId = "run-2";
+      await app.render();
+      state.completedAt = "2026-09-13T11:00:00.000Z";
+      await app.render();
+      expect(state.sound).toHaveBeenCalledTimes(1);
+    }
   });
 
   it.each([false, true])("keeps viewed attention sounds (approval=%s)", async (approval) => {

@@ -9,6 +9,7 @@ import {
   type EnvironmentId,
   projectCoordinatorThreadId,
   type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -287,6 +288,12 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
       void navigate({
         to: "/settings/projects",
         search: { project: page.group.projectKey, machine: undefined },
+      }),
+    jobs: page.jobs,
+    onOpenJobThread: (thread: { readonly environmentId: EnvironmentId; readonly id: ThreadId }) =>
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
       }),
     onOpenThread:
       chat === null
