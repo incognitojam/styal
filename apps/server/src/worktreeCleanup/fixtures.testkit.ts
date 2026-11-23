@@ -68,9 +68,7 @@ export function shell(
 export const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const base = yield* fs.makeTempDirectoryScoped({
-    prefix: "cleanup-safety-",
-  });
+  const base = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-safety-" }));
   const dependencies = GitVcsDriver.layer.pipe(
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), base)),
   );
