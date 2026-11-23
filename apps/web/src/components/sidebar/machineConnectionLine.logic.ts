@@ -1,10 +1,15 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+  resolveEnvironmentMachineKind,
+} from "@t3tools/contracts";
 
 interface MachineConnection {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly connection: { readonly phase: EnvironmentConnectionPhase };
+  readonly serverConfig: Parameters<typeof resolveEnvironmentMachineKind>[0];
   /** A server update is restarting it, so a dropped connection is expected. */
   readonly updating: boolean;
   /** Reached only through styal Link and there is no Link sign-in, so a retry cannot help. */
@@ -14,6 +19,8 @@ interface MachineConnection {
 export interface MachineConnectionLine {
   readonly tone: "connecting" | "failed";
   readonly text: string;
+  /** The icon while connecting: the one machine's own kind, or a server for several. */
+  readonly machineKind: EnvironmentMachineKind | null;
   /** The first machine still waiting, failed or not, which keys the line's grace period. */
   readonly waitingEnvironmentId: EnvironmentId;
   /** The failed machines Retry reconnects; empty while connecting. */
@@ -55,6 +62,7 @@ export function machineConnectionLine(
   if (failed.length > 0) {
     return {
       tone: "failed",
+      machineKind: null,
       waitingEnvironmentId,
       text: `Can't reach ${nameMachines(failed.map((environment) => environment.label))}`,
       retryEnvironmentIds: failed.map((environment) => environment.environmentId),
@@ -62,6 +70,10 @@ export function machineConnectionLine(
   }
   return {
     tone: "connecting",
+    machineKind:
+      connecting.length === 1 && connecting[0]
+        ? resolveEnvironmentMachineKind(connecting[0].serverConfig)
+        : "server",
     waitingEnvironmentId,
     text: `Connecting to ${nameMachines(connecting.map((environment) => environment.label))}`,
     retryEnvironmentIds: [],

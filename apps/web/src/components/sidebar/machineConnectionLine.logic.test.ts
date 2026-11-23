@@ -1,5 +1,5 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type EnvironmentMachineKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
@@ -7,11 +7,18 @@ import { machineConnectionEmptyText, machineConnectionLine } from "./machineConn
 const machine = (
   label: string,
   phase: EnvironmentConnectionPhase,
-  flags: { updating?: boolean; awaitingSignIn?: boolean } = {},
+  flags: { updating?: boolean; awaitingSignIn?: boolean; kind?: EnvironmentMachineKind } = {},
 ) => ({
   environmentId: EnvironmentId.make(label),
   label,
   connection: { phase },
+  serverConfig: flags.kind
+    ? {
+        environment: {
+          platform: { os: "linux" as const, arch: "x64" as const, machine: flags.kind },
+        },
+      }
+    : null,
   updating: flags.updating ?? false,
   awaitingSignIn: flags.awaitingSignIn ?? false,
 });
@@ -62,6 +69,23 @@ describe("machineConnectionLine", () => {
     ],
   ])("%s", (_name, environments, text) => {
     expect(machineConnectionLine(environments)?.text ?? null).toBe(text);
+  });
+
+  it.each([
+    [
+      "one machine uses its own kind",
+      [machine("atlas", "connecting", { kind: "laptop" })],
+      "laptop",
+    ],
+    ["an unknown kind falls back to a server", [machine("atlas", "connecting")], "server"],
+    [
+      "several machines use a server",
+      [machine("atlas", "connecting", { kind: "laptop" }), machine("mesa", "connecting")],
+      "server",
+    ],
+    ["a failure keeps its warning icon", [machine("atlas", "error", { kind: "laptop" })], null],
+  ])("icon: %s", (_name, environments, kind) => {
+    expect(machineConnectionLine(environments)?.machineKind).toBe(kind);
   });
 
   it("retries only the failed machines and keeps the first waiting machine across tones", () => {

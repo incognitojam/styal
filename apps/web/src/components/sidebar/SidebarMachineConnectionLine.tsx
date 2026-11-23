@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionRoutes } from "@t3tools/client-runtime/connection";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { TriangleAlertIcon, WifiIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentStateHeldFor } from "../../hooks/useEnvironmentDisconnectDelay";
@@ -10,6 +10,7 @@ import { useEnvironments } from "../../state/environments";
 import { environmentUpdateStatesAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
 
 function useMachineConnections() {
@@ -49,10 +50,10 @@ export function SidebarMachineConnectionLine() {
         failed ? "bg-warning/12 text-warning" : "bg-sidebar-control-surface text-sidebar-foreground"
       }`}
     >
-      {failed ? (
+      {line.machineKind === null ? (
         <TriangleAlertIcon className="size-3.5 shrink-0" />
       ) : (
-        <WifiIcon className="size-3.5 shrink-0" />
+        <EnvironmentMachineIcon kind={line.machineKind} className="size-3.5 shrink-0" />
       )}
       <span role="status" className="min-w-0 flex-1 truncate">
         {line.text}
