@@ -1173,7 +1173,7 @@ export function failedFeedRunIds(
 }
 
 /**
- * The key a run fold uses for the message `entryId`: its run, or for an
+ * The key a run fold uses for the message `entryId`: its continued-run root, or for an
  * imported message with no run, the runless key of the user message before
  * it, or the segment after its run's last steer when `presented` shows that
  * fold. Null for user messages, which never fold.
@@ -1182,6 +1182,7 @@ export function messageFoldRunId(
   feed: ReadonlyArray<ThreadFeedEntry>,
   entryId: string,
   presented: ReadonlyArray<{ readonly type: string; readonly runId?: RunId | null }>,
+  continuedRunRoots?: ReadonlyMap<RunId, RunId>,
 ): RunId | null {
   let runlessKey: RunId | null = null;
   const lastSteerIdByRunId = new Map<RunId, string>();
@@ -1190,11 +1191,16 @@ export function messageFoldRunId(
     if (entry.message.role === "user") {
       if (entry.id === entryId) return null;
       if (isSteerMessage(entry.message) && entry.message.runId != null) {
-        lastSteerIdByRunId.set(entry.message.runId, entry.id);
+        lastSteerIdByRunId.set(
+          continuedRunRoots?.get(entry.message.runId) ?? entry.message.runId,
+          entry.id,
+        );
       }
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
     } else if (entry.id === entryId) {
-      const runId = entry.message.runId ?? runlessKey;
+      const messageRunId = entry.message.runId ?? runlessKey;
+      const runId =
+        messageRunId === null ? null : (continuedRunRoots?.get(messageRunId) ?? messageRunId);
       const steerId = runId === null ? undefined : lastSteerIdByRunId.get(runId);
       if (runId === null || steerId === undefined) return runId;
       // Tool visibility can drop all output before the steer, leaving no split.

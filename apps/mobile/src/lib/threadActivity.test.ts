@@ -33,6 +33,7 @@ import {
   threadFeedCompactionLabels,
   createThreadFeedCache,
   deriveThreadFeedPresentation,
+  deriveFeedContinuedRunRoots,
   workEntryRowLabel,
   messageFoldRunId,
   type ThreadFeedCache,
@@ -2300,6 +2301,7 @@ describe("V2 continued response timer boundaries", () => {
     answer("second-progress", second, 22, 25),
     recovery(recovery3, third, 40),
     tool("third-tool", third, 41, 46),
+    answer("third-progress", third, 41, 44),
     answer("final-answer", third, 42, 45),
   ];
   const runs = [
@@ -2329,6 +2331,22 @@ describe("V2 continued response timer boundaries", () => {
     expect(rows.find((entry) => entry.type === "run-fold")).toMatchObject({
       label: "Worked for 35m 0s",
     });
+    for (const messageId of ["second-progress", "third-progress"]) {
+      const foldRunId = messageFoldRunId(feed, messageId, rows, deriveFeedContinuedRunRoots(runs));
+      expect(foldRunId).toBe(runId);
+      const expanded = deriveThreadFeedPresentation(
+        feed,
+        latest,
+        new Set([foldRunId!]),
+        new Set(),
+        null,
+        false,
+        runs,
+      );
+      expect(expanded.some((entry) => entry.type === "message" && entry.id === messageId)).toBe(
+        true,
+      );
+    }
     expect(
       feed
         .flatMap((entry) => (entry.type === "activity-group" ? entry.activities : []))
@@ -2337,30 +2355,63 @@ describe("V2 continued response timer boundaries", () => {
     ).toBe(iso(15));
   });
 
-  it("leaves an outage out of the segment after a steer", () => {
-    const steer = {
-      ...userMessage(iso(12)),
-      id: TurnItemId.make("timer-steer"),
-      messageId: MessageId.make("timer-steer"),
-      inputIntent: "steer" as const,
-    };
-    const feed = buildThreadFeed(
-      [...items.slice(0, 3), steer, ...items.slice(3)].map((item, index) => projected(item, index)),
-    );
-    const rows = deriveThreadFeedPresentation(
-      feed,
-      latest,
-      new Set(),
-      new Set(),
-      null,
-      false,
-      runs,
-    );
-    expect(rows.filter((entry) => entry.type === "run-fold").map((entry) => entry.label)).toEqual([
-      "Worked for 35m 0s",
-      "Continued for 19m 0s",
-    ]);
-  });
+  it.each([
+    [runId, 12, 3, "19m 0s"],
+    [second, 22, 5, "14m 0s"],
+  ] as const)(
+    "finds the continued fold after a steer in %s",
+    (steerRunId, minute, index, duration) => {
+      const steer = {
+        ...userMessage(iso(minute)),
+        id: TurnItemId.make("timer-steer"),
+        messageId: MessageId.make("timer-steer"),
+        runId: steerRunId,
+        inputIntent: "steer" as const,
+      };
+      const feed = buildThreadFeed(
+        [...items.slice(0, index), steer, ...items.slice(index)].map((item, position) =>
+          projected(item, position),
+        ),
+      );
+      const rows = deriveThreadFeedPresentation(
+        feed,
+        latest,
+        new Set(),
+        new Set(),
+        null,
+        false,
+        runs,
+      );
+      expect(rows.filter((entry) => entry.type === "run-fold").map((entry) => entry.label)).toEqual(
+        ["Worked for 35m 0s", `Continued for ${duration}`],
+      );
+      for (const messageId of ["second-progress", "third-progress"]) {
+        const foldRunId = messageFoldRunId(
+          feed,
+          messageId,
+          rows,
+          deriveFeedContinuedRunRoots(runs),
+        );
+        expect(foldRunId).toBe(`${runId}:steer:timer-steer`);
+        const expanded = deriveThreadFeedPresentation(
+          feed,
+          latest,
+          new Set([foldRunId!]),
+          new Set(),
+          null,
+          false,
+          runs,
+        );
+        expect(expanded.some((entry) => entry.type === "message" && entry.id === messageId)).toBe(
+          true,
+        );
+        expect(expanded.find((entry) => entry.type === "run-fold")).toMatchObject({
+          runId,
+          expanded: false,
+        });
+      }
+    },
+  );
 
   it("ignores synthetic recovery completion before another run is resumed", () => {
     const feed = buildThreadFeed(items.slice(0, 3).map((item, index) => projected(item, index)));
