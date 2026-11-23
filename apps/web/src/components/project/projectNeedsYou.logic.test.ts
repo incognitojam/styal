@@ -148,6 +148,9 @@ describe("listStoppedThreadNeeds", () => {
         stopped("never-opened", failedAt, { lastVisitedAt: null }),
       ]).map((need) => need.thread.id),
     ).toEqual(["never-opened", "opened-before"]);
+    // A server that predates visit marks leaves the field out; this client's own visit counts.
+    const older = stopped("older-server", failedAt);
+    expect(listStoppedThreadNeeds([older], () => "2026-11-18T10:06:00.000Z")).toEqual([]);
   });
 });
 

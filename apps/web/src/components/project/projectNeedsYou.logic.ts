@@ -19,7 +19,7 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { isLatestFailureSeen } from "../Sidebar.logic";
+import { isLatestFailureSeen, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 
 export interface OpenReport {
   readonly messageId: MessageId;
@@ -132,10 +132,12 @@ export function listProjectNeeds(
  */
 export function listStoppedThreadNeeds(
   threads: ReadonlyArray<EnvironmentThreadShell>,
+  localVisitedAt: (thread: EnvironmentThreadShell) => string | undefined = () => undefined,
 ): ReadonlyArray<ProjectNeed> {
   const needs: ProjectNeed[] = [];
   for (const thread of threads) {
-    if (thread.settledAt != null || isLatestFailureSeen(thread)) continue;
+    const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localVisitedAt(thread));
+    if (thread.settledAt != null || isLatestFailureSeen({ ...thread, lastVisitedAt })) continue;
     const base = {
       key: `${thread.environmentId}:${thread.id}`,
       thread,

@@ -34,6 +34,7 @@ import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useUiStateStore } from "../../uiStateStore";
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
 import {
   dismissCoordinatorReport,
@@ -101,9 +102,13 @@ export function useProjectNeeds(
   const keyOf = (thread: EnvironmentThreadShell) =>
     threadKey(scopeThreadRef(thread.environmentId, thread.id));
   const needs = useAtomValue(projectNeedsAtom(threads.map(keyOf).toSorted().join("\n")));
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   return [
     ...listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null),
-    ...listStoppedThreadNeeds(stopped),
+    ...listStoppedThreadNeeds(
+      stopped,
+      (thread) => localVisits[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+    ),
   ];
 }
 
