@@ -311,6 +311,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarNoProjectsText } from "./sidebar/SidebarMachineConnectionLine";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 
 import { TooltipProvider } from "./ui/tooltip";
@@ -4306,7 +4307,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 ? (
                 <>
-                  <span>No projects yet</span>
+                  <SidebarNoProjectsText />
                   <button
                     type="button"
                     onClick={openAddProjectCommandPalette}
