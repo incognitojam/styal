@@ -68,7 +68,9 @@ place of all `.gitignore` files, so keep its exclusions aligned when those chang
 
 ## Build and distribute
 
-Pull requests compare the Android native fingerprint in **Mobile Fingerprint Check**.
+Pull requests and `intake/**` pushes compare the Android native fingerprint in
+**Mobile Fingerprint Check**. Intake compares current main with the whole candidate;
+a candidate missing current main must be rebased and pushed for a fresh check on its new SHA.
 Its **Android release build** job builds a production-variant arm64 release APK when
 that fingerprint changes and succeeds without building when it does not. A failed
 fingerprint comparison fails the job. The check uses no production signing credentials

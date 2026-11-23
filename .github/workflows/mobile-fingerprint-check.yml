@@ -16,11 +16,13 @@ on:
     # Run even when a rebase or base change removes every native input from the
     # diff, so the label can be cleared without installing Expo dependencies.
     types: [opened, synchronize, reopened, edited]
+  push:
+    branches: ["intake/**"]
 
 concurrency:
   # A title or body edit gets its own group, so it cannot cancel the PR's real
   # run and leave a cancelled check on the head commit.
-  group: mobile-fingerprint-check-${{ github.event.action == 'edited' && !github.event.changes.base && format('edit-{0}', github.run_id) || github.event.pull_request.number }}
+  group: mobile-fingerprint-check-${{ github.event_name }}-${{ github.event.action == 'edited' && !github.event.changes.base && format('edit-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,16 +46,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # The merge ref can advance after the event is queued. Pin its commit
-          # and compare against its first parent, rather than the event's base.
+          # Pin the event SHA; intake comparisons need the whole candidate ancestry.
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '2' }}
 
       - id: changes
         name: Detect native fingerprint inputs
         run: |
-          base_sha=$(git rev-parse HEAD^1)
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            base_sha=$(git rev-parse refs/remotes/origin/main)
+            if ! git merge-base --is-ancestor "$base_sha" HEAD; then
+              echo "::error::The intake candidate does not include current main. Rebase it and push again."
+              exit 1
+            fi
+          else
+            base_sha=$(git rev-parse HEAD^1)
+          fi
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "Comparing $base_sha..$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           paths=$(git diff --no-renames --name-only "$base_sha" HEAD -- \
             apps/mobile/ packages/client-runtime/ packages/contracts/ packages/shared/ \
             assets/ scripts/ patches/ package.json pnpm-lock.yaml pnpm-workspace.yaml \
@@ -83,7 +94,7 @@ jobs:
           echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
           "$vp_pnpm_bin/pnpm" --version
 
-      - name: Fingerprint merge result
+      - name: Fingerprint candidate
         if: steps.changes.outputs.relevant == 'true'
         working-directory: apps/mobile
         run: |
