@@ -181,20 +181,20 @@ export function isProjectPageJob(
 const NO_JOB_THREADS: ReadonlyMap<string, JobThreadState> = new Map();
 
 /**
- * A thread the project's chat launched with reportBack, or a scheduled task's thread in
+ * A thread the project's chat launched in the same project with reportBack, or a scheduled task's thread in
  * `jobThreads` (by thread key), stays on the project page until it needs you, fails, is pinned or
  * you write to it (to a job, after its cutoff). A `project-coordinator` report target
- * only says the thread was created in the project. `chatThreadKeys`: chats taking reports.
+ * only says the thread was created in the project. `chatProjects`: projects of chats taking reports.
  */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,
-  chatThreadKeys: ReadonlySet<string>,
+  chatProjects: ReadonlyMap<string, ProjectId>,
   jobThreads: ReadonlyMap<string, JobThreadState> = NO_JOB_THREADS,
 ): boolean {
   const launched =
     thread.reportTo != null &&
     thread.reportTo.source === undefined &&
-    chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) &&
+    chatProjects.get(`${thread.environmentId}:${thread.reportTo.threadId}`) === thread.projectId &&
     thread.source.createdBy === "agent";
   const job = jobThreads.get(`${thread.environmentId}:${thread.id}`);
   const jobSince = job?.since;

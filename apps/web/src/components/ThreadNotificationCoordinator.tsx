@@ -334,22 +334,22 @@ export function startThreadNotifications(
         ? new Map([[`${environmentId}:${thread.id}`, since]])
         : NO_JOBS;
     };
-    let projectChatKeys: ReadonlySet<string> | null = null;
-    const reportingChatKeys = () => {
-      if (projectChatKeys !== null) return projectChatKeys;
+    let projectChatProjects: ReadonlyMap<string, ProjectId> | null = null;
+    const reportingChatProjects = () => {
+      if (projectChatProjects !== null) return projectChatProjects;
       const chatIds = new Set(
         settings?.projectCoordinatorsEnabled
           ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
           : [],
       );
-      projectChatKeys = new Set(
+      projectChatProjects = new Map(
         threads.flatMap((thread) =>
           chatIds.has(thread.id) && projectChatTakesReports(thread)
-            ? [`${environmentId}:${thread.id}`]
+            ? [[`${environmentId}:${thread.id}`, thread.projectId] as const]
             : [],
         ),
       );
-      return projectChatKeys;
+      return projectChatProjects;
     };
     const changed: Array<[NotificationState | undefined, NotificationState, boolean]> = [];
     for (const rawThread of threads) {
@@ -398,7 +398,7 @@ export function startThreadNotifications(
         completed &&
         ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
           jobThreads.has(rawThread.id)) &&
-        staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread));
+        staysOnProjectPage(thread, reportingChatProjects(), jobThreadKeys(thread));
       const settled = completed && !monitorHoldsWakeCompletion(rawThread) && !quietCompletion;
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;

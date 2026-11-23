@@ -9,6 +9,8 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { groupSidebarThreadsByProject } from "../Sidebar.logic";
+
 import {
   assistantCitationFromLocation,
   assistantCitationRoute,
@@ -113,7 +115,7 @@ describe("jobThreadStates", () => {
       const states = new Map(
         [...jobThreadStates(tasks)].map(([id, state]) => [`${local}:${id}`, state]),
       );
-      expect([status, staysOnProjectPage(job, new Set(), states)]).toEqual([status, !visible]);
+      expect([status, staysOnProjectPage(job, new Map(), states)]).toEqual([status, !visible]);
     }
     const shared = ThreadId.make("thread-dispatch");
     for (const overrides of [
@@ -132,8 +134,10 @@ describe("jobThreadStates", () => {
           source: { createdBy: "agent" } as EnvironmentThreadShell["source"],
           reportTo: { threadId: chatId },
         };
-        expect(staysOnProjectPage(job, new Set(), scoped)).toBe(false);
-        expect(staysOnProjectPage(launched, new Set([`${local}:${chatId}`]), scoped)).toBe(false);
+        expect(staysOnProjectPage(job, new Map(), scoped)).toBe(false);
+        expect(
+          staysOnProjectPage(launched, new Map([[`${local}:${chatId}`, project]]), scoped),
+        ).toBe(false);
       }
     }
   });
@@ -176,7 +180,7 @@ describe("isProjectPageJob", () => {
 });
 
 describe("staysOnProjectPage", () => {
-  const chats = new Set([`${local}:${chatId}`]);
+  const chats = new Map([[`${local}:${chatId}`, project]]);
   const started = (id: string, overrides: Partial<EnvironmentThreadShell> = {}) =>
     shell(id, {
       reportTo: { threadId: chatId },
@@ -187,9 +191,32 @@ describe("staysOnProjectPage", () => {
       ...overrides,
     });
 
-  it("keeps a thread an agent started for the chat off the sidebar while it works or after it finished", () => {
-    expect(staysOnProjectPage(started("working", { runtime: running }), chats)).toBe(true);
-    expect(staysOnProjectPage(started("done"), chats)).toBe(true);
+  it("keeps only same-project launches off the sidebar, preserving another project’s only thread", () => {
+    const otherProject = ProjectId.make("project-garden");
+    const launches = [
+      started("working", { runtime: running }),
+      started("done"),
+      started("other-project", { projectId: otherProject }),
+      started("other-project-working", { projectId: otherProject, runtime: running }),
+    ];
+    expect(launches.map((thread) => [thread.id, staysOnProjectPage(thread, chats)])).toEqual([
+      ["working", true],
+      ["done", true],
+      ["other-project", false],
+      ["other-project-working", false],
+    ]);
+    const groups = [project, otherProject].map((projectId) => ({
+      memberProjectRefs: [{ environmentId: local, projectId }],
+    }));
+    expect(
+      groupSidebarThreadsByProject(
+        groups,
+        launches.filter(
+          (thread) => thread.id !== "other-project-working" && !staysOnProjectPage(thread, chats),
+        ),
+        () => false,
+      ).map((folder) => folder.threads.map((thread) => thread.id)),
+    ).toEqual([["other-project"]]);
   });
 
   it("keeps a scheduled task's thread off the sidebar, whoever made the task", () => {
@@ -201,14 +228,14 @@ describe("staysOnProjectPage", () => {
     expect(
       staysOnProjectPage(
         job,
-        new Set(),
+        new Map(),
         new Map([[`${local}:job`, { since: 0, dispatchFailed: false }]]),
       ),
     ).toBe(true);
     expect(
       staysOnProjectPage(
         job,
-        new Set(),
+        new Map(),
         new Map([[`${remote}:job`, { since: 0, dispatchFailed: false }]]),
       ),
     ).toBe(false);
@@ -226,7 +253,7 @@ describe("staysOnProjectPage", () => {
         { since: Date.parse("2026-11-19T09:00:00.000Z"), dispatchFailed: false },
       ],
     ]);
-    expect(staysOnProjectPage(handMade, new Set(), latestRun)).toBe(true);
+    expect(staysOnProjectPage(handMade, new Map(), latestRun)).toBe(true);
   });
 
   it("brings a scheduled task's thread back for a message after its latest run, until the next run", () => {
@@ -236,8 +263,8 @@ describe("staysOnProjectPage", () => {
     });
     const since = (at: string) =>
       new Map([[`${local}:written`, { since: Date.parse(at), dispatchFailed: false }]]);
-    expect(staysOnProjectPage(written, new Set(), since("2026-11-19T09:00:00.000Z"))).toBe(false);
-    expect(staysOnProjectPage(written, new Set(), since("2026-11-19T11:00:00.000Z"))).toBe(true);
+    expect(staysOnProjectPage(written, new Map(), since("2026-11-19T09:00:00.000Z"))).toBe(false);
+    expect(staysOnProjectPage(written, new Map(), since("2026-11-19T11:00:00.000Z"))).toBe(true);
   });
 
   it("brings it, or a scheduled task's thread, back when it needs you, fails, is pinned or you write to it", () => {
@@ -256,7 +283,7 @@ describe("staysOnProjectPage", () => {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
       const job = { ...thread, reportTo: null };
       const jobs = new Map([[`${local}:${thread.id}`, { since: 0, dispatchFailed: false }]]);
-      expect([thread.id, staysOnProjectPage(job, new Set(), jobs)]).toEqual([thread.id, false]);
+      expect([thread.id, staysOnProjectPage(job, new Map(), jobs)]).toEqual([thread.id, false]);
     }
   });
 
@@ -274,7 +301,7 @@ describe("staysOnProjectPage", () => {
     expect(staysOnProjectPage(person, chats)).toBe(false);
     expect(staysOnProjectPage(elsewhere, chats)).toBe(false);
     expect(staysOnProjectPage(otherMachine, chats)).toBe(false);
-    expect(staysOnProjectPage(started("no-chat"), new Set())).toBe(false);
+    expect(staysOnProjectPage(started("no-chat"), new Map())).toBe(false);
   });
 });
 

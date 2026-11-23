@@ -1293,15 +1293,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
   const projectChatKeys =
     projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
-  // Threads a project chat started, and scheduled tasks' threads, are on the project page until
+  // Threads a project chat started in its own project, and scheduled tasks' threads, stay there until
   // they need you, or while open.
   const onProjectPageOnly = (thread: EnvironmentThreadShell) =>
-    staysOnProjectPage(thread, reportingChatKeys, jobThreadKeys) &&
+    staysOnProjectPage(thread, reportingChatProjects, jobThreadKeys) &&
     threadShellKey(thread) !== routeRowThreadKey;
-  const reportingChatKeys = new Set(
+  const reportingChatProjects = new Map(
     listedThreads.flatMap((thread) =>
       projectChatKeys.has(threadShellKey(thread)) && projectChatTakesReports(thread)
-        ? [threadShellKey(thread)]
+        ? [[threadShellKey(thread), thread.projectId] as const]
         : [],
     ),
   );
