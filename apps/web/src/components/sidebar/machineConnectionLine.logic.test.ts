@@ -4,10 +4,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
 
-const machine = (label: string, phase: EnvironmentConnectionPhase) => ({
+const machine = (
+  label: string,
+  phase: EnvironmentConnectionPhase,
+  flags: { updating?: boolean; awaitingSignIn?: boolean } = {},
+) => ({
   environmentId: EnvironmentId.make(label),
   label,
   connection: { phase },
+  updating: flags.updating ?? false,
+  awaitingSignIn: flags.awaitingSignIn ?? false,
 });
 
 describe("machineConnectionLine", () => {
@@ -34,6 +40,21 @@ describe("machineConnectionLine", () => {
       "Connecting to 3 machines",
     ],
     ["a failed attempt retrying", [machine("atlas", "reconnecting")], "Can't reach atlas"],
+    [
+      "a server update restarting the machine",
+      [machine("atlas", "reconnecting", { updating: true })],
+      null,
+    ],
+    [
+      "retries stopped during a server update",
+      [machine("atlas", "error", { updating: true })],
+      "Can't reach atlas",
+    ],
+    [
+      "a styal Link machine with no sign-in",
+      [machine("atlas", "error", { awaitingSignIn: true })],
+      null,
+    ],
     [
       "a failure beside a machine still connecting",
       [machine("mesa", "connecting"), machine("atlas", "error")],
