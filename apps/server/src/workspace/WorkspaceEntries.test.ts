@@ -8,8 +8,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
 
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -33,6 +35,7 @@ const layerTest = Layer.empty.pipe(
     }),
   ),
   Layer.provide(ServerSettings.layerTest()),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(NodeServices.layer),
 );
 
@@ -534,12 +537,22 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           const cwd = `${base}/managed/project/topic`;
           yield* git(base, ["worktree", "add", "-b", "topic", cwd]);
           yield* writeTextFile(cwd, "parent-only.txt", "local work");
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO orchestration_v2_projection_threads (
+              thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+              created_at, updated_at, payload_json
+            ) VALUES (
+              'lost-worktree', 'fixture', 'Fixture', 'codex', 'full-access', 'default',
+              '1970-01-01', '1970-01-01', ${JSON.stringify({ worktreePath: cwd })}
+            )
+          `;
           const process = yield* VcsProcess.VcsProcess;
           const entries = yield* WorkspaceEntries.make.pipe(
             Effect.provide(
               Layer.mergeAll(
                 WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer,
-                ServerSettings.layerTest({ worktreesDirectory: `${base}/managed` }),
+                ServerSettings.layerTest({ worktreesDirectory: base }),
               ),
             ),
           );

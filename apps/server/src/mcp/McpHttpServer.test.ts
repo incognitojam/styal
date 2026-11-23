@@ -318,6 +318,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         Layer.mock(DocumentText.DocumentText)({}),
         Layer.mock(ProviderRegistry.ProviderRegistry)({}),
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),
+        Sqlite.layerMemory,
         NodeCrypto.layer,
       ),
     ),

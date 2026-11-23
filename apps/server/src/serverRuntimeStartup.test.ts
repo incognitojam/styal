@@ -50,6 +50,7 @@ import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.t
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
@@ -84,6 +85,7 @@ it.effect.each([
       const imports = { importedThreadCount: 0, importedMessageCount: 0 };
       const dependencies = Layer.mergeAll(
         AutoPullStatus.layer,
+        SqlitePersistence.layerMemory,
         NodeCrypto.layer,
         Path.layer,
         Layer.mock(ServerConfig.ServerConfig)({
@@ -425,6 +427,7 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
     Effect.provide(
       Layer.mergeAll(
         AutoPullStatus.layer,
+        SqlitePersistence.layerMemory,
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-autopull-" }),
         ServerSettings.layerTest(),
       ).pipe(Layer.provideMerge(NodeServices.layer)),

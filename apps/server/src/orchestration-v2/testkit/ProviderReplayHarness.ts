@@ -619,6 +619,7 @@ export function layerWithRegistry<Error>(
     layerCommandOutputHubProvided,
   ).pipe(
     Layer.provide(ProviderTurnStartServiceTestkit.layer),
+    Layer.provide(layerDatabase),
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 

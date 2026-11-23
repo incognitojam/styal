@@ -1,6 +1,8 @@
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
@@ -150,6 +152,10 @@ export const makeManagedWorktreeBoundary = Effect.gen(function* () {
         .filter(Boolean);
       return {
         directory,
+        canonical: (candidate: string) =>
+          canonical(
+            path.isAbsolute(candidate) ? candidate : `${path.resolve(".")}${path.sep}${candidate}`,
+          ),
         cwd: physical,
         escaped: !physicallyInside,
         caseInsensitive: insensitive,
@@ -170,5 +176,58 @@ export const makeIsManagedWorktreePath = Effect.gen(function* () {
     const boundary = yield* boundaryFor(worktreePath).pipe(Effect.orElseSucceed(() => null));
     if (boundary === null || boundary.escaped) return false;
     return boundary.cwd.split(path.sep).length - boundary.directory.split(path.sep).length === 2;
+  });
+});
+
+type ManagedWorktreeBoundary = NonNullable<
+  Effect.Success<ReturnType<Effect.Success<typeof makeManagedWorktreeBoundary>>>
+>;
+
+export const makeIsManagedGitRoot = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const sql = yield* SqlClient.SqlClient;
+  return Effect.fn("worktreesDirectory.isManagedGitRoot")(function* (
+    boundary: ManagedWorktreeBoundary,
+    root: string,
+    recordedWorktree?: string,
+  ) {
+    if (boundary.escaped) return false;
+    const top = yield* fs.realPath(root).pipe(Effect.orElseSucceed(() => null));
+    if (top === null) return false;
+    const within = (parent: string, child: string) =>
+      isWithinWorktreesDirectory(path, parent, child, boundary.caseInsensitive);
+    if (!within(boundary.directory, top)) return false;
+    if (recordedWorktree !== undefined) {
+      const expected = yield* boundary.canonical(recordedWorktree);
+      return within(expected, top) && within(top, expected);
+    }
+    if (within(top, boundary.cwd) && within(boundary.cwd, top)) return true;
+    const records = yield* sql<{ readonly worktreePath: string }>`
+      SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
+      FROM orchestration_v2_projection_threads
+      WHERE deleted_at IS NULL AND json_extract(payload_json, '$.worktreePath') IS NOT NULL
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(
+        (cause) =>
+          new VcsRepositoryDetectionError({
+            cwd: boundary.cwd,
+            operation: "worktreesDirectory.isManagedGitRoot",
+            detail: "Could not read recorded worktrees. The workspace cannot be used.",
+            cause,
+          }),
+      ),
+    );
+    const roots = yield* Effect.forEach(
+      records,
+      (record) => boundary.canonical(record.worktreePath),
+      { concurrency: 16 },
+    );
+    const owner = roots
+      .toSorted((a, b) => b.length - a.length)
+      .find((candidate) => within(candidate, boundary.cwd));
+    // A repository initialized below a recorded worktree has its own Git data.
+    return owner === undefined || within(owner, top);
   });
 });

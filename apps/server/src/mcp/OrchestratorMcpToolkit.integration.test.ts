@@ -105,6 +105,7 @@ const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
   Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+  Layer.provide(SqlitePersistence.layerMemory),
 );
 
 /** A task delegated here always has a local child thread. */

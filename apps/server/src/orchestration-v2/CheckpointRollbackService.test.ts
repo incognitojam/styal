@@ -177,7 +177,7 @@ it.effect.each(["initial", "waiting"])(
       assert.equal(resolveRuntimePolicy.mock.calls.length, 0);
       assert.equal(open.mock.calls.length, 0);
       assert.equal(restore.mock.calls.length, 0);
-    }).pipe(Effect.provide(testLayer));
+    }).pipe(Effect.provide(testLayer.pipe(Layer.provide(SqlitePersistence.layerMemory))));
   },
 );
 
@@ -467,7 +467,7 @@ it.effect.each([
       if (leavesFolder) {
         assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
       }
-    }).pipe(Effect.provide(testLayer));
+    }).pipe(Effect.provide(testLayer.pipe(Layer.provide(SqlitePersistence.layerMemory))));
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

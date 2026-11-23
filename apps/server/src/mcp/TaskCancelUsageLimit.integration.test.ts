@@ -182,6 +182,7 @@ it.effect.each([
           layerRecovery,
         ).pipe(
           Layer.provideMerge(layerOrchestration),
+          Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(
             Layer.mergeAll(
               layerAdapters,

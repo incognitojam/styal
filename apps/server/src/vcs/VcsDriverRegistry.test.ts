@@ -9,6 +9,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
@@ -27,9 +28,10 @@ const normalizeGitArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const DETECT_COMMAND = "rev-parse --is-inside-work-tree --show-toplevel --git-common-dir";
 
-const layerManagedWorktrees = Layer.merge(
+const layerManagedWorktrees = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-vcs-registry-" }),
   ServerSettings.layerTest(),
+  SqlitePersistence.layerMemory,
 );
 
 describe("VcsDriverRegistry", () => {

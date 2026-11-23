@@ -31,6 +31,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import type * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
@@ -289,6 +290,7 @@ export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   never,
   | ServerConfig.ServerConfig
+  | SqlClient.SqlClient
   | ServerSettings.ServerSettingsService
   | FileSystem.FileSystem
   | Path.Path

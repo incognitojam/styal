@@ -23,6 +23,7 @@ import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Digest from "effect/crypto/Digest";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -185,6 +186,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   never,
   | EventSink.EventSinkV2
+  | SqlClient.SqlClient
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
@@ -747,7 +749,7 @@ export const layer: Layer.Layer<
         return;
       }
       if (workspace !== undefined) {
-        const restored = yield* checkoutRoot(workspace).pipe(
+        const restored = yield* checkoutRoot(workspace, false, worktreePath ?? undefined).pipe(
           Effect.flatMap(checkout.restore),
           Effect.result,
         );
@@ -2208,7 +2210,11 @@ export const layer: Layer.Layer<
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
           const resolved =
-            cwd === undefined ? undefined : yield* checkoutRoot(cwd, true).pipe(Effect.result);
+            cwd === undefined
+              ? undefined
+              : yield* checkoutRoot(cwd, true, thread.worktreePath ?? undefined).pipe(
+                  Effect.result,
+                );
           if (resolved?._tag === "Failure") {
             yield* Effect.scoped(start(input, undefined, resolved.failure));
             return;

@@ -97,6 +97,7 @@ const makeLayerTest = <E>(
       Layer.provide(
         Layer.mergeAll(
           instances,
+          layerTestDatabase,
           layerTestStores,
           ingestorEventSink,
           IdAllocator.layer,

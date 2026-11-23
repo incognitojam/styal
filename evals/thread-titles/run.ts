@@ -23,6 +23,7 @@ import * as ThreadTitleLinks from "../../apps/server/src/textGeneration/ThreadTi
 import * as SourceControlProviderRegistry from "../../apps/server/src/sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlBuiltInDrivers from "../../apps/server/src/sourceControl/builtInDrivers.ts";
 import * as ServerSettings from "../../apps/server/src/serverSettings.ts";
+import { layerMemory } from "../../apps/server/src/persistence/Sqlite.ts";
 import * as VcsProcess from "../../apps/server/src/vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../../apps/server/src/vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../../apps/server/src/vcs/VcsProjectConfig.ts";
@@ -160,6 +161,7 @@ await Effect.runPromise(
           Layer.provide(FetchHttpClient.layer),
         ),
       ).pipe(
+        Layer.provideMerge(layerMemory),
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-title-evaluation-state-" }),
         ),

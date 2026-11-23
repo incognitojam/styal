@@ -1,4 +1,4 @@
-import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, makeIsManagedGitRoot } from "../worktreesDirectory.ts";
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import { parseGitRemoteConfig } from "@t3tools/shared/git";
@@ -314,6 +314,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const boundaryFor = yield* makeManagedWorktreeBoundary;
+  const isManagedGitRoot = yield* makeIsManagedGitRoot;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
@@ -368,12 +369,10 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
           cacheKey = yield* Cache.get(repositoryRootCache, lookupCwd);
           if (cacheKey === null) return null;
         }
-        const root = yield* fileSystem
-          .realPath(cacheKey.rootPath)
-          .pipe(Effect.orElseSucceed(() => null));
         if (
-          root === null ||
-          !isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
+          !(yield* isManagedGitRoot(boundary, cacheKey.rootPath).pipe(
+            Effect.orElseSucceed(() => false),
+          ))
         ) {
           yield* Cache.invalidate(repositoryRootCache, lookupCwd);
           return null;

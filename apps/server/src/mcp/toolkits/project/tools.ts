@@ -31,6 +31,7 @@ import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchServ
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import { Tool, Toolkit } from "effect/ai";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
@@ -180,6 +181,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     PhysicalFileSystem.PhysicalFileSystem,
     ServerConfig.ServerConfig,
     ServerSettings.ServerSettingsService,
+    SqlClient.SqlClient,
     ProviderRegistry.ProviderRegistry,
     DocumentText.DocumentText,
     Digest.Digest,

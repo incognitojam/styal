@@ -87,6 +87,7 @@ const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
+    NodeSqliteClient.layer({ filename: ":memory:" }),
   );
 
 function startWithMissingWorktree(
@@ -156,6 +157,7 @@ function startWithMissingWorktree(
       }),
   );
   const startRootRun = vi.fn(() => Effect.void);
+  const openSession = vi.fn(() => Effect.die("Unexpected provider session"));
   const pruneWorktrees = vi.fn(() => Effect.void);
   const runSetup = vi.fn(() => onSetup.pipe(Effect.as(setupResult)));
   let folderExists = exists;
@@ -242,7 +244,7 @@ function startWithMissingWorktree(
             );
           },
         }),
-        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
+        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ open: openSession }),
         Layer.mock(ProviderAuthService.ProviderAuthService)({
           tryHandlePromptCommand: () => Effect.succeed(false),
         }),
@@ -272,6 +274,7 @@ function startWithMissingWorktree(
     runSetup,
     writeIfRunCurrent,
     startRootRun,
+    openSession,
     setBranch: (branch: string | null) => {
       projection = { ...projection, thread: { ...projection.thread, branch } };
     },
@@ -2179,6 +2182,7 @@ effectIt.effect.each(["recovery-record", "lost-git"] as const)(
   (failure) =>
     Effect.gen(function* () {
       const f = yield* cleanupFixture;
+      if (failure === "lost-git") yield* f.command(f.base, ["init", "-b", "main"]);
       yield* f.write("src/main.txt", "tracked source");
       yield* f.command(f.worktree, ["add", "src/main.txt"]);
       yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
@@ -2211,6 +2215,21 @@ effectIt.effect.each(["recovery-record", "lost-git"] as const)(
       expect(harness.startRootRun).not.toHaveBeenCalled();
       expect(harness.writeIfRunCurrent).toHaveBeenCalledOnce();
       const events = harness.writeIfRunCurrent.mock.calls[0]![0].events;
+      expect(harness.openSession).not.toHaveBeenCalled();
+      if (failure === "lost-git") {
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: "turn-item.updated",
+            payload: expect.objectContaining({
+              type: "error",
+              title: "Couldn't check out thread workspace",
+              failure: expect.objectContaining({
+                message: `Worktree "${f.worktree}" is missing its Git data. Run git worktree repair from the main repository if its registration still exists, or move your files out and remove this folder so styal can recreate it.`,
+              }),
+            }),
+          }),
+        );
+      }
       expect(
         events.some((event) => event.type === "run.updated" && event.payload.status === "failed"),
       ).toBe(true);

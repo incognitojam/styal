@@ -14,6 +14,7 @@ import { TestClock } from "effect/testing";
 
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 
@@ -29,9 +30,10 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
-const layerTest = Layer.merge(
+const layerTest = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-repository-identity-" }),
   ServerSettings.layerTest(),
+  SqlitePersistence.layerMemory,
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(layerTest)("RepositoryIdentityResolverLive", (it) => {

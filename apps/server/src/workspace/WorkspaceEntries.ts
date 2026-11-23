@@ -3,7 +3,6 @@ import * as NodeFSP from "node:fs/promises";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as RcMap from "effect/RcMap";
@@ -27,7 +26,7 @@ import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/p
 import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, makeIsManagedGitRoot } from "../worktreesDirectory.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -160,8 +159,8 @@ export const make = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
   const vcsProcess = yield* VcsProcess.VcsProcess;
-  const fs = yield* FileSystem.FileSystem;
   const boundaryFor = yield* makeManagedWorktreeBoundary;
+  const isManagedGitRoot = yield* makeIsManagedGitRoot;
   const canReadGit = Effect.fn("WorkspaceEntries.canReadGit")(function* (cwd: string) {
     const located = yield* boundaryFor(cwd).pipe(Effect.result);
     if (located._tag === "Failure") return false;
@@ -179,10 +178,8 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.orElseSucceed(() => undefined));
     if (result === undefined || result.exitCode !== 0 || result.stdoutTruncated) return false;
-    const root = yield* fs.realPath(result.stdout.trimEnd()).pipe(Effect.orElseSucceed(() => null));
-    return (
-      root !== null &&
-      isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
+    return yield* isManagedGitRoot(boundary, result.stdout.trimEnd()).pipe(
+      Effect.orElseSucceed(() => false),
     );
   });
 

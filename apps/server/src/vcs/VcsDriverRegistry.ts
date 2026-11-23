@@ -11,7 +11,7 @@ import type { VcsDriverKind, VcsError, VcsRepositoryIdentity } from "@t3tools/co
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
-import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, makeIsManagedGitRoot } from "../worktreesDirectory.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 
 const DETECTION_CACHE_CAPACITY = 2_048;
@@ -61,6 +61,7 @@ function parseDetectionCacheKey(key: string): {
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const boundaryFor = yield* makeManagedWorktreeBoundary;
+  const isManagedGitRoot = yield* makeIsManagedGitRoot;
   const path = yield* Path.Path;
   const projectConfig = yield* VcsProjectConfig.VcsProjectConfig;
   const git = yield* GitVcsDriver.makeVcsDriver;
@@ -173,13 +174,7 @@ export const make = Effect.gen(function* () {
         if (boundary.escaped) return null;
         const handle = yield* detectResolvedKind({ cwd: input.cwd, requestedKind });
         if (handle === null) return null;
-        const root = yield* fileSystem
-          .realPath(handle.repository.rootPath)
-          .pipe(Effect.orElseSucceed(() => null));
-        return root !== null &&
-          isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
-          ? handle
-          : null;
+        return (yield* isManagedGitRoot(boundary, handle.repository.rootPath)) ? handle : null;
       }
       const key = detectionCacheKey({ cwd: input.cwd, requestedKind });
       const cached = yield* Cache.get(detectionCache, key);

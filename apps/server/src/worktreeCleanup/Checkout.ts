@@ -6,7 +6,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, makeIsManagedGitRoot } from "../worktreesDirectory.ts";
 import { makeInspectGit } from "./gitInspection.ts";
 
 export class CheckoutLimits extends Context.Reference<{
@@ -510,13 +510,18 @@ export const makeCheckoutRoot = Effect.gen(function* () {
   const path = yield* Path.Path;
   const git = yield* makeInspectGit;
   const boundaryFor = yield* makeManagedWorktreeBoundary;
+  const isManagedGitRoot = yield* makeIsManagedGitRoot;
   const fail = (message: string) => new WorktreeCleanupError({ reason: "run-failed", message });
   const io = <A>(run: () => Promise<A>) =>
     Effect.tryPromise({
       try: run,
       catch: () => fail("Could not identify the workspace checkout."),
     });
-  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string, forLease = false) {
+  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (
+    cwd: string,
+    forLease = false,
+    recordedWorktree?: string,
+  ) {
     const resolved = path.resolve(cwd);
     let canonical = resolved;
     let parent = path.isAbsolute(cwd) ? cwd : `${path.resolve(".")}${path.sep}${cwd}`;
@@ -543,10 +548,14 @@ export const makeCheckoutRoot = Effect.gen(function* () {
       );
     if (boundary?.escaped) return yield* unavailable();
     if (boundary !== null) {
+      const leasePath =
+        recordedWorktree === undefined
+          ? boundary.leasePath
+          : yield* boundary.canonical(recordedWorktree);
       if (
         missing.length > 0 &&
         !(yield* io(() =>
-          fs.stat(boundary.leasePath).then(
+          fs.stat(leasePath).then(
             () => true,
             () => false,
           ),
@@ -558,36 +567,35 @@ export const makeCheckoutRoot = Effect.gen(function* () {
           ),
         ))
       )
-        return boundary.leasePath;
+        return leasePath;
       const reported = yield* git(parent, ["rev-parse", "--show-toplevel"]);
       if (reported.exitCode === 0 && !reported.stdoutTruncated) {
         const top = yield* io(() => fs.realpath(reported.stdout.trimEnd()));
-        if (isWithinWorktreesDirectory(path, boundary.directory, top, boundary.caseInsensitive))
-          return top;
+        if (yield* isManagedGitRoot(boundary, top, recordedWorktree)) return top;
         if (
           forLease ||
           (missing.length > 0 &&
             !(yield* io(() =>
-              fs.stat(boundary.leasePath).then(
+              fs.stat(leasePath).then(
                 () => true,
                 () => false,
               ),
             )))
         )
-          return boundary.leasePath;
+          return leasePath;
         return yield* unavailable();
       }
       if (
         forLease ||
         (missing.length > 0 &&
           !(yield* io(() =>
-            fs.stat(boundary.leasePath).then(
+            fs.stat(leasePath).then(
               () => true,
               () => false,
             ),
           )))
       )
-        return boundary.leasePath;
+        return leasePath;
       return canonical;
     }
     for (let directory = canonical; ; directory = path.dirname(directory)) {

@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { checkpointRefForScopeOrdinal } from "../orchestration-v2/CheckpointService.ts";
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
@@ -279,6 +280,7 @@ const layerStore = CheckpointStore.layer.pipe(
 const layerTest = Layer.merge(layerStore, layerVcsProcess).pipe(
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(NodeCrypto.layer),
+  Layer.provide(SqlitePersistence.layerMemory),
 );
 
 it.effect("shares the turn and full-thread diff budget across real Git batches", () =>

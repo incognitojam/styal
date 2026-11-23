@@ -3131,10 +3131,17 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
   ) {
     const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
-    yield* checkoutRoot(workspace).pipe(
+    yield* checkoutRoot(workspace, false, requestedInput.worktreePath ?? undefined).pipe(
       Effect.flatMap(checkout.restore),
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
     );
+    if (requestedInput.cwd !== workspace) {
+      yield* checkoutRoot(requestedInput.cwd).pipe(
+        Effect.mapError(
+          (cause) => new TerminalWorkspaceRestoreError({ cwd: requestedInput.cwd, cause }),
+        ),
+      );
+    }
     const terminalId = requestedInput.terminalId;
     const launchCommand = "command" in requestedInput ? requestedInput.command : null;
     const displayLabel = ("label" in requestedInput ? (requestedInput.label ?? "") : "").trim();
@@ -3284,14 +3291,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const session = Option.getOrUndefined(existing);
     const workspace = input.worktreePath ?? session?.worktreePath ?? input.cwd ?? session?.cwd;
     if (workspace === undefined) return yield* effect;
-    const root = yield* checkoutRoot(workspace).pipe(
+    const root = yield* checkoutRoot(
+      workspace,
+      false,
+      input.worktreePath ?? session?.worktreePath ?? undefined,
+    ).pipe(
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
     );
     return yield* withWorkspaceLease(root, effect);
   });
 
   const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
-    checkoutRoot(input.worktreePath ?? input.cwd).pipe(
+    checkoutRoot(input.worktreePath ?? input.cwd, false, input.worktreePath ?? undefined).pipe(
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: input.cwd, cause })),
       Effect.flatMap((root) =>
         withWorkspaceLease(root, withThreadLock(input.threadId, openWithWorkspaceLease(input))),

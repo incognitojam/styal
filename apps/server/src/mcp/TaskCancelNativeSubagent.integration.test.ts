@@ -216,6 +216,7 @@ const cancelBackgroundOnlyTask = (
       );
       const layerTest = layerOrchestratorService.pipe(
         Layer.provideMerge(layerOrchestration),
+        Layer.provide(databaseLayer),
         Layer.provide(
           Layer.mergeAll(
             layerAdapters,

@@ -38,6 +38,7 @@ import * as ProviderInstances from "./provider/ProviderInstanceRegistry.ts";
 import * as Relay from "./relay/AgentAwarenessRelay.ts";
 import * as Lifecycle from "./serverLifecycleEvents.ts";
 import * as Startup from "./serverRuntimeStartup.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as Settings from "./serverSettings.ts";
 import * as Environment from "./environment/ServerEnvironment.ts";
 import * as Launcher from "./cloud/serviceLauncherClient.ts";
@@ -166,7 +167,9 @@ it.effect.each(["success", "retry"] as const)(
         const context = yield* Layer.buildWithScope(
           Startup.layerWithOptions().pipe(
             Layer.provide(services),
-            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            Layer.provide(
+              Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, SqlitePersistence.layerMemory),
+            ),
           ),
           serviceScope,
         );
@@ -307,7 +310,9 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
       const context = yield* Layer.build(
         Startup.layerWithOptions().pipe(
           Layer.provide(services),
-          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          Layer.provide(
+            Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, SqlitePersistence.layerMemory),
+          ),
         ),
       );
       const startup = Context.get(context, Startup.ServerRuntimeStartup);

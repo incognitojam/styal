@@ -17,6 +17,7 @@ import { fixture, nodeLayer } from "./fixtures.testkit.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import { CheckoutLimits, makeCheckout, makeCheckoutRoot } from "./Checkout.ts";
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeDeletion } from "./Deletion.ts";
 
@@ -818,6 +819,12 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
       expect(yield* root(nested)).toBe(nested);
       yield* fs.makeDirectory(`${nested}/subdir`);
       expect(yield* root(`${nested}/subdir`)).toBe(nested);
+      expect(yield* root(`${nested}/subdir`, false, nested)).toBe(nested);
+      if ((yield* HostProcess.Platform) !== "win32") {
+        const alias = `${enclosing}/managed/alias`;
+        yield* fs.symlink(`${enclosing}/managed/project`, alias);
+        expect(yield* root(`${alias}/topic/subdir`, false, `${alias}/topic`)).toBe(nested);
+      }
       const inner = `${nested}/inner`;
       yield* fs.makeDirectory(inner);
       yield* command(inner, ["init", "-b", "main"]);
@@ -830,6 +837,7 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
         command(enclosing, ["for-each-ref", "--format=%(refname) %(objectname)"]),
       ]);
       yield* fs.remove(`${nested}/.git`);
+      expect((yield* root(nested, false, nested).pipe(Effect.result))._tag).toBe("Failure");
       for (const cwd of [nested, `${nested}/subdir`]) {
         expect(yield* root(cwd, true)).toBe(nested);
         expect(yield* registry.detect({ cwd })).toBeNull();
@@ -881,6 +889,13 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
       }
       yield* fs.makeDirectory(`${enclosing}/ordinary`);
       expect(yield* root(`${enclosing}/ordinary`)).toBe(enclosing);
+      const plain = `${base}/plain`;
+      yield* fs.makeDirectory(plain);
+      yield* fs.writeFileString(`${plain}/notes`, "keep");
+      const plainRoot = yield* makeCheckoutRoot.pipe(
+        Effect.provide(ServerSettings.layerTest({ worktreesDirectory: base })),
+      );
+      expect(yield* plainRoot(plain, false, plain)).toBe(plain);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -889,5 +904,5 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
         ).pipe(Layer.provideMerge(ServerConfig.layerTest(base, base))),
       ),
     );
-  }).pipe(Effect.scoped, Effect.provide(nodeLayer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.merge(nodeLayer, SqlitePersistence.layerMemory))),
 );

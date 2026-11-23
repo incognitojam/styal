@@ -25,6 +25,7 @@ import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
@@ -357,6 +358,7 @@ it.effect("resolves the identity of a project whose remote was added during the 
         ProcessRunner.layer,
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-finalization-identity-" }),
         ServerSettings.layerTest(),
+        SqlitePersistence.layerMemory,
       ).pipe(Layer.provideMerge(NodeServices.layer)),
     ),
   ),

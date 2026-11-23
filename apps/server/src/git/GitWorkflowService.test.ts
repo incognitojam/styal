@@ -59,6 +59,7 @@ const realGitLayer = (
 
 const managedGitFixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const base = yield* fs.realPath(
     yield* fs.makeTempDirectoryScoped({ prefix: "t3-git-worktree-boundary-" }),
   );
@@ -67,6 +68,7 @@ const managedGitFixture = Effect.gen(function* () {
   const context = yield* Layer.build(realGitLayer(base, managed));
   const git = Context.get(context, GitVcsDriver.GitVcsDriver);
   const workflow = Context.get(context, GitWorkflowService.GitWorkflowService);
+  const sql = Context.get(context, SqlClient.SqlClient);
   const command = (cwd: string, args: ReadonlyArray<string>) =>
     git.execute({ operation: "fixture", cwd, args }).pipe(Effect.map(({ stdout }) => stdout));
   const init = Effect.fn("fixture.initRepository")(function* (
@@ -89,13 +91,25 @@ const managedGitFixture = Effect.gen(function* () {
   });
   yield* init(enclosing);
   yield* fs.makeDirectory(managed);
-  return { fs, base, enclosing, managed, workflow, command, init };
+  const record = (worktreePath: string) => sql`
+    INSERT INTO orchestration_v2_projection_threads (
+      thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+      created_at, updated_at, payload_json
+    ) VALUES (
+      ${worktreePath}, 'fixture', 'Fixture', 'codex', 'full-access', 'default',
+      '1970-01-01', '1970-01-01', ${JSON.stringify({ worktreePath })}
+    )
+  `;
+  return { fs, path, base, enclosing, managed, workflow, command, init, record };
 }).pipe(Effect.provide(NodeServices.layer));
 
 const layerTest = Layer.merge(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }),
   ServerSettings.layerTest(),
-).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+).pipe(
+  Layer.provideMerge(layerMemory),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 it.layer(layerTest)("GitWorkflowService", (it) => {
   it.effect.each([{ location: "root" }, { location: "nested" }, { location: "missing-nested" }])(
@@ -302,6 +316,7 @@ it.live.each([
     yield* f.fs.makeDirectory(`${root}/topic`);
     const entry = alias ? `${f.managed}/${alias}` : root;
     if (alias) yield* f.fs.symlink(root, entry);
+    if (rootPath !== null) yield* f.record(nested ? `${f.managed}/project/topic` : entry);
 
     for (const cwd of alias ? [entry, `${entry}/topic`] : [`${entry}/topic`]) {
       assert.strictEqual(yield* f.workflow.repositoryRoot(cwd), root);
@@ -349,52 +364,71 @@ it.live.each([
   }),
 );
 
-it.live("refuses Git operations after a nested linked worktree loses its gitfile", () =>
-  Effect.gen(function* () {
-    const f = yield* managedGitFixture;
-    const worktree = `${f.managed}/project/topic`;
-    const cwd = `${worktree}/src`;
-    const note = `${cwd}/untracked.txt`;
-    yield* f.command(f.enclosing, ["worktree", "add", "-b", "topic", worktree]);
-    yield* f.fs.makeDirectory(cwd);
-    yield* f.fs.writeFileString(note, "untracked work\n");
-    assert.strictEqual(yield* f.workflow.repositoryRoot(cwd), worktree);
-    assert.strictEqual(yield* f.workflow.currentBranch(cwd), "topic");
+it.live.each([
+  { layout: "outside" },
+  { layout: "project/topic" },
+  { layout: "outer/inner" },
+  { layout: "managed-root" },
+  { layout: "project/topic", relative: true },
+])(
+  "refuses a recorded worktree after it loses its gitfile: $layout (relative: $relative)",
+  ({ layout, relative = false }) =>
+    Effect.gen(function* () {
+      const f = yield* managedGitFixture;
+      const enclosing =
+        layout === "outside"
+          ? f.enclosing
+          : layout === "managed-root"
+            ? f.managed
+            : `${f.managed}/${layout.split("/")[0]}`;
+      if (layout !== "outside") yield* f.init(enclosing);
+      const worktree =
+        layout === "managed-root"
+          ? `${f.managed}/topic`
+          : `${f.managed}/${layout === "outer/inner" ? layout : "project/topic"}`;
+      const cwd = `${worktree}/src`;
+      const note = `${cwd}/untracked.txt`;
+      yield* f.command(f.enclosing, ["worktree", "add", "-b", "topic", worktree]);
+      yield* f.fs.makeDirectory(cwd);
+      yield* f.fs.writeFileString(note, "untracked work\n");
+      yield* f.record(relative ? f.path.relative(process.cwd(), worktree) : worktree);
+      assert.strictEqual(yield* f.workflow.repositoryRoot(cwd), worktree);
+      assert.strictEqual(yield* f.workflow.currentBranch(cwd), "topic");
 
-    const enclosingState = Effect.forEach(
-      [
-        ["symbolic-ref", "HEAD"],
-        ["rev-parse", "HEAD"],
-        ["ls-files", "--stage", "-z"],
-        ["for-each-ref", "--format=%(refname) %(objectname)"],
-      ],
-      (args) => f.command(f.enclosing, args),
-    );
-    const before = yield* enclosingState;
-    yield* f.fs.remove(`${worktree}/.git`);
-    assert.strictEqual(
-      (yield* f.command(cwd, ["rev-parse", "--show-toplevel"])).trim(),
-      f.enclosing,
-    );
+      const enclosingState = Effect.forEach(
+        [
+          ["symbolic-ref", "HEAD"],
+          ["rev-parse", "HEAD"],
+          ["ls-files", "--stage", "-z"],
+          ["for-each-ref", "--format=%(refname) %(objectname)"],
+        ],
+        (args) => f.command(enclosing, args),
+      );
+      const before = yield* enclosingState;
+      yield* f.fs.remove(`${worktree}/.git`);
+      assert.strictEqual(
+        (yield* f.command(cwd, ["rev-parse", "--show-toplevel"])).trim(),
+        enclosing,
+      );
 
-    assert.deepStrictEqual(
-      yield* Effect.all({
-        root: f.workflow.repositoryRoot(cwd),
-        branch: f.workflow.currentBranch(cwd),
-        creation: f.workflow.createRef({ cwd, refName: "wrong-repository" }).pipe(
-          Effect.result,
-          Effect.map(({ _tag }) => _tag),
-        ),
-        enclosingState,
-        note: f.fs.readFileString(note),
-      }),
-      {
-        root: null,
-        branch: null,
-        creation: "Failure",
-        enclosingState: before,
-        note: "untracked work\n",
-      },
-    );
-  }),
+      assert.deepStrictEqual(
+        yield* Effect.all({
+          root: f.workflow.repositoryRoot(cwd),
+          branch: f.workflow.currentBranch(cwd),
+          creation: f.workflow.createRef({ cwd, refName: "wrong-repository" }).pipe(
+            Effect.result,
+            Effect.map(({ _tag }) => _tag),
+          ),
+          enclosingState,
+          note: f.fs.readFileString(note),
+        }),
+        {
+          root: null,
+          branch: null,
+          creation: "Failure",
+          enclosingState: before,
+          note: "untracked work\n",
+        },
+      );
+    }),
 );

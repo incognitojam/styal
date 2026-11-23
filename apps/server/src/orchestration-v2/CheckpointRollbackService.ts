@@ -10,6 +10,7 @@ import {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Digest from "effect/crypto/Digest";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -112,6 +113,7 @@ export const layer: Layer.Layer<
   CheckpointRollbackServiceV2,
   never,
   | CheckpointServiceV2
+  | SqlClient.SqlClient
   | GitWorkflowService.GitWorkflowService
   | EventSinkV2
   | IdAllocator.IdAllocatorV2
@@ -232,7 +234,7 @@ export const layer: Layer.Layer<
 
       const { worktreePath, branch } = context.thread;
       if (workspace !== undefined) {
-        yield* checkoutRoot(workspace).pipe(
+        yield* checkoutRoot(workspace, false, worktreePath ?? undefined).pipe(
           Effect.flatMap(checkout.restore),
           Effect.mapError(
             (cause) =>
@@ -411,7 +413,10 @@ export const layer: Layer.Layer<
               ? Option.getOrUndefined(yield* projects.get(thread.projectId))
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
-          const workspace = cwd === undefined ? undefined : yield* checkoutRoot(cwd, true);
+          const workspace =
+            cwd === undefined
+              ? undefined
+              : yield* checkoutRoot(cwd, true, thread.worktreePath ?? undefined);
           yield* Effect.scoped(
             workspace === undefined
               ? execute(input)

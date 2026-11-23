@@ -21,6 +21,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
@@ -91,6 +92,7 @@ function layer(input: {
   readonly pathLayer?: typeof NodePath.layer;
 }) {
   const layerService = SourceControlRepositoryService.layer.pipe(
+    Layer.provide(SqlitePersistence.layerMemory),
     Layer.provide(Layer.merge(PhysicalFileSystem.layer, ServerSettings.layerTest())),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({

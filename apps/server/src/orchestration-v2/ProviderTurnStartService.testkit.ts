@@ -2,6 +2,7 @@ import { SourceControlProviderError, SourceControlProviderKind } from "@t3tools/
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "../nodeServices.ts";
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as GitManager from "../git/GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -67,6 +68,7 @@ export const layerRealGit = GitWorkflow.layer.pipe(
     ),
   ),
   Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer))),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provide(ServerSettings.layerTest()),
   Layer.provideMerge(VcsProcess.layer),

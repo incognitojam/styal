@@ -26,6 +26,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
@@ -40,6 +41,7 @@ import { expect, vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
@@ -248,6 +250,7 @@ interface CreateManagerOptions {
   maxRetainedInactiveSessions?: number;
   resolveWorkspaceEnvironment?: (workspacePath: string) => Effect.Effect<Record<string, string>>;
   historyByteLimit?: number;
+  worktreesDirectory?: string;
   ptyAdapter?: FakePtyAdapter;
   registerBrowserOpen?: Parameters<
     typeof TerminalManager.makeWithOptions
@@ -279,6 +282,7 @@ const createManager = (
   | ProcessRunner.ProcessRunner
   | Digest.Digest
   | PhysicalFileSystem.PhysicalFileSystem
+  | SqlClient.SqlClient
 > =>
   Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
     Effect.gen(function* () {
@@ -332,7 +336,9 @@ const createManager = (
         Effect.provide(
           Layer.merge(
             ServerConfig.layerTest(baseDir, baseDir),
-            ServerSettings.layerTest().pipe(Layer.orDie),
+            ServerSettings.layerTest({ worktreesDirectory: options.worktreesDirectory ?? "" }).pipe(
+              Layer.orDie,
+            ),
           ),
         ),
         Effect.provideService(
@@ -449,6 +455,7 @@ it.layer(
   Layer.mergeAll(
     NodeServices.layer,
     NodeCrypto.layer,
+    SqlitePersistence.layerMemory,
     ProcessRunner.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   ),
   { excludeTestServices: true },
@@ -505,6 +512,37 @@ it.layer(
           : yield* manager.openCommand({ ...input, command: "synthetic" });
       assert.equal(terminal.cwd, cwd);
       yield* manager.close({ threadId: input.threadId, terminalId: input.terminalId });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refuses a recorded damaged cwd even when the terminal workspace is healthy", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const cwd = `${f.worktree}/inner`;
+      yield* f.command(f.root, ["worktree", "add", "-b", "inner", cwd]);
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+          created_at, updated_at, payload_json
+        ) VALUES (
+          'terminal-inner', 'fixture', 'Fixture', 'codex', 'full-access', 'default',
+          '1970-01-01', '1970-01-01', ${JSON.stringify({ worktreePath: cwd })}
+        )
+      `;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        gitDriver: f.git,
+        worktreesDirectory: f.config.worktreesDir,
+      });
+      yield* f.fs.remove(`${cwd}/.git`);
+      const result = yield* manager
+        .open(openInput({ cwd, worktreePath: f.worktree }))
+        .pipe(Effect.result);
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "TerminalWorkspaceRestoreError" },
+      });
+      expect(ptyAdapter.spawnInputs).toEqual([]);
     }).pipe(Effect.scoped),
   );
 

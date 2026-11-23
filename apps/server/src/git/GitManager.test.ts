@@ -765,6 +765,7 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
     ),
   ),
   Layer.provideMerge(VcsProcess.layer),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 

@@ -1,6 +1,7 @@
 import * as ServerConfig from "../config.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import type * as SqlClient from "effect/sql/SqlClient";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import {
@@ -3492,6 +3493,7 @@ export const layer: Layer.Layer<
   OrchestratorMcpService,
   never,
   | ServerConfig.ServerConfig
+  | SqlClient.SqlClient
   | FileSystem.FileSystem
   | Path.Path
   | PhysicalFileSystem.PhysicalFileSystem

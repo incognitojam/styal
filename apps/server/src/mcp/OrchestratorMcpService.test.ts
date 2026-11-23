@@ -84,6 +84,7 @@ const layerServerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-mc
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(layerServerConfig),
+  Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(NodeServices.layer),
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
@@ -3176,6 +3177,7 @@ describe("OrchestratorMcpService provider resolution", () => {
     ) =>
       OrchestratorMcpService.layer.pipe(
         Layer.provide(layerServerConfig),
+        Layer.provide(SqlitePersistence.layerMemory),
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
         Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)(git)),
         Layer.provide(
