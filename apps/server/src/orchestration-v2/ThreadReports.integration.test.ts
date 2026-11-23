@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
@@ -33,6 +33,7 @@ import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { reportRecipient } from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
 import { answerNotesText, checkThreadReport } from "./ThreadReports.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
@@ -55,6 +56,7 @@ const makeHelpers = (input: {
   return Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
     const settings = yield* ServerSettings.ServerSettingsService;
     const projectId = ProjectId.make(`project:${name}`);
     const setCoordinator = (threadId: ThreadId | null) =>
@@ -352,6 +354,7 @@ const makeHelpers = (input: {
       orchestrator,
       settings,
       worker,
+      outbox,
       started,
       create,
       setCoordinator,
@@ -579,6 +582,56 @@ it.effect("person-started summaries wait for the launcher, once, until supersede
       assert.deepEqual(yield* notes(), [], "threads without report-back are untouched");
     }),
   ),
+);
+
+it.effect.each(["idle", "person", "agent"] as const)(
+  "%s compaction before summary recording preserves the unreported person-started result",
+  (source) =>
+    harness(
+      `report-late-summary-${source}`,
+      ({ orchestrator, send, endTurn, reports, worker, outbox }) =>
+        Effect.gen(function* () {
+          const enqueue = outbox.enqueue;
+          const held: Array<EffectOutbox.PendingOrchestrationEffectV2> = [];
+          using pause = vi.spyOn(outbox, "enqueue").mockImplementation((effects) => {
+            held.push(...effects.filter((effect) => effect.request.type === "thread-report.check"));
+            return enqueue(
+              effects.filter((effect) => effect.request.type !== "thread-report.check"),
+            );
+          });
+          const notes = () =>
+            orchestrator
+              .getThreadProjection(launcherId)
+              .pipe(Effect.map((projection) => projection.thread.answerNotes ?? []));
+          const result = yield* send(launchedId, "Keep JSON", { sender: "user" });
+          yield* endTurn(result, "completed", ["JSON remains the default."]);
+          assert.isEmpty(yield* notes(), "the result's report check has not run yet");
+          const compact = yield* send(launchedId, "/compact", {
+            ...(source === "idle" ? { idleCompaction: "beforeCacheExpires" } : {}),
+            sender: source === "person" ? "user" : "agent",
+          });
+          yield* endTurn(compact, "completed");
+          assert.isEmpty(yield* notes(), "compaction completed before summary recording");
+          assert.isTrue(
+            held.some(
+              (effect) =>
+                effect.request.type === "thread-report.check" &&
+                effect.request.trigger.kind === "run" &&
+                effect.request.trigger.runId === result.runId,
+            ),
+          );
+          pause.mockRestore();
+          yield* enqueue(held);
+          yield* worker.drain();
+          assert.lengthOf(yield* notes(), 1);
+          assert.include((yield* notes())[0]!.text, "JSON remains the default.");
+          assert.isEmpty(yield* reports(), "the summary does not wake the launcher");
+          const next = yield* send(launcherId, "Collect the result", { sender: "user" });
+          assert.include(next.message.text, "JSON remains the default.");
+          yield* endTurn(next, "completed");
+          assert.isEmpty(yield* notes());
+        }),
+    ),
 );
 
 it.effect("a turn with a pull request watch reports its published work once", () =>
