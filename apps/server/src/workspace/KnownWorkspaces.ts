@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 // Client-supplied worktrees count only under managed folders or when Git lists them for the project.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -55,6 +56,7 @@ export const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
 
   // Missing roots keep lexical paths; other resolution failures and filesystem roots grant nothing.
   const resolveRoot = (value: string) => {
@@ -110,7 +112,8 @@ export const make = Effect.gen(function* () {
         if (project === undefined) return false;
         let listed = projectWorktrees.get(projectId);
         if (listed === undefined) {
-          listed = yield* git.listWorktreePaths(project.workspaceRoot).pipe(
+          listed = yield* checkoutRoot(project.workspaceRoot).pipe(
+            Effect.andThen(git.listWorktreePaths(project.workspaceRoot)),
             Effect.flatMap((paths) => Effect.forEach(paths, resolveRoot)),
             Effect.map((paths) => paths.filter((listedPath) => listedPath !== null)),
             Effect.orElseSucceed((): ReadonlyArray<string> => []),

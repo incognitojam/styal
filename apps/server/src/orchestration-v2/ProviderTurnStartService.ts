@@ -38,7 +38,7 @@ import {
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
 } from "./Adapters/ClaudeAdapterV2.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
-import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import { makeCheckout, makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -215,6 +215,7 @@ export const layer: Layer.Layer<
     const path = yield* Path.Path;
     const withWorkspaceLease = yield* makeWorkspaceLease;
     const checkout = yield* makeCheckout;
+    const checkoutRoot = yield* makeCheckoutRoot;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
@@ -447,6 +448,7 @@ export const layer: Layer.Layer<
         readonly willRetry?: boolean;
       },
       workspace?: string,
+      workspaceError?: Error,
     ) {
       const { runId } = input;
       const projection = yield* projectionStore.getTurnStartContext(input.threadId, runId);
@@ -734,6 +736,16 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
+      if (workspaceError !== undefined) {
+        if (input.willRetry === true) return yield* Effect.fail(workspaceError);
+        yield* settleStartFailure({
+          signal: "worktree-restore-failure",
+          title: "Couldn't check out thread workspace",
+          error: workspaceError,
+          message: workspaceError.message,
+        });
+        return;
+      }
       if (workspace !== undefined) {
         const restored = yield* checkout.restore(workspace).pipe(Effect.result);
         if (restored._tag === "Failure") {
@@ -2192,7 +2204,13 @@ export const layer: Layer.Layer<
               ? Option.getOrUndefined(yield* projects.getById(thread.projectId))
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
-          const workspace = cwd === undefined ? undefined : yield* checkout.root(cwd);
+          const resolved =
+            cwd === undefined ? undefined : yield* checkoutRoot(cwd).pipe(Effect.result);
+          if (resolved?._tag === "Failure") {
+            yield* Effect.scoped(start(input, undefined, resolved.failure));
+            return;
+          }
+          const workspace = resolved?.success;
           yield* Effect.scoped(
             Effect.gen(function* () {
               const providerTurn = yield* workspace === undefined

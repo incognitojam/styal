@@ -6,6 +6,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
 import { makeInspectGit } from "./gitInspection.ts";
 
 export class CheckoutLimits extends Context.Reference<{
@@ -58,37 +59,6 @@ export const makeCheckout = Effect.gen(function* () {
     if (!allowed.includes(result.exitCode) || result.stdoutTruncated || result.stderrTruncated)
       return yield* fail("Git checkout check failed or returned incomplete output.");
     return result.stdout;
-  });
-  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string) {
-    const resolved = path.resolve(cwd);
-    let canonical = resolved;
-    let parent = resolved;
-    const missing: string[] = [];
-    while (true) {
-      const real = yield* io(() =>
-        fs.realpath(parent).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
-          throw error;
-        }),
-      );
-      if (real !== null) {
-        canonical = path.join(real, ...missing);
-        break;
-      }
-      if (path.dirname(parent) === parent) break;
-      missing.unshift(path.basename(parent));
-      parent = path.dirname(parent);
-    }
-    for (let directory = canonical; ; directory = path.dirname(directory)) {
-      const marker = yield* io(() =>
-        fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
-          throw error;
-        }),
-      );
-      if (marker?.isFile() || marker?.isDirectory()) return directory;
-      if (path.dirname(directory) === directory) return canonical;
-    }
   });
   const adminDirectory = Effect.fn("WorktreeCleanup.checkoutAdmin")(function* (root: string) {
     const file = path.join(root, ".git");
@@ -532,5 +502,84 @@ export const makeCheckout = Effect.gen(function* () {
           Effect.mapError(() => fail("Invalid worktree checkout recovery record.")),
         );
   });
-  return { release, restore, state, root, verifyOwnership };
+  return { release, restore, state, verifyOwnership };
+});
+
+export const makeCheckoutRoot = Effect.gen(function* () {
+  const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
+  const path = yield* Path.Path;
+  const git = yield* makeInspectGit;
+  const managedOwner = yield* makeManagedWorktreeOwner;
+  const fail = (message: string) => new WorktreeCleanupError({ reason: "run-failed", message });
+  const io = <A>(run: () => Promise<A>) =>
+    Effect.tryPromise({
+      try: run,
+      catch: () => fail("Could not identify the workspace checkout."),
+    });
+  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string) {
+    const resolved = path.resolve(cwd);
+    let canonical = resolved;
+    let parent = resolved;
+    const missing: string[] = [];
+    while (true) {
+      const real = yield* io(() =>
+        fs.realpath(parent).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+          throw error;
+        }),
+      );
+      if (real !== null) {
+        canonical = path.join(real, ...missing);
+        break;
+      }
+      if (path.dirname(parent) === parent) break;
+      missing.unshift(path.basename(parent));
+      parent = path.dirname(parent);
+    }
+    const owner = yield* managedOwner(resolved);
+    if (owner !== null) {
+      if (
+        !(yield* io(() =>
+          fs.lstat(owner).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return false;
+              throw error;
+            },
+          ),
+        ))
+      )
+        return owner;
+      if (
+        !(yield* io(() =>
+          fs.lstat(path.join(owner, ".git")).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return false;
+              throw error;
+            },
+          ),
+        ))
+      )
+        return yield* fail("This worktree has lost its Git data. Its workspace cannot be used.");
+      const reported = yield* git(owner, ["rev-parse", "--show-toplevel"]);
+      if (
+        reported.exitCode !== 0 ||
+        reported.stdoutTruncated ||
+        path.resolve(reported.stdout.trimEnd()) !== owner
+      )
+        return yield* fail("This worktree has lost its Git data. Its workspace cannot be used.");
+    }
+    for (let directory = canonical; ; directory = path.dirname(directory)) {
+      const marker = yield* io(() =>
+        fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+          throw error;
+        }),
+      );
+      if (marker?.isFile() || marker?.isDirectory()) return directory;
+      if (path.dirname(directory) === directory) return canonical;
+    }
+  });
+  return root;
 });

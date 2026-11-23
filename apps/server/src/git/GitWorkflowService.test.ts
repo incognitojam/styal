@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
@@ -45,6 +46,7 @@ const realGitLayer = (prefix: string) =>
     Layer.provideMerge(WorkspacePortAllocator.layer),
     Layer.provideMerge(layerMemory),
     Layer.provideMerge(GitVcsDriver.layer),
+    Layer.provide(ServerSettings.layerTest()),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix }).pipe(
@@ -54,7 +56,12 @@ const realGitLayer = (prefix: string) =>
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowService", (it) => {
+const layerTest = Layer.merge(
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }),
+  ServerSettings.layerTest(),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+
+it.layer(layerTest)("GitWorkflowService", (it) => {
   it.effect.each([{ location: "root" }, { location: "nested" }, { location: "missing-nested" }])(
     "restores source before committing from $location",
     ({ location }) =>
@@ -71,6 +78,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
         yield* checkout.release(f.worktree, f.root);
         assert.isFalse(yield* f.fs.exists(`${f.worktree}/src/main.txt`));
         const workflow = yield* GitWorkflowService.make.pipe(
+          Effect.provideService(ServerConfig.ServerConfig, f.config),
           Effect.provide(
             Layer.mergeAll(
               Layer.succeed(GitVcsDriver.GitVcsDriver, f.git),

@@ -2146,9 +2146,9 @@ effectIt.effect("holds a starting run back until an install of its provider CLI 
   }),
 );
 
-effectIt.effect(
-  "reports checkout recovery failure on the thread without starting setup or the provider",
-  () =>
+effectIt.effect.each(["recovery-record", "lost-git"] as const)(
+  "reports %s workspace failure on the thread without starting setup or the provider",
+  (failure) =>
     Effect.gen(function* () {
       const f = yield* cleanupFixture;
       yield* f.write("src/main.txt", "tracked source");
@@ -2159,10 +2159,14 @@ effectIt.effect(
       );
       yield* checkout.release(f.worktree, f.root);
       const admin = yield* f.command(f.worktree, ["rev-parse", "--absolute-git-dir"]);
-      yield* f.fs.writeFileString(
-        `${admin.stdout.trim()}/styal-checkout.json`,
-        "invalid recovery record",
-      );
+      if (failure === "recovery-record") {
+        yield* f.fs.writeFileString(
+          `${admin.stdout.trim()}/styal-checkout.json`,
+          "invalid recovery record",
+        );
+      } else {
+        yield* f.fs.remove(`${f.worktree}/.git`);
+      }
       const harness = startWithMissingWorktree(
         f.worktree,
         { [f.worktree]: f.worktree, [f.config.worktreesDir]: f.config.worktreesDir },
@@ -2283,6 +2287,8 @@ effectIt.effect.each(["retained", "failed-setup", "missing", "detached"] as cons
             Effect.map((rows) => rows.length > 0),
             Effect.orDie,
           ),
+        Effect.void,
+        f.git,
       );
       if (mode === "detached") harness.setBranch(null);
       yield* harness.start;
@@ -2334,6 +2340,7 @@ effectIt.effect.each([false])(
             Effect.orDie,
           ),
         Deferred.succeed(entered, undefined).pipe(Effect.asVoid),
+        f.git,
       );
       expect((yield* sql`SELECT * FROM worktree_stripped`).length).toBe(1);
       const pending = yield* harness.start.pipe(Effect.forkChild);
@@ -2395,6 +2402,8 @@ effectIt.effect.each(["success", "failure", "interrupted"] as const)(
             Effect.map((rows) => rows.length > 0),
             Effect.orDie,
           ),
+        Effect.void,
+        f.git,
       );
       yield* Effect.gen(function* () {
         const first = yield* Effect.raceFirst(

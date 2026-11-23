@@ -1,3 +1,4 @@
+import { VcsRepositoryDetectionError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -45,7 +46,7 @@ export function managedWorktreesDirectories(
 }
 
 // Client paths/branches are untrusted; recreate only real paths matching managed-folder/repo/branch.
-export const makeIsManagedWorktreePath = Effect.gen(function* () {
+export const makeManagedWorktreeOwner = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
@@ -62,36 +63,55 @@ export const makeIsManagedWorktreePath = Effect.gen(function* () {
       }),
     );
 
-  return Effect.fn("worktreesDirectory.isManagedWorktreePath")(function* (worktreePath: string) {
-    // git resolves a relative path against the project, not the server cwd.
-    if (!path.isAbsolute(worktreePath)) return false;
-    // Require normalized paths; Git and realPath disagree on .. after symlink traversal.
-    if (path.resolve(worktreePath) !== worktreePath) return false;
+  return Effect.fn("worktreesDirectory.managedWorktreeOwner")(function* (
+    worktreePath: string,
+    includeDescendants = true,
+  ) {
     const settings = yield* serverSettings.getSettings.pipe(
-      Effect.orElseSucceed(() => ({
-        worktreesDirectory: "",
-        previousWorktreesDirectories: [],
-      })),
-    );
-    const roots = yield* Effect.forEach(
-      managedWorktreesDirectories(
-        settings,
-        serverConfig.worktreesDir,
-        path,
-        yield* HostProcess.HomeDirectory,
+      Effect.mapError(
+        (cause) =>
+          new VcsRepositoryDetectionError({
+            operation: "worktreesDirectory.managedWorktreeOwner",
+            cwd: worktreePath,
+            detail: "Could not read managed worktree locations. The workspace cannot be used.",
+            cause,
+          }),
       ),
-      realLocation,
     );
-    const candidate = yield* realLocation(worktreePath);
-    return roots.some((root) => {
-      if (isFilesystemRoot(root, path)) return false;
-      const relative = path.relative(root, candidate);
-      const segments = relative.split(path.sep);
-      return (
-        !path.isAbsolute(relative) &&
-        segments.length === 2 &&
-        segments.every((segment) => segment !== "" && segment !== "..")
-      );
-    });
+    const directories = managedWorktreesDirectories(
+      settings,
+      serverConfig.worktreesDir,
+      path,
+      yield* HostProcess.HomeDirectory,
+    ).toSorted((a, b) => b.length - a.length);
+    const resolved = path.resolve(worktreePath);
+    const candidate = yield* realLocation(resolved);
+    for (const directory of directories) {
+      const root = yield* realLocation(directory);
+      if (isFilesystemRoot(root, path)) continue;
+      // Keep the declared boundary when a checkout itself becomes an escaping symlink.
+      for (const relative of includeDescendants
+        ? [path.relative(directory, resolved), path.relative(root, candidate)]
+        : [path.relative(root, candidate)]) {
+        const segments = relative.split(path.sep);
+        if (
+          !path.isAbsolute(relative) &&
+          (includeDescendants ? segments.length >= 2 : segments.length === 2) &&
+          segments.every((segment) => segment !== "" && segment !== "..")
+        )
+          return path.join(root, segments[0]!, segments[1]!);
+      }
+    }
+    return null;
+  });
+});
+
+export const makeIsManagedWorktreePath = Effect.gen(function* () {
+  const owner = yield* makeManagedWorktreeOwner;
+  const path = yield* Path.Path;
+  return Effect.fn("worktreesDirectory.isManagedWorktreePath")(function* (worktreePath: string) {
+    // Git and realPath disagree on .. after symlink traversal; recreate only normalized absolute paths.
+    if (!path.isAbsolute(worktreePath) || path.resolve(worktreePath) !== worktreePath) return false;
+    return (yield* owner(worktreePath, false).pipe(Effect.orElseSucceed(() => null))) !== null;
   });
 });

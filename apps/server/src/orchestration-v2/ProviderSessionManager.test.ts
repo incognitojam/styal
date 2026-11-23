@@ -1,6 +1,6 @@
 import * as NetAddress from "effect/net/NetAddress";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import {
@@ -45,6 +45,7 @@ import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
@@ -693,7 +694,10 @@ function layerTest(input: {
     input.pauseResolve === undefined
       ? layerTestMcpRegistry
       : layerPausingMcpRegistry(input.pauseResolve);
+  const layerServerSettings = input.serverSettingsLayer ?? ServerSettings.layerTest();
   const layerProviderEventIngestorTest = ProviderEventIngestor.layer.pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-session-" })),
+    Layer.provide(layerServerSettings),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
@@ -733,7 +737,7 @@ function layerTest(input: {
           layerConfiguredMcpRegistry,
           layerTestStores,
           input.installationGateLayer ?? ProviderInstallationGate.layer,
-          ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
+          layerServerSettings,
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
         ),
       ),

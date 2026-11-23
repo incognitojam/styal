@@ -1,3 +1,8 @@
+import * as ServerConfig from "../config.ts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import {
   describePendingRequests,
   pendingRequestNeedsAttention,
@@ -1084,6 +1089,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
 
@@ -1923,6 +1929,11 @@ const make = Effect.gen(function* () {
   const resolveScheduledTaskBaseRef = Effect.fn(
     "OrchestratorMcpService.resolveScheduledTaskBaseRef",
   )(function* (cwd: string) {
+    yield* checkoutRoot(cwd).pipe(
+      Effect.mapError(() =>
+        failure("invalid_request", "The project worktree has lost its Git data."),
+      ),
+    );
     const remoteName = yield* gitDriver
       .resolvePrimaryRemoteName(cwd)
       .pipe(Effect.orElseSucceed(() => null));
@@ -2518,6 +2529,11 @@ const make = Effect.gen(function* () {
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
+        yield* checkoutRoot(parent.thread.worktreePath ?? project.workspaceRoot).pipe(
+          Effect.mapError(() =>
+            failure("invalid_request", "The parent worktree has lost its Git data."),
+          ),
+        );
         const base = yield* gitDriver
           .resolveCommit({
             cwd: parent.thread.worktreePath ?? project.workspaceRoot,
@@ -3475,6 +3491,10 @@ const make = Effect.gen(function* () {
 export const layer: Layer.Layer<
   OrchestratorMcpService,
   never,
+  | ServerConfig.ServerConfig
+  | FileSystem.FileSystem
+  | Path.Path
+  | PhysicalFileSystem.PhysicalFileSystem
   | SecureRandom.SecureRandom
   | ThreadManagementService.ThreadManagementService
   | ThreadLaunchService.ThreadLaunchService

@@ -1,3 +1,4 @@
+import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import { parseGitRemoteConfig } from "@t3tools/shared/git";
@@ -294,6 +295,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const managedOwner = yield* makeManagedWorktreeOwner;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
@@ -330,9 +332,24 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
   const resolve: RepositoryIdentityResolver["Service"]["resolve"] = Effect.fnUntraced(
     function* (cwd, options) {
-      if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
+      const ownerResult = yield* managedOwner(cwd).pipe(Effect.result);
+      if (ownerResult._tag === "Failure") return null;
+      const owner = ownerResult.success;
+      if (
+        owner !== null &&
+        !(yield* fileSystem
+          .exists(path.join(owner, ".git"))
+          .pipe(Effect.orElseSucceed(() => false)))
+      )
+        return null;
+      if (options?.refresh || owner !== null) yield* Cache.invalidate(repositoryRootCache, cwd);
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
       if (cacheKey === null) return null;
+      if (owner !== null) {
+        const relative = path.relative(owner, cacheKey.rootPath);
+        if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+          return null;
+      }
       if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
       return yield* Cache.get(repositoryIdentityCache, cacheKey);
     },

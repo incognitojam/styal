@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "./worktreeCleanup/Checkout.ts";
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import {
   CommandId,
@@ -207,6 +208,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   settings = DEFAULT_SERVER_SETTINGS,
 ) {
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const outcomes = yield* AutoPullStatus.AutoPullStatus;
   const workspaceRoots = [
     ...new Set(
@@ -220,6 +222,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
     workspaceRoots,
     (cwd) =>
       Effect.gen(function* () {
+        yield* checkoutRoot(cwd);
         const status = yield* git.statusDetails(cwd);
         if (
           !status.isRepo ||

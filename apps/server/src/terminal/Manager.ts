@@ -4,7 +4,7 @@ import { mergePathValues } from "@t3tools/shared/shell";
 import * as NodeCrypto from "node:crypto";
 
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
-import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import { makeCheckout, makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import {
   DEFAULT_TERMINAL_ID,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
@@ -1618,6 +1618,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
   const checkout = yield* makeCheckout;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
@@ -3130,7 +3131,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
   ) {
     const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
-    yield* checkout.root(workspace).pipe(
+    yield* checkoutRoot(workspace).pipe(
       Effect.flatMap(checkout.restore),
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
     );
@@ -3283,16 +3284,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const session = Option.getOrUndefined(existing);
     const workspace = input.worktreePath ?? session?.worktreePath ?? input.cwd ?? session?.cwd;
     if (workspace === undefined) return yield* effect;
-    const root = yield* checkout
-      .root(workspace)
-      .pipe(
-        Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
-      );
+    const root = yield* checkoutRoot(workspace).pipe(
+      Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
+    );
     return yield* withWorkspaceLease(root, effect);
   });
 
   const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
-    checkout.root(input.worktreePath ?? input.cwd).pipe(
+    checkoutRoot(input.worktreePath ?? input.cwd).pipe(
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: input.cwd, cause })),
       Effect.flatMap((root) =>
         withWorkspaceLease(root, withThreadLock(input.threadId, openWithWorkspaceLease(input))),

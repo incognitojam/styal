@@ -396,6 +396,7 @@ export function layerWithRegistry<Error>(
         ),
       ),
     ),
+    Layer.provide(Layer.mergeAll(layerServerConfig, layerServerSettings, NodeServices.layer)),
   );
   const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(
     Layer.provide(VcsProcess.layer),
@@ -404,6 +405,7 @@ export function layerWithRegistry<Error>(
   );
   const layerCheckpointStore = CheckpointStore.layer.pipe(
     Layer.provide(layerVcsDriverRegistry),
+    Layer.provide(Layer.merge(layerServerConfig, layerServerSettings)),
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const layerCheckpointServiceProvided = CheckpointService.layer.pipe(

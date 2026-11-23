@@ -34,7 +34,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
-import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import { makeCheckout, makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -183,11 +183,12 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const withWorkspaceLease = yield* makeWorkspaceLease;
   const checkout = yield* makeCheckout;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
-    checkout.root(rootPath).pipe(
+    checkoutRoot(rootPath).pipe(
       Effect.mapError(
         (cause) =>
           new GitCommandError({
@@ -222,7 +223,7 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* checkout.root(cwd).pipe(
+    const handle = yield* checkoutRoot(cwd).pipe(
       Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
@@ -241,7 +242,7 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
-    const handle = yield* checkout.root(cwd).pipe(
+    const handle = yield* checkoutRoot(cwd).pipe(
       Effect.flatMap((root) => registry.resolve({ cwd: root })),
       Effect.mapError(
         (cause) =>
@@ -407,17 +408,18 @@ export const make = Effect.gen(function* () {
     invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
     invalidateStatus: gitManager.invalidateStatus,
     headPath: Effect.fn("GitWorkflowService.headPath")(function (cwd) {
-      return git
-        .execute({
-          operation: "GitWorkflowService.headPath",
-          cwd,
-          args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
-          allowNonZeroExit: true,
-        })
-        .pipe(
-          Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
-          Effect.orElseSucceed(() => null),
-        );
+      return checkoutRoot(cwd).pipe(
+        Effect.andThen(
+          git.execute({
+            operation: "GitWorkflowService.headPath",
+            cwd,
+            args: ["rev-parse", "--path-format=absolute", "--git-path", "HEAD"],
+            allowNonZeroExit: true,
+          }),
+        ),
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
+        Effect.orElseSucceed(() => null),
+      );
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(

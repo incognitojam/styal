@@ -1,3 +1,9 @@
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import {
   NodeId,
   CommandId,
@@ -282,6 +288,11 @@ const decodeDomainEvent = Schema.decodeUnknownEffect(OrchestrationV2DomainEvent)
 export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   never,
+  | ServerConfig.ServerConfig
+  | ServerSettings.ServerSettingsService
+  | FileSystem.FileSystem
+  | Path.Path
+  | PhysicalFileSystem.PhysicalFileSystem
   | EventSink.EventSinkV2
   | GitVcsDriver.GitVcsDriver
   | IdAllocator.IdAllocatorV2
@@ -295,6 +306,7 @@ export const layer: Layer.Layer<
     const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
     const eventSink = yield* EventSink.EventSinkV2;
     const git = yield* GitVcsDriver.GitVcsDriver;
+    const checkoutRoot = yield* makeCheckoutRoot;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
@@ -956,6 +968,7 @@ export const layer: Layer.Layer<
                     return storedEvents;
                   // Git renames before scanning committed threads. If that scan missed this
                   // creation, HEAD already has the new name, even if the parent moved away.
+                  yield* checkoutRoot(child.worktreePath);
                   const branch = yield* git.resolveBranchName(child.worktreePath, "HEAD");
                   if (branch === null || branch === child.branch) return storedEvents;
                   const now = yield* DateTime.now;

@@ -39,6 +39,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { expect, vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
+import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   TERMINAL_BROWSER_OPEN_HELPER_SOURCE,
@@ -328,6 +329,12 @@ const createManager = (
               managedBinaryToolsDir: options.managedBinaryToolsDir,
             }),
       }).pipe(
+        Effect.provide(
+          Layer.merge(
+            ServerConfig.layerTest(baseDir, baseDir),
+            ServerSettings.layerTest().pipe(Layer.orDie),
+          ),
+        ),
         Effect.provideService(
           GitVcsDriver.GitVcsDriver,
           options.gitDriver ?? ({} as GitVcsDriver.GitVcsDriver["Service"]),

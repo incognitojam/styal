@@ -3,11 +3,21 @@ import { vi } from "vite-plus/test";
 import { GitCommandError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import { CheckpointRef } from "@t3tools/contracts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as Digest from "effect/crypto/Digest";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { fixture, nodeLayer } from "./fixtures.testkit.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
-import { CheckoutLimits, makeCheckout } from "./Checkout.ts";
+import { CheckoutLimits, makeCheckout, makeCheckoutRoot } from "./Checkout.ts";
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { makeDeletion } from "./Deletion.ts";
 
 it.effect(
@@ -768,4 +778,108 @@ it.effect("keeps sources when the recovery directory cannot be synced", () =>
       expect(yield* f.fs.readFileString(`${f.worktree}/src/clean`)).toBe("source");
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
+);
+
+it.live("refuses a nested managed checkout that lost its Git data", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const base = yield* fs.makeTempDirectoryScoped({ prefix: "lost-worktree-git-" });
+    yield* Effect.gen(function* () {
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const command = (cwd: string, args: readonly string[]) =>
+        git.execute({ operation: "fixture", cwd, args });
+      const enclosing = `${base}/enclosing`;
+      const nested = `${enclosing}/managed/project/topic`;
+      yield* fs.makeDirectory(enclosing);
+      yield* command(enclosing, ["init", "-b", "main"]);
+      yield* command(enclosing, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "fixture",
+      ]);
+      yield* command(enclosing, ["worktree", "add", "-b", "topic", nested]);
+      const root = yield* makeCheckoutRoot;
+      const registry = yield* VcsDriverRegistry.make.pipe(
+        Effect.provide(Layer.mergeAll(VcsProjectConfig.layer, VcsProcess.layer)),
+      );
+      const checkpoints = yield* CheckpointStore.make.pipe(
+        Effect.provideService(VcsDriverRegistry.VcsDriverRegistry, registry),
+      );
+      expect((yield* registry.detect({ cwd: nested }))?.repository.rootPath).toBe(nested);
+      const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/fixture");
+      yield* checkpoints.captureCheckpoint({ cwd: nested, checkpointRef });
+      expect(yield* root(nested)).toBe(nested);
+      yield* fs.makeDirectory(`${nested}/subdir`);
+      expect(yield* root(`${nested}/subdir`)).toBe(nested);
+      yield* fs.writeFileString(`${nested}/untracked.txt`, "keep this file");
+      const before = yield* Effect.all([
+        command(enclosing, ["rev-parse", "HEAD"]),
+        command(enclosing, ["ls-files", "--stage", "-z"]),
+        command(enclosing, ["for-each-ref", "--format=%(refname) %(objectname)"]),
+      ]);
+      yield* fs.remove(`${nested}/.git`);
+      for (const cwd of [nested, `${nested}/subdir`]) {
+        expect(yield* registry.detect({ cwd })).toBeNull();
+        expect(
+          (yield* checkpoints.captureCheckpoint({ cwd, checkpointRef }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        expect(
+          (yield* checkpoints.restoreCheckpoint({ cwd, checkpointRef }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        const result = yield* root(cwd).pipe(Effect.result);
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            message: "This worktree has lost its Git data. Its workspace cannot be used.",
+          },
+        });
+      }
+      expect(yield* fs.readFileString(`${nested}/untracked.txt`)).toBe("keep this file");
+      expect(
+        yield* Effect.all([
+          command(enclosing, ["rev-parse", "HEAD"]),
+          command(enclosing, ["ls-files", "--stage", "-z"]),
+          command(enclosing, ["for-each-ref", "--format=%(refname) %(objectname)"]),
+        ]),
+      ).toEqual(before);
+      yield* fs.makeDirectory(`${nested}/.git`);
+      expect(yield* registry.detect({ cwd: nested })).toBeNull();
+      expect((yield* root(nested).pipe(Effect.result))._tag).toBe("Failure");
+      expect(
+        (yield* checkpoints.captureCheckpoint({ cwd: nested, checkpointRef }).pipe(Effect.result))
+          ._tag,
+      ).toBe("Failure");
+      yield* fs.remove(nested, { recursive: true });
+      expect(yield* root(nested)).toBe(nested);
+      if ((yield* HostProcess.Platform) !== "win32") {
+        yield* fs.symlink(enclosing, nested);
+        expect((yield* root(nested).pipe(Effect.result))._tag).toBe("Failure");
+        expect(yield* registry.detect({ cwd: nested })).toBeNull();
+        yield* fs.remove(nested);
+        const alias = `${base}/alias-managed`;
+        yield* fs.symlink(`${enclosing}/managed`, alias);
+        const managed = yield* makeIsManagedWorktreePath.pipe(
+          Effect.provide(ServerSettings.layerTest({ worktreesDirectory: alias })),
+        );
+        expect(yield* managed(`${alias}/project/topic`)).toBe(true);
+        yield* fs.remove(`${enclosing}/managed/project`, { recursive: true });
+        yield* fs.symlink(enclosing, `${enclosing}/managed/project`);
+        expect(yield* managed(`${alias}/project/topic`)).toBe(false);
+      }
+      yield* fs.makeDirectory(`${enclosing}/ordinary`);
+      expect(yield* root(`${enclosing}/ordinary`)).toBe(enclosing);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          GitVcsDriver.layer,
+          ServerSettings.layerTest({ worktreesDirectory: `${base}/enclosing/managed` }),
+        ).pipe(Layer.provideMerge(ServerConfig.layerTest(base, base))),
+      ),
+    );
+  }).pipe(Effect.scoped, Effect.provide(nodeLayer)),
 );

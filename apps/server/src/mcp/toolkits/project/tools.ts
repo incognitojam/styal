@@ -1,3 +1,5 @@
+import * as Path from "effect/Path";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import { McpAttachmentInput } from "../attachment/input.ts";
 import {
   NonNegativeInt,
@@ -174,6 +176,8 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ManagedProjectFolders.ManagedProjectFolders,
     GitVcsDriver.GitVcsDriver,
     FileSystem.FileSystem,
+    Path.Path,
+    PhysicalFileSystem.PhysicalFileSystem,
     ServerConfig.ServerConfig,
     ServerSettings.ServerSettingsService,
     ProviderRegistry.ProviderRegistry,

@@ -1,6 +1,8 @@
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "./nodeServices.ts";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import {
   GitCommandError,
   DEFAULT_SERVER_SETTINGS,
@@ -241,6 +243,7 @@ it.effect.each([
         Layer.mock(AnalyticsService.AnalyticsService)({}),
         // No provider logins or Connect link, so startup records no owners.
         FileSystem.layerNoop({}),
+        PhysicalFileSystem.layer,
         Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
@@ -418,5 +421,13 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
       { ...overrides({ "/opted-out": false }), defaultAutoPull: true },
     ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, git));
     assert.deepStrictEqual(pulled, ["/inherited"]);
-  }).pipe(Effect.provide(AutoPullStatus.layer)),
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        AutoPullStatus.layer,
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-autopull-" }),
+        ServerSettings.layerTest(),
+      ).pipe(Layer.provideMerge(NodeServices.layer)),
+    ),
+  ),
 );

@@ -22,7 +22,7 @@ import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
-import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
+import { makeCheckout, makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
@@ -142,6 +142,7 @@ export const layer: Layer.Layer<
     const path = yield* Path.Path;
     const withWorkspaceLease = yield* makeWorkspaceLease;
     const checkout = yield* makeCheckout;
+    const checkoutRoot = yield* makeCheckoutRoot;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
@@ -409,7 +410,7 @@ export const layer: Layer.Layer<
               ? Option.getOrUndefined(yield* projects.get(thread.projectId))
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
-          const workspace = cwd === undefined ? undefined : yield* checkout.root(cwd);
+          const workspace = cwd === undefined ? undefined : yield* checkoutRoot(cwd);
           yield* Effect.scoped(
             workspace === undefined
               ? execute(input)

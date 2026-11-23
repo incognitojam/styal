@@ -1,3 +1,4 @@
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
@@ -174,6 +175,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         FileSystem.layerNoop({}),
         Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),
         NodeCrypto.layer,
+        PhysicalFileSystem.layer,
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
         Layer.mock(HttpServer.HttpServer)({

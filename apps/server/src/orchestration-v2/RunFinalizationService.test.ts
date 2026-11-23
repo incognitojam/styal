@@ -18,12 +18,14 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
@@ -350,7 +352,13 @@ it.effect("resolves the identity of a project whose remote was added during the 
     );
   }).pipe(
     Effect.scoped,
-    Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      Layer.mergeAll(
+        ProcessRunner.layer,
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-finalization-identity-" }),
+        ServerSettings.layerTest(),
+      ).pipe(Layer.provideMerge(NodeServices.layer)),
+    ),
   ),
 );
 

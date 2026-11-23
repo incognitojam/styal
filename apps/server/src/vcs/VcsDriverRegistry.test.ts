@@ -8,6 +8,8 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError } from "@t3tools/contracts";
 
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
 import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
@@ -25,9 +27,15 @@ const normalizeGitArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const DETECT_COMMAND = "rev-parse --is-inside-work-tree --show-toplevel --git-common-dir";
 
+const layerManagedWorktrees = Layer.merge(
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3-vcs-registry-" }),
+  ServerSettings.layerTest(),
+);
+
 describe("VcsDriverRegistry", () => {
   const makeDiskBackedLayer = (rootDir: string, calls: string[]) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(layerManagedWorktrees),
       Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({
@@ -131,6 +139,7 @@ describe("VcsDriverRegistry", () => {
   );
   const makeFailingLayer = (detectOutput: VcsProcess.VcsProcessOutput) =>
     Layer.effect(VcsDriverRegistry.VcsDriverRegistry, VcsDriverRegistry.make).pipe(
+      Layer.provide(layerManagedWorktrees),
       Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(
         Layer.mock(VcsProjectConfig.VcsProjectConfig)({

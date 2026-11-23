@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -368,6 +369,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const path = yield* Path.Path;
   const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
 
@@ -478,6 +480,7 @@ export const make = Effect.gen(function* () {
   const readRemoteConfig = Effect.fn("SourceControlRepositoryService.readRemoteConfig")(function* (
     cwd: string,
   ) {
+    yield* checkoutRoot(cwd);
     const result = yield* git.execute({
       operation: "SourceControlRepositoryService.getDefaultRepository",
       cwd,
@@ -837,6 +840,7 @@ export const make = Effect.gen(function* () {
 
   const publishRepository = Effect.fn("SourceControlRepositoryService.publishRepository")(
     function* (input: SourceControlPublishRepositoryInput) {
+      yield* checkoutRoot(input.cwd);
       const providerKind = yield* ensureConcreteProvider({
         operation: "publishRepository",
         provider: input.provider,

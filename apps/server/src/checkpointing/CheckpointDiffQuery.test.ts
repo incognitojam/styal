@@ -7,6 +7,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { checkpointRefForScopeOrdinal } from "../orchestration-v2/CheckpointService.ts";
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import type { ProjectionCheckpointContext } from "../orchestration-v2/ProjectionStore.ts";
@@ -266,6 +268,12 @@ it.effect("selects historical and native checkpoints independently when both are
 const layerVcsProcess = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
 const layerStore = CheckpointStore.layer.pipe(
   Layer.provide(VcsDriverRegistry.layer.pipe(Layer.provide(layerVcsProcess))),
+  Layer.provide(
+    Layer.merge(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-checkpoint-diff-" }),
+      ServerSettings.layerTest(),
+    ),
+  ),
   Layer.provide(NodeServices.layer),
 );
 const layerTest = Layer.merge(layerStore, layerVcsProcess).pipe(

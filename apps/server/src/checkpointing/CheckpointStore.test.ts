@@ -19,6 +19,7 @@ import * as CheckpointStore from "./CheckpointStore.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 function checkpointRefForThreadTurn(threadId: ThreadId, turnCount: number): CheckpointRef {
   return CheckpointRef.make(`refs/t3/checkpoints/${Base64Url.encode(threadId)}/turn/${turnCount}`);
@@ -38,7 +39,7 @@ const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
 const layerTest = layerCheckpointStoreTest.pipe(
   Layer.provideMerge(layerVcsProcessTest),
   Layer.provideMerge(layerVcsDriverTest),
-  Layer.provideMerge(layerServerConfig),
+  Layer.provideMerge(Layer.merge(layerServerConfig, ServerSettings.layerTest())),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 

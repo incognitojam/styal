@@ -1,7 +1,7 @@
 import { UsageService } from "../usage/UsageService.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "../nodeServices.ts";
 import {
   CheckpointId,
   CheckpointRef,
@@ -41,6 +41,7 @@ import * as Stream from "effect/Stream";
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
@@ -71,7 +72,8 @@ const layerTestEventSink = EventSink.layer.pipe(
 );
 
 const layerGit = GitVcsDriver.layer.pipe(
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "ingestor-git-" })),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "ingestor-git-" })),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 

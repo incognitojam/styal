@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -70,6 +71,7 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
   const fileSystem = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
   const serviceScope = yield* Effect.scope;
@@ -159,6 +161,7 @@ const make = Effect.gen(function* () {
     stack: PullRequestStack | null,
     runId: string,
   ) {
+    yield* checkoutRoot(workspaceRoot);
     // Identity names can be stale; match effective fetch URLs, including insteadOf rewrites.
     const names = yield* git
       .execute({

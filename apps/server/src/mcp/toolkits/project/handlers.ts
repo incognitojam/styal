@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "../../../worktreeCleanup/Checkout.ts";
 import { reportTargetFor } from "../../threadAccess.ts";
 import {
   CommandId,
@@ -78,6 +79,16 @@ const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
   worktreePath: string,
 ) {
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const checkoutRoot = yield* makeCheckoutRoot;
+  yield* checkoutRoot(workspaceRoot).pipe(
+    Effect.mapError(
+      () =>
+        new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "The project worktree has lost its Git data.",
+        }),
+    ),
+  );
   const fileSystem = yield* FileSystem.FileSystem;
   const real = (path: string) => fileSystem.realPath(path).pipe(Effect.orElseSucceed(() => path));
   const worktrees = yield* git.listWorktreePaths(workspaceRoot).pipe(

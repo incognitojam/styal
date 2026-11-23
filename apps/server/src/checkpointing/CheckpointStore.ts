@@ -1,10 +1,13 @@
-import { type CheckpointRef } from "@t3tools/contracts";
+import { VcsRepositoryDetectionError, type CheckpointRef } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
+import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 export interface CaptureCheckpointInput {
@@ -87,10 +90,27 @@ export class CheckpointStore extends Context.Service<
 /** @public */
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const managedOwner = yield* makeManagedWorktreeOwner;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const assertCheckout = Effect.fn("CheckpointStore.assertCheckout")(function* (cwd: string) {
+    const owner = yield* managedOwner(cwd);
+    if (
+      owner !== null &&
+      !(yield* fs.exists(path.join(owner, ".git")).pipe(Effect.orElseSucceed(() => false)))
+    )
+      return yield* new VcsRepositoryDetectionError({
+        operation: "CheckpointStore.resolveCheckpoints",
+        cwd,
+        detail: "This worktree has lost its Git data. Checkpoints cannot use its workspace.",
+      });
+    return owner;
+  });
 
   const resolveCheckpoints = Effect.fn("CheckpointStore.resolveCheckpoints")(function* (
     cwd: string,
   ) {
+    yield* assertCheckout(cwd);
     const handle = yield* vcsRegistry.resolve({ cwd });
     return handle.driver.checkpoints satisfies VcsCheckpointOps;
   });
@@ -99,7 +119,9 @@ export const make = Effect.gen(function* () {
   const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = Effect.fn(
     "CheckpointStore.isGitRepository",
   )(function* (cwd) {
+    const owner = yield* assertCheckout(cwd);
     if ((yield* vcsRegistry.detect({ cwd, requestedKind: "git" })) !== null) return true;
+    if (owner !== null) return false;
     const git = yield* vcsRegistry.get("git");
     return (yield* git.detectRepository(cwd)) !== null;
   });

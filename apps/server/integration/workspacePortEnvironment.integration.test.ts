@@ -13,6 +13,8 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ServerConfig from "../src/config.ts";
+import * as ServerSettings from "../src/serverSettings.ts";
 import { layerMemory } from "../src/persistence/Sqlite.ts";
 import * as ProcessRunner from "../src/processRunner.ts";
 import * as TerminalManager from "../src/terminal/Manager.ts";
@@ -75,7 +77,14 @@ integrationLayer("workspace port environment integration", (it) => {
         ptyAdapter,
         shellResolver: () => (platform === "win32" ? "powershell.exe" : "/bin/sh"),
         resolveWorkspaceEnvironment: reloadedAllocator.environmentFor,
-      });
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            ServerConfig.layerTest(workspacePath, workspacePath),
+            ServerSettings.layerTest(),
+          ),
+        ),
+      );
       const output = yield* Ref.make("");
       const completed = yield* Deferred.make<TerminalEvent>();
       const unsubscribe = yield* terminalManager.subscribe((event) =>
