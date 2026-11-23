@@ -488,11 +488,12 @@ it.effect("a finished turn with nothing pending wakes the launcher once", () =>
     Effect.gen(function* () {
       const turn = yield* send(launchedId, "Fix the login page");
       assert.include(turn.message.text, launcherId, "the first turn names the launcher");
-      yield* endTurn(turn, "completed");
+      yield* endTurn(turn, "completed", ["Fixed the login page."]);
       const delivered = yield* reports();
       assert.equal(delivered.length, 1);
       assert.equal(delivered[0]?.outcome, "completed");
       assert.include(delivered[0]?.text ?? "", "Fix the login page");
+      assert.include(delivered[0]?.text ?? "", "Fixed the login page.");
       const wake = started.find((candidate) => candidate.threadId === launcherId);
       assert.isDefined(wake, "the report starts a turn on the idle launcher");
       yield* worker.drain();
