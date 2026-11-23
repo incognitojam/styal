@@ -803,13 +803,10 @@ function ProjectDetail({
           <SettingsRow
             title="Project icon"
             description={
-              projectIcon?.kind === "lucide"
-                ? `${projectIcon.name} · ${projectIcon.color}`
-                : projectIcon?.kind === "monogram"
-                  ? `${projectIcon.text} · ${projectIcon.color}`
-                  : projectIcon?.kind === "emoji"
-                    ? projectIcon.emoji
-                    : (faviconPath ?? "Automatic")
+              projectIcon !== null
+                ? undefined
+                : (faviconPath ??
+                  "Uses a favicon or logo found in the project's files, or a monogram of its name.")
             }
             resetAction={
               group.memberProjects.some((member) => !hasDefaultProjectIcon(member)) ? (
@@ -846,6 +843,10 @@ function ProjectDetail({
               </div>
             }
           />
+          {hasMultipleCheckouts ? null : (
+            <DefaultRepositorySetting checkout={group.memberProjects[0]!} />
+          )}
+          <ProjectCoordinatorSetting members={group.memberProjects} />
           <SettingsRow
             title="Additional instructions"
             forkFeature="project-agent-instructions"
@@ -858,12 +859,13 @@ function ProjectDetail({
                 />
               ) : null
             }
-            control={
+          >
+            <div className="mt-3 pb-3.5">
               <Textarea
                 key={`${group.projectKey}:${filePickerProject.updatedAt}:additional-instructions`}
-                className="min-h-24 w-full sm:w-96"
                 aria-label="Additional instructions"
                 placeholder="For example: Run focused tests after making changes."
+                rows={4}
                 defaultValue={additionalInstructions ?? ""}
                 maxLength={32_000}
                 onBlur={(event) => {
@@ -874,12 +876,8 @@ function ProjectDetail({
                   setAdditionalInstructions(normalized);
                 }}
               />
-            }
-          />
-          {hasMultipleCheckouts ? null : (
-            <DefaultRepositorySetting checkout={group.memberProjects[0]!} />
-          )}
-          <ProjectCoordinatorSetting members={group.memberProjects} />
+            </div>
+          </SettingsRow>
           {canOrganize ? (
             <>
               <SettingsRow
