@@ -2,12 +2,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProviderInstanceId, ProviderSetupError } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Logger from "effect/Logger";
-import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import { lock } from "proper-lockfile";
 import { vi } from "vite-plus/test";
@@ -70,7 +69,7 @@ it.effect("interrupts a protected task when the shared lease is compromised", ()
 );
 
 it.effect.each(["ELOCKED", "EACCES"])(
-  "reports %s clearly and retries startup adoption only for a busy lock",
+  "reports %s clearly for relay credential operations",
   (code) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -94,47 +93,17 @@ it.effect.each(["ELOCKED", "EACCES"])(
               : "Could not read or update the stored styal Link sign-in.",
           );
         }
-        const failed = yield* Deferred.make<void>();
-        const retried = yield* Deferred.make<void>();
-        const warnings: Array<unknown> = [];
-        let attempts = 0;
-        yield* Layer.build(
-          CliSession.layerStartupAdoption.pipe(
-            Layer.provide(
-              Layer.succeed(CliSession.CloudCliSession, {
-                ...session,
-                currentIdentity: Effect.suspend(() => {
-                  attempts += 1;
-                  return session.currentIdentity.pipe(
-                    Effect.tapError(() =>
-                      Deferred.succeed(attempts === 1 ? failed : retried, undefined),
-                    ),
-                  );
-                }),
-              }),
-            ),
-            Layer.provide(
-              Logger.layer([Logger.make(({ message }) => warnings.push(message))], {
-                mergeWithExisting: false,
-              }),
-            ),
-          ),
-        );
-        yield* Deferred.await(failed);
-        if (code === "ELOCKED") {
-          yield* TestClock.adjust("1 second");
-          yield* Deferred.await(retried);
-          assert.equal(attempts, 2);
-          assert.include(String(warnings[0]), "will retry");
-        } else {
-          yield* TestClock.adjust("10 minutes");
-          assert.equal(attempts, 1);
-          assert.lengthOf(warnings, 1);
-          assert.include(String(warnings[0]), "adoption stopped");
-        }
       }),
     ).pipe(
-      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({ env: { T3CODE_RELAY_URL: "https://relay.example.test" } }),
+          ),
+        ),
+      ),
       Effect.provideService(
         HttpClient.HttpClient,
         HttpClient.make(() =>
@@ -144,8 +113,18 @@ it.effect.each(["ELOCKED", "EACCES"])(
       Effect.provideService(ServerSecretStore.ServerSecretStore, {
         directory: "synthetic-secrets",
         get: (name) =>
-          name === CliSession.LEGACY_CLERK_CLI_TOKEN_SECRET
-            ? Effect.succeedSome(new TextEncoder().encode("stored-legacy-credential"))
+          name === CliSession.CLOUD_RELAY_SESSION_SECRET
+            ? Effect.succeedSome(
+                new TextEncoder().encode(
+                  JSON.stringify({
+                    relayUrl: "https://relay.example.test",
+                    refreshToken: "styal_rt_synthetic",
+                    sessionId: "synthetic-session",
+                    userId: "synthetic-account",
+                    email: null,
+                  }),
+                ),
+              )
             : Effect.succeedNone,
         set: () => Effect.die("No credential mutation should run without the lease"),
         create: () => Effect.die("No credential mutation should run without the lease"),

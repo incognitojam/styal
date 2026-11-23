@@ -1,106 +1,117 @@
-# T3 Connect setup
+# styal Link sign-in
 
-Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
-explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
-provisioning instructions. [styal Link](./styal-link.md) lists the values styal's
-deployment uses.
+The relay owns account sign-in and sessions. Web, desktop, mobile and the CLI sign in with an
+eight-digit emailed code. The [relay README](../../infra/relay/README.md#deployment) owns provisioning;
+[styal Link](./styal-link.md) records this deployment's configuration.
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. To build against the production deployment, copy the
-repository-root example:
-
-```sh
-cp .env.example .env
-```
-
-For another deployment, set the relay origin in the repository-root `.env` or `.env.local`:
-
-```dotenv
-T3CODE_RELAY_URL=https://relay.example.com
-```
-
-Web, desktop, and mobile need only this public value. Process variables take precedence over
-`.env.local`, then `.env`. Client and bundled-server builds embed it; bundled servers also accept
-runtime overrides. The build loader supplies the web alias.
-
-GUI clients ignore Clerk credentials and show email sign-in without a stored relay session.
-The server/CLI still adopts a stored Clerk credential at startup without a prompt. Its bundled
-build retains `T3CODE_CLERK_PUBLISHABLE_KEY` and `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` solely to
-refresh an expired legacy credential; no SDK is needed. Server operators can use `styal link login`
-for email sign-in. Signing in with the imported email restores the same machines. An existing relay session
-keeps working. GUI bundles need no Clerk public build inputs.
-
-Copy `infra/relay/.env.example` to `infra/relay/.env` for relay deployment settings.
-The relay README owns provisioning; deployment's `PublishClientConfig` writes the relay URL to `.env`.
-
-## Legacy client compatibility
-
-Older transition builds can still exchange a Clerk sign-in for a relay session. Earlier binaries
-still use Clerk directly. Keep both Clerk instances, their existing JWT template and audience,
-OAuth application, and native callbacks configured until all devices and servers have converted
-and relay compatibility is retired. New GUI builds need none of these settings. Do not remove
-relay secrets or restrict existing users' access as part of a client release.
-
-Desktop builds no longer need account-provider redirects, RP domains or associated domains. Their
-provisioning profile is still used for passkeys in the in-app browser.
-
-## Restricting sign-ups
-
-Use Clerk's allowlist for permitted email addresses or domains, or Restricted mode for invitation-only
-sign-up. An enabled empty allowlist blocks all new sign-ups.
-
-Sign-up restrictions do not revoke an existing account's access. Ban the account in Clerk when
-its active Clerk sessions and future sign-ins must be disabled, including sign-in by email and moving
-a Clerk sign-in to the relay. A ban does not end relay sessions already issued; delete the user's
-`relay_auth_sessions` rows as well.
+Set `T3CODE_RELAY_URL` to the relay's HTTPS origin before building. Process variables take
+precedence over `.env.local`, then `.env`. Bundled servers accept runtime overrides. No Clerk
+application key, JWT template, OAuth app or native redirect is needed after client retirement.
 
 ## Email sign-in
 
-The relay signs users in with an eight-digit code sent by email, without Clerk. It stays off until a
-sender is configured; until then the sign-in endpoints answer `email_sign_in_unavailable`.
+A sender needs a domain onboarded to Cloudflare Email Sending and the Workers Paid plan.
+`RELAY_EMAIL_FROM_ADDRESS` enables delivery; `RELAY_EMAIL_FROM_NAME` defaults to `styal`.
+Without a sender the endpoints return `email_sign_in_unavailable`. Preserve the relay signing
+keys: changing them is separate work and can invalidate credentials or codes.
 
-Requirements:
+On non-production stages, `RELAY_EMAIL_DELIVERY=log` writes codes to Worker logs instead of
+sending email. `RELAY_TEST_SIGN_IN_CODE` accepts a fixed eight-digit code for `agent+…@styal.build`
+addresses. The shared development deployment reads `RELAY_DEV_EMAIL_DELIVERY` and
+`RELAY_DEV_TEST_SIGN_IN_CODE`. Both settings are refused on `prod`. Alchemy's `--env-file`
+overrides shell values; do not use an old env file to reintroduce removed settings.
 
-- A sending domain onboarded to Cloudflare Email Sending in the relay's Cloudflare account.
-- The Workers Paid plan, which Email Sending needs for arbitrary recipients.
-- `RELAY_EMAIL_FROM_ADDRESS` set to an address on that domain (see the
-  [relay README](../../infra/relay/README.md)).
+## Retiring Clerk compatibility
 
-Enable it on a stage that already has Clerk users in this order, so existing users keep their
-account id and data when they sign in by email:
+The production import and email cutover have already happened. This removal does not change
+stored users, ids, email mappings, sessions or links. Never edit or rename a deployed migration.
+For a new deployment needing a historical import, use the pre-removal revision's tooling before
+this version; do not recreate accounts under new ids.
 
-1. Deploy the relay with `RELAY_EMAIL_FROM_ADDRESS` unset.
-2. Run a dry run, then the import, against the stage's direct (non-pooled) Neon connection string
-   from the Neon console. For the `dev` stage use its Neon branch and the development instance's
-   secret key (`CLERK_DEV_SECRET_KEY`):
+The maintainer owns every production check and setting below. Agents may prepare code, builds and
+local tests. No telemetry is required for three accounts: ask each owner to inventory every browser
+profile, desktop install, store mobile build, nightly, spare phone and background server/CLI home.
 
-   ```sh
-   CLERK_SECRET_KEY=sk_... RELAY_DATABASE_URL=postgres://... node infra/relay/scripts/import-clerk-users.ts
-   CLERK_SECRET_KEY=sk_... RELAY_DATABASE_URL=postgres://... node infra/relay/scripts/import-clerk-users.ts --apply
+1. Release the client removal separately while the relay still supports older clients. An already
+   converted device keeps its relay session. An unconverted updated GUI shows email sign-in;
+   signing in with the imported address restores the same machines. Local work stays available.
+   A not-yet-updated mobile binary can keep using Clerk only until relay retirement.
+2. Have all three owners open each device and restart each server, confirm their account and
+   machines, and confirm a relay session in **styal Link account → Signed-in devices**. On every
+   server use `styal link login` if needed, then `styal link status` and connect from a signed-in
+   client. A server and CLI sharing one home may share one session. Do not count a session row as
+   proof that every device converted; missing devices, expired sessions and abandoned installs
+   must be explicitly accounted for by their owner.
+3. Check only aggregate counts and the maintainer's own account in the relay database. Do not
+   export credentials, code hashes, DPoP keys, friends' labels or account identifiers. These are
+   read-only SQL examples for the maintainer's own database console:
+
+   ```sql
+   SELECT count(*) AS accounts, count(email) AS mapped_emails FROM relay_users;
+   SELECT client_id, count(*) AS live_sessions
+   FROM relay_auth_sessions WHERE expires_at::timestamptz > now() GROUP BY client_id;
    ```
 
-3. Restrict Clerk sign-ups, then run the import again.
-4. Set `RELAY_EMAIL_FROM_ADDRESS` and redeploy.
+   The first query should still describe the three imported accounts with their verified email
+   mappings. Counts alone cannot prove migration. For his own account only, bind `$1` to his own
+   known account id in a parameterized query:
 
-Users without a verified Clerk email are not imported. Older transition builds that still hold a Clerk session move
-over through `/v1/auth/clerk-exchange`, which keeps the Clerk user id either way.
+   ```sql
+   SELECT client_id, label, last_used_at, expires_at
+   FROM relay_auth_sessions WHERE user_id = $1 ORDER BY created_at;
+   SELECT count(*) AS links FROM relay_environment_links WHERE user_id = $1;
+   ```
 
-During the transition, email sign-in checks Clerk's current verified addresses before using an
-imported account and looks up unmapped addresses in Clerk before creating an account. Clerk exchange
-refreshes the account's email each time. A stale email is cleared if no verified replacement is
-available or its replacement belongs to another account. A Clerk outage fails with
-`upstream_unavailable`; after email-code redemption, request a new code before retrying.
+   Compare his links and sessions before/after; ask his friends to confirm their own equivalent
+   results privately. Stop for an unexpected account count, missing mapping, missing machines or
+   any owner who cannot account for a device. Legacy mobile registration rows with null session
+   ids are historical data, not evidence of a currently active Clerk client; keep them.
 
-Ship the relay before the clients that use it. The transition build signs out of Clerk once
-it has a relay session, so it cannot fall back to an older relay, and a signed-out user can only
-sign in once email delivery works. Deploy and verify the relay, finish the steps above on `prod`,
-and confirm a real sign-in email arrives before releasing web, desktop, mobile, or the CLI.
+4. Only after every device/server is accounted for, merge the relay retirement. **Merging this change to main automatically deploys the production relay, then the development
+   relay. It also triggers hosted web deployment and mobile production reconciliation; successful
+   main CI can publish a desktop/CLI nightly.** Review that plan before
+   approval: expect Worker code and removal of Clerk bindings, no database, queue, DNS or tunnel
+   destruction. Old Clerk bearer requests now fail authentication; `/v1/client/dpop-token` and
+   `/v1/auth/clerk-exchange` return 404, OAuth discovery is retired, and signed sessionless
+   legacy tokens are refused.
+   Existing environment credentials and tunnels remain, but old clients cannot establish new
+   authenticated control-plane connections. Servers with only a Clerk credential must use the email-only client build or the
+   transition build's interactive email recovery; silent exchange no longer works.
+5. Smoke-test email login, reload/relaunch, sign-out and reconnect on released GUI and CLI builds;
+   confirm existing relay sessions and the same machines still work. Recheck aggregate counts and
+   his own links. Before deleting Clerk, an operator can redeploy the previous relay revision with
+   its original bindings to restore compatibility; it does not undo email sessions or new-client
+   sign-outs. Preserve the rollback configuration privately; an empty `CLERK_SECRET_KEY=` does not
+   remove an Alchemy stage binding.
+6. After a chosen rollback window and all releases, delete unused GitHub Actions Clerk settings
+   using Settings → Secrets and variables → Actions for repository scope and Settings →
+   Environments → production for environment scope. The environment currently holds secrets
+   `CLERK_SECRET_KEY` and `CLERK_DEV_SECRET_KEY`. Repository variables are
+   `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_TEMPLATE` and `CLERK_CLI_OAUTH_CLIENT_ID`; the environment
+   has those three plus `CLERK_JWT_AUDIENCE`. Remove `CLERK_PASSKEY_RP_DOMAINS` if set later.
+   Remove `T3CODE_CLERK_*`, `VITE_CLERK_*` and `EXPO_PUBLIC_CLERK_*` from local build/EAS files
+   after no supported build reads them. Confirm the Worker has no Clerk bindings. Keep email,
+   database, Cloudflare, mobile push and browser-passkey signing configuration.
+7. Delete the Clerk CLI OAuth app, JWT template, native application/redirect/passkey configuration,
+   then the production and development instances/application in the [Clerk dashboard](https://clerk.com/docs/guides/dashboard/overview) when no other
+   service uses them. **Clerk deletion is the irreversible point:** old credentials, sessions and
+   identities cannot be recovered by reverting code. It must be last. Revoke any remaining Clerk
+   API keys. Rotate the two separately identified cutover secrets as their own reviewed operation;
+   never delete or rotate relay signing keys as part of this cleanup.
 
-On non-production stages, `RELAY_EMAIL_DELIVERY=log` turns email sign-in on and writes codes to the
-worker log instead of sending them (read them with `wrangler tail` or the Worker's Live logs in the
-Cloudflare dashboard; `alchemy logs` does not show them), and `RELAY_TEST_SIGN_IN_CODE` sets a fixed
-code accepted for
-`agent+…@styal.build` addresses. The test code needs a sender or log delivery; on its own, sign-in
-stays off. The deploy refuses both on `prod`. For the shared `dev` stage these come from the
-`RELAY_DEV_EMAIL_DELIVERY` and `RELAY_DEV_TEST_SIGN_IN_CODE` variables.
+The client build that includes this retirement also removes old on-device credentials once:
+only the desktop's named `clerk-tokens.json` files, Expo SecureStore's `__clerk_client_jwt`,
+and same-origin browser storage keys starting with `__clerk` or `clerk_`. Current relay sessions,
+DPoP keys, device registrations and unrelated storage are preserved. A failed deletion retries;
+the preceding client-only release deliberately retains this data for downgrade compatibility.
+HttpOnly or cross-origin Clerk cookies cannot be removed by this JavaScript cleanup; retire
+those sessions through Clerk when the rollback window ends. Deleted local credentials cannot be
+restored by reverting code; older Clerk builds may require a fresh Clerk sign-in.
+
+Choose the rollback window and whether abandoned devices must be recovered or deliberately retired
+before approving the relay PR. Clerk bans, sign-up restrictions and email edits no longer control
+relay accounts after retirement; use the relay's session/account controls. T3 Chat keeps its existing
+external `clerkUserId` JSON field for protocol compatibility; it receives the stable relay id and
+reads email from the relay account, never Clerk.

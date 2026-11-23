@@ -15,6 +15,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { removeClerkTokenStorage } from "./RetiredSignInData.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
@@ -53,6 +54,15 @@ export const make = Effect.gen(function* () {
     userDataPath,
     electronVersion: process.versions.electron,
   });
+
+  yield* Effect.try({
+    try: () => removeClerkTokenStorage(environment.stateDir, userDataPath),
+    catch: () => undefined,
+  }).pipe(
+    Effect.catch(() =>
+      Effect.logWarning("Could not remove retired sign-in files; retrying next launch."),
+    ),
+  );
 
   const pendingSecondInstances: Array<readonly string[]> = [];
   let handleSecondInstance = (argv: readonly string[]) => {

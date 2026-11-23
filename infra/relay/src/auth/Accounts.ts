@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -14,7 +14,7 @@ import { relayUsers } from "../persistence/schema.ts";
 export class AccountPersistenceError extends Schema.TaggedError<AccountPersistenceError>()(
   "AccountPersistenceError",
   {
-    operation: Schema.Literals(["find-or-create", "get", "import", "sync-email"]),
+    operation: Schema.Literals(["find-or-create", "get"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -41,22 +41,6 @@ export class Accounts extends Context.Service<
     readonly get: (
       userId: string,
     ) => Effect.Effect<Option.Option<Account>, AccountPersistenceError>;
-    readonly getByEmail: (
-      email: string,
-    ) => Effect.Effect<Option.Option<Account>, AccountPersistenceError>;
-    /** Clears a stale mapping if the verified primary is absent or owned by another account. */
-    readonly syncEmail: (
-      userId: string,
-      email: string | null,
-    ) => Effect.Effect<Account, AccountPersistenceError>;
-    /**
-     * Records an account that already exists elsewhere (a Clerk user) under its
-     * existing id. Returns false when the id or the email is already taken.
-     */
-    readonly importAccount: (account: {
-      readonly userId: string;
-      readonly email: string;
-    }) => Effect.Effect<boolean, AccountPersistenceError>;
   }
 >()("t3code-relay/auth/Accounts") {}
 
@@ -111,87 +95,6 @@ const make = Effect.gen(function* () {
       Effect.mapError(
         (cause) =>
           new AccountPersistenceError({ operation: "get", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    getByEmail: Effect.fn("relay.accounts.get_by_email")(
-      function* (email) {
-        const rows = yield* db
-          .select({ userId: relayUsers.userId, email: relayUsers.email })
-          .from(relayUsers)
-          .where(eq(relayUsers.email, normalizeEmail(email)))
-          .limit(1);
-        return Option.fromNullishOr(rows[0]);
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "get", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    syncEmail: Effect.fn("relay.accounts.sync_email")(
-      function* (userId, input) {
-        const email = input === null ? null : normalizeEmail(input);
-        return yield* db.$client.withTransaction(
-          Effect.gen(function* () {
-            let availableEmail = email;
-            if (email !== null) {
-              yield* db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${email}))`);
-              const owner = yield* db
-                .select({ userId: relayUsers.userId })
-                .from(relayUsers)
-                .where(eq(relayUsers.email, email))
-                .limit(1);
-              if (owner[0] && owner[0].userId !== userId) availableEmail = null;
-            }
-            const now = DateTime.formatIso(yield* DateTime.now);
-            const rows = yield* db
-              .insert(relayUsers)
-              .values({ userId, email: availableEmail, createdAt: now, updatedAt: now })
-              .onConflictDoUpdate({
-                target: relayUsers.userId,
-                set: { email: availableEmail, updatedAt: now },
-              })
-              .returning({ userId: relayUsers.userId, email: relayUsers.email });
-            const row = rows[0];
-            if (!row) return yield* Effect.die("relay_users email sync returned no row");
-            return row;
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new AccountPersistenceError({
-                  operation: "sync-email",
-                  cause: persistenceCause(cause),
-                }),
-            ),
-          ),
-        );
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "sync-email", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    importAccount: Effect.fn("relay.accounts.import")(
-      function* (account) {
-        const now = DateTime.formatIso(yield* DateTime.now);
-        const rows = yield* db
-          .insert(relayUsers)
-          .values({
-            userId: account.userId,
-            email: normalizeEmail(account.email),
-            lastSignInAt: null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoNothing()
-          .returning({ userId: relayUsers.userId });
-        return rows.length > 0;
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "import", cause: persistenceCause(cause) }),
       ),
     ),
   });

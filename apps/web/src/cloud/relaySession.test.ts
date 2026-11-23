@@ -54,6 +54,7 @@ import {
   verifyEmailSignIn,
 } from "./relaySession";
 import {
+  removeLegacyClerkStorage,
   endRelaySession,
   publishRelaySession,
   updateRelaySessionState,
@@ -314,4 +315,50 @@ describe("relay session lifecycle", () => {
       expectCurrent(null);
     }),
   );
+});
+
+it("removes only Clerk browser storage once and preserves relay state", () => {
+  const memory = (values: Record<string, string>) => {
+    const data = new Map(Object.entries(values));
+    return {
+      get length() {
+        return data.size;
+      },
+      key: (index: number) => [...data.keys()][index] ?? null,
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        data.set(key, value);
+      },
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
+      clear: () => data.clear(),
+    };
+  };
+  const local = memory({
+    __clerk_client_jwt: "synthetic old token",
+    "relay-session": "synthetic current session",
+  });
+  const session = memory({ clerk_cache: "synthetic old cache", unrelated: "keep" });
+  removeLegacyClerkStorage(local, session);
+  expect(local.getItem("__clerk_client_jwt")).toBeNull();
+  expect(session.getItem("clerk_cache")).toBeNull();
+  expect(local.getItem("relay-session")).toBe("synthetic current session");
+  expect(session.getItem("unrelated")).toBe("keep");
+  const otherTab = memory({ __clerk_other_tab: "synthetic other tab token", unrelated: "keep" });
+  removeLegacyClerkStorage(local, otherTab);
+  expect(otherTab.getItem("__clerk_other_tab")).toBeNull();
+  expect(otherTab.getItem("unrelated")).toBe("keep");
+  const locked = memory({ __clerk_retry: "synthetic retry token" });
+  vi.spyOn(locked, "removeItem").mockImplementationOnce(() => {
+    throw new Error("storage blocked");
+  });
+  expect(() => removeLegacyClerkStorage(local, locked)).toThrow("storage blocked");
+  expect(locked.getItem("styal:clerk-storage-removed")).toBeNull();
+  expect(locked.getItem("__clerk_retry")).toBe("synthetic retry token");
+  removeLegacyClerkStorage(local, locked);
+  expect(locked.getItem("__clerk_retry")).toBeNull();
+  local.setItem("__clerk_after_cleanup", "synthetic sentinel");
+  removeLegacyClerkStorage(local, session);
+  expect(local.getItem("__clerk_after_cleanup")).toBe("synthetic sentinel");
 });

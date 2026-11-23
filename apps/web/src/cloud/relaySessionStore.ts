@@ -47,7 +47,32 @@ function readState(store: IDBObjectStore, done: (state: RelaySessionState) => vo
   );
 }
 
-export const readRelaySessionState = cloudAuthTransaction<RelaySessionState>("readonly", readState);
+export function removeLegacyClerkStorage(local: Storage, session: Storage): void {
+  for (const storage of [local, session]) {
+    if (storage.getItem("styal:clerk-storage-removed") === "1") continue;
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    for (const key of keys) {
+      if (key?.startsWith("__clerk") || key?.startsWith("clerk_")) storage.removeItem(key);
+    }
+    storage.setItem("styal:clerk-storage-removed", "1");
+  }
+}
+
+export const readRelaySessionState = cloudAuthTransaction<RelaySessionState>(
+  "readonly",
+  readState,
+).pipe(
+  Effect.tap(() =>
+    Effect.try({
+      try: () => removeLegacyClerkStorage(localStorage, sessionStorage),
+      catch: () => undefined,
+    }).pipe(
+      Effect.catch(() =>
+        Effect.logWarning("Could not remove retired sign-in storage; retrying next restore."),
+      ),
+    ),
+  ),
+);
 
 /**
  * The revision check and all writes share one transaction, including without

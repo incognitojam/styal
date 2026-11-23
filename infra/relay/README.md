@@ -86,7 +86,7 @@ vp run --filter t3code-relay deploy
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, and database
 connectivity. Copy [`infra/relay/.env.example`](./.env.example) to
 `infra/relay/.env` and fill in the deployment-specific values before deploying. Alchemy loads that
-file from the relay directory. Runtime secrets include Clerk credentials and optional FCM
+file from the relay directory. Runtime secrets include the relay signing keys and optional FCM
 credentials for Android push. APNs credentials are optional as an all-or-nothing group: leave all
 five `APNS_*` values unset until the mobile app ships and the relay deploys with push delivery
 disabled, while setting only some of them fails config resolution. Production adopts the configured
@@ -130,7 +130,7 @@ that was just deployed without copying values manually. It runs only when the UR
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
 the shared Alchemy `prod` stage on pushes to `main` that change the relay or its workspace
 dependencies, followed by the shared `dev` stage, which
-verifies development Clerk tokens for local source builds. Stable and nightly release builds both
+uses log delivery and a fixed agent test code for local source builds. Stable and nightly release builds both
 resolve their static public config from the same
 `production` GitHub environment. Labeling a same-repository PR `relay:preview` deploys a `pr-<number>`
 stage, and the cleanup workflow tears it down; see
@@ -146,9 +146,6 @@ The `production` GitHub environment must define these Actions variables:
 - `RELAY_API_ZONE_NAME`
 - `RELAY_TUNNEL_ZONE_NAME`
 - `RELAY_DOMAIN` if overriding the derived production relay domain
-- `CLERK_PUBLISHABLE_KEY`
-- `CLERK_JWT_AUDIENCE`
-- `CLERK_JWT_TEMPLATE`
 - `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_BUNDLE_ID` only when enabling
   mobile push; leave the group unset (together with `APNS_PRIVATE_KEY`) until the mobile app ships
 - `RELAY_EMAIL_FROM_ADDRESS` and optionally `RELAY_EMAIL_FROM_NAME` to turn on email sign-in for
@@ -160,8 +157,6 @@ The `production` GitHub environment must define these Actions secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `NEON_API_KEY`
-- `CLERK_SECRET_KEY`
-- `CLERK_DEV_SECRET_KEY`, the development Clerk instance's secret key for the `dev` stage
 - `APNS_PRIVATE_KEY` only when enabling mobile push, alongside the `APNS_*` variables above
 - `FCM_SERVICE_ACCOUNT` when Android push is enabled
 - `T3CHAT_LINK_SECRET`, optional, shared with T3 Chat's `T3CODE_LINK_SECRET`. Without it the
@@ -170,11 +165,11 @@ The `production` GitHub environment must define these Actions secrets:
 
 The account-scoped deployment credentials are consumed by Alchemy while provisioning relay stages;
 they are not bound into the relay Worker. The release workflow reads the production relay's derived public
-URL and Clerk publishable key from the same environment for downstream desktop, CLI, and hosted web
+URL from the same environment for downstream desktop, CLI, and hosted web
 builds.
 
 See:
 
-- [styal Link Clerk setup](../../docs/operations/connect-setup.md) for Clerk keys, JWT templates, and sign-up restrictions.
+- [styal Link sign-in and Clerk retirement](../../docs/operations/connect-setup.md) for email delivery and the compatibility-removal gate.
 - [Relay Observability](../../docs/operations/relay-observability.md) for relay logs, span names and diagnostics.
 - [styal Link architecture](../../docs/internals/t3-connect.md) for environment linking and trust boundaries.

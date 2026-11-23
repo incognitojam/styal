@@ -1,8 +1,7 @@
 # T3 Connect
 
 The relay is the identity provider for cloud accounts: users sign in with an
-emailed code, and Clerk remains only for older client binaries that have not moved over yet
-(see [Relay sessions](#relay-sessions)). The relay manages environment links,
+emailed code (see [Relay sessions](#relay-sessions)). The relay manages environment links,
 credentials for reaching environments, and managed tunnel allocations. After
 bootstrap, clients send application traffic through the environment's tunnel
 hostname; the relay Worker does not proxy their HTTP or WebSocket sessions.
@@ -40,7 +39,7 @@ read-once bodies of up to 1 MiB that need per-link order, caps, and retry
 timing. Queues cap messages at 128 KB and cannot hold one link's requests back
 while its environment is away.
 
-Deployment and email sign-in setup live in the
+Email sign-in, deployment and compatibility retirement live in the
 [Connect setup runbook](../operations/connect-setup.md).
 
 ## The relay is a trusted broker
@@ -146,7 +145,7 @@ host that reconnects mid-sweep wins.
 T3 Chat uses WorkOS, not Clerk, so the two accounts are linked by consent
 rather than by a shared identity. The relay and T3 Chat share one secret
 (`T3CHAT_LINK_SECRET` here, `T3CODE_LINK_SECRET` there). The relay signs a
-short-lived token naming the Clerk user and email; the user confirms it while
+short-lived token naming the stable relay user and email; the user confirms it while
 signed in to T3 Chat, and T3 Chat stores the link. T3 Chat owns the link and the
 plan, so the relay keeps no copy. It asks T3 Chat only when an account reaches
 its normal cap for a new environment, and any failure keeps the normal cap.
@@ -196,8 +195,7 @@ days without a refresh, with no hard cap, or when deleted
 Access tokens from a session carry every scope its client id allows, including
 `account` for the `client` group, and the session id as `sid`. The relay
 checks that the session still exists on every request with such a token, so
-revoking a session ends its access tokens at once; tokens from a Clerk sign-in
-have no session and last until they expire.
+revoking a session ends its access tokens at once. Tokens without a live session are refused.
 
 Sign-in codes are bound to the key that requested them, and only the newest
 code for an address and key is live. Attempts are spent and checked in one
@@ -207,16 +205,10 @@ from Clerk keep their Clerk user id, which is why the import must run before
 email sign-in is enabled: a Clerk user signing in by email without an imported
 row would get a new id and lose their links.
 
-## Moving off Clerk
+## Removing identity-provider compatibility
 
-Current web, desktop and mobile GUIs use relay sessions only. Without a stored relay
-session they show email sign-in. The server/CLI retains SDK-free startup adoption of an older
-Clerk credential until relay retirement. The imported email restores the original user id
-and environment links. Stored relay sessions,
-proof keys, cross-process credential leases and logout fences retain their existing formats.
-
-Older transition builds can still exchange Clerk session-template JWTs or CLI OAuth tokens at
-`/v1/auth/clerk-exchange`. The relay also accepts Clerk bearer tokens on its compatibility routes.
-Its Bearer scheme rejects other authorization schemes before calling Clerk, so DPoP requests do
-not cause Clerk verification. Keep the deployed relay compatible until every device and server
-has converted; see [legacy client compatibility](../operations/connect-setup.md#legacy-client-compatibility).
+Imported accounts retain their existing ids and email mappings. Only live relay sessions authenticate
+client requests; neither legacy exchange route is mounted. All old devices and servers must convert
+before deploying this relay. The [retirement checklist](../operations/connect-setup.md#retiring-clerk-compatibility)
+owns that operational gate and rollback limits. Historical migrations and legacy mobile registration
+rows stay untouched. T3 Chat's external `clerkUserId` wire field still carries the stable relay id.

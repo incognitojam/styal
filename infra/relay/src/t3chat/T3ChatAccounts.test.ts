@@ -1,5 +1,4 @@
 import { describe, expect, it } from "@effect/vitest";
-import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
@@ -13,13 +12,6 @@ import * as Accounts from "../auth/Accounts.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as T3ChatAccounts from "./T3ChatAccounts.ts";
 
-const clerk = vi.hoisted(() => ({
-  getUser: async (): Promise<unknown> => ({ primaryEmailAddress: { emailAddress: "a@b.co" } }),
-}));
-vi.mock("@clerk/backend", () => ({
-  createClerkClient: () => ({ users: { getUser: () => clerk.getUser() } }),
-}));
-
 const SECRET = "shared-link-secret";
 
 const relaySettings = (
@@ -27,9 +19,6 @@ const relaySettings = (
 ): RelayConfiguration.RelayConfiguration["Service"] => ({
   relayIssuer: "https://relay.example.test",
   apns: null,
-  clerkSecretKey: Redacted.make("clerk-secret-key"),
-  clerkPublishableKey: "pk_test_test",
-  clerkJwtAudience: "t3-code-relay",
   apnsDeliveryJobSigningSecret: Redacted.make("apns-delivery-secret"),
   signInCodeSecret: Redacted.make("sign-in-code-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-mint-private-key"),
@@ -115,14 +104,13 @@ describe("T3ChatAccounts", () => {
       expect(JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))).toEqual({
         v: 1,
         sub: "user_1",
-        email: "a@b.co",
+        email: "relay@example.test",
         exp: 600,
       });
-    }).pipe(provide(fakeT3Chat({}).client)),
+    }).pipe(provide(fakeT3Chat({}).client, undefined, "relay@example.test")),
   );
 
-  it.effect("uses the relay account's email without asking Clerk", () => {
-    const getUser = vi.spyOn(clerk, "getUser");
+  it.effect("uses the relay account's stored email", () => {
     return Effect.gen(function* () {
       const accounts = yield* T3ChatAccounts.T3ChatAccounts;
       const url = new URL(yield* accounts.createLinkUrl({ userId: "usr_relay" }));
@@ -131,11 +119,7 @@ describe("T3ChatAccounts", () => {
         sub: "usr_relay",
         email: "relay@example.test",
       });
-      expect(getUser).not.toHaveBeenCalled();
-    }).pipe(
-      provide(fakeT3Chat({}).client, undefined, "relay@example.test"),
-      Effect.ensuring(Effect.sync(() => getUser.mockRestore())),
-    );
+    }).pipe(provide(fakeT3Chat({}).client, undefined, "relay@example.test"));
   });
 
   it.effect("asks T3 Chat for the link with the shared secret", () => {
@@ -180,17 +164,11 @@ describe("T3ChatAccounts", () => {
     }).pipe(provide(client));
   });
 
-  it.effect("times out when Clerk stalls on the email lookup", () =>
+  it.effect("refuses linking an account with no stored email", () =>
     Effect.gen(function* () {
-      const getUser = clerk.getUser;
-      clerk.getUser = () => new Promise(() => {});
       const accounts = yield* T3ChatAccounts.T3ChatAccounts;
-      const fiber = yield* Effect.forkChild(Effect.flip(accounts.createLinkUrl({ userId: "u" })));
-      yield* TestClock.adjust("5 seconds");
-      const error = yield* Fiber.join(fiber).pipe(
-        Effect.ensuring(Effect.sync(() => (clerk.getUser = getUser))),
-      );
-      expect(error._tag).toBe("ClerkUserLookupFailed");
+      const error = yield* Effect.flip(accounts.createLinkUrl({ userId: "user_imported" }));
+      expect(error._tag).toBe("AccountEmailLookupFailed");
     }).pipe(provide(fakeT3Chat({}).client)),
   );
 

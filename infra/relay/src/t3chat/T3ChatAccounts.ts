@@ -1,4 +1,3 @@
-import { createClerkClient } from "@clerk/backend";
 import { hmac } from "@noble/hashes/hmac";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Context from "effect/Context";
@@ -33,12 +32,12 @@ export class T3ChatNotConfigured extends Schema.TaggedError<T3ChatNotConfigured>
   }
 }
 
-export class ClerkUserLookupFailed extends Schema.TaggedError<ClerkUserLookupFailed>()(
-  "ClerkUserLookupFailed",
+export class AccountEmailLookupFailed extends Schema.TaggedError<AccountEmailLookupFailed>()(
+  "AccountEmailLookupFailed",
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Could not read the Clerk user's primary email";
+    return "Could not read the account email";
   }
 }
 
@@ -64,7 +63,7 @@ export class T3ChatAccounts extends Context.Service<
     readonly available: boolean;
     readonly createLinkUrl: (input: {
       readonly userId: string;
-    }) => Effect.Effect<string, T3ChatNotConfigured | ClerkUserLookupFailed>;
+    }) => Effect.Effect<string, T3ChatNotConfigured | AccountEmailLookupFailed>;
     readonly getLink: (input: {
       readonly userId: string;
     }) => Effect.Effect<RelayT3ChatLink | null, T3ChatNotConfigured | T3ChatRequestFailed>;
@@ -119,32 +118,10 @@ export const make = Effect.gen(function* () {
   const accountEmail = Effect.fn("relay.t3chat.account_email")(function* (userId: string) {
     const account = yield* accounts
       .get(userId)
-      .pipe(Effect.mapError((cause) => new ClerkUserLookupFailed({ cause })));
+      .pipe(Effect.mapError((cause) => new AccountEmailLookupFailed({ cause })));
     return Option.isSome(account) && account.value.email !== null
       ? account.value.email
-      : yield* lookupClerkPrimaryEmail(userId);
-  });
-
-  const lookupClerkPrimaryEmail = Effect.fn("relay.t3chat.lookup_clerk_primary_email")(function* (
-    userId: string,
-  ) {
-    return yield* Effect.tryPromise({
-      try: async () => {
-        const user = await createClerkClient({
-          secretKey: Redacted.value(config.clerkSecretKey),
-          publishableKey: config.clerkPublishableKey,
-        }).users.getUser(userId);
-        const email = user.primaryEmailAddress?.emailAddress;
-        if (!email) throw new Error("Clerk user has no primary email address.");
-        return email;
-      },
-      catch: (cause) => new ClerkUserLookupFailed({ cause }),
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: T3CHAT_REQUEST_TIMEOUT,
-        orElse: () => Effect.fail(new ClerkUserLookupFailed({ cause: "timed out" })),
-      }),
-    );
+      : yield* new AccountEmailLookupFailed({ cause: "account has no email" });
   });
 
   return T3ChatAccounts.of({

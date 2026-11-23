@@ -36,8 +36,6 @@ catalog:
   "@alchemy.run/drizzle": 2.0.0-beta.85
   "@alchemy.run/neon": 2.0.0-beta.85
   "@alchemy.run/test": 2.0.0-beta.85
-  "@clerk/backend": 3.27.0
-  "@clerk/shared": 4.44.1
   # Must match the version alchemy depends on: the relay overrides its
   # Cloudflare retry policy through this package's Retry service.
   "@distilled.cloud/cloudflare": 1.0.0-rc.18
@@ -154,8 +152,6 @@ overrides:
   # which imports only types from rollup; rolldown runs the plugin.
   "@posthog/rollup-plugin>@posthog/cli": "-"
   "@posthog/rollup-plugin>rollup": "-"
-  "@clerk/backend": "catalog:"
-  "@clerk/shared": "catalog:"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"

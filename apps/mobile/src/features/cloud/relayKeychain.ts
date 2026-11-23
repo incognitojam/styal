@@ -18,7 +18,7 @@ const MIGRATED_ITEM_KEYS = [
   ...AGENT_AWARENESS_BACKGROUND_KEYS,
 ];
 const MIGRATION_MARKER_KEY = "styal.cloud.keychain-accessibility";
-const MIGRATION_VERSION = "2";
+const MIGRATION_VERSION = "3";
 
 let migration: Promise<void> | null = null;
 
@@ -37,6 +37,9 @@ export function migrateRelayKeychainAccessibility(): Promise<void> {
         await SecureStore.setItemAsync(key, value, RELAY_KEYCHAIN_OPTIONS);
       }
     }
+    await SecureStore.deleteItemAsync("__clerk_client_jwt", {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+    });
     await SecureStore.setItemAsync(MIGRATION_MARKER_KEY, MIGRATION_VERSION, RELAY_KEYCHAIN_OPTIONS);
   })().catch((error: unknown) => {
     migration = null;

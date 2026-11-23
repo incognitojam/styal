@@ -21,6 +21,7 @@ const accessible = "after-first-unlock-this-device-only";
 
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "synthetic-device-id" }));
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK: "after-first-unlock",
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: vi.fn((key: string) => {
     const item = state.items.get(key);
@@ -69,7 +70,7 @@ describe("background registration storage", () => {
       const storage = yield* makeStorage;
 
       yield* Effect.promise(() => migrateRelayKeychainAccessibility());
-      expect(state.items.get(MARKER_KEY)?.value).toBe("2");
+      expect(state.items.get(MARKER_KEY)?.value).toBe("3");
       state.locked = true;
       __resetRelayKeychainMigrationForTest();
       vi.mocked(SecureStore.setItemAsync).mockClear();
@@ -129,7 +130,7 @@ describe("background registration storage", () => {
       state.locked = true;
       const storage = yield* makeStorage;
       expect(yield* storage.loadAgentAwarenessDeviceId).toBe("existing-device");
-      expect(state.items.get(MARKER_KEY)?.value).toBe("2");
+      expect(state.items.get(MARKER_KEY)?.value).toBe("3");
     }),
   );
 });

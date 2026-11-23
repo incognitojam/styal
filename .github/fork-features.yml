@@ -5888,23 +5888,25 @@ features:
     title: Sign in to styal Link with an emailed code and a relay-owned session
     status: maintained
     tier: keep
-    prs: []
+    prs: [903, 904, 905, 1703, 1704]
     invariants:
       - The relay signs users in with an eight-digit emailed code bound to the requesting DPoP key; only the newest code for an address and key is live, each code allows five attempts and expires after 10 minutes. A key can request five codes per address per hour, an address receives at most 20 per hour from all keys, bounding guesses to 100 per hour against 100 million codes; issuance and per-code caps hold under concurrent requests.
       - Signing in returns a session credential that only works with proofs from the key that signed in. It does not rotate and ends after 90 days without use or when the user signs it out. Revocation, sign-out, and expiry pruning queue card-specific Live Activity ends before removing the session's mobile devices and Live Activities in one transaction; the sends run outside that transaction, a registration that arrives between them and the removal gets its own end first, queue failures retain registrations for retry, and legacy registrations without a session remain. Device and Live Activity registrations made with a session are refused once that session is gone. A failed session prune does not stop the cron's other pruning.
-      - Accounts imported from Clerk keep their Clerk user id. During transition, email sign-in rechecks imported email ownership and resolves unmapped verified addresses through Clerk, while exchange refreshes the email mapping. Clerk outages fail as upstream_unavailable instead of splitting accounts or rejecting credentials. A relay without a Clerk secret keeps stored email mappings as they are and makes no Clerk lookups, so removing Clerk later does not split imported accounts.
-      - The account endpoints accept either a Clerk bearer token or a relay DPoP access token with the account scope. DPoP authentication does not call Clerk. Deleting an imported account tears down its environments, then deletes its Clerk identity when Clerk is configured (404 counts as success; outages are retryable upstream_unavailable), then deletes relay data, so a failure at any step leaves the account and its sessions able to retry.
+      - Imported accounts keep their stored ids, email mappings, sessions and links. Email sign-in resolves the stored email without consulting any identity provider; removing a dependency must never rewrite a deployed migration or rename an imported account.
+      - Account endpoints require a DPoP-bound access token with the account scope and a live relay session. Clerk bearer tokens and sessionless legacy tokens are refused; neither exchange route nor the obsolete OAuth discovery routes are served. Account deletion tears down environments before deleting relay data and remains retryable on failure.
       - Email sign-in stays off until a sender is configured, and production refuses log delivery and fixed test codes.
-      - A Clerk user banned in Clerk cannot sign in by email or move a Clerk sign-in to the relay. A Live Activity can only be registered by the session that owns its device and is dropped when the device moves to another session, so revoking that session ends it. A session cannot be opened for an account that is deleted or being deleted.
+      - Clerk bans no longer control relay access. A Live Activity can only be registered by the session that owns its device and is dropped when the device moves to another session, so revoking that session ends it. A session cannot be opened for an account that is deleted or being deleted.
       - Web, desktop, and mobile sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key.
       - Web, desktop, mobile, and the CLI sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key, and the CLI asks for the code in the terminal, including over SSH.
       - Web, desktop, and mobile ship no Clerk SDK or session exchange. Existing relay sessions restore offline; a device with only a Clerk credential asks for an emailed code and returns to the same imported account and machines after sign-in. A failed saved-session or DPoP-key read remains retryable rather than clearing credentials.
-      - CLI credential updates use a cross-process lease. A server holding only a Clerk credential still adopts it at startup without a prompt; existing relay sessions and proof keys remain unchanged. Logout clears leftover legacy credentials, and the upgrade marker fences re-adoption by older processes. Server adoption is removed only with relay compatibility retirement.
+      - CLI credential updates use a cross-process lease. Existing relay sessions continue unchanged; any remaining Clerk-only server must update to the email-only client build and sign in before this relay ships. No client or server exchanges Clerk credentials.
       - CLI login offers email sign-in after permanent credential recovery failures, keeps prompting after temporary verify or resend failures, and treats a stored session for another relay as signed out. The CLI uses packages/shared/src/dpopProof.ts to sign proofs and sends authorization only to the session's relay origin. Email sign-in replaces upstream's CLI OAuth flow (apps/server/src/cloud/CliTokenManager.ts and cliAuthHtml.ts, deleted here), so intake must not restore those files.
       - A session the relay reports as ended signs the client out; a network failure does not.
+      - Compatibility retirement removes only known legacy credentials; cleanup is retryable and preserves relay sessions, proof keys, and unrelated files or storage. Browser completion is tracked independently for local storage and each tab’s session storage.
       - Account deletion retries teardown for active links, revoked links, and outstanding allocations, clearing held-hook inboxes before removing allocation records. Teardown failure preserves cleanup state and account sessions for retry. Deletion queues Live Activity ends before removing registrations and removes activity content only for environment/key pairs with no other active account owner; signed removal ends remain deliverable after SQL removal without recreating account records. Deletion takes session row locks before device and Live Activity rows, the same order as registration and session revocation.
-    rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on. Upstream still uses Clerk as of 1ffa099e7fbf0037dbffb6fb72b7585c933be24a; intake must drop SDK, provider, native auth, GUI build-variable and GUI legacy adoption changes instead of restoring them.
+    rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on. Upstream still uses Clerk at 1ffa099e7fbf0037dbffb6fb72b7585c933be24a; intake must discard Clerk SDK/provider/native-auth/build-variable changes, bearer verification, exchange routes, directory lookups, import tooling and relay bindings.
     implementation_paths:
+      - apps/desktop/src/app/RetiredSignInData.ts
       - apps/mobile/src/features/cloud/relayKeychain.ts
       - apps/mobile/src/features/cloud/relaySession.ts
       - apps/mobile/src/features/cloud/relaySessionStore.ts
@@ -5913,17 +5915,14 @@ features:
       - apps/web/src/cloud/relaySessionStore.ts
       - apps/web/src/components/relay-auth/RelayAccountDialog.tsx
       - apps/web/src/components/relay-auth/RelayEmailSignInForm.tsx
-      - infra/relay/scripts/import-clerk-users.ts
       - infra/relay/src/Runtime.ts
       - infra/relay/src/agentActivity/LiveActivityCleanup.ts
       - infra/relay/src/auth/AccountAuth.ts
       - infra/relay/src/auth/AccountData.ts
       - infra/relay/src/auth/Accounts.ts
       - infra/relay/src/auth/AuthSessions.ts
-      - infra/relay/src/auth/ClerkDirectory.ts
       - infra/relay/src/auth/EmailSender.ts
       - infra/relay/src/auth/EmailSignInCodes.ts
-      - infra/relay/src/auth/clerkImport.ts
       - infra/relay/src/pruneExpiredState.ts
       - packages/shared/src/dpopProof.ts
     upstream_paths:
@@ -5942,9 +5941,12 @@ features:
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/contracts/src/relay.ts
     tests:
+      - apps/desktop/src/app/RetiredSignInData.test.ts
+      - apps/mobile/src/features/cloud/relayKeychain.test.ts
       - apps/mobile/src/features/cloud/relaySessionStore.test.ts
       - apps/server/src/cli/connect.test.ts
       - apps/server/src/cloud/CliSession.test.ts
+      - apps/web/src/cloud/relaySession.test.ts
       - apps/web/src/components/relay-auth/RelayEmailSignInForm.logic.test.ts
       - infra/relay/src/Config.test.ts
       - infra/relay/src/Runtime.test.ts
@@ -5952,8 +5954,6 @@ features:
       - infra/relay/src/auth/AccountAuth.test.ts
       - infra/relay/src/auth/AccountData.postgres.test.ts
       - infra/relay/src/auth/AuthSessions.postgres.test.ts
-      - infra/relay/src/auth/ClerkDirectory.test.ts
-      - infra/relay/src/auth/clerkImport.test.ts
       - infra/relay/src/http/AuthApi.test.ts
       - infra/relay/src/pruneExpiredState.test.ts
       - packages/client-runtime/src/relay/managedRelay.test.ts
@@ -5962,6 +5962,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/blob/1ffa099e7fbf0037dbffb6fb72b7585c933be24a/apps/web/package.json
+        - https://github.com/pingdotgg/t3code/blob/1ffa099e7fbf0037dbffb6fb72b7585c933be24a/infra/relay/src/http/Api.ts
       retire_when: Upstream replaces Clerk with relay-owned sessions that stay valid while used, on every client.
 
   - id: relay-mobile-axiom-removal

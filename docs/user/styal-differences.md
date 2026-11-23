@@ -17,8 +17,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   and your account lists every signed-in device so you can sign any of them out. T3 Code signs in
   through Clerk, so a sign-in ends when Clerk's maximum session lifetime runs out, as of
   [revision 1ffa099](https://github.com/pingdotgg/t3code/tree/1ffa099e7fbf0037dbffb6fb72b7585c933be24a).
-  The web, desktop, and mobile apps no longer include Clerk. Updating a device that has not
-  converted asks you to sign in by email; use the same address to see your machines again.
+  styal Link requires a current client signed in by email. Devices and servers still using
+  an older Clerk sign-in must update and sign in again to reach their existing machines.
   [styal Link](./remote-access.md#styal-link).
 
 ## Agent permissions

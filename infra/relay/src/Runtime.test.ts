@@ -67,11 +67,13 @@ describe("Worker HTTP composition", () => {
     ).pipe(
       Effect.flatMap((app) =>
         Effect.promise(async () => {
-          const response = await app.handler(
-            new Request(`${config.relayIssuer}/.well-known/oauth-authorization-server`),
-          );
-          expect(response.status).toBe(200);
-          expect(await response.json()).toMatchObject({ issuer: config.relayIssuer });
+          for (const path of [
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-protected-resource",
+          ]) {
+            const response = await app.handler(new Request(`${config.relayIssuer}${path}`));
+            expect(response.status).toBe(404);
+          }
         }),
       ),
       Effect.scoped,

@@ -105,7 +105,6 @@ Required `production` environment variables:
 
 - `RELAY_API_ZONE_NAME`
 - `RELAY_TUNNEL_ZONE_NAME`
-- `CLERK_JWT_AUDIENCE`
 
 Optional `production` environment variables:
 
@@ -122,7 +121,6 @@ Required `production` environment secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `NEON_API_KEY`
-- `CLERK_SECRET_KEY`
 
 Optional `production` environment secrets:
 
