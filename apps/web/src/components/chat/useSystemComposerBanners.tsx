@@ -247,10 +247,15 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
                 ? `Connecting to ${label}`
                 : unavailableConnection.phase === "available"
                   ? `${label} is not connected`
-                  : `Can't reach ${label}`,
+                  : unavailableConnection.phase === "unsupported"
+                    ? `Can't connect to ${label}`
+                    : `Can't reach ${label}`,
           description:
             unavailableConnection.phase === "offline" ? (
               `Reconnects to ${label} when the network returns.`
+            ) : unavailableConnection.phase === "unsupported" ? (
+              (unavailableConnection.error ??
+              `This app and ${label} run versions that can't connect.`)
             ) : activeEnvironment ? (
               <ConnectionDiagnosisHeadline
                 environment={activeEnvironment}
