@@ -46,6 +46,8 @@ export interface ProjectPage {
   readonly statusLine: string | null;
   /** The threads the status line counts as needing you. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** The threads a failure or a usage limit stopped; Needs you lists those not yet seen. */
+  readonly stopped: ReadonlyArray<EnvironmentThreadShell>;
   /** Tasks whose threads the page keeps (`isProjectPageJob`), latest thread activity first. */
   readonly jobs: ReadonlyArray<ProjectPageJob>;
   /** `jobThreadStates` of those threads, by `environmentId:threadId`. */
@@ -109,6 +111,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
       statusLine: null,
       needYou: [],
+      stopped: [],
       jobs: [],
       jobThreads: new Map(),
     });
@@ -167,6 +170,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       ...page,
       statusLine: formatProjectStatusLine(counts),
       needYou: counts.needYou,
+      stopped: counts.stopped,
       jobs: jobs.toSorted(
         (left, right) =>
           getThreadSortTimestamp(right.thread, "updated_at") -

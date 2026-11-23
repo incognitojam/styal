@@ -49,7 +49,7 @@ function ranking(
 }
 
 describe("countProjectThreads", () => {
-  it("counts approvals, questions and report questions as needing you, and failures as neither", () => {
+  it("counts approvals, questions and report questions as needing you, and failures apart", () => {
     const counts = countProjectThreads(
       [
         shell("approval", { hasPendingApprovals: true }),
@@ -66,6 +66,7 @@ describe("countProjectThreads", () => {
     );
     expect(counts.working).toBe(2);
     expect(counts.needYou.map((thread) => thread.id)).toEqual(["approval", "question", "report"]);
+    expect(counts.stopped.map((thread) => thread.id)).toEqual(["failed"]);
   });
 
   it("leaves out the chat itself, subagents, side chats and archived threads", () => {

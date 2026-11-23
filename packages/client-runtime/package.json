@@ -647,10 +647,6 @@
       "types": "./src/projectPage.ts",
       "default": "./src/projectPage.ts"
     },
-    "./project-since-last-visit": {
-      "types": "./src/projectSinceLastVisit.ts",
-      "default": "./src/projectSinceLastVisit.ts"
-    },
     "./provider-instance-ids": {
       "types": "./src/providerInstanceIds.ts",
       "default": "./src/providerInstanceIds.ts"
