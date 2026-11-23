@@ -1756,7 +1756,7 @@ function ScheduledTaskEditorForm({
           <Field label="Prompt" htmlFor="scheduled-task-prompt">
             <Textarea
               id="scheduled-task-prompt"
-              className="max-h-64 overflow-y-auto"
+              tall
               placeholder="What should the agent do each time this runs?"
               value={draft.prompt}
               onChange={(event) =>

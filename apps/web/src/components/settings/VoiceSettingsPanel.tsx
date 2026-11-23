@@ -1652,6 +1652,7 @@ export function VoiceSettingsPanel() {
               <div className="mt-3 pb-2">
                 <Textarea
                   aria-label="Custom cleanup instructions"
+                  tall
                   maxLength={10_000}
                   value={settings.speechPostProcessingPrompt.customInstructions}
                   onChange={(event) =>
