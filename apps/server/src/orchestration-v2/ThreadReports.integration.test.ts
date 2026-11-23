@@ -133,6 +133,7 @@ const makeHelpers = (input: {
     const endTurn = (
       turn: ProviderAdapter.ProviderAdapterV2TurnInput,
       outcome: "completed" | "failed",
+      texts: ReadonlyArray<string> = [],
     ) =>
       Effect.gen(function* () {
         const projection = yield* orchestrator.getThreadProjection(turn.threadId);
@@ -152,6 +153,27 @@ const makeHelpers = (input: {
           Stream.runDrain,
           Effect.forkScoped,
         );
+        for (const [index, text] of texts.entries()) {
+          const now = DateTime.addDuration(yield* DateTime.now, `${index} millis`);
+          yield* Queue.offer(events, {
+            type: "message.updated",
+            driver,
+            message: {
+              id: MessageId.make(`assistant:${turn.runId}:${index}`),
+              threadId: turn.threadId,
+              runId: turn.runId,
+              nodeId: turn.rootNodeId,
+              role: "assistant",
+              text,
+              attachments: [],
+              streaming: false,
+              createdBy: "agent",
+              creationSource: "provider",
+              createdAt: now,
+              updatedAt: now,
+            },
+          });
+        }
         yield* Queue.offer(events, {
           type: "provider_turn.updated",
           driver,
@@ -478,19 +500,65 @@ it.effect("a finished turn with nothing pending wakes the launcher once", () =>
   ),
 );
 
-it.effect("a launched thread reports person-started turns and failures", () =>
-  harness("report-person", ({ send, endTurn, reports }) =>
+it.effect("person-started summaries wait for the launcher, once, until superseded", () =>
+  harness("report-person", ({ orchestrator, create, send, endTurn, reports, started }) =>
     Effect.gen(function* () {
-      const quiet = yield* send(launchedId, "Tweak the copy", { sender: "user" });
-      yield* endTurn(quiet, "completed");
-      assert.equal((yield* reports()).length, 1);
+      const notes = () =>
+        orchestrator
+          .getThreadProjection(launcherId)
+          .pipe(Effect.map((projection) => projection.thread.answerNotes ?? []));
+      const first = yield* send(launchedId, "Keep JSON", { sender: "user" });
+      yield* endTurn(first, "completed", ["I will keep JSON."]);
+      assert.equal((yield* reports()).length, 0, "a person's result does not wake the launcher");
+      const original = (yield* notes())[0]!;
+      const lateRecording = (key: string) =>
+        orchestrator.dispatch({
+          type: "thread.answer-notes.update",
+          commandId: CommandId.make(`late-summary:${key}`),
+          threadId: launcherId,
+          summaryFor: launchedId,
+          summaryRunId: first.runId,
+          note: original,
+          delivered: [],
+        });
+      const second = yield* send(launchedId, "Use opt-in SQLite", { sender: "user" });
+      const summary = "SQLite is opt-in; JSON remains. " + "Details. ".repeat(300);
+      yield* endTurn(second, "completed", ["Checking the settings.", summary, "  "]);
+      assert.lengthOf(yield* notes(), 1, "the latest summary replaces the earlier one");
+      yield* lateRecording("after-new-summary");
+      assert.include((yield* notes())[0]!.text, "SQLite is opt-in");
+      const next = yield* send(launcherId, "What remains?", { sender: "user" });
+      assert.include(next.message.text, "SQLite is opt-in; JSON remains.");
+      assert.notInclude(next.message.text, "I will keep JSON.");
+      assert.notInclude(next.message.text, "Checking the settings.");
+      assert.notInclude(next.message.text, summary, "the summary is capped");
+      assert.include(next.message.text, "Read more with t3_thread_read");
+      yield* endTurn(next, "completed");
+      assert.deepEqual(yield* notes(), [], "consumed once");
+      const again = yield* send(launcherId, "Continue", { sender: "agent" });
+      assert.notInclude(again.message.text, "SQLite is opt-in");
+      yield* endTurn(again, "completed");
 
+      const empty = yield* send(launchedId, "Check again", { sender: "user" });
+      yield* endTurn(empty, "completed");
+      assert.include((yield* notes())[0]!.text, "The turn ended without assistant text.");
+      const before = started.length;
       const failed = yield* send(launchedId, "Try again", { sender: "user" });
       yield* endTurn(failed, "failed");
-      const delivered = yield* reports();
-      assert.equal(delivered.length, 2);
-      assert.equal(delivered[1]?.outcome, "failed");
-      assert.include(delivered[1]?.text ?? "", "Sign-in expired.");
+      assert.equal((yield* reports()).length, 1);
+      assert.equal((yield* reports())[0]?.outcome, "failed");
+      assert.include((yield* reports())[0]?.text ?? "", "Sign-in expired.");
+      assert.equal(started.length, before + 2, "failure wakes the launcher");
+      assert.notInclude(started.at(-1)!.message.text, "The turn ended without assistant text.");
+      assert.deepEqual(yield* notes(), [], "the wake supersedes the stored summary");
+      yield* lateRecording("after-wake");
+      assert.deepEqual(yield* notes(), [], "a late recording cannot restore superseded text");
+
+      const lone = ThreadId.make("thread:no-report");
+      yield* create(lone);
+      const alone = yield* send(lone, "Stay here", { sender: "user" });
+      yield* endTurn(alone, "completed", ["Local result."]);
+      assert.deepEqual(yield* notes(), [], "threads without report-back are untouched");
     }),
   ),
 );
@@ -1302,7 +1370,9 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
         );
         yield* worker.drain();
         assert.deepEqual(
-          (yield* notes()).map((note) => note.text),
+          (yield* notes())
+            .filter((note) => !note.id.startsWith("answer-note:summary:"))
+            .map((note) => note.text),
           [
             `- "Fix the login page" (${launchedId}): the user answered the report "Merge the fix?" with "Merge it".`,
             `- "Fix the login page" (${launchedId}): the user dismissed the report "Old plan".`,
@@ -1324,8 +1394,13 @@ it.effect("answers given outside the chat reach it on its next turn as one list,
             delivered: [],
           });
         }
-        const capped =
-          (yield* orchestrator.getThreadProjection(launcherId)).thread.answerNotes ?? [];
+        const capped = (
+          (yield* orchestrator.getThreadProjection(launcherId)).thread.answerNotes ?? []
+        ).filter((note) => !note.id.startsWith("answer-note:summary:"));
+        assert.isTrue(
+          (yield* notes()).some((note) => note.id.startsWith("answer-note:summary:")),
+          "answer retention does not evict a thread summary",
+        );
         assert.deepEqual(
           capped.map((note) => note.id),
           Array.from({ length: 10 }, (_, index) => `note:${index + 2}`),

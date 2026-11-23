@@ -586,7 +586,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   reportDismissals: Schema.optional(Schema.Array(CoordinatorReportDismissal)),
-  /** Answers given in the threads reporting here, for this thread's next turn; capped. */
+  /** Answers and latest quiet summaries from reporting threads, for the next turn. */
   answerNotes: Schema.optional(
     Schema.Array(
       Schema.Struct({ id: Schema.String, text: Schema.String, occurredAt: IsoDateTime }),
@@ -4190,6 +4190,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
     note: Schema.optional(
       Schema.Struct({ id: Schema.String, text: Schema.String, occurredAt: IsoDateTime }),
     ),
+    summaryFor: Schema.optional(ThreadId),
+    summaryRunId: Schema.optional(RunId),
     delivered: Schema.Array(Schema.String),
   }),
 ]);

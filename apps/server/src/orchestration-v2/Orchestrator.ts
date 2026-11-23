@@ -4304,6 +4304,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is deleted.`,
       });
     }
+    if (
+      command.type === "thread.answer-notes.update" &&
+      command.summaryFor !== undefined &&
+      command.summaryRunId !== undefined
+    ) {
+      const source = yield* projectionStore
+        .getThreadRecords(command.summaryFor, ["runs"])
+        .pipe(mapDispatchError(command));
+      if (
+        latestExecutedRun(source.runs)?.id !== command.summaryRunId ||
+        source.thread.reportTo?.threadId !== thread.id ||
+        source.thread.reportTo?.sentInRunId === command.summaryRunId
+      )
+        return;
+    }
     // Starting either kind of watch takes the same checks.
     const startsWatch =
       (command.type === "thread.pull-request.watch" ||
@@ -4946,14 +4961,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
         }
         case "thread.answer-notes.update": {
-          const { note, delivered } = command;
+          const { note, delivered, summaryFor } = command;
           const kept = (thread.answerNotes ?? []).filter(
-            (candidate) => candidate.id !== note?.id && !delivered.includes(candidate.id),
+            (candidate) =>
+              candidate.id !== note?.id &&
+              !delivered.includes(candidate.id) &&
+              !(
+                summaryFor !== undefined &&
+                candidate.id.startsWith(`answer-note:summary:${summaryFor}:`)
+              ),
+          );
+          const notes = note === undefined ? kept : [...kept, note];
+          const answers = new Set(
+            notes
+              .filter((entry) => !entry.id.startsWith("answer-note:summary:"))
+              .slice(-ANSWER_NOTES_KEPT)
+              .map((entry) => entry.id),
           );
           // Not activity: the note waits for the thread's next turn without moving it in lists.
           return {
             ...thread,
-            answerNotes: (note === undefined ? kept : [...kept, note]).slice(-ANSWER_NOTES_KEPT),
+            answerNotes: notes.filter(
+              (entry) => entry.id.startsWith("answer-note:summary:") || answers.has(entry.id),
+            ),
           };
         }
         case "thread.metadata.update": {
@@ -15857,6 +15887,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 text: guestSend.text,
                 context: { version: 1 as const, records: [], guest: guestSend.guest },
               };
+        if (command.notification?.source.kind === "launched_thread") {
+          yield* dispatchThreadMutation(
+            {
+              type: "thread.answer-notes.update",
+              commandId: command.commandId,
+              threadId: command.threadId,
+              summaryFor: command.notification.source.childThreadId,
+              delivered: [],
+            },
+            events,
+            effects,
+          );
+        }
         cancelUnsettledEffects = yield* dispatchMessage(dispatched, events, effects);
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
         if (command.reportAnswer !== undefined && command.createdBy === "user") {
@@ -16190,6 +16233,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           planned.events.length > 0 ||
           isUnobservedAcknowledgement(command) ||
           command.type === "thread.background-work.settle" ||
+          command.type === "thread.answer-notes.update" ||
           // A read can answer a watch again before a push's reopen lands; nothing is left to clear.
           command.type === "thread.pull-request-watch.checks-reopen" ||
           command.type === "thread.interrupt.unresponsive" ||
