@@ -26,12 +26,14 @@ function nameMachines(labels: ReadonlyArray<string>): string {
 
 // A machine switched off, an offline device and an incompatible version are not connections in
 // progress. The composer banner covers a missing Link sign-in, which Retry cannot fix.
-function waitingMachines(environments: ReadonlyArray<MachineConnection>) {
-  const shown = environments.filter(
-    (environment) =>
-      !environment.awaitingSignIn &&
-      (!environment.updating || environment.connection.phase === "error"),
-  );
+function waitingMachines(environments: ReadonlyArray<MachineConnection>, everyMachine = false) {
+  const shown = everyMachine
+    ? environments
+    : environments.filter(
+        (environment) =>
+          !environment.awaitingSignIn &&
+          (!environment.updating || environment.connection.phase === "error"),
+      );
   const connecting = shown.filter((environment) => environment.connection.phase === "connecting");
   // Reconnecting means an attempt failed; a manual retry starts over as connecting.
   const failed = shown.filter(
@@ -70,7 +72,8 @@ export function machineConnectionLine(
 export function machineConnectionEmptyText(
   environments: ReadonlyArray<MachineConnection>,
 ): string | null {
-  const { connecting, failed } = waitingMachines(environments);
+  // Projects can still arrive from a machine the footer line leaves out.
+  const { connecting, failed } = waitingMachines(environments, true);
   const waiting = [...failed, ...connecting];
   if (waiting.length === 0) return null;
   const names = nameMachines(waiting.map((environment) => environment.label));

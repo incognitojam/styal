@@ -83,6 +83,10 @@ describe("machineConnectionEmptyText", () => {
       [machine("mesa", "connecting"), machine("atlas", "reconnecting")],
       "Projects on atlas and mesa show up here once they connect",
     ],
+    [
+      [machine("atlas", "connecting", { awaitingSignIn: true, updating: true })],
+      "Projects on atlas show up here once it connects",
+    ],
   ])("%j", (environments, text) => {
     expect(machineConnectionEmptyText(environments)).toBe(text);
   });
