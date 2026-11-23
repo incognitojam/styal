@@ -5,12 +5,12 @@
       "reason": "Orchestration V2 protects sidebar-pinned threads from automatic settlement. When the queue reaches V2, retire the fork's V1 pinned-thread-auto-settlement patch in favor of upstream's policy. Verify the pin/unpin lifecycle, explicit Un-settle and per-thread auto-settle opt-outs, manual settle, and merge/inactivity eligibility. V2 currently lacks an unpin-triggered settlement sweep; carry the immediate recheck forward if still needed, then remove the ledger entry when all fork-owned behavior is replaced."
     },
     {
-      "pr": 8338,
-      "reason": "Imported provisionally as one snapshot: the server, pairing and shared development leave a Tailscale Serve handler they do not own unchanged, and shutdown removes only a mapping that targets this server. Fixes fork #366. The fork keeps its styal naming in the remote access guide and pairing tests. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, verify startup and shutdown with a foreign handler on the Serve port, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
-      "snapshot": {
-        "base": "5a574a77d1bef579b01d137b81888f68eabf7d4b",
-        "head": "2fa37ecbfdf980143984851c1c09b8d5208e19b8"
-      }
+      "pr": 35547,
+      "reason": "Makes `pair --tailscale` read who holds the Serve port's root and refuse only another live server or app. The fork's pairing already checks ownership from the closed 8338 snapshot (ledger tailscale-serve-ownership): it reuses an exact mapping, lets a dev server repoint a simple private root handler only after the probe shows it serves this environment, and otherwise refuses through the guarded `ensureTailscaleServe`. When it arrives, take upstream's root-holder read and its move of the holder classification into packages/tailscale, keep the guard and the pairing identity checks (ledger pair-cli-startup), and decide a root left on a dead loopback port the same way the server does."
+    },
+    {
+      "pr": 37888,
+      "reason": "Makes `dev --share` read who holds the Serve port's root, refuse another live server, and replace a mapping left by an earlier run or one dialing a dead loopback port. The fork's dev share already leaves other handlers alone from the closed 8338 snapshot (ledger tailscale-serve-ownership): it no longer clears the port before configuring it, and the guarded `ensureTailscaleServe` and `disableTailscaleServe` change only an empty port or this target's exact mapping. When it arrives, take upstream's root-holder check and errors, keep the guarded calls rather than upstream's clear-then-serve, and decide a dead loopback root the same way the server does."
     },
     {
       "pr": 10411,

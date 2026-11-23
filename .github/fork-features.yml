@@ -7103,6 +7103,40 @@ features:
         - https://github.com/pingdotgg/t3code/blob/30654b3e91a51937d1dba18fc83af19d8003f5ca/packages/client-runtime/src/state/threadTagFilter.ts
       retire_when: Upstream has these surfaces and hides tagged threads on them.
 
+  - id: tailscale-serve-ownership
+    title: Leave Tailscale Serve handlers this server does not own unchanged
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - Server startup configures Tailscale Serve only when the port holds nothing or already holds this server's exact private mapping; another handler, an extra mount, Funnel, a TCP forward, or a foreground `tailscale serve` session on the port is left unchanged, including a root handler whose loopback backend is not listening.
+      - Server shutdown and `dev --share` cleanup remove a mapping only while the port holds a single private root handler that targets their own local port.
+      - "`styal pair --tailscale` reuses an exact mapping; a dev server also repoints a simple private root handler once its HTTPS probe shows the same environment; any other handler fails pairing without changing it."
+      - "`dev --share` configures its port without clearing an existing mapping first."
+    rationale: Tailscale Serve holds one mapping per HTTPS port for the whole machine, so a second server or a dev share that replaced or removed a mapping it did not own cut the first server off the tailnet without warning (fork issue 366). The guard was imported as a snapshot of an upstream proposal that closed unmerged; upstream later left a live server's route alone in the server, pairing and dev share, but still replaces a root handler on a dead loopback port and any handler beside the root.
+    implementation_paths:
+      - apps/server/src/cli/pair.ts
+      - apps/server/src/server.ts
+      - packages/tailscale/src/tailscale.ts
+      - scripts/lib/dev-share.ts
+    upstream_paths:
+      - apps/server/src/cli/pair.ts
+      - apps/server/src/server.ts
+      - packages/tailscale/src/tailscale.ts
+      - scripts/lib/dev-share.ts
+    tests:
+      - apps/server/src/cli/pair.test.ts
+      - packages/tailscale/src/tailscale.test.ts
+      - scripts/lib/dev-share.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/35042
+        - https://github.com/pingdotgg/t3code/pull/35547
+        - https://github.com/pingdotgg/t3code/pull/37888
+        - https://github.com/pingdotgg/t3code/pull/8338
+      retire_when: Upstream's server, pairing and dev share leave every Serve handler they do not own unchanged, including a root handler on a dead loopback port, Funnel, extra mounts and foreground sessions, and remove only their own mapping.
+
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
     status: maintained
