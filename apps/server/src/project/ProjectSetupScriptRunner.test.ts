@@ -1,7 +1,13 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it, vi } from "@effect/vitest";
-import { ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { ProjectId, TerminalCwdNotFoundError, ThreadId, TurnItemId } from "@t3tools/contracts";
+import * as PhysicalFileSystem from "@t3tools/shared/PhysicalFileSystem";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
@@ -12,6 +18,7 @@ import * as TurnItemPositions from "../orchestration-v2/TurnItemPositionStore.ts
 import * as LegacyImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectFileActionApprovals from "./ProjectFileActionApprovals.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -29,6 +36,8 @@ const reservedPorts = Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)(
   getBasePort: () => Effect.succeed(20_000),
 });
 const importer = LegacyImporter.layer.pipe(Layer.provide(Layer.mergeAll(stores, sink)));
+// Workspace leases resolve paths; the synthetic ones fall back to their resolved form.
+const platform = Layer.mergeAll(FileSystem.layerNoop({}), Path.layer, PhysicalFileSystem.layer);
 
 it.effect(
   "runs finite setup commands and records configured identity and actual outcomes in V2",
@@ -93,6 +102,7 @@ it.effect(
       deletedAt: null,
     };
     const dependencies = Layer.mergeAll(
+      platform,
       stores,
       sink,
       importer,
@@ -227,6 +237,64 @@ it.effect(
 );
 
 it.effect(
+  "one setup runs per worktree root, started before an interrupted caller's lease ends",
+  () =>
+    Effect.gen(function* () {
+      const root = "/synthetic/worktrees/project/feature";
+      const withWorkspaceLease = yield* makeWorkspaceLease.pipe(Effect.provide(platform));
+      const reading = yield* Deferred.make<void>();
+      const read = yield* Deferred.make<void>();
+      const finish = yield* Deferred.make<void>();
+      const events: Array<string> = [];
+      const consumed: Array<string> = [];
+      const setUpStripped = yield* ProjectSetupScriptRunner.makeSetUpStripped({
+        isStripped: () => Effect.sync(() => consumed.length === 0),
+        consumeStripped: (path) => Effect.sync(() => consumed.push(path) > 0),
+        // Until setup's terminal exists, only the caller's lease keeps cleanup out of the root.
+        runForThread: (input) =>
+          Deferred.succeed(reading, undefined).pipe(
+            Effect.andThen(Deferred.await(read)),
+            Effect.andThen(Effect.sync(() => events.push(`setup terminal for ${input.threadId}`))),
+            Effect.as({
+              status: "started" as const,
+              runId: "setup",
+              scriptId: "setup",
+              scriptName: "Setup",
+              scriptCommand: "synthetic setup",
+              terminalId: "setup-setup",
+              cwd: root,
+              async: false,
+              completion: Deferred.await(finish).pipe(
+                Effect.as({ exitCode: 0, exitSignal: null, durationMs: 0 }),
+              ),
+            }),
+          ),
+      });
+      const first = yield* withWorkspaceLease(
+        root,
+        setUpStripped({ threadId: "thread-a", worktreePath: root }),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(reading);
+      const interrupted = yield* Fiber.interrupt(first).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const cleanup = yield* withWorkspaceLease(
+        root,
+        Effect.sync(() => events.push("cleanup")),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(read, undefined);
+      yield* Fiber.join(interrupted);
+      yield* Fiber.join(cleanup);
+      // Another thread in the same worktree waits for that run instead of starting its own.
+      const joined = yield* setUpStripped({ threadId: "thread-b", worktreePath: root });
+      yield* Deferred.succeed(finish, undefined);
+      assert.deepEqual(yield* joined!.completion, { exitCode: 0, exitSignal: null, durationMs: 0 });
+      assert.deepEqual(events, ["setup terminal for thread-a", "cleanup"]);
+      assert.deepEqual(consumed, [root]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
   "runs the settle script in one retained terminal per thread, outside the checkout",
   () => {
     const listeners = new Set<
@@ -286,6 +354,7 @@ it.effect(
       deletedAt: null,
     };
     const dependencies = Layer.mergeAll(
+      platform,
       stores,
       sink,
       importer,
@@ -390,24 +459,55 @@ describe("styal.json setup actions", () => {
     }>;
     readonly approved: boolean;
     readonly approveAfterWaiting?: boolean;
+    readonly stripped?: boolean;
+    readonly worktreePath?: string;
+    readonly onOpenCommand?: Effect.Effect<void>;
     readonly exitCode?: number;
+    readonly launch?: "fails" | "errors";
+    readonly sameThreadShell?: "reuses" | "replaces" | "replaced";
     readonly portsExhausted?: boolean;
   }) => {
+    let opens = 0;
     const openCommand = vi.fn(
-      (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
-        Effect.succeed({
+      (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) => {
+        const snapshot = {
           threadId: input.threadId,
           terminalId: input.terminalId,
           cwd: input.cwd,
           worktreePath: input.worktreePath ?? null,
-          status: "running" as const,
+          status: options.launch === "errors" ? ("error" as const) : ("running" as const),
           pid: 123,
           history: "",
           exitCode: null,
           exitSignal: null,
           label: "Shell",
           updatedAt: "2026-06-20T00:00:00.000Z",
-        }),
+        };
+        // As TerminalManager reports a process it replaced for a changed launch: only the start.
+        const replaces =
+          (opens += 1) > 1 &&
+          (options.sameThreadShell === "replaces" || options.sameThreadShell === "replaced");
+        return (options.onOpenCommand ?? Effect.void).pipe(
+          Effect.andThen(
+            options.launch === "fails"
+              ? Effect.fail(new TerminalCwdNotFoundError({ cwd: input.cwd }))
+              : Effect.void,
+          ),
+          Effect.andThen(
+            replaces
+              ? Effect.forEach([...listeners], (listener) =>
+                  listener({
+                    type: "started",
+                    threadId: input.threadId,
+                    terminalId: input.terminalId,
+                    snapshot,
+                  }),
+                )
+              : Effect.void,
+          ),
+          Effect.as(snapshot),
+        );
+      },
     );
     const listeners = new Set<
       Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
@@ -434,6 +534,7 @@ describe("styal.json setup actions", () => {
       deletedAt: null,
     };
     const dependencies = Layer.mergeAll(
+      platform,
       stores,
       sink,
       importer,
@@ -465,7 +566,12 @@ describe("styal.json setup actions", () => {
       yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
       const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const runInput = { threadId, projectId, worktreePath: "/synthetic/repo-worktree" };
+      const runInput = {
+        threadId,
+        projectId,
+        worktreePath: options.worktreePath ?? "/synthetic/repo-worktree",
+      };
+      if (options.stripped) yield* service.markStripped(runInput.worktreePath, projectId);
       const initial = yield* service.runForThread(runInput);
       let waitingId: string | undefined;
       if (options.approveAfterWaiting) {
@@ -483,13 +589,30 @@ describe("styal.json setup actions", () => {
         });
       }
       if (options.approveAfterWaiting) {
-        yield* service.runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) });
+        // A shell's setup that the approved run's open then replaces.
+        const replacedShell =
+          options.sameThreadShell === "replaced" ? yield* service.setUpStripped(runInput) : null;
+        const approved = service.runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) });
+        if (options.launch === undefined) yield* approved;
+        else assert.equal((yield* Effect.flip(approved)).reason, "run-failed");
         const repeated = yield* service
           .runPending({ threadId, turnItemId: TurnItemId.make(waitingId!) })
           .pipe(Effect.flip);
         assert.equal(repeated.reason, "run-failed");
-        assert.equal(openCommand.mock.calls.length, 1);
+        assert.equal(openCommand.mock.calls.length, replacedShell === null ? 1 : 2);
+        // A shell on the same thread sets up again on the terminal the approved run is using.
+        const shell =
+          options.sameThreadShell === "reuses" || options.sameThreadShell === "replaces"
+            ? yield* service.setUpStripped(runInput)
+            : null;
+        if (options.sameThreadShell !== undefined) assert.isNotNull(shell ?? replacedShell);
         if (options.exitCode !== undefined) {
+          // Pending until the approved run ends: at this exit, or when the shell's setup replaced it.
+          if (options.sameThreadShell !== "replaced")
+            assert.equal(
+              yield* service.isStripped(runInput.worktreePath),
+              options.stripped === true && options.sameThreadShell !== "replaces",
+            );
           yield* Effect.forEach([...listeners], (listener) =>
             listener({
               type: "exited",
@@ -499,6 +622,10 @@ describe("styal.json setup actions", () => {
               exitSignal: null,
             }),
           );
+          if (shell !== null) yield* shell.completion;
+          // The replaced setup ended when its process did, not with the approved run's exit.
+          if (replacedShell !== null)
+            assert.equal((yield* replacedShell.completion).exitCode, null);
         }
       }
       const result = initial;
@@ -506,7 +633,8 @@ describe("styal.json setup actions", () => {
       const turnItems = (yield* projections.getThreadProjection(threadId)).turnItems;
       const rows = turnItems.filter((item) => item.type === "command_execution");
       const notices = turnItems.filter((item) => item.type === "system_notice");
-      return { result, rows, notices, openCommand, projectId, waitingId };
+      const stripped = yield* service.isStripped(runInput.worktreePath);
+      return { result, rows, notices, openCommand, projectId, waitingId, stripped };
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   };
 
@@ -533,28 +661,93 @@ describe("styal.json setup actions", () => {
     }),
   );
 
-  it.effect.each([0, 7])(
-    "resumes the approved file action in its waiting row with exit %s",
-    (exitCode) =>
+  it.effect.each([
+    { exitCode: 0, stripped: false },
+    { exitCode: 7, stripped: false },
+    { exitCode: 0, stripped: true },
+    { exitCode: 7, stripped: true },
+    { exitCode: undefined, stripped: true, launch: "fails" as const },
+    { exitCode: undefined, stripped: true, launch: "errors" as const },
+    { exitCode: 7, stripped: true, sameThreadShell: "reuses" as const },
+    { exitCode: 0, stripped: true, sameThreadShell: "replaces" as const },
+    { exitCode: 7, stripped: true, sameThreadShell: "replaced" as const },
+  ])(
+    "resumes the approved file action in its waiting row with exit $exitCode (stripped: $stripped, launch: $launch, same-thread shell: $sameThreadShell)",
+    ({ exitCode, stripped, launch, sameThreadShell }) =>
       Effect.gen(function* () {
-        const { result, rows, openCommand, waitingId } = yield* runWith({
+        const { result, rows, openCommand, waitingId, ...after } = yield* runWith({
           suffix: "approved",
           localScripts: [],
           approved: false,
           approveAfterWaiting: true,
-          exitCode,
+          stripped,
+          ...(exitCode === undefined ? {} : { exitCode }),
+          ...(launch === undefined ? {} : { launch }),
+          ...(sameThreadShell === undefined ? {} : { sameThreadShell }),
         });
+        // The approved run was the root's setup, so its end clears the pending record.
+        assert.isFalse(after.stripped);
         assert.equal(result.status, "awaiting-approval");
         assert.equal(openCommand.mock.calls[0]?.[0].command, "./scripts/bootstrap.sh");
-        assert.equal(rows.length, 1);
-        assert.equal(rows[0]?.id, waitingId);
-        assert.equal(rows[0]?.status, exitCode === 0 ? "completed" : "failed");
-        assert.equal(rows[0]?.type === "command_execution" && rows[0].exitCode, exitCode);
+        // One exit of a shared process settles the approved row and the shell's row; a process
+        // the shell's setup replaced stops the approved run instead.
+        const exited = exitCode === 0 ? "completed" : "failed";
+        assert.deepEqual(
+          rows.map((row) => row.status),
+          sameThreadShell === "replaces"
+            ? ["interrupted", exited]
+            : sameThreadShell === "replaced"
+              ? [exited, "interrupted"]
+              : sameThreadShell === "reuses"
+                ? [exited, exited]
+                : [exited],
+        );
+        const waiting = rows.find((row) => row.id === waitingId);
         assert.equal(
-          rows[0]?.type === "command_execution" && rows[0].setupScript?.awaitingApproval,
+          waiting?.type === "command_execution" && waiting.exitCode,
+          sameThreadShell === "replaces" ? undefined : exitCode,
+        );
+        assert.equal(
+          waiting?.type === "command_execution" && waiting.setupScript?.awaitingApproval,
           undefined,
         );
       }),
+  );
+
+  it.effect(
+    "Approve and run leases the canonical root of a worktree under a symlinked parent",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const dir = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+        yield* fs.makeDirectory(path.join(dir, "real"));
+        yield* fs.symlink(path.join(dir, "real"), path.join(dir, "link"));
+        // Turn and terminal recovery lease this root, as cleanup does.
+        const withWorkspaceLease = yield* makeWorkspaceLease.pipe(Effect.provide(platform));
+        const events: Array<string> = [];
+        let cleanup: Fiber.Fiber<number> | undefined;
+        yield* runWith({
+          suffix: "symlinked",
+          localScripts: [],
+          approved: false,
+          approveAfterWaiting: true,
+          stripped: true,
+          worktreePath: path.join(dir, "link", "feature"),
+          onOpenCommand: withWorkspaceLease(
+            path.join(dir, "real", "feature"),
+            Effect.sync(() => events.push("cleanup")),
+          ).pipe(
+            Effect.forkDetach({ startImmediately: true }),
+            Effect.map((fiber) => {
+              cleanup = fiber;
+              events.push("setup opened");
+            }),
+          ),
+        });
+        yield* Fiber.join(cleanup!);
+        assert.deepEqual(events, ["setup opened", "cleanup"]);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("runs setup without ports and says so once when no range is free", () =>

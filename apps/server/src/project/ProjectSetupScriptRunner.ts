@@ -1,3 +1,4 @@
+import { makeCheckoutRoot } from "../worktreeCleanup/Checkout.ts";
 import { makeConsume } from "../worktreeCleanup/Stripped.ts";
 import {
   EventId,
@@ -46,6 +47,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as WorkspacePortAllocator from "../workspace/WorkspacePortAllocator.ts";
+import { makeWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 type SetupRunOutcome =
   | {
@@ -102,6 +104,7 @@ interface ActiveSetupRun {
   readonly startedAt: string;
   readonly startedActivityRecorded: boolean;
   readonly pendingOutcome: SetupRunOutcome | null;
+  readonly clearsSetupRecord?: boolean;
 }
 
 function deriveUnfinishedSetupRuns(
@@ -217,6 +220,8 @@ export interface ProjectSetupScriptRunnerInput {
   readonly preferredTerminalId?: string;
   readonly expectedActionId?: string;
   readonly resumeRunId?: string;
+  /** Clear the worktree's pending setup record when this run's terminal reports its end. */
+  readonly clearsSetupRecord?: boolean;
   /**
    * Report the script's exit through `completion`, and forward cleaned output
    * lines while it runs. The bootstrap flow uses this to drive the worktree
@@ -276,8 +281,63 @@ export class ProjectSetupScriptRunner extends Context.Service<
     readonly runForThread: (
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
+    /** Call with the worktree root's lease held. */
+    readonly setUpStripped: (
+      input: ProjectSetupScriptRunnerInput,
+    ) => Effect.Effect<StrippedSetup | null, ProjectSetupScriptRunnerError>;
   }
 >()("@styal/cli/project/ProjectSetupScriptRunner") {}
+
+export interface StrippedSetup {
+  readonly async: boolean;
+  readonly completion: Effect.Effect<ProjectSetupScriptCompletion>;
+}
+
+/**
+ * Runs approved setup while a worktree root's setup record is pending. Turn starts and terminals,
+ * on any thread, join a run already going in that root instead of starting another. The record
+ * clears when setup ends, not when setup awaits approval or the scope closes first, as at shutdown.
+ */
+export const makeSetUpStripped = Effect.fn("ProjectSetupScriptRunner.makeSetUpStripped")(function* (
+  runner: Pick<
+    ProjectSetupScriptRunner["Service"],
+    "runForThread" | "isStripped" | "consumeStripped"
+  >,
+) {
+  const scope = yield* Effect.scope;
+  const inFlight = new Map<string, StrippedSetup>();
+  return Effect.fn("ProjectSetupScriptRunner.setUpStripped")(
+    function* (input: ProjectSetupScriptRunnerInput) {
+      const root = input.worktreePath;
+      const running = inFlight.get(root);
+      if (running !== undefined) return running;
+      if (!(yield* runner.isStripped(root))) return null;
+      const setup = yield* runner
+        .runForThread({ ...input, observeCompletion: {}, workspaceLeaseHeld: true })
+        .pipe(Effect.tapError(() => runner.consumeStripped(root)));
+      if (setup.status !== "started") {
+        if (setup.status !== "awaiting-approval") yield* runner.consumeStripped(root);
+        return null;
+      }
+      if (setup.completion === undefined) return null;
+      const done = Deferred.makeUnsafe<ProjectSetupScriptCompletion>();
+      const entry: StrippedSetup = { async: setup.async, completion: Deferred.await(done) };
+      inFlight.set(root, entry);
+      // Observed apart from any caller, so a caller that stops waiting leaves the run joinable.
+      yield* setup.completion.pipe(
+        Effect.tap(() => runner.consumeStripped(root)),
+        Effect.onExit((exit) =>
+          Effect.sync(() => inFlight.delete(root)).pipe(Effect.andThen(Deferred.done(done, exit))),
+        ),
+        Effect.interruptible,
+        Effect.forkIn(scope),
+      );
+      return entry;
+    },
+    // Until setup's terminal exists, the caller's lease is all that keeps cleanup out of the root.
+    Effect.uninterruptible,
+  );
+});
 
 const OUTPUT_LINE_MAX_LENGTH = 400;
 const PARTIAL_LINE_MAX_LENGTH = 4_096;
@@ -301,7 +361,21 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const consume = yield* makeConsume;
   const portAllocator = yield* WorkspacePortAllocator.WorkspacePortAllocator;
-  const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
+  // Runs that reuse one setup terminal's process, such as an approved run and a shell's setup, share it.
+  const activeRunsRef = yield* SynchronizedRef.make(
+    new Map<string, ReadonlyArray<ActiveSetupRun>>(),
+  );
+  const replaceRuns = (
+    runs: ReadonlyMap<string, ReadonlyArray<ActiveSetupRun>>,
+    key: string,
+    update: (active: ReadonlyArray<ActiveSetupRun>) => ReadonlyArray<ActiveSetupRun>,
+  ) => {
+    const next = new Map(runs);
+    const active = update(runs.get(key) ?? []);
+    if (active.length === 0) next.delete(key);
+    else next.set(key, active);
+    return next;
+  };
   // Runs this process started. Startup recovery runs alongside new runs and
   // must only close runs a previous server left behind.
   const ownRunIds = new Set<string>();
@@ -394,6 +468,14 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const isStripped = Effect.fn("ProjectSetupScriptRunner.isStripped")(function* (root: string) {
+    const rows = yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`;
+    return rows.length > 0;
+  }, Effect.orDie);
+  const consumeStripped = Effect.fn("ProjectSetupScriptRunner.consumeStripped")((root: string) =>
+    consume(root).pipe(Effect.orDie),
+  );
+
   const recordOutcome = Effect.fn("ProjectSetupScriptRunner.recordOutcome")(function* (
     run: ActiveSetupRun,
     outcome: SetupRunOutcome,
@@ -452,29 +534,26 @@ export const make = Effect.gen(function* () {
       ),
       Duration.millis(durationMs),
     );
+    if (run.clearsSetupRecord) yield* consumeStripped(run.worktreePath);
   });
 
   const finishRun = Effect.fn("ProjectSetupScriptRunner.finishRun")(function* (
     threadId: string,
     terminalId: string,
     outcome: SetupRunOutcome,
+    // A new process comes from an opening run's own launch, so it ends only runs already started.
+    endsOpening = true,
   ) {
-    const ready = yield* SynchronizedRef.modify(activeRunsRef, (runs) => {
-      const key = terminalKey(threadId, terminalId);
-      const run = runs.get(key);
-      if (!run) return [Option.none<ActiveSetupRun>(), runs] as const;
-      if (!run.startedActivityRecorded) {
-        const next = new Map(runs);
-        next.set(key, { ...run, pendingOutcome: outcome });
-        return [Option.none<ActiveSetupRun>(), next] as const;
-      }
-      const next = new Map(runs);
-      next.delete(key);
-      return [Option.some(run), next] as const;
+    const ended = yield* SynchronizedRef.modify(activeRunsRef, (runs) => {
+      const active = runs.get(terminalKey(threadId, terminalId)) ?? [];
+      const next = replaceRuns(runs, terminalKey(threadId, terminalId), () =>
+        active
+          .filter((run) => !run.startedActivityRecorded)
+          .map((run) => (endsOpening ? { ...run, pendingOutcome: outcome } : run)),
+      );
+      return [active.filter((run) => run.startedActivityRecorded), next] as const;
     });
-    if (Option.isSome(ready)) {
-      yield* recordOutcome(ready.value, outcome);
-    }
+    yield* Effect.forEach(ended, (run) => recordOutcome(run, outcome), { discard: true });
   });
 
   const unsubscribe = yield* terminalManager.subscribe((event) => {
@@ -511,19 +590,14 @@ export const make = Effect.gen(function* () {
           exitSignal: null,
           detail: event.message,
         });
+      // A changed command or cwd replaces the process silently, reporting only the new start.
+      case "started":
       case "restarted":
-        return SynchronizedRef.get(activeRunsRef).pipe(
-          Effect.flatMap((runs) =>
-            runs.get(terminalKey(event.threadId, event.terminalId))?.startedActivityRecorded ===
-            false
-              ? Effect.void
-              : finishRun(event.threadId, event.terminalId, {
-                  outcome: "failed",
-                  reason: "terminal-restarted",
-                  exitCode: null,
-                  exitSignal: null,
-                }),
-          ),
+        return finishRun(
+          event.threadId,
+          event.terminalId,
+          { outcome: "failed", reason: "terminal-restarted", exitCode: null, exitSignal: null },
+          false,
         );
       default:
         return Effect.void;
@@ -632,6 +706,8 @@ export const make = Effect.gen(function* () {
           }
           case "exited":
             return settle(event.exitCode, event.exitSignal);
+          // Another open's new process replaced this one, which reports only the new start.
+          case "started":
           case "restarted":
             return opening ? Effect.void : settle(null, null);
           case "closed":
@@ -919,13 +995,15 @@ export const make = Effect.gen(function* () {
       startedAt: requestedAt,
       startedActivityRecorded: false,
       pendingOutcome: null,
+      clearsSetupRecord: input.clearsSetupRecord === true,
     };
     ownRunIds.add(runId);
-    yield* SynchronizedRef.update(activeRunsRef, (runs) => {
-      const next = new Map(runs);
-      next.set(terminalKey(input.threadId, terminalId), activeRun);
-      return next;
-    });
+    const runKey = terminalKey(input.threadId, terminalId);
+    const withoutThisRun = (runs: ReadonlyMap<string, ReadonlyArray<ActiveSetupRun>>) =>
+      replaceRuns(runs, runKey, (active) => active.filter((run) => run.runId !== runId));
+    yield* SynchronizedRef.update(activeRunsRef, (runs) =>
+      replaceRuns(runs, runKey, (active) => [...active, activeRun]),
+    );
     yield* appendActivity({
       threadId: input.threadId,
       runId,
@@ -977,11 +1055,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
         Effect.tapError((error) =>
-          SynchronizedRef.update(activeRunsRef, (runs) => {
-            const next = new Map(runs);
-            next.delete(terminalKey(input.threadId, terminalId));
-            return next;
-          }).pipe(
+          SynchronizedRef.update(activeRunsRef, withoutThisRun).pipe(
             Effect.andThen(
               recordOutcome(activeRun, {
                 outcome: "failed",
@@ -1004,11 +1078,7 @@ export const make = Effect.gen(function* () {
         operation: "openTerminal",
         cause: new Error(`Setup terminal '${terminalId}' failed to start.`),
       });
-      yield* SynchronizedRef.update(activeRunsRef, (runs) => {
-        const next = new Map(runs);
-        next.delete(terminalKey(input.threadId, terminalId));
-        return next;
-      });
+      yield* SynchronizedRef.update(activeRunsRef, withoutThisRun);
       yield* recordOutcome(activeRun, {
         outcome: "failed",
         reason: "launch-error",
@@ -1039,16 +1109,16 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.ignoreCause({ log: true }));
 
     const pendingOutcome = yield* SynchronizedRef.modify(activeRunsRef, (runs) => {
-      const key = terminalKey(input.threadId, terminalId);
-      const run = runs.get(key);
+      const run = runs.get(runKey)?.find((candidate) => candidate.runId === runId);
       if (!run) return [Option.none<readonly [ActiveSetupRun, SetupRunOutcome]>(), runs] as const;
       if (run.pendingOutcome) {
-        const next = new Map(runs);
-        next.delete(key);
-        return [Option.some([run, run.pendingOutcome] as const), next] as const;
+        return [Option.some([run, run.pendingOutcome] as const), withoutThisRun(runs)] as const;
       }
-      const next = new Map(runs);
-      next.set(key, { ...run, startedActivityRecorded: true });
+      const next = replaceRuns(runs, runKey, (active) =>
+        active.map((candidate) =>
+          candidate.runId === runId ? { ...candidate, startedActivityRecorded: true } : candidate,
+        ),
+      );
       return [Option.none<readonly [ActiveSetupRun, SetupRunOutcome]>(), next] as const;
     });
     if (Option.isSome(pendingOutcome)) {
@@ -1067,6 +1137,9 @@ export const make = Effect.gen(function* () {
       ...(observed ? { completion: observed.completion } : {}),
     } as const;
   });
+
+  const withWorkspaceLease = yield* makeWorkspaceLease;
+  const checkoutRoot = yield* makeCheckoutRoot;
 
   const runPending = Effect.fn("ProjectSetupScriptRunner.runPending")(
     function* (input: { readonly threadId: ThreadId; readonly turnItemId: TurnItemId }) {
@@ -1093,15 +1166,28 @@ export const make = Effect.gen(function* () {
           message: "This action does not belong to the thread's project.",
         });
       }
-      const result = yield* runForThread({
+      const run = {
         threadId: input.threadId,
         projectId: shell.projectId,
         worktreePath: item.setupScript.worktreePath,
         trigger: triggerForTerminalId(item.setupScript.terminalId),
         expectedActionId: item.setupScript.awaitingApproval.actionId,
         resumeRunId: item.setupScript.runId,
-      });
-      if (result.status !== "started") {
+      };
+      // Leases the root turns and terminals lease, but starts its own run rather than joining the
+      // root's shared one, so overlapping setup can run twice; its end clears a pending record.
+      const started = yield* withWorkspaceLease(
+        yield* checkoutRoot(run.worktreePath, { worktree: true }),
+        Effect.gen(function* () {
+          const result = yield* runForThread({
+            ...run,
+            workspaceLeaseHeld: true,
+            clearsSetupRecord: run.trigger === "setup" && (yield* isStripped(run.worktreePath)),
+          });
+          return result.status === "started";
+        }),
+      );
+      if (!started) {
         return yield* new ProjectFileActionApprovalError({
           reason: "run-failed",
           message: "The action could not run. Review its current command and approval.",
@@ -1120,13 +1206,10 @@ export const make = Effect.gen(function* () {
   return ProjectSetupScriptRunner.of({
     runForThread,
     runPending,
-    isStripped: Effect.fn("ProjectSetupScriptRunner.isStripped")(function* (root) {
-      const rows = yield* sql`SELECT 1 FROM worktree_stripped WHERE worktree_path = ${root}`;
-      return rows.length > 0;
-    }, Effect.orDie),
-    consumeStripped: Effect.fn("ProjectSetupScriptRunner.consumeStripped")((root) =>
-      consume(root).pipe(Effect.orDie),
-    ),
+    isStripped,
+    consumeStripped,
+    // This scope closes before TerminalManager's, so a shutdown does not count as setup ending.
+    setUpStripped: yield* makeSetUpStripped({ runForThread, isStripped, consumeStripped }),
     markStripped: Effect.fn("ProjectSetupScriptRunner.markStripped")(function* (root, projectId) {
       const strippedAt = DateTime.formatIso(yield* DateTime.now);
       yield* sql`INSERT INTO worktree_stripped (worktree_path, project_id, stripped_at) VALUES (${root}, ${projectId}, ${strippedAt}) ON CONFLICT (worktree_path) DO NOTHING`;

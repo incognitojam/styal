@@ -1,4 +1,4 @@
-import { ThreadId, type ProjectId, type TerminalCwdNotFoundError } from "@t3tools/contracts";
+import { ThreadId, type ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -11,7 +11,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
-import { TerminalCwdRecovery } from "../terminal/Manager.ts";
+import { TerminalLaunchPreparation } from "../terminal/Manager.ts";
 
 class WorktreeRecreateError extends Schema.TaggedError<WorktreeRecreateError>()(
   "WorktreeRecreateError",
@@ -146,7 +146,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
   });
 });
 
-// Worktree setup uses terminals, so recovery must stay outside TerminalManager.
+// Worktree setup uses terminals, so preparation must stay outside TerminalManager's thread lock.
 export const makePrepareTerminalLaunch = Effect.fn(
   "restoreMissingWorktree.makePrepareTerminalLaunch",
 )(function* <LookupError>(
@@ -154,6 +154,8 @@ export const makePrepareTerminalLaunch = Effect.fn(
 ) {
   const path = yield* Path.Path;
   const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
+  const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+
   return Effect.fn("restoreMissingWorktree.prepareTerminalLaunch")(function* <
     Input extends {
       readonly threadId: string;
@@ -170,19 +172,36 @@ export const makePrepareTerminalLaunch = Effect.fn(
       worktreePath === null ||
       !isWithinRoot(path, path.resolve(input.cwd ?? worktreePath), worktreePath)
     ) {
-      return { input, recover: TerminalCwdRecovery.defaultValue() };
+      return { input, prepare: TerminalLaunchPreparation.defaultValue() };
     }
-    const recover = (error: TerminalCwdNotFoundError) =>
-      restoreMissingWorktree(thread).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("failed to recreate missing worktree", {
-            threadId: thread.id,
-            worktreePath,
-            cause,
-          }).pipe(Effect.andThen(Effect.fail(error))),
-        ),
-      );
+    // A failed recreation leaves the folder missing, and the open reports that.
+    const prepare = restoreMissingWorktree(thread).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("failed to recreate missing worktree", {
+          threadId: thread.id,
+          worktreePath,
+          cause,
+        }),
+      ),
+      Effect.andThen(
+        setupScripts.setUpStripped({
+          threadId: thread.id,
+          projectId: thread.projectId,
+          worktreePath: path.resolve(worktreePath),
+        }),
+      ),
+      // Mirrors turn start: a shell waits for synchronous setup, not asynchronous setup.
+      Effect.flatMap((setup) => (setup === null || setup.async ? Effect.void : setup.completion)),
+      Effect.asVoid,
+      Effect.catch((cause) =>
+        Effect.logWarning("failed to set up worktree", {
+          threadId: thread.id,
+          worktreePath,
+          cause,
+        }),
+      ),
+    );
     // The lease must cover the worktree root, even when the terminal opens in a subdirectory.
-    return { input: { ...input, worktreePath }, recover };
+    return { input: { ...input, worktreePath }, prepare };
   });
 });

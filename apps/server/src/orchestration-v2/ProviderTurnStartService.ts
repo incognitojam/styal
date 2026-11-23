@@ -1,5 +1,3 @@
-import * as Scope from "effect/Scope";
-import { forkParked } from "../serverActivation.ts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -20,7 +18,6 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Digest from "effect/crypto/Digest";
@@ -196,7 +193,6 @@ export const layer: Layer.Layer<
     const git = yield* GitVcsDriver.GitVcsDriver;
     const projects = yield* ProjectService.ProjectService;
     const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-    const serviceScope = yield* Effect.scope;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const installGate = yield* ProviderInstallGate.ProviderInstallGate;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -692,39 +688,20 @@ export const layer: Layer.Layer<
           });
           const setupResult = yield* Effect.result(
             Effect.gen(function* () {
-              const setup = yield* setupScripts.runForThread({
+              const setup = yield* setupScripts.setUpStripped({
                 threadId: projection.thread.id,
                 projectId: project.id,
                 projectCwd: project.workspaceRoot,
-                worktreePath,
+                worktreePath: path.resolve(worktreePath),
                 project,
-                observeCompletion: {},
-                workspaceLeaseHeld: true,
               });
-              if (setup.status !== "started") return setup.status !== "awaiting-approval";
-              if (!setup.completion) return false;
-              if (setup.async) {
-                yield* forkParked(
-                  setup.completion.pipe(
-                    Effect.onExit((exit) =>
-                      exit._tag === "Success" || !Cause.hasInterrupts(exit.cause)
-                        ? setupScripts
-                            .consumeStripped(path.resolve(worktreePath))
-                            .pipe(Effect.asVoid)
-                        : Effect.void,
-                    ),
-                  ),
-                ).pipe(Effect.provideService(Scope.Scope, serviceScope));
-                return false;
-              } else {
-                const completion = yield* setup.completion;
-                if (
-                  completion.exitCode !== 0 ||
-                  (completion.exitSignal !== null && completion.exitSignal !== 0)
-                )
-                  return yield* new WorktreeSetupError({ worktreePath, cause: completion });
-              }
-              return true;
+              if (setup === null || setup.async) return;
+              const completion = yield* setup.completion;
+              if (
+                completion.exitCode !== 0 ||
+                (completion.exitSignal !== null && completion.exitSignal !== 0)
+              )
+                return yield* new WorktreeSetupError({ worktreePath, cause: completion });
             }).pipe(
               Effect.mapError((cause) =>
                 cause._tag === "WorktreeSetupError"
@@ -733,8 +710,6 @@ export const layer: Layer.Layer<
               ),
             ),
           );
-          if (setupResult._tag === "Failure" || setupResult.success)
-            yield* setupScripts.consumeStripped(path.resolve(worktreePath));
           if (setupResult._tag === "Failure") {
             yield* settleStartFailure({
               signal: "worktree-setup-failure",

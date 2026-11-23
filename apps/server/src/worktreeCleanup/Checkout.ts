@@ -29,37 +29,20 @@ const Journal = Schema.Struct({
 const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Journal));
 const encode = Schema.encodeEffect(Schema.fromJsonString(Journal));
 
-export const makeCheckout = Effect.gen(function* () {
-  const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
-  const crypto = yield* Digest.Digest;
-  const path = yield* Path.Path;
-  const git = yield* makeInspectGit;
-  const limits = yield* CheckoutLimits;
-  const platform = yield* HostProcess.Platform;
-  const fail = (message: string) => new WorktreeCleanupError({ reason: "run-failed", message });
-  const io = <A>(run: () => Promise<A>) =>
-    Effect.tryPromise({
-      try: run,
-      catch: () =>
-        new WorktreeCleanupError({
-          reason: "run-failed",
-          message: "Worktree checkout verification failed; the workspace must not be used.",
-        }),
-    });
-  const command = Effect.fn("WorktreeCleanup.checkoutGit")(function* (
-    root: string,
-    args: readonly string[],
-    allowed = [0],
-    stdin?: string,
-  ) {
-    const result = yield* git(root, args, stdin).pipe(
-      Effect.mapError(() => fail("Git could not complete worktree checkout verification.")),
-    );
-    if (!allowed.includes(result.exitCode) || result.stdoutTruncated || result.stderrTruncated)
-      return yield* fail("Git checkout check failed or returned incomplete output.");
-    return result.stdout;
+const io = <A>(run: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: () =>
+      new WorktreeCleanupError({
+        reason: "run-failed",
+        message: "Worktree checkout verification failed; the workspace must not be used.",
+      }),
   });
-  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (
+
+export const makeCheckoutRoot = Effect.gen(function* () {
+  const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
+  const path = yield* Path.Path;
+  return Effect.fn("WorktreeCleanup.checkoutRoot")(function* (
     cwd: string,
     options?: { readonly worktree?: boolean },
   ) {
@@ -95,6 +78,30 @@ export const makeCheckout = Effect.gen(function* () {
       if (path.dirname(directory) === directory) return canonical;
     }
   });
+});
+
+export const makeCheckout = Effect.gen(function* () {
+  const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
+  const crypto = yield* Digest.Digest;
+  const path = yield* Path.Path;
+  const git = yield* makeInspectGit;
+  const limits = yield* CheckoutLimits;
+  const platform = yield* HostProcess.Platform;
+  const fail = (message: string) => new WorktreeCleanupError({ reason: "run-failed", message });
+  const command = Effect.fn("WorktreeCleanup.checkoutGit")(function* (
+    root: string,
+    args: readonly string[],
+    allowed = [0],
+    stdin?: string,
+  ) {
+    const result = yield* git(root, args, stdin).pipe(
+      Effect.mapError(() => fail("Git could not complete worktree checkout verification.")),
+    );
+    if (!allowed.includes(result.exitCode) || result.stdoutTruncated || result.stderrTruncated)
+      return yield* fail("Git checkout check failed or returned incomplete output.");
+    return result.stdout;
+  });
+  const root = yield* makeCheckoutRoot;
   const adminDirectory = Effect.fn("WorktreeCleanup.checkoutAdmin")(function* (root: string) {
     const file = path.join(root, ".git");
     const stat = yield* io(() =>

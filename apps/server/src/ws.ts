@@ -3227,7 +3227,9 @@ export const layerWsRpc = (
             Effect.flatMap((launch) =>
               terminalManager
                 .open(launch.input)
-                .pipe(Effect.provideService(TerminalManager.TerminalCwdRecovery, launch.recover)),
+                .pipe(
+                  Effect.provideService(TerminalManager.TerminalLaunchPreparation, launch.prepare),
+                ),
             ),
           ),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
@@ -3236,7 +3238,12 @@ export const layerWsRpc = (
               Effect.map((launch) =>
                 terminalManager
                   .attachOutputStream(launch.input, terminalViewerId(metadata))
-                  .pipe(Stream.provideService(TerminalManager.TerminalCwdRecovery, launch.recover)),
+                  .pipe(
+                    Stream.provideService(
+                      TerminalManager.TerminalLaunchPreparation,
+                      launch.prepare,
+                    ),
+                  ),
               ),
             ),
           ),

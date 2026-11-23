@@ -571,6 +571,7 @@ it.layer(
   it.effect.each([
     { method: "open", location: "managed" },
     { method: "attach", location: "managed" },
+    { method: "reopen", location: "managed" },
     { method: "open", location: "subdirectory" },
     { method: "open", location: "unmanaged" },
     { method: "open", location: "no-worktree" },
@@ -592,6 +593,54 @@ it.layer(
         let creations = 0;
         const markedForSetup: Array<string> = [];
         const gitCommands: Array<ReadonlyArray<string>> = [];
+        const consumedSetup: Array<string> = [];
+        let spawnsWhenSetupEnded: number | null = null;
+        // Reopening a running terminal into the worktree restarts its shell there.
+        const earlierSpawns = method === "reopen" ? 1 : 0;
+        const setupRunner = {
+          markStripped: (root: string) => Effect.sync(() => void markedForSetup.push(root)),
+          isStripped: (root: string) =>
+            Effect.sync(() => markedForSetup.includes(root) && !consumedSetup.includes(root)),
+          consumeStripped: (root: string) => Effect.sync(() => consumedSetup.push(root) > 0),
+          // Setup opens its own terminal on this thread while the shell's open waits.
+          runForThread: (setup: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput) =>
+            manager
+              .openCommand(
+                {
+                  ...openInput({ cwd: setup.worktreePath, worktreePath: setup.worktreePath }),
+                  terminalId: "setup-setup",
+                  command: "synthetic setup",
+                },
+                { workspaceLeaseHeld: true },
+              )
+              .pipe(
+                Effect.orDie,
+                Effect.as({
+                  status: "started" as const,
+                  runId: "setup",
+                  scriptId: "setup",
+                  scriptName: "Setup",
+                  scriptCommand: "synthetic setup",
+                  terminalId: "setup-setup",
+                  cwd: setup.worktreePath,
+                  async: false,
+                  // Setup ends only once a viewer has attached to its terminal.
+                  completion: manager
+                    .attachStream(
+                      { threadId: "thread-1", terminalId: "setup-setup" },
+                      () => Effect.void,
+                    )
+                    .pipe(
+                      Effect.orDie,
+                      Effect.map((detach) => {
+                        detach();
+                        spawnsWhenSetupEnded = ptyAdapter.spawnInputs.length;
+                        return { exitCode: 0, exitSignal: null, durationMs: 0 };
+                      }),
+                    ),
+                }),
+              ),
+        };
         const prepareLaunch = yield* makePrepareTerminalLaunch(() =>
           Effect.succeed({
             id: ThreadId.make("thread-1"),
@@ -611,7 +660,8 @@ it.layer(
                   Effect.succeedSome({ id: "project-1", workspaceRoot: baseDir } as never),
               }),
               Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-                markStripped: (root) => Effect.sync(() => void markedForSetup.push(root)),
+                ...setupRunner,
+                setUpStripped: yield* ProjectSetupScriptRunner.makeSetUpStripped(setupRunner),
               }),
               Layer.mock(GitVcsDriver.GitVcsDriver)({
                 execute: ({ args }) =>
@@ -627,10 +677,12 @@ it.layer(
                     assert.deepEqual(markedForSetup, [path.resolve(worktreePath)]);
                     creations++;
                     yield* fs.makeDirectory(cwd, { recursive: true }).pipe(Effect.orDie);
+                    // A .git marker makes the recreated folder its own root, as the real checkout is.
+                    yield* fs.makeDirectory(path.join(worktreePath, ".git")).pipe(Effect.orDie);
                     const cleanup = yield* withWorkspaceLease(
                       worktreePath,
                       Effect.sync(() => {
-                        assert.equal(ptyAdapter.spawnInputs.length, 1);
+                        assert.equal(ptyAdapter.spawnInputs.length, earlierSpawns + 2);
                       }),
                     ).pipe(Effect.forkChild({ startImmediately: true }));
                     yield* Deferred.succeed(cleanupQueued, cleanup);
@@ -644,12 +696,13 @@ it.layer(
           cwd,
           worktreePath: location === "subdirectory" ? null : worktreePath,
         });
+        if (method === "reopen") yield* manager.open(openInput({ cwd: baseDir }));
         const launch = prepareLaunch(input).pipe(
-          Effect.flatMap(({ input, recover }) =>
+          Effect.flatMap(({ input, prepare }) =>
             (method === "attach"
               ? manager.attachStream(input, () => Effect.void).pipe(Effect.asVoid)
               : manager.open(input).pipe(Effect.asVoid)
-            ).pipe(Effect.provideService(TerminalManager.TerminalCwdRecovery, recover)),
+            ).pipe(Effect.provideService(TerminalManager.TerminalLaunchPreparation, prepare)),
           ),
         );
         if (location === "unmanaged" || location === "no-worktree") {
@@ -657,6 +710,7 @@ it.layer(
           assert.deepEqual(error, new TerminalCwdNotFoundError({ cwd }));
           assert.equal(creations, 0);
           assert.deepEqual(markedForSetup, []);
+          assert.isNull(spawnsWhenSetupEnded);
           assert.equal(ptyAdapter.spawnInputs.length, 0);
           return;
         }
@@ -665,9 +719,63 @@ it.layer(
         assert.equal(creations, 1);
         assert.deepEqual(gitCommands, [["worktree", "remove", worktreePath]]);
         assert.deepEqual(markedForSetup, [path.resolve(worktreePath)]);
-        assert.equal(ptyAdapter.spawnInputs.length, 1);
+        // Setup ran to completion before the shell spawned, and its record cleared.
+        assert.equal(spawnsWhenSetupEnded, earlierSpawns + 1);
+        assert.equal(ptyAdapter.spawnInputs.length, earlierSpawns + 2);
+        assert.deepEqual(consumedSetup, [path.resolve(worktreePath)]);
         assert.isTrue(yield* fs.exists(cwd));
       }),
+  );
+
+  it.effect("a reopen whose shell exits while it checks the cwd spawns only under the lease", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      let gate: {
+        readonly checking: Deferred.Deferred<void>;
+        readonly release: Deferred.Deferred<void>;
+      } | null = null;
+      const { manager, ptyAdapter } = yield* createManager().pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          stat: (path) => {
+            const held = gate;
+            gate = null;
+            return held === null
+              ? fs.stat(path)
+              : Deferred.succeed(held.checking, undefined).pipe(
+                  Effect.andThen(Deferred.await(held.release)),
+                  Effect.andThen(fs.stat(path)),
+                );
+          },
+        }),
+      );
+      yield* manager.open(openInput());
+      const exited = yield* Deferred.make<void>();
+      yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      const checking = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      gate = { checking, release };
+      let preparations = 0;
+      const reopen = yield* manager.open(openInput()).pipe(
+        Effect.provideService(
+          TerminalManager.TerminalLaunchPreparation,
+          Effect.sync(() => void preparations++),
+        ),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.await(checking);
+      ptyAdapter.processes[0]!.emitExit({ exitCode: 0, signal: 0 });
+      yield* Deferred.await(exited);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(reopen);
+      // The replacement shell spawned after the open moved to the lease path and its preparation.
+      assert.equal(ptyAdapter.spawnInputs.length, 2);
+      assert.equal(preparations, 1);
+    }),
   );
 
   it.effect("spawns lazily and reuses running terminal per thread", () =>

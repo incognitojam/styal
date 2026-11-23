@@ -168,6 +168,14 @@ function startWithMissingWorktree(
     }),
   );
   const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
+  const setupRunner = {
+    consumeStripped: (root: string) =>
+      consumeStripped(root).pipe(Effect.map((consumed) => markedForSetup.delete(root) || consumed)),
+    isStripped: (root: string) =>
+      markedForSetup.has(root) ? Effect.succeed(true) : isStripped(root),
+    markStripped: (root: string) => Effect.sync(() => void markedForSetup.add(root)),
+    runForThread: runSetup,
+  };
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(Layer.mergeAll(PhysicalFileSystem.layer, NodeCrypto.layer)),
     Layer.provide(
@@ -202,16 +210,16 @@ function startWithMissingWorktree(
               ? unregisterWorktree(input)
               : checkoutGit.execute(input),
         }),
-        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-          consumeStripped: (root) =>
-            consumeStripped(root).pipe(
-              Effect.map((consumed) => markedForSetup.delete(root) || consumed),
+        Layer.unwrap(
+          ProjectSetupScriptRunner.makeSetUpStripped(setupRunner).pipe(
+            Effect.map((setUpStripped) =>
+              Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+                ...setupRunner,
+                setUpStripped,
+              }),
             ),
-          isStripped: (root) =>
-            markedForSetup.has(root) ? Effect.succeed(true) : isStripped(root),
-          markStripped: (root) => Effect.sync(() => void markedForSetup.add(root)),
-          runForThread: runSetup,
-        }),
+          ),
+        ),
         Layer.mock(ProjectService.ProjectService)({
           getById: () => Effect.succeedSome({ workspaceRoot: projectWorkspaceRoot } as never),
         }),

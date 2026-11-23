@@ -174,9 +174,18 @@ class TerminalProcessSignalError extends Schema.TaggedError<TerminalProcessSigna
   }
 }
 
-export class TerminalCwdRecovery extends Context.Reference<
-  (error: TerminalCwdNotFoundError) => Effect.Effect<void, TerminalCwdNotFoundError>
->("t3/terminal/TerminalCwdRecovery", { defaultValue: () => (error) => Effect.fail(error) }) {}
+/** An open or attach would spawn a process, which needs the workspace lease taken before the thread lock. */
+class TerminalSpawnNeedsLease extends Schema.TaggedError<TerminalSpawnNeedsLease>()(
+  "TerminalSpawnNeedsLease",
+  {},
+) {}
+const spawnNeedsLease = Effect.fail(new TerminalSpawnNeedsLease());
+
+/** Runs inside the workspace lease before a shell spawns, such as recreating and setting up a worktree. */
+export class TerminalLaunchPreparation extends Context.Reference<Effect.Effect<void>>(
+  "t3/terminal/TerminalLaunchPreparation",
+  { defaultValue: () => Effect.void },
+) {}
 
 export class TerminalManager extends Context.Service<
   TerminalManager,
@@ -1526,6 +1535,19 @@ function normalizedRuntimeEnv(
   return Object.fromEntries(entries.toSorted(([left], [right]) => left.localeCompare(right)));
 }
 
+/** Whether reopening this session restarts its process in a new cwd, env, command or worktree. */
+function launchContextChanged(
+  session: TerminalSessionState,
+  input: TerminalOpenInput | TerminalCommandOpenInput,
+): boolean {
+  return (
+    session.cwd !== input.cwd ||
+    !Equal.equals(session.runtimeEnv, normalizedRuntimeEnv(input.env)) ||
+    session.launchCommand !== ("command" in input ? input.command : null) ||
+    (input.worktreePath !== undefined && session.worktreePath !== (input.worktreePath ?? null))
+  );
+}
+
 interface TerminalManagerOptions {
   resolveProviderInstanceEnvironment?: (
     providerInstanceId: string,
@@ -2351,20 +2373,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
 
   const assertValidCwd = Effect.fn("terminal.assertValidCwd")(function* (cwd: string) {
-    const stat = fileSystem.stat(cwd).pipe(
+    const stats = yield* fileSystem.stat(cwd).pipe(
       Effect.catchTags({
         PlatformError: (cause) =>
           cause.reason._tag === "NotFound"
             ? new TerminalCwdNotFoundError({ cwd })
             : new TerminalCwdStatError({ cwd, cause }),
-      }),
-    );
-    const stats = yield* stat.pipe(
-      Effect.catchTags({
-        TerminalCwdNotFoundError: (error) =>
-          Effect.flatMap(TerminalCwdRecovery, (recover) =>
-            recover(error).pipe(Effect.andThen(stat)),
-          ),
       }),
     );
     if (stats.type !== "Directory") {
@@ -3208,15 +3222,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }).pipe(Effect.ignoreCause({ log: true })),
   );
 
-  const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
+  // requireLease runs wherever the open would spawn; without the lease it fails to back out.
+  const openLocked = Effect.fn("terminal.openLocked")(function* <E>(
     requestedInput: TerminalOpenInput | TerminalCommandOpenInput,
+    requireLease: Effect.Effect<void, E>,
   ) {
-    const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
-    // Resolved as the lease was, so a missing nested worktree never restores its enclosing checkout.
-    yield* checkout.root(workspace, { worktree: requestedInput.worktreePath != null }).pipe(
-      Effect.flatMap(checkout.restore),
-      Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
-    );
     const terminalId = requestedInput.terminalId;
     const launchCommand = "command" in requestedInput ? requestedInput.command : null;
     const displayLabel = ("label" in requestedInput ? (requestedInput.label ?? "") : "").trim();
@@ -3226,6 +3236,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const input = withSharedGrid(sessionKey, requestedInput);
     const existing = yield* getSession(input.threadId, terminalId);
     if (Option.isNone(existing)) {
+      yield* requireLease;
       yield* flushPersist(input.threadId, terminalId);
       const inherited = yield* readHistory(input.threadId, terminalId);
       const history = new BoundedTerminalHistory(
@@ -3295,20 +3306,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const liveSession = existing.value;
     if (input.stopOnSettle !== undefined) liveSession.stopOnSettle = input.stopOnSettle;
     const nextRuntimeEnv = normalizedRuntimeEnv(input.env);
-    const currentRuntimeEnv = liveSession.runtimeEnv;
     const targetCols = input.cols ?? liveSession.cols;
     const targetRows = input.rows ?? liveSession.rows;
-    const runtimeEnvChanged = !Equal.equals(currentRuntimeEnv, nextRuntimeEnv);
     const nextLaunchCommand = launchCommand;
     const nextWorktreePath =
       input.worktreePath !== undefined ? (input.worktreePath ?? null) : liveSession.worktreePath;
-    const launchContextChanged =
-      liveSession.cwd !== input.cwd ||
-      runtimeEnvChanged ||
-      liveSession.launchCommand !== nextLaunchCommand ||
-      liveSession.worktreePath !== nextWorktreePath;
 
-    if (launchContextChanged) {
+    if (launchContextChanged(liveSession, input)) {
+      yield* requireLease;
       yield* stopProcess(liveSession);
       liveSession.cwd = input.cwd;
       liveSession.worktreePath = nextWorktreePath;
@@ -3333,6 +3338,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
 
     if (!liveSession.process) {
+      yield* requireLease;
       yield* startSession(
         liveSession,
         {
@@ -3353,6 +3359,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     return snapshot(liveSession);
   });
+
+  const openWithWorkspaceLease = (requestedInput: TerminalOpenInput | TerminalCommandOpenInput) => {
+    const workspace = requestedInput.worktreePath ?? requestedInput.cwd;
+    // Resolved as the lease was, so a missing nested worktree never restores its enclosing checkout.
+    return checkout.root(workspace, { worktree: requestedInput.worktreePath != null }).pipe(
+      Effect.flatMap(checkout.restore),
+      Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: workspace, cause })),
+      Effect.andThen(openLocked(requestedInput, Effect.void)),
+    );
+  };
 
   const withSessionWorkspaceLease = Effect.fn("terminal.withSessionWorkspaceLease")(function* <
     A,
@@ -3375,23 +3391,63 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return yield* withWorkspaceLease(root, effect);
   });
 
-  const openLocked = (input: TerminalOpenInput | TerminalCommandOpenInput) =>
+  // Preparation can run setup in another terminal of this thread, so it waits outside the thread lock.
+  const preparedThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
+    Effect.flatten(TerminalLaunchPreparation).pipe(
+      Effect.andThen(withThreadLock(threadId, effect)),
+    );
+
+  const withOpenWorkspaceLease = <A, E, R>(
+    input: TerminalOpenInput | TerminalCommandOpenInput,
+    effect: Effect.Effect<A, E, R>,
+  ) =>
     checkout.root(input.worktreePath ?? input.cwd, { worktree: input.worktreePath != null }).pipe(
       Effect.mapError((cause) => new TerminalWorkspaceRestoreError({ cwd: input.cwd, cause })),
-      Effect.flatMap((root) =>
-        withWorkspaceLease(root, withThreadLock(input.threadId, openWithWorkspaceLease(input))),
-      ),
+      Effect.flatMap((root) => withWorkspaceLease(root, effect)),
+    );
+
+  // Reusing a running process spawns nothing and needs no lease, so setup's terminal stays
+  // attachable while another open holds the lease waiting for that setup.
+  const reuseRunningSession = (input: TerminalOpenInput) =>
+    withThreadLock(
+      input.threadId,
+      Effect.gen(function* () {
+        const session = yield* getSession(input.threadId, input.terminalId);
+        if (
+          Option.isNone(session) ||
+          session.value.process === null ||
+          launchContextChanged(session.value, input)
+        )
+          return yield* new TerminalSpawnNeedsLease();
+        return yield* openLocked(input, spawnNeedsLease);
+      }),
     );
 
   const open: TerminalManager["Service"]["open"] = (input) =>
-    resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(openLocked));
+    resolveLaunchInputEnvironment(input).pipe(
+      Effect.flatMap((resolved) =>
+        reuseRunningSession(resolved).pipe(
+          Effect.catchTags({
+            TerminalSpawnNeedsLease: () =>
+              withOpenWorkspaceLease(
+                resolved,
+                preparedThreadLock(resolved.threadId, openWithWorkspaceLease(resolved)),
+              ),
+          }),
+        ),
+      ),
+    );
 
-  const openCommand: TerminalManager["Service"]["openCommand"] = (requestedInput, options) =>
-    options?.workspaceLeaseHeld
-      ? withThreadLock(requestedInput.threadId, openWithWorkspaceLease(requestedInput))
-      : openLocked(requestedInput);
+  const openCommand: TerminalManager["Service"]["openCommand"] = (requestedInput, options) => {
+    const locked = withThreadLock(requestedInput.threadId, openWithWorkspaceLease(requestedInput));
+    return options?.workspaceLeaseHeld ? locked : withOpenWorkspaceLease(requestedInput, locked);
+  };
 
-  const openOrAttachForStream = Effect.fnUntraced(function* (requestedInput: TerminalAttachInput) {
+  const openOrAttachForStream = Effect.fnUntraced(function* <E>(
+    requestedInput: TerminalAttachInput,
+    // As for openLocked.
+    requireLease: Effect.Effect<void, E>,
+  ) {
     const terminalId = requestedInput.terminalId;
     const input = withSharedGrid(toSessionKey(requestedInput.threadId, terminalId), requestedInput);
     const existing = yield* getSession(input.threadId, terminalId);
@@ -3407,6 +3463,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         });
       }
 
+      yield* requireLease;
       const resolvedInput = yield* resolveLaunchInputEnvironment({
         ...input,
         terminalId,
@@ -3420,6 +3477,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const targetRows = input.rows ?? session.rows;
 
     if (!input.resume && !session.process && input.cwd && input.restartIfNotRunning === true) {
+      yield* requireLease;
       const resolvedInput = yield* resolveLaunchInputEnvironment({
         ...input,
         terminalId,
@@ -3474,11 +3532,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   // Subscribe after taking the lock so contention cannot accumulate an unbounded replay.
   // Snapshot listeners run under that lock and must not block.
-  const streamSession = (
+  const streamSession = <E>(
     input: TerminalObserveInput,
-    initial: Effect.Effect<TerminalSessionSnapshot | null, TerminalError>,
+    initial: Effect.Effect<TerminalSessionSnapshot | null, E>,
     listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
     registerCleanup?: (stop: () => void) => void,
+    spawns = false,
   ) => {
     let unsubscribe: (() => void) | null = null;
     const stop = () => {
@@ -3549,7 +3608,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       deliverLive = true;
       return stop;
     }).pipe(
-      (effect) => withSessionWorkspaceLease(input, withThreadLock(input.threadId, effect)),
+      (effect) =>
+        spawns
+          ? withSessionWorkspaceLease(input, preparedThreadLock(input.threadId, effect))
+          : withThreadLock(input.threadId, effect),
       Effect.onError(() => Effect.sync(stop)),
     );
   };
@@ -3579,35 +3641,43 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     viewerId,
   ) => {
     const viewer = viewerId ?? `stream:${++anonymousViewerCount}`;
-    let detach = () => {};
-    const initial = Effect.suspend(() => {
-      detach = retainViewerOnce(
+    const attach = <E>(open: Effect.Effect<TerminalSessionSnapshot | null, E>, spawns: boolean) => {
+      let detach = () => {};
+      const initial = Effect.suspend(() => {
+        detach = retainViewerOnce(
+          input,
+          viewer,
+          input.cols !== undefined && input.rows !== undefined
+            ? { cols: input.cols, rows: input.rows }
+            : null,
+        );
+        return open;
+      });
+      return streamSession(
         input,
-        viewer,
-        input.cols !== undefined && input.rows !== undefined
-          ? { cols: input.cols, rows: input.rows }
-          : null,
+        initial,
+        listener,
+        registerCleanup &&
+          ((stop) =>
+            registerCleanup(() => {
+              stop();
+              detach();
+            })),
+        spawns,
+      ).pipe(
+        Effect.map((stop) => () => {
+          stop();
+          detach();
+        }),
+        Effect.onError(() => Effect.sync(detach)),
       );
-      return openOrAttachForStream(input);
-    });
-    const attach = streamSession(
-      input,
-      initial,
-      listener,
-      registerCleanup &&
-        ((stop) =>
-          registerCleanup(() => {
-            stop();
-            detach();
-          })),
-    ).pipe(
-      Effect.map((stop) => () => {
-        stop();
-        detach();
+    };
+    // As with open, only an attach that spawns takes the lease and runs preparation.
+    return attach(openOrAttachForStream(input, spawnNeedsLease), false).pipe(
+      Effect.catchTags({
+        TerminalSpawnNeedsLease: () => attach(openOrAttachForStream(input, Effect.void), true),
       }),
-      Effect.onError(() => Effect.sync(detach)),
     );
-    return attach;
   };
 
   const observeStream: TerminalManager["Service"]["observeStream"] = (
