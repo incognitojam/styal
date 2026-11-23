@@ -91,6 +91,7 @@ const makeHelpers = (input: {
       text: string,
       options?: {
         readonly sender?: "user" | "agent";
+        readonly idleCompaction?: "beforeCacheExpires";
         readonly reportAnswer?: {
           readonly messageId: MessageId;
           readonly key: string;
@@ -121,7 +122,11 @@ const makeHelpers = (input: {
           attachments: [],
           dispatchMode: { type: "start_immediately" },
           createdBy: sender,
-          creationSource: sender === "agent" ? "mcp" : "web",
+          creationSource:
+            options?.idleCompaction !== undefined ? "server" : sender === "agent" ? "mcp" : "web",
+          ...(options?.idleCompaction === undefined
+            ? {}
+            : { idleCompaction: options.idleCompaction }),
           ...(options?.reportAnswer === undefined ? {} : { reportAnswer: options.reportAnswer }),
         });
         yield* worker.drain();
@@ -479,7 +484,7 @@ const harness = <A, E>(
   );
 
 it.effect("a finished turn with nothing pending wakes the launcher once", () =>
-  harness("report-result", ({ started, send, endTurn, reports, worker }) =>
+  harness("report-result", ({ orchestrator, started, send, endTurn, reports, worker }) =>
     Effect.gen(function* () {
       const turn = yield* send(launchedId, "Fix the login page");
       assert.include(turn.message.text, launcherId, "the first turn names the launcher");
@@ -492,6 +497,18 @@ it.effect("a finished turn with nothing pending wakes the launcher once", () =>
       assert.isDefined(wake, "the report starts a turn on the idle launcher");
       yield* worker.drain();
       assert.equal((yield* reports()).length, 1);
+
+      const compact = yield* send(launchedId, "/compact", {
+        idleCompaction: "beforeCacheExpires",
+      });
+      const before = started.length;
+      yield* endTurn(compact, "completed");
+      assert.deepEqual(yield* reports(), delivered, "idle compaction adds no report");
+      assert.equal(started.length, before, "idle compaction does not wake the launcher");
+      assert.isUndefined(
+        (yield* orchestrator.getThreadProjection(launchedId)).thread.reportTo?.sentInRunId,
+        "automatic report delivery does not set the explicit-send marker",
+      );
 
       // Later turns do not repeat the note.
       const next = yield* send(launchedId, "Keep going");
