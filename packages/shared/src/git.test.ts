@@ -428,6 +428,19 @@ describe("parseGitRemoteConfig", () => {
     ).toEqual([{ remoteName: "my.fork", url: "https://github.com/o/r", ghResolved: "base" }]);
     expect(parseGitRemoteConfig("")).toEqual([]);
   });
+
+  it("keeps spaces in remote names and URLs but drops a pin containing one", () => {
+    expect(
+      parseGitRemoteConfig(
+        [
+          "remote.space demo.url https://github.com/o/space repo",
+          "remote.space demo.gh-resolved bad pin",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { remoteName: "space demo", url: "https://github.com/o/space repo", ghResolved: null },
+    ]);
+  });
 });
 
 describe("sanitizeFeatureBranchName", () => {

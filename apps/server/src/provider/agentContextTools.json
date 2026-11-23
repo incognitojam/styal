@@ -1,6 +1,6 @@
 {
   "create_threads": 1395,
-  "delegate_task": 2367,
+  "delegate_task": 2366,
   "delete_scheduled_task": 323,
   "device_close": 358,
   "device_list": 469,
@@ -34,7 +34,7 @@
   "report_styal_issue": 676,
   "request_secret": 960,
   "run_scheduled_task_now": 343,
-  "schedule_task": 3361,
+  "schedule_task": 3357,
   "t3_attachment_discard": 207,
   "t3_attachment_prepare_upload": 708,
   "t3_background_wait": 427,

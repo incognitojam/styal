@@ -39,6 +39,7 @@ import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { GitHubStatusNotice } from "./GitHubStatusNotice";
+import { SidebarMachineConnectionLine } from "./SidebarMachineConnectionLine";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 
@@ -276,6 +277,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <GitHubStatusNotice />
       <ClaudeStatusNotice />
       <OpenAIStatusNotice />
+      <SidebarMachineConnectionLine />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
       <SidebarUtilityMenu />

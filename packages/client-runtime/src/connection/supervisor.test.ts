@@ -383,10 +383,12 @@ const makeSlowRelayServer = Effect.fn("TestSlowRelayServer.make")(function* (inp
 }) {
   const stalls = yield* Queue.unbounded<void>();
   const paths: Array<string> = [];
+  let stalled = 0;
   const fetchFn = ((request, init) => {
     const pathname = new URL(new Request(request, init).url).pathname;
     paths.push(pathname);
-    if (paths.length <= input.stalledRequests) {
+    // A cached token's descriptor read runs beside its ticket request; only the ticket stalls.
+    if (pathname !== "/.well-known/t3/environment" && stalled++ < input.stalledRequests) {
       Queue.offerUnsafe(stalls, undefined);
       return new Promise<Response>(() => {});
     }
@@ -398,6 +400,9 @@ const makeSlowRelayServer = Effect.fn("TestSlowRelayServer.make")(function* (inp
   }) satisfies typeof fetch;
   return { fetchFn, paths, stalls };
 });
+
+const withoutDescriptorReads = (paths: ReadonlyArray<string>) =>
+  paths.filter((path) => path !== "/.well-known/t3/environment");
 
 /**
  * Builds the real relay authorization service over a test fetch, one stored token, and a
@@ -1807,7 +1812,7 @@ describe("EnvironmentSupervisor", () => {
       const connected = yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(connected).toMatchObject({ attempt: 1, lastFailure: null });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(httpPaths).toEqual(["/api/auth/websocket-ticket/rpc"]);
+      expect(withoutDescriptorReads(httpPaths)).toEqual(["/api/auth/websocket-ticket/rpc"]);
       const session = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "access-token-1" });
@@ -1865,7 +1870,7 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual([
+      expect(withoutDescriptorReads(server.paths)).toEqual([
         "/api/auth/websocket-ticket/rpc",
         "/api/auth/websocket-ticket/rpc",
       ]);
@@ -1910,7 +1915,9 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual(Array(3).fill("/api/auth/websocket-ticket/rpc"));
+      expect(withoutDescriptorReads(server.paths)).toEqual(
+        Array(3).fill("/api/auth/websocket-ticket/rpc"),
+      );
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
@@ -1969,8 +1976,7 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "access-token-2" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(1);
-      expect(server.paths.slice(6)).toEqual([
-        "/.well-known/t3/environment",
+      expect(withoutDescriptorReads(server.paths).slice(6)).toEqual([
         "/oauth/token",
         "/api/auth/websocket-ticket/rpc",
       ]);
@@ -2270,6 +2276,65 @@ describe("EnvironmentSupervisor routes", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("tries a route still silent after its check when a late LAN route fails", () =>
+    Effect.gen(function* () {
+      const tailnetTarget = new BearerConnectionTarget({
+        environmentId: TARGET.environmentId,
+        label: TARGET.label,
+        connectionId: "bearer:tailnet",
+      });
+      const entry: ConnectionCatalogEntry = {
+        ...LAN_THEN_RELAY_ENTRY,
+        alternateRoutes: [
+          {
+            target: tailnetTarget,
+            profile: Option.some(
+              new BearerConnectionProfile({
+                connectionId: tailnetTarget.connectionId,
+                environmentId: TARGET.environmentId,
+                label: TARGET.label,
+                httpBaseUrl: "http://100.100.1.2:3773/",
+                wsBaseUrl: "ws://100.100.1.2:3773/",
+                network: "tailscale",
+              }),
+            ),
+          },
+        ],
+      };
+      const checking = yield* Ref.make(0);
+      const checkingBoth = yield* Deferred.make<void>();
+      const attempted: string[] = [];
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Ref.updateAndGet(checking, (count) => count + 1).pipe(
+            Effect.flatMap((count) =>
+              count === 2 ? Deferred.succeed(checkingBoth, undefined) : Effect.void,
+            ),
+            Effect.andThen(
+              connectionRouteId(route.target) === LAN_TARGET.connectionId
+                ? Effect.sleep("700 millis").pipe(Effect.as("answered" as const))
+                : Effect.sleep("2500 millis").pipe(Effect.as("silent" as const)),
+            ),
+          ),
+        // The LAN answers its check but its socket fails; the slow tailnet works.
+        prepare: (_attempt, target) => {
+          attempted.push(connectionRouteId(target));
+          return connectionRouteId(target) === LAN_TARGET.connectionId
+            ? Effect.fail(transient("LAN socket closed."))
+            : Effect.succeed(preparedFor(target));
+        },
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(entry, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Deferred.await(checkingBoth);
+      yield* TestClock.adjust("2500 millis");
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(attempted).toEqual([LAN_TARGET.connectionId, "bearer:tailnet"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("still tries a slow LAN route when relay fails", () =>
     Effect.gen(function* () {
       const checkingLan = yield* Deferred.make<void>();
@@ -2297,6 +2362,36 @@ describe("EnvironmentSupervisor routes", () => {
       yield* TestClock.adjust("2500 millis");
       yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(attempted).toEqual(["RelayConnectionTarget", "BearerConnectionTarget"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("retries instead of waiting on a LAN route that stayed silent after relay failed", () =>
+    Effect.gen(function* () {
+      const checkingLan = yield* Deferred.make<void>();
+      const attempted: string[] = [];
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Deferred.succeed(checkingLan, undefined).pipe(
+                Effect.andThen(Effect.sleep("2500 millis")),
+                Effect.as("silent" as const),
+              )
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) => {
+          attempted.push(target._tag);
+          return target._tag === "RelayConnectionTarget"
+            ? Effect.fail(transient("Relay socket closed."))
+            : Effect.never;
+        },
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Deferred.await(checkingLan);
+      yield* TestClock.adjust("2500 millis");
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      expect(attempted).toEqual(["RelayConnectionTarget"]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

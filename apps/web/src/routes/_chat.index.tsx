@@ -1,6 +1,7 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -23,10 +24,20 @@ import {
 import {
   indexDraftStartNeedsRetry,
   isBootstrapWelcomePending,
+  isLaunchWelcomeAwaited,
   useLaunchNavigationStore,
 } from "../launchNavigationStore";
 import { useEnvironments } from "../state/environments";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { primaryServerWelcomeAtom } from "../state/server";
+import { environmentShell } from "../state/shell";
+
+const primaryShellRestoredFromCacheAtom = Atom.make((get) => {
+  const environmentId = get(primaryEnvironmentIdAtom);
+  return environmentId === null
+    ? false
+    : get(environmentShell.stateValueAtom(environmentId)).restoredFromCache;
+}).pipe(Atom.withLabel("web-index-primary-shell-restored-from-cache"));
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -45,6 +56,9 @@ function IndexDraftLanding() {
   const threads = useVisibleThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const primaryWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const primaryShellRestoredFromCache = useAtomValue(primaryShellRestoredFromCacheAtom);
+  const launchPending = useLaunchNavigationStore((store) => store.launchPending);
   const launchNavigationOwner = useLaunchNavigationStore((store) => store.owner);
   const handledBootstrapKey = useLaunchNavigationStore((store) => store.handledBootstrapKey);
   const handleNewThread = useNewThreadHandler();
@@ -55,14 +69,27 @@ function IndexDraftLanding() {
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const bootstrapRoutePending = isBootstrapWelcomePending(primaryWelcome, handledBootstrapKey);
-  const mostRecentProject = !bootstrapRoutePending
+  const candidateProject = !bootstrapRoutePending
     ? (sortScopedProjectsForSidebar(
         projects.filter((project) => project.archivedAt == null),
         threads,
         "updated_at",
       )[0] ?? null)
     : null;
+  const launchWelcomeAwaited = isLaunchWelcomeAwaited({
+    launchPending,
+    welcome: primaryWelcome,
+    primaryEnvironmentId,
+    primaryShellRestoredFromCache,
+    project: candidateProject,
+  });
+  const mostRecentProject = launchWelcomeAwaited ? null : candidateProject;
   const attempt = startState.retryRequest;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the launch's welcome deadline timer
+  useEffect(() => {
+    if (launchWelcomeAwaited) useLaunchNavigationStore.getState().awaitLaunchWelcome();
+  }, [launchWelcomeAwaited]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the index
   useEffect(() => {
@@ -100,7 +127,7 @@ function IndexDraftLanding() {
       .finally(() => release("index-draft"));
   }, [attempt, handleNewThread, launchNavigationOwner, mostRecentProject, startState.failed]);
 
-  if (bootstrapRoutePending) {
+  if (bootstrapRoutePending || launchWelcomeAwaited) {
     return null;
   }
   if (mostRecentProject !== null) {

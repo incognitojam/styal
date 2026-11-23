@@ -145,12 +145,14 @@ export interface GitRemoteConfigEntry {
 export function parseGitRemoteConfig(stdout: string): ReadonlyArray<GitRemoteConfigEntry> {
   const entries = new Map<string, { url: string | null; ghResolved: string | null }>();
 
-  for (const line of stdout.split("\n")) {
-    const match = /^remote\.(.+)\.(url|gh-resolved)\s+(\S+)$/u.exec(line.trim());
+  for (const line of stdout.split(/\r?\n/)) {
+    // Git separates the key from its value with one space; a URL can contain spaces, a pin cannot.
+    const match = /^remote\.(.+?)\.(url|gh-resolved) (.+)$/u.exec(line.trim());
     const remoteName = match?.[1];
     const key = match?.[2];
     const value = match?.[3];
     if (!remoteName || !key || !value) continue;
+    if (key === "gh-resolved" && /\s/u.test(value)) continue;
 
     const entry = entries.get(remoteName) ?? { url: null, ghResolved: null };
     // A key can repeat (`git config --add`); the first value is the one git
