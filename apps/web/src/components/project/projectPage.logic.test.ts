@@ -21,6 +21,7 @@ import {
   isProjectPageJob,
   jobThreadStates,
   projectJobStatus,
+  projectPageMemberKeys,
   staysOnProjectPage,
   isProjectChatDraftId,
   projectChatDraftId,
@@ -32,6 +33,17 @@ const local = EnvironmentId.make("env-local");
 const remote = EnvironmentId.make("env-remote");
 const project = ProjectId.make("project-orchard");
 const chatId = ThreadId.make("thread-chat");
+const checkout = ProjectId.make("project-orchard-checkout");
+const orchardMembers = [
+  { environmentId: local, id: project },
+  { environmentId: local, id: checkout },
+];
+const orchard = {
+  memberProjectRefs: orchardMembers.map((member) => ({
+    environmentId: member.environmentId,
+    projectId: member.id,
+  })),
+};
 
 function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
   return {
@@ -136,7 +148,11 @@ describe("jobThreadStates", () => {
         };
         expect(staysOnProjectPage(job, new Map(), scoped)).toBe(false);
         expect(
-          staysOnProjectPage(launched, new Map([[`${local}:${chatId}`, project]]), scoped),
+          staysOnProjectPage(
+            launched,
+            new Map([[`${local}:${chatId}`, projectPageMemberKeys(orchardMembers)]]),
+            scoped,
+          ),
         ).toBe(false);
       }
     }
@@ -180,7 +196,7 @@ describe("isProjectPageJob", () => {
 });
 
 describe("staysOnProjectPage", () => {
-  const chats = new Map([[`${local}:${chatId}`, project]]);
+  const chats = new Map([[`${local}:${chatId}`, projectPageMemberKeys(orchardMembers)]]);
   const started = (id: string, overrides: Partial<EnvironmentThreadShell> = {}) =>
     shell(id, {
       reportTo: { threadId: chatId },
@@ -191,29 +207,30 @@ describe("staysOnProjectPage", () => {
       ...overrides,
     });
 
-  it("keeps only same-project launches off the sidebar, preserving another project’s only thread", () => {
+  it("keeps only same-group launches off the sidebar, preserving another project’s only thread", () => {
     const otherProject = ProjectId.make("project-garden");
     const launches = [
       started("working", { runtime: running }),
       started("done"),
+      started("same-group-checkout", { projectId: checkout }),
       started("other-project", { projectId: otherProject }),
       started("other-project-working", { projectId: otherProject, runtime: running }),
     ];
     expect(launches.map((thread) => [thread.id, staysOnProjectPage(thread, chats)])).toEqual([
       ["working", true],
       ["done", true],
+      ["same-group-checkout", true],
       ["other-project", false],
       ["other-project-working", false],
     ]);
-    const groups = [project, otherProject].map((projectId) => ({
-      memberProjectRefs: [{ environmentId: local, projectId }],
-    }));
+    const groups = [
+      orchard,
+      { memberProjectRefs: [{ environmentId: local, projectId: otherProject }] },
+    ];
     expect(
       groupSidebarThreadsByProject(
         groups,
-        launches.filter(
-          (thread) => thread.id !== "other-project-working" && !staysOnProjectPage(thread, chats),
-        ),
+        launches.filter((thread) => thread.runtime === null && !staysOnProjectPage(thread, chats)),
         () => false,
       ).map((folder) => folder.threads.map((thread) => thread.id)),
     ).toEqual([["other-project"]]);

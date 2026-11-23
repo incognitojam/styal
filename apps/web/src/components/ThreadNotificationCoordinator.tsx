@@ -59,6 +59,7 @@ import {
   isProjectPageJob,
   jobThreadStates,
   projectChatTakesReports,
+  projectPageMemberKeys,
   staysOnProjectPage,
 } from "./project/projectPage.logic";
 import { environmentServerConfigsAtom, projectJobListAtom } from "../state/server";
@@ -170,12 +171,14 @@ export function startThreadNotifications(
 
   // The project's sidebar group: its label names the project chat, its representative's icon is
   // the one the sidebar shows.
-  const projectGroup = (environmentId: EnvironmentId, projectId: ProjectId) =>
+  const projectGroups = () =>
     buildProjectGroups({
       projects: registry.get(environmentProjects.projectsAtom),
       settings: selectProjectGroupingSettings(getClientSettings()),
       preferredEnvironmentId: registry.get(primaryEnvironmentIdAtom),
-    }).find((group) =>
+    });
+  const projectGroup = (environmentId: EnvironmentId, projectId: ProjectId) =>
+    projectGroups().find((group) =>
       group.memberProjectRefs.some(
         (ref) => ref.environmentId === environmentId && ref.projectId === projectId,
       ),
@@ -334,7 +337,7 @@ export function startThreadNotifications(
         ? new Map([[`${environmentId}:${thread.id}`, since]])
         : NO_JOBS;
     };
-    let projectChatProjects: ReadonlyMap<string, ProjectId> | null = null;
+    let projectChatProjects: ReadonlyMap<string, ReadonlySet<string>> | null = null;
     const reportingChatProjects = () => {
       if (projectChatProjects !== null) return projectChatProjects;
       const chatIds = new Set(
@@ -342,12 +345,24 @@ export function startThreadNotifications(
           ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
           : [],
       );
+      if (chatIds.size === 0) {
+        projectChatProjects = new Map();
+        return projectChatProjects;
+      }
+      const membersByProject = new Map(
+        projectGroups().flatMap((group) => {
+          const members = projectPageMemberKeys(group.members.map((member) => member.project));
+          return group.memberProjectRefs.map(
+            (ref) => [`${ref.environmentId}:${ref.projectId}`, members] as const,
+          );
+        }),
+      );
       projectChatProjects = new Map(
-        threads.flatMap((thread) =>
-          chatIds.has(thread.id) && projectChatTakesReports(thread)
-            ? [[`${environmentId}:${thread.id}`, thread.projectId] as const]
-            : [],
-        ),
+        threads.flatMap((thread) => {
+          if (!chatIds.has(thread.id) || !projectChatTakesReports(thread)) return [];
+          const members = membersByProject.get(`${environmentId}:${thread.projectId}`);
+          return members === undefined ? [] : [[`${environmentId}:${thread.id}`, members] as const];
+        }),
       );
       return projectChatProjects;
     };

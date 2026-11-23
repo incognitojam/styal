@@ -30,6 +30,7 @@ import {
   isProjectPageJob,
   jobRunsAgain,
   jobThreadStates,
+  projectPageMemberKeys,
 } from "./projectPage.logic";
 import { stoppedThreadsNeedingYou } from "./projectNeedsYou.logic";
 
@@ -43,6 +44,7 @@ export interface ProjectPageJob {
 
 export interface ProjectPage {
   readonly group: SidebarProjectSnapshot;
+  readonly memberProjectKeys: ReadonlySet<string>;
   readonly host: ProjectChatHost<SidebarProjectGroupMember>;
   /** `environmentId:threadId` of the chat, once it exists. */
   readonly chatThreadKey: string | null;
@@ -105,11 +107,11 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
       },
     );
     if (host === null) continue;
-    for (const member of group.memberProjects) {
-      groupKeyByProject.set(`${member.environmentId}:${member.id}`, group.projectKey);
-    }
+    const memberProjectKeys = projectPageMemberKeys(group.memberProjects);
+    for (const key of memberProjectKeys) groupKeyByProject.set(key, group.projectKey);
     pages.set(group.projectKey, {
       group,
+      memberProjectKeys,
       host,
       chatThreadKey:
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
