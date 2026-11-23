@@ -218,6 +218,7 @@ it.effect.each([
     yield* fileSystem.makeDirectory(real ? worktreePath : path.join(worktreePath, ".git"), {
       recursive: true,
     });
+    if (leavesFolder) yield* fileSystem.makeDirectory(path.join(workspaceRoot, ".git"));
     if (real) {
       yield* real.write("src/main.txt", "tracked source");
       yield* real.command(worktreePath, ["add", "src/main.txt"]);
@@ -272,13 +273,20 @@ it.effect.each([
             ? Layer.succeed(GitVcsDriver.GitVcsDriver, real.git)
             : Layer.mock(GitVcsDriver.GitVcsDriver)({
                 execute: ({ cwd }) =>
-                  Effect.succeed({
-                    exitCode: ChildProcessSpawner.ExitCode(0),
-                    stdout: `${cwd}\n`,
-                    stderr: "",
-                    stdoutTruncated: false,
-                    stderrTruncated: false,
-                  }),
+                  Effect.gen(function* () {
+                    const root = (yield* fileSystem.exists(path.join(cwd, ".git")))
+                      ? cwd
+                      : (yield* fileSystem.exists(path.join(workspaceRoot, ".git")))
+                        ? workspaceRoot
+                        : null;
+                    return {
+                      exitCode: ChildProcessSpawner.ExitCode(root === null ? 128 : 0),
+                      stdout: root === null ? "" : `${root}\n`,
+                      stderr: root === null ? "fatal: not a git repository" : "",
+                      stdoutTruncated: false,
+                      stderrTruncated: false,
+                    };
+                  }).pipe(Effect.orDie),
               }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
@@ -314,7 +322,6 @@ it.effect.each([
             restore: () =>
               Effect.gen(function* () {
                 calls.push("files");
-                // The fixture folder sits outside any checkout, so Git finds nothing to restore.
                 if (
                   !(yield* fileSystem.exists(path.join(worktreePath, ".git")).pipe(Effect.orDie))
                 ) {
@@ -427,7 +434,7 @@ it.effect.each([
       if (leavesFolder) {
         const error = yield* Fiber.join(rollback).pipe(Effect.flip);
         assert.equal(error.reason, "workspace-restore-failed");
-        assert.isTrue(Cause.pretty(Cause.fail(error)).includes("lost its Git data"));
+        assert.isTrue(Cause.pretty(Cause.fail(error)).includes("missing its Git data"));
         assert.deepEqual(calls, ["cleanup"]);
         assert.equal(
           yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),

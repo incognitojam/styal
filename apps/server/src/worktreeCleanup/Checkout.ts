@@ -6,7 +6,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
 import { makeInspectGit } from "./gitInspection.ts";
 
 export class CheckoutLimits extends Context.Reference<{
@@ -509,7 +509,7 @@ export const makeCheckoutRoot = Effect.gen(function* () {
   const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
   const path = yield* Path.Path;
   const git = yield* makeInspectGit;
-  const managedOwner = yield* makeManagedWorktreeOwner;
+  const boundaryFor = yield* makeManagedWorktreeBoundary;
   const fail = (message: string) => new WorktreeCleanupError({ reason: "run-failed", message });
   const io = <A>(run: () => Promise<A>) =>
     Effect.tryPromise({
@@ -519,7 +519,7 @@ export const makeCheckoutRoot = Effect.gen(function* () {
   const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string, forLease = false) {
     const resolved = path.resolve(cwd);
     let canonical = resolved;
-    let parent = resolved;
+    let parent = path.isAbsolute(cwd) ? cwd : `${path.resolve(".")}${path.sep}${cwd}`;
     const missing: string[] = [];
     while (true) {
       const real = yield* io(() =>
@@ -536,48 +536,61 @@ export const makeCheckoutRoot = Effect.gen(function* () {
       missing.unshift(path.basename(parent));
       parent = path.dirname(parent);
     }
-    const owner = yield* managedOwner(resolved);
-    if (owner !== null && forLease) {
-      const relative = path.relative(owner, canonical);
-      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
-        return owner;
-    }
-    if (owner !== null && !forLease) {
+    const boundary = yield* boundaryFor(cwd);
+    const unavailable = () =>
+      fail(
+        `Worktree "${cwd}" is missing its Git data. Run git worktree repair from the main repository if its registration still exists, or move your files out and remove this folder so styal can recreate it.`,
+      );
+    if (boundary?.escaped) return yield* unavailable();
+    if (boundary !== null) {
       if (
+        missing.length > 0 &&
         !(yield* io(() =>
-          fs.lstat(owner).then(
+          fs.stat(boundary.leasePath).then(
             () => true,
-            (error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return false;
-              throw error;
-            },
+            () => false,
+          ),
+        )) &&
+        !(yield* io(() =>
+          fs.stat(path.join(parent, ".git")).then(
+            () => true,
+            () => false,
           ),
         ))
       )
-        return owner;
+        return boundary.leasePath;
+      const reported = yield* git(parent, ["rev-parse", "--show-toplevel"]);
+      if (reported.exitCode === 0 && !reported.stdoutTruncated) {
+        const top = yield* io(() => fs.realpath(reported.stdout.trimEnd()));
+        if (isWithinWorktreesDirectory(path, boundary.directory, top, boundary.caseInsensitive))
+          return top;
+        if (
+          forLease ||
+          (missing.length > 0 &&
+            !(yield* io(() =>
+              fs.stat(boundary.leasePath).then(
+                () => true,
+                () => false,
+              ),
+            )))
+        )
+          return boundary.leasePath;
+        return yield* unavailable();
+      }
       if (
-        !(yield* io(() =>
-          fs.lstat(path.join(owner, ".git")).then(
-            () => true,
-            (error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return false;
-              throw error;
-            },
-          ),
-        ))
+        forLease ||
+        (missing.length > 0 &&
+          !(yield* io(() =>
+            fs.stat(boundary.leasePath).then(
+              () => true,
+              () => false,
+            ),
+          )))
       )
-        return yield* fail("This worktree has lost its Git data. Its workspace cannot be used.");
-      const reported = yield* git(owner, ["rev-parse", "--show-toplevel"]);
-      if (
-        reported.exitCode !== 0 ||
-        reported.stdoutTruncated ||
-        path.resolve(reported.stdout.trimEnd()) !== owner
-      )
-        return yield* fail("This worktree has lost its Git data. Its workspace cannot be used.");
+        return boundary.leasePath;
+      return canonical;
     }
     for (let directory = canonical; ; directory = path.dirname(directory)) {
-      // Cleanup may remove the marker; lease discovery must stop at the managed boundary.
-      if (directory === owner) return owner;
       const marker = yield* io(() =>
         fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;

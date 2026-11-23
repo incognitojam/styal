@@ -233,7 +233,7 @@ export const layer: Layer.Layer<
       const { worktreePath, branch } = context.thread;
       if (workspace !== undefined) {
         yield* checkoutRoot(workspace).pipe(
-          Effect.andThen(checkout.restore(workspace)),
+          Effect.flatMap(checkout.restore),
           Effect.mapError(
             (cause) =>
               new CheckpointRollbackExecutionError({
@@ -415,7 +415,7 @@ export const layer: Layer.Layer<
           yield* Effect.scoped(
             workspace === undefined
               ? execute(input)
-              : withWorkspaceLease(workspace, execute(input, workspace)),
+              : withWorkspaceLease(workspace, execute(input, cwd)),
           );
         },
         (effect, input) =>

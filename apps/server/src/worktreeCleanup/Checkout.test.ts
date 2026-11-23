@@ -783,7 +783,9 @@ it.effect("keeps sources when the recovery directory cannot be synced", () =>
 it.live("refuses a nested managed checkout that lost its Git data", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const base = yield* fs.makeTempDirectoryScoped({ prefix: "lost-worktree-git-" });
+    const base = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "lost-worktree-git-" }),
+    );
     yield* Effect.gen(function* () {
       const git = yield* GitVcsDriver.GitVcsDriver;
       const command = (cwd: string, args: readonly string[]) =>
@@ -841,7 +843,7 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
         expect(result).toMatchObject({
           _tag: "Failure",
           failure: {
-            message: "This worktree has lost its Git data. Its workspace cannot be used.",
+            message: `Worktree "${cwd}" is missing its Git data. Run git worktree repair from the main repository if its registration still exists, or move your files out and remove this folder so styal can recreate it.`,
           },
         });
       }

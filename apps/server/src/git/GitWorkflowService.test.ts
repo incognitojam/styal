@@ -1,4 +1,6 @@
 import { assert, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -35,26 +37,60 @@ function layer(input: {
   );
 }
 
-const realGitLayer = (prefix: string) =>
+const realGitLayer = (
+  baseDirOrPrefix: string | { readonly prefix: string },
+  worktreesDirectory?: string,
+) =>
   GitWorkflowService.layer.pipe(
-    Layer.provide(
-      Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
-        resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
-      }),
-    ),
+    Layer.provide(VcsDriverRegistry.layer),
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
     Layer.provideMerge(WorkspacePortAllocator.layer),
     Layer.provideMerge(layerMemory),
     Layer.provideMerge(GitVcsDriver.layer),
-    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(ServerSettings.layerTest(worktreesDirectory ? { worktreesDirectory } : {})),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), { prefix }).pipe(
+      ServerConfig.layerTest(process.cwd(), baseDirOrPrefix).pipe(
         Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
+
+const managedGitFixture = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const base = yield* fs.realPath(
+    yield* fs.makeTempDirectoryScoped({ prefix: "t3-git-worktree-boundary-" }),
+  );
+  const enclosing = `${base}/enclosing`;
+  const managed = `${enclosing}/managed`;
+  const context = yield* Layer.build(realGitLayer(base, managed));
+  const git = Context.get(context, GitVcsDriver.GitVcsDriver);
+  const workflow = Context.get(context, GitWorkflowService.GitWorkflowService);
+  const command = (cwd: string, args: ReadonlyArray<string>) =>
+    git.execute({ operation: "fixture", cwd, args }).pipe(Effect.map(({ stdout }) => stdout));
+  const init = Effect.fn("fixture.initRepository")(function* (
+    cwd: string,
+    options: ReadonlyArray<string> = [],
+  ) {
+    yield* fs.makeDirectory(cwd, { recursive: true });
+    yield* command(cwd, ["init", "-b", "main", ...options]);
+    yield* fs.writeFileString(`${cwd}/source.txt`, "tracked source\n");
+    yield* command(cwd, ["add", "source.txt"]);
+    yield* command(cwd, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "fixture: source",
+    ]);
+  });
+  yield* init(enclosing);
+  yield* fs.makeDirectory(managed);
+  return { fs, base, enclosing, managed, workflow, command, init };
+}).pipe(Effect.provide(NodeServices.layer));
 
 const layerTest = Layer.merge(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }),
@@ -201,7 +237,7 @@ it.layer(layerTest)("GitWorkflowService", (it) => {
         (refName) => workflow.hasRefNamed({ cwd, refName }),
       );
       assert.deepEqual(found, [true, true, true, true, false, false]);
-    }).pipe(Effect.scoped, Effect.provide(realGitLayer("t3-ref-named-"))),
+    }).pipe(Effect.scoped, Effect.provide(realGitLayer({ prefix: "t3-ref-named-" }))),
   );
 
   it.effect("removing a worktree frees its port range", () =>
@@ -234,6 +270,131 @@ it.layer(layerTest)("GitWorkflowService", (it) => {
         [path.resolve(cwd)],
       );
       assert.isFalse(yield* fileSystem.exists(worktreePath));
-    }).pipe(Effect.scoped, Effect.provide(realGitLayer("t3-remove-port-"))),
+    }).pipe(Effect.scoped, Effect.provide(realGitLayer({ prefix: "t3-remove-port-" }))),
   );
 });
+
+it.live.each([
+  { label: "an ordinary repository below the managed folder", rootPath: "project" },
+  { label: "a deeply nested repository", rootPath: "group/project/repository" },
+  { label: "an in-folder symlink", rootPath: "project", alias: "alias" },
+  { label: "a linked worktree", rootPath: "project/topic", linked: true },
+  { label: "a separate Git directory", rootPath: "project/topic", separate: true },
+  { label: "a repository inside a linked worktree", rootPath: "project/topic/inner", nested: true },
+  { label: "the enclosing repository from outside the managed folder", rootPath: null },
+])("uses $label", ({ rootPath, alias, linked, separate, nested }) =>
+  Effect.gen(function* () {
+    if (alias && (yield* HostProcess.Platform) === "win32") return;
+    const f = yield* managedGitFixture;
+    const root = rootPath === null ? f.enclosing : `${f.managed}/${rootPath}`;
+    if (linked || nested) {
+      yield* f.command(f.enclosing, [
+        "worktree",
+        "add",
+        "-b",
+        "topic",
+        `${f.managed}/project/topic`,
+      ]);
+    }
+    if (rootPath !== null && !linked) {
+      yield* f.init(root, separate ? ["--separate-git-dir", `${f.base}/git-metadata`] : []);
+    }
+    yield* f.fs.makeDirectory(`${root}/topic`);
+    const entry = alias ? `${f.managed}/${alias}` : root;
+    if (alias) yield* f.fs.symlink(root, entry);
+
+    for (const cwd of alias ? [entry, `${entry}/topic`] : [`${entry}/topic`]) {
+      assert.strictEqual(yield* f.workflow.repositoryRoot(cwd), root);
+      assert.strictEqual(yield* f.workflow.currentBranch(cwd), linked ? "topic" : "main");
+    }
+    const refName = "fixture-branch";
+    yield* f.workflow.createRef({ cwd: `${entry}/topic`, refName, switchRef: true });
+    assert.strictEqual(
+      (yield* f.command(root, ["symbolic-ref", "HEAD"])).trim(),
+      `refs/heads/${refName}`,
+    );
+  }),
+);
+
+it.live.each([
+  { label: "a symlink", parentTraversal: false },
+  { label: "a symlink followed by '..'", parentTraversal: true },
+])("refuses $label that leads outside the managed folder", ({ parentTraversal }) =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) === "win32") return;
+    const f = yield* managedGitFixture;
+    const project = `${f.managed}/project`;
+    yield* f.init(project);
+    const alias = `${project}/escape`;
+    const target = parentTraversal ? `${f.enclosing}/outside` : f.enclosing;
+    if (parentTraversal) yield* f.fs.makeDirectory(target);
+    yield* f.fs.symlink(target, alias);
+    const cwd = parentTraversal ? `${alias}/..` : alias;
+    assert.strictEqual(
+      (yield* f.command(f.enclosing, ["-C", cwd, "rev-parse", "--show-toplevel"])).trim(),
+      f.enclosing,
+    );
+
+    assert.deepStrictEqual(
+      yield* Effect.all({
+        root: f.workflow.repositoryRoot(cwd),
+        branch: f.workflow.currentBranch(cwd),
+        creation: f.workflow.createRef({ cwd, refName: "escaped" }).pipe(
+          Effect.result,
+          Effect.map(({ _tag }) => _tag),
+        ),
+      }),
+      { root: null, branch: null, creation: "Failure" },
+    );
+  }),
+);
+
+it.live("refuses Git operations after a nested linked worktree loses its gitfile", () =>
+  Effect.gen(function* () {
+    const f = yield* managedGitFixture;
+    const worktree = `${f.managed}/project/topic`;
+    const cwd = `${worktree}/src`;
+    const note = `${cwd}/untracked.txt`;
+    yield* f.command(f.enclosing, ["worktree", "add", "-b", "topic", worktree]);
+    yield* f.fs.makeDirectory(cwd);
+    yield* f.fs.writeFileString(note, "untracked work\n");
+    assert.strictEqual(yield* f.workflow.repositoryRoot(cwd), worktree);
+    assert.strictEqual(yield* f.workflow.currentBranch(cwd), "topic");
+
+    const enclosingState = Effect.forEach(
+      [
+        ["symbolic-ref", "HEAD"],
+        ["rev-parse", "HEAD"],
+        ["ls-files", "--stage", "-z"],
+        ["for-each-ref", "--format=%(refname) %(objectname)"],
+      ],
+      (args) => f.command(f.enclosing, args),
+    );
+    const before = yield* enclosingState;
+    yield* f.fs.remove(`${worktree}/.git`);
+    assert.strictEqual(
+      (yield* f.command(cwd, ["rev-parse", "--show-toplevel"])).trim(),
+      f.enclosing,
+    );
+
+    assert.deepStrictEqual(
+      yield* Effect.all({
+        root: f.workflow.repositoryRoot(cwd),
+        branch: f.workflow.currentBranch(cwd),
+        creation: f.workflow.createRef({ cwd, refName: "wrong-repository" }).pipe(
+          Effect.result,
+          Effect.map(({ _tag }) => _tag),
+        ),
+        enclosingState,
+        note: f.fs.readFileString(note),
+      }),
+      {
+        root: null,
+        branch: null,
+        creation: "Failure",
+        enclosingState: before,
+        note: "untracked work\n",
+      },
+    );
+  }),
+);

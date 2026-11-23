@@ -1,4 +1,4 @@
-import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import { parseGitRemoteConfig } from "@t3tools/shared/git";
@@ -11,6 +11,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Option from "effect/Option";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
@@ -149,7 +150,20 @@ function buildRepositoryIdentity(input: {
 class RepositoryIdentityCacheKey extends Data.Class<{
   readonly rootPath: string;
   readonly isBare: boolean;
+  readonly marker?: string;
 }> {}
+
+const markerState = Effect.fn("RepositoryIdentityResolver.markerState")(function* (root: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return yield* fs.stat(path.join(root, ".git")).pipe(
+    Effect.map(
+      (info) =>
+        `${info.type}:${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
+    ),
+    Effect.orElseSucceed(() => "missing"),
+  );
+});
 
 const gitEnv = (platform: NodeJS.Platform): NodeJS.ProcessEnv => ({
   ...unsetInheritedRepositoryEnv(process.env, platform),
@@ -186,7 +200,11 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     if (topLevelResult.value.code === 0) {
       const rootPath = topLevelResult.value.stdout.trim();
       return rootPath.length > 0
-        ? new RepositoryIdentityCacheKey({ rootPath, isBare: false })
+        ? new RepositoryIdentityCacheKey({
+            rootPath,
+            isBare: false,
+            marker: yield* markerState(rootPath),
+          })
         : null;
     }
 
@@ -295,7 +313,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const managedOwner = yield* makeManagedWorktreeOwner;
+  const boundaryFor = yield* makeManagedWorktreeBoundary;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
   const timeToLive = (exit: Exit.Exit<unknown>) =>
@@ -332,23 +350,34 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
   const resolve: RepositoryIdentityResolver["Service"]["resolve"] = Effect.fnUntraced(
     function* (cwd, options) {
-      const ownerResult = yield* managedOwner(cwd).pipe(Effect.result);
-      if (ownerResult._tag === "Failure") return null;
-      const owner = ownerResult.success;
-      if (
-        owner !== null &&
-        !(yield* fileSystem
-          .exists(path.join(owner, ".git"))
-          .pipe(Effect.orElseSucceed(() => false)))
-      )
-        return null;
-      if (options?.refresh || owner !== null) yield* Cache.invalidate(repositoryRootCache, cwd);
-      const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
+      const boundaryResult = yield* boundaryFor(cwd).pipe(Effect.result);
+      if (boundaryResult._tag === "Failure") return null;
+      const boundary = boundaryResult.success;
+      if (boundary?.escaped) return null;
+      const lookupCwd = boundary?.cwd ?? cwd;
+      if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, lookupCwd);
+      let cacheKey = yield* Cache.get(repositoryRootCache, lookupCwd);
       if (cacheKey === null) return null;
-      if (owner !== null) {
-        const relative = path.relative(owner, cacheKey.rootPath);
-        if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      if (boundary !== null) {
+        const marker = yield* markerState(cacheKey.rootPath).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+        if (!cacheKey.isBare && marker !== cacheKey.marker) {
+          yield* Cache.invalidate(repositoryRootCache, lookupCwd);
+          cacheKey = yield* Cache.get(repositoryRootCache, lookupCwd);
+          if (cacheKey === null) return null;
+        }
+        const root = yield* fileSystem
+          .realPath(cacheKey.rootPath)
+          .pipe(Effect.orElseSucceed(() => null));
+        if (
+          root === null ||
+          !isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
+        ) {
+          yield* Cache.invalidate(repositoryRootCache, lookupCwd);
           return null;
+        }
       }
       if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
       return yield* Cache.get(repositoryIdentityCache, cacheKey);

@@ -3,6 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as RcMap from "effect/RcMap";
@@ -26,6 +27,7 @@ import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/p
 import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -158,6 +160,31 @@ export const make = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
   const vcsProcess = yield* VcsProcess.VcsProcess;
+  const fs = yield* FileSystem.FileSystem;
+  const boundaryFor = yield* makeManagedWorktreeBoundary;
+  const canReadGit = Effect.fn("WorkspaceEntries.canReadGit")(function* (cwd: string) {
+    const located = yield* boundaryFor(cwd).pipe(Effect.result);
+    if (located._tag === "Failure") return false;
+    const boundary = located.success;
+    if (boundary === null) return true;
+    if (boundary.escaped) return false;
+    const result = yield* vcsProcess
+      .run({
+        operation: "WorkspaceEntries.repositoryRoot",
+        command: "git",
+        cwd,
+        args: ["rev-parse", "--show-toplevel"],
+        allowNonZeroExit: true,
+        timeoutMs: 5_000,
+      })
+      .pipe(Effect.orElseSucceed(() => undefined));
+    if (result === undefined || result.exitCode !== 0 || result.stdoutTruncated) return false;
+    const root = yield* fs.realPath(result.stdout.trimEnd()).pipe(Effect.orElseSucceed(() => null));
+    return (
+      root !== null &&
+      isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
+    );
+  });
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
@@ -307,6 +334,7 @@ export const make = Effect.gen(function* () {
     ) {
       return [];
     }
+    if (!(yield* canReadGit(cwd))) return [];
     const listed = yield* vcsProcess
       .run({
         operation: "WorkspaceEntries.listWorktrees",
@@ -487,18 +515,24 @@ export const make = Effect.gen(function* () {
         let gitPrefix = "";
         // stdin avoids argument limits; ignore classification is optional without git/repositories.
         const checkIgnore = (paths: ReadonlyArray<string>) =>
-          vcsProcess
-            .run({
-              operation: "WorkspaceEntries.list",
-              command: "git",
-              args: ["-c", "core.fsmonitor=false", "check-ignore", "-z", "--stdin"],
-              cwd: path.join(normalizedCwd, gitRoot),
-              stdin: `${paths.map((entryPath) => entryPath.slice(gitPrefix.length)).join("\0")}\0`,
-              allowNonZeroExit: true,
-              timeoutMs: 10_000,
-              maxOutputBytes: 16 * 1024 * 1024,
-            })
-            .pipe(Effect.orElseSucceed(() => undefined));
+          canReadGit(path.join(normalizedCwd, gitRoot)).pipe(
+            Effect.flatMap((available) =>
+              available
+                ? vcsProcess
+                    .run({
+                      operation: "WorkspaceEntries.list",
+                      command: "git",
+                      args: ["-c", "core.fsmonitor=false", "check-ignore", "-z", "--stdin"],
+                      cwd: path.join(normalizedCwd, gitRoot),
+                      stdin: `${paths.map((entryPath) => entryPath.slice(gitPrefix.length)).join("\0")}\0`,
+                      allowNonZeroExit: true,
+                      timeoutMs: 10_000,
+                      maxOutputBytes: 16 * 1024 * 1024,
+                    })
+                    .pipe(Effect.orElseSucceed(() => undefined))
+                : Effect.undefined,
+            ),
+          );
         // Git refuses paths inside a submodule (128) but still answers for nested clones.
         for (const nestedGitRoot of nestedGitRoots) {
           if ((yield* checkIgnore([`${nestedGitRoot}/.git`]))?.exitCode !== 128) continue;
@@ -552,6 +586,7 @@ export const make = Effect.gen(function* () {
     "WorkspaceEntries.listIgnoredFiles",
   )(function* (input) {
     const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+    if (!(yield* canReadGit(normalizedCwd))) return { files: [], truncated: false };
     // `--directory` reports a folder holding nothing but ignored files as one
     // `name/` entry, which is how `node_modules` and build output drop out.
     const result = yield* vcsProcess

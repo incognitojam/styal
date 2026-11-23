@@ -10,10 +10,12 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import { vi } from "vite-plus/test";
 
+import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
+import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -25,11 +27,12 @@ const layerTest = Layer.empty.pipe(
   Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(VcsProcess.layer),
-  Layer.provide(
+  Layer.provideMerge(
     ServerConfig.ServerConfig.layerTest(process.cwd(), {
       prefix: "t3-workspace-entries-test-",
     }),
   ),
+  Layer.provide(ServerSettings.layerTest()),
   Layer.provideMerge(NodeServices.layer),
 );
 
@@ -509,6 +512,53 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(paths).toContain("src/keep.ts");
         expect(paths.some((entryPath) => entryPath.startsWith(".convex/"))).toBe(false);
       }),
+    );
+
+    it.effect(
+      "does not use enclosing Git ignore rules or worktree lists after a managed checkout loses Git data",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const base = yield* fs.realPath(yield* makeTempDir({ git: true }));
+          yield* writeTextFile(base, ".gitignore", "parent-only.txt\n");
+          yield* git(base, ["add", ".gitignore"]);
+          yield* git(base, [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+          ]);
+          const cwd = `${base}/managed/project/topic`;
+          yield* git(base, ["worktree", "add", "-b", "topic", cwd]);
+          yield* writeTextFile(cwd, "parent-only.txt", "local work");
+          const process = yield* VcsProcess.VcsProcess;
+          const entries = yield* WorkspaceEntries.make.pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer,
+                ServerSettings.layerTest({ worktreesDirectory: `${base}/managed` }),
+              ),
+            ),
+          );
+          yield* fs.remove(`${cwd}/.git`);
+          using requests = vi.spyOn(process, "run");
+          const listed = yield* entries.list({ cwd, directoryPath: "" });
+          expect(listed.entries).toContainEqual({ path: "parent-only.txt", kind: "file" });
+          expect(yield* entries.listIgnoredFiles({ cwd })).toEqual({ files: [], truncated: false });
+          yield* entries.search({ cwd, query: "src/file.ts", limit: 10 });
+          expect(
+            requests.mock.calls.some(
+              ([input]) =>
+                input.operation === "WorkspaceEntries.listWorktrees" ||
+                input.operation === "WorkspaceEntries.list" ||
+                input.operation === "WorkspaceEntries.listIgnoredFiles",
+            ),
+          ).toBe(false);
+          expect(yield* fs.readFileString(`${cwd}/parent-only.txt`)).toBe("local work");
+        }),
     );
 
     it.effect("finds a path inside a gitignored nested git worktree only by its exact path", () =>

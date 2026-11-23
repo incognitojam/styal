@@ -748,7 +748,7 @@ export const layer: Layer.Layer<
       }
       if (workspace !== undefined) {
         const restored = yield* checkoutRoot(workspace).pipe(
-          Effect.andThen(checkout.restore(workspace)),
+          Effect.flatMap(checkout.restore),
           Effect.result,
         );
         if (restored._tag === "Failure") {
@@ -2218,7 +2218,7 @@ export const layer: Layer.Layer<
             Effect.gen(function* () {
               const providerTurn = yield* workspace === undefined
                 ? start(input)
-                : withWorkspaceLease(workspace, start(input, workspace));
+                : withWorkspaceLease(workspace, start(input, cwd));
               if (providerTurn !== undefined) yield* providerTurn;
             }),
           );

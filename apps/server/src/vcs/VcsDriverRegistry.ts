@@ -11,7 +11,7 @@ import type { VcsDriverKind, VcsError, VcsRepositoryIdentity } from "@t3tools/co
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProjectConfig from "./VcsProjectConfig.ts";
-import { makeManagedWorktreeOwner } from "../worktreesDirectory.ts";
+import { makeManagedWorktreeBoundary, isWithinWorktreesDirectory } from "../worktreesDirectory.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 
 const DETECTION_CACHE_CAPACITY = 2_048;
@@ -60,7 +60,7 @@ function parseDetectionCacheKey(key: string): {
 
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  const managedOwner = yield* makeManagedWorktreeOwner;
+  const boundaryFor = yield* makeManagedWorktreeBoundary;
   const path = yield* Path.Path;
   const projectConfig = yield* VcsProjectConfig.VcsProjectConfig;
   const git = yield* GitVcsDriver.makeVcsDriver;
@@ -167,27 +167,19 @@ export const make = Effect.gen(function* () {
 
   const detect: VcsDriverRegistry["Service"]["detect"] = Effect.fn("VcsDriverRegistry.detect")(
     function* (input) {
-      const owner = yield* managedOwner(input.cwd);
+      const boundary = yield* boundaryFor(input.cwd);
       const requestedKind = yield* projectConfig.resolveKind(input);
-      if (owner !== null) {
-        if (
-          !(yield* fileSystem
-            .exists(path.join(owner, ".git"))
-            .pipe(Effect.orElseSucceed(() => false)))
-        )
-          return null;
-        // A managed checkout can lose or replace its gitfile while the server is running.
+      if (boundary !== null) {
+        if (boundary.escaped) return null;
         const handle = yield* detectResolvedKind({ cwd: input.cwd, requestedKind });
         if (handle === null) return null;
         const root = yield* fileSystem
           .realPath(handle.repository.rootPath)
-          .pipe(Effect.orElseSucceed(() => handle.repository.rootPath));
-        const relative = path.relative(owner, root);
-        return relative === ".." ||
-          relative.startsWith(`..${path.sep}`) ||
-          path.isAbsolute(relative)
-          ? null
-          : handle;
+          .pipe(Effect.orElseSucceed(() => null));
+        return root !== null &&
+          isWithinWorktreesDirectory(path, boundary.directory, root, boundary.caseInsensitive)
+          ? handle
+          : null;
       }
       const key = detectionCacheKey({ cwd: input.cwd, requestedKind });
       const cached = yield* Cache.get(detectionCache, key);

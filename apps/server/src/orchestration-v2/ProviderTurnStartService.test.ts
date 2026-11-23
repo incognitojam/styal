@@ -101,7 +101,7 @@ function startWithMissingWorktree(
   worktreesDir = managedWorktreesDir,
   isStripped: (root: string) => Effect.Effect<boolean> = () => Effect.succeed(false),
   onSetup: Effect.Effect<void> = Effect.void,
-  checkoutGit: GitVcsDriver.GitVcsDriver["Service"] = {} as GitVcsDriver.GitVcsDriver["Service"],
+  checkoutGit?: GitVcsDriver.GitVcsDriver["Service"],
   projectWorkspaceRoot = "/tmp/provider-turn-start-project",
 ) {
   const threadId = ThreadId.make("thread_provider_turn_start_projection_failure");
@@ -174,11 +174,12 @@ function startWithMissingWorktree(
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
-        Layer.succeed(FileSystem.FileSystem, {
+        FileSystem.layerNoop({
           exists: () => Effect.succeed(folderExists),
-          realPath: (target: string) =>
-            normalize(target) in realPaths
-              ? Effect.succeed(realPaths[normalize(target)])
+          realPath: (target: string) => {
+            const real = realPaths[normalize(target)];
+            return real !== undefined
+              ? Effect.succeed(real)
               : Effect.fail(
                   PlatformError.systemError({
                     _tag: "NotFound",
@@ -186,15 +187,27 @@ function startWithMissingWorktree(
                     method: "realPath",
                     pathOrDescriptor: target,
                   }),
-                ),
-        } as never),
+                );
+          },
+        }),
         layerWorktreeLocation(worktreesDir),
         Layer.mock(GitWorkflow.GitWorkflowService)({
           pruneWorktrees,
           createWorktree,
           listLocalBranchNames,
         }),
-        Layer.succeed(GitVcsDriver.GitVcsDriver, checkoutGit),
+        checkoutGit === undefined
+          ? Layer.mock(GitVcsDriver.GitVcsDriver)({
+              execute: () =>
+                Effect.succeed({
+                  exitCode: ChildProcessSpawner.ExitCode(128),
+                  stdout: "",
+                  stderr: "fatal: not a git repository",
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                }),
+            })
+          : Layer.succeed(GitVcsDriver.GitVcsDriver, checkoutGit),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped,
           isStripped,
@@ -1102,13 +1115,16 @@ function makeLocalCommandHarness(input: {
           : Layer.succeed(GitWorkflow.GitWorkflowService, input.gitWorkflow),
         Layer.mock(GitVcsDriver.GitVcsDriver)({
           execute: ({ cwd }) =>
-            Effect.succeed({
-              exitCode: ChildProcessSpawner.ExitCode(0),
-              stdout: `${cwd}\n`,
-              stderr: "",
-              stdoutTruncated: false,
-              stderrTruncated: false,
-            }),
+            (input.fileSystem?.exists(`${cwd}/.git`) ?? Effect.succeed(true)).pipe(
+              Effect.orDie,
+              Effect.map((hasGit) => ({
+                exitCode: ChildProcessSpawner.ExitCode(hasGit ? 0 : 128),
+                stdout: hasGit ? `${cwd}\n` : "",
+                stderr: hasGit ? "" : "fatal: not a git repository",
+                stdoutTruncated: false,
+                stderrTruncated: false,
+              })),
+            ),
         }),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped: () => Effect.succeed(false),

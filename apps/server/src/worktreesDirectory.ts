@@ -45,73 +45,130 @@ export function managedWorktreesDirectories(
   return [...directories];
 }
 
-// Client paths/branches are untrusted; recreate only real paths matching managed-folder/repo/branch.
-export const makeManagedWorktreeOwner = Effect.gen(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const serverSettings = yield* ServerSettings.ServerSettingsService;
+export function isWithinWorktreesDirectory(
+  path: Path.Path,
+  directory: string,
+  candidate: string,
+  caseInsensitive = false,
+): boolean {
+  const relative = path.relative(
+    caseInsensitive ? directory.toLowerCase() : directory,
+    caseInsensitive ? candidate.toLowerCase() : candidate,
+  );
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
 
-  // Match Git's symlink-following location: nearest real ancestor plus missing path components.
-  const realLocation = (target: string): Effect.Effect<string> =>
-    fileSystem.realPath(target).pipe(
+export const makeManagedWorktreeBoundary = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const config = yield* ServerConfig.ServerConfig;
+  const settingsService = yield* ServerSettings.ServerSettingsService;
+  const platform = yield* HostProcess.Platform;
+  const home = yield* HostProcess.HomeDirectory;
+  let knownDirectories: ReadonlyArray<string> = [config.worktreesDir];
+  const caseRules = new Map<string, boolean>();
+
+  // Resolve a symlink before a following "..", matching the cwd Git receives.
+  const canonical = (target: string): Effect.Effect<string> => {
+    const segments = target.split(path.sep);
+    const dotdot = segments.indexOf("..");
+    if (dotdot !== -1) {
+      const prefix = segments.slice(0, dotdot).join(path.sep) || path.parse(target).root;
+      return canonical(prefix).pipe(
+        Effect.flatMap((real) =>
+          canonical([path.dirname(real), ...segments.slice(dotdot + 1)].join(path.sep)),
+        ),
+      );
+    }
+    return fs.realPath(target).pipe(
       Effect.catch(() => {
         const parent = path.dirname(target);
         return parent === target
           ? Effect.succeed(target)
-          : Effect.map(realLocation(parent), (real) => path.join(real, path.basename(target)));
+          : Effect.map(canonical(parent), (real) => path.join(real, path.basename(target)));
       }),
     );
-
-  return Effect.fn("worktreesDirectory.managedWorktreeOwner")(function* (
-    worktreePath: string,
-    includeDescendants = true,
+  };
+  const caseInsensitive = Effect.fn("worktreesDirectory.caseInsensitive")(function* (
+    directory: string,
   ) {
-    const settings = yield* serverSettings.getSettings.pipe(
-      Effect.mapError(
-        (cause) =>
-          new VcsRepositoryDetectionError({
-            operation: "worktreesDirectory.managedWorktreeOwner",
-            cwd: worktreePath,
-            detail: "Could not read managed worktree locations. The workspace cannot be used.",
-            cause,
-          }),
-      ),
+    if (platform === "win32") return true;
+    const cached = caseRules.get(directory);
+    if (cached !== undefined) return cached;
+    const original = yield* fs.lstat(directory).pipe(Effect.orElseSucceed(() => null));
+    if (original === null) return false;
+    const name = path.basename(directory);
+    const alternateName = name.replace(/[a-zA-Z]/, (letter) =>
+      letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase(),
     );
-    const directories = managedWorktreesDirectories(
-      settings,
-      serverConfig.worktreesDir,
-      path,
-      yield* HostProcess.HomeDirectory,
-    ).toSorted((a, b) => b.length - a.length);
-    const resolved = path.resolve(worktreePath);
-    const candidate = yield* realLocation(resolved);
-    for (const directory of directories) {
-      const root = yield* realLocation(directory);
-      if (isFilesystemRoot(root, path)) continue;
-      // Keep the declared boundary when a checkout itself becomes an escaping symlink.
-      for (const relative of includeDescendants
-        ? [path.relative(directory, resolved), path.relative(root, candidate)]
-        : [path.relative(root, candidate)]) {
-        const segments = relative.split(path.sep);
-        if (
-          !path.isAbsolute(relative) &&
-          (includeDescendants ? segments.length >= 2 : segments.length === 2) &&
-          segments.every((segment) => segment !== "" && segment !== "..")
-        )
-          return path.join(root, segments[0]!, segments[1]!);
-      }
+    const alternate = yield* fs
+      .lstat(path.join(path.dirname(directory), alternateName))
+      .pipe(Effect.orElseSucceed(() => null));
+    const insensitive =
+      alternateName !== name &&
+      original.type === "Directory" &&
+      alternate?.type === "Directory" &&
+      original.dev === alternate.dev &&
+      original.ino._tag === "Some" &&
+      alternate.ino._tag === "Some" &&
+      original.ino.value === alternate.ino.value;
+    caseRules.set(directory, insensitive);
+    return insensitive;
+  });
+
+  return Effect.fn("worktreesDirectory.managedWorktreeBoundary")(function* (cwd: string) {
+    const settings = yield* settingsService.getSettings.pipe(Effect.result);
+    if (settings._tag === "Success")
+      knownDirectories = managedWorktreesDirectories(
+        settings.success,
+        config.worktreesDir,
+        path,
+        home,
+      );
+    const resolved = path.resolve(cwd);
+    const absolute = path.isAbsolute(cwd) ? cwd : `${path.resolve(".")}${path.sep}${cwd}`;
+    const physical = yield* canonical(absolute);
+    for (const declared of knownDirectories.toSorted((a, b) => b.length - a.length)) {
+      const directory = yield* canonical(declared);
+      if (isFilesystemRoot(directory, path)) continue;
+      const insensitive = yield* caseInsensitive(directory);
+      const physicallyInside = isWithinWorktreesDirectory(path, directory, physical, insensitive);
+      const lexicallyInside = isWithinWorktreesDirectory(path, declared, resolved, insensitive);
+      if (!physicallyInside && !lexicallyInside) continue;
+      if (settings._tag === "Failure")
+        return yield* new VcsRepositoryDetectionError({
+          operation: "worktreesDirectory.managedWorktreeBoundary",
+          cwd,
+          detail: "Could not read managed worktree locations. The workspace cannot be used.",
+          cause: settings.failure,
+        });
+      const owner = physicallyInside ? directory : declared;
+      const candidate = physicallyInside ? physical : resolved;
+      const segments = candidate
+        .split(path.sep)
+        .slice(owner.split(path.sep).length)
+        .filter(Boolean);
+      return {
+        directory,
+        cwd: physical,
+        escaped: !physicallyInside,
+        caseInsensitive: insensitive,
+        // Only the no-repository lease fallback uses styal's folder shape; healthy roots come from Git.
+        leasePath:
+          segments.length >= 2 ? path.join(directory, segments[0]!, segments[1]!) : physical,
+      };
     }
     return null;
   });
 });
 
 export const makeIsManagedWorktreePath = Effect.gen(function* () {
-  const owner = yield* makeManagedWorktreeOwner;
+  const boundaryFor = yield* makeManagedWorktreeBoundary;
   const path = yield* Path.Path;
   return Effect.fn("worktreesDirectory.isManagedWorktreePath")(function* (worktreePath: string) {
-    // Git and realPath disagree on .. after symlink traversal; recreate only normalized absolute paths.
     if (!path.isAbsolute(worktreePath) || path.resolve(worktreePath) !== worktreePath) return false;
-    return (yield* owner(worktreePath, false).pipe(Effect.orElseSucceed(() => null))) !== null;
+    const boundary = yield* boundaryFor(worktreePath).pipe(Effect.orElseSucceed(() => null));
+    if (boundary === null || boundary.escaped) return false;
+    return boundary.cwd.split(path.sep).length - boundary.directory.split(path.sep).length === 2;
   });
 });
