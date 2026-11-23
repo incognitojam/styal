@@ -90,7 +90,7 @@ export function threadReportEffect(
   if (event.type === "run.updated") {
     const { id, status } = event.payload;
     if (
-      status === "cancelled" ||
+      (status === "cancelled" && event.payload.activeAttemptId == null) ||
       status === "rolled_back" ||
       (status === "queued" && event.payload.queueHeld === true)
     ) {
@@ -99,7 +99,7 @@ export function threadReportEffect(
     if (status === "completed" || status === "failed") {
       return make(id, { kind: "run", runId: id });
     }
-    return status === "interrupted"
+    return status === "interrupted" || status === "cancelled"
       ? make(id, { kind: "run", runId: id }, INTERRUPTED_REPORT_DELAY)
       : null;
   }
@@ -171,7 +171,7 @@ export function runReportKind(input: {
   // wake that thread again. Only work that did not start from a report reaches it on its own.
   if (input.toCoordinator && input.startedByReport) return null;
   if (input.run.status === "failed") return "failed";
-  if (input.run.status === "interrupted") return "stopped";
+  if (input.run.status === "interrupted" || input.run.status === "cancelled") return "stopped";
   if (
     input.run.status !== "completed" ||
     input.reportedInRunId === input.run.id ||
@@ -504,7 +504,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       messageRoles: ["user", "assistant"],
       messageRunIds: [run.id],
       turnItemRunId: run.id,
-      turnItemTypes: ["assistant_message", "error"],
+      turnItemTypes: ["assistant_message", "error", "system_notice", "run_interrupt_result"],
       providerTurnAttemptIds: run.activeAttemptId == null ? [] : [run.activeAttemptId],
     },
   );
@@ -542,6 +542,16 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   }
   const copy = reportCopy[kind];
   const result = subagentResultForRun(history, run);
+  const cancellationReason =
+    run.status === "cancelled"
+      ? history.turnItems
+          .filter(
+            (item) =>
+              item.runId === run.id &&
+              (item.type === "system_notice" || item.type === "run_interrupt_result"),
+          )
+          .toSorted((a, b) => b.ordinal - a.ordinal)[0]
+      : undefined;
   const waiting = [
     ...(thread.pullRequests ?? [])
       .filter((link) => link.watch !== undefined)
@@ -554,14 +564,25 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     thread,
     source,
     situation:
-      kind === "result" && waiting.length > 0
-        ? "ended a turn and is waiting on background work."
-        : copy.situation,
+      run.status === "cancelled"
+        ? "had requested work stopped before finishing."
+        : kind === "result" && waiting.length > 0
+          ? "ended a turn and is waiting on background work."
+          : copy.situation,
     body:
-      kind === "result" && result.messageId === null && result.turnItemId === null
-        ? "The turn ended without assistant text."
-        : result.text,
-    next: [...waiting, copy.next].join("\n\n"),
+      run.status === "cancelled"
+        ? cancellationReason !== undefined && "message" in cancellationReason
+          ? cancellationReason.message
+          : "The work was cancelled before it finished. No cancellation reason was recorded."
+        : kind === "result" && result.messageId === null && result.turnItemId === null
+          ? "The turn ended without assistant text."
+          : result.text,
+    next: [
+      ...waiting,
+      run.status === "cancelled"
+        ? "Read more with t3_thread_read. Check the reason before deciding whether to retry with t3_thread_send."
+        : copy.next,
+    ].join("\n\n"),
     pendingRequests: records.runtimeRequests,
   });
   if (quiet) {
