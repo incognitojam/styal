@@ -1056,17 +1056,16 @@ const layerMakeServer = Layer.unwrap(
                 urlHost: localHost,
                 localHost: localHost.replace(/^\[|\]$/gu, ""),
                 servePort: config.tailscaleServePort,
-                previousDeadProxy: undefined as string | undefined,
               };
               return yield* ensureTailscaleServe({
                 localPort,
                 servePort: config.tailscaleServePort,
                 localHost,
-                reclaimDeadHandler: true,
+                recoveryHome: config.stateDir,
               }).pipe(
-                Effect.map((previousDeadProxy) => ({ ...route, previousDeadProxy })),
+                Effect.map((previousDigest) => ({ ...route, previousDigest })),
                 Effect.tap((configured) =>
-                  configured.previousDeadProxy === undefined
+                  configured.previousDigest === undefined
                     ? Effect.logInfo("Tailscale Serve configured", {
                         localPort,
                         servePort: config.tailscaleServePort,
@@ -1077,7 +1076,7 @@ const layerMakeServer = Layer.unwrap(
                   Effect.logWarning(cause.message, {
                     localPort,
                     servePort: config.tailscaleServePort,
-                  }).pipe(Effect.as(route)),
+                  }).pipe(Effect.as({ ...route, previousDigest: undefined })),
                 ),
               );
             }),
@@ -1112,17 +1111,12 @@ const layerMakeServer = Layer.unwrap(
                             localPort: configured.localPort,
                             servePort: configured.servePort,
                             localHost: configured.urlHost,
-                            recordedOnly: true,
+                            recoveryHome: config.stateDir,
                           }).pipe(
-                            Effect.tap((removed) =>
-                              Effect.logInfo(
-                                removed
-                                  ? "Tailscale Serve disabled"
-                                  : "Tailscale Serve left on; its mapping is not recorded as server-managed",
-                                {
-                                  servePort: configured.servePort,
-                                },
-                              ),
+                            Effect.tap(() =>
+                              Effect.logInfo("Tailscale Serve disabled", {
+                                servePort: configured.servePort,
+                              }),
                             ),
                           )
                         : Effect.logInfo(
@@ -1145,10 +1139,11 @@ const layerMakeServer = Layer.unwrap(
               configured === null
                 ? Effect.void
                 : repairTailscaleServe({
+                    home: config.stateDir,
                     localPort: configured.localPort,
-                    servePort: configured.servePort,
                     localHost: configured.urlHost,
-                    previousDeadProxy: configured.previousDeadProxy,
+                    servePort: configured.servePort,
+                    previousDigest: configured.previousDigest,
                   }).pipe(Effect.forkScoped),
             ),
           ),

@@ -1,8 +1,3 @@
-// @effect-diagnostics nodeBuiltinImport:off -- Keep mocked Serve cleanup away from the real account's ownership records.
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -161,21 +156,6 @@ it.effect(
     // drops every handler on that port of the current name unless `--set-path` names one
     // (serve_v2.go removeWebServe), and `serve --tcp=<port> off` drops that port's forward.
     const close = (answers: Answers, offCalls: Array<ReadonlyArray<string>> = []) => {
-      return Effect.gen(function* () {
-        const home = yield* Effect.acquireRelease(
-          Effect.sync(() =>
-            NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "serve-policy-test-")),
-          ),
-          (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
-        );
-        return yield* closeRoutes(answers, offCalls, home);
-      }).pipe(Effect.scoped);
-    };
-    const closeRoutes = (
-      answers: Answers,
-      offCalls: Array<ReadonlyArray<string>>,
-      home: string,
-    ) => {
       const web: Web = answers.web ?? {
         "box.tailnet.ts.net:443": { "/": "http://127.0.0.1:3773" },
       };
@@ -185,9 +165,6 @@ it.effect(
         host: "127.0.0.1",
         port: 3773,
       }).pipe(
-        Effect.provideService(HostProcess.HomeDirectory, home),
-        Effect.provideService(HostProcess.Environment, {}),
-        Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(
           ChildProcessSpawner.ChildProcessSpawner,
           ChildProcessSpawner.make((command) => {

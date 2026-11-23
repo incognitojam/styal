@@ -669,8 +669,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly host?: string;
       }) =>
         Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const home = yield* fs.makeTempDirectoryScoped({ prefix: "dev-share-account-test-" });
           let captured: Record<string, string | undefined> | undefined;
           let vpArgs: ReadonlyArray<string> = [];
           const tailscaleCalls: Array<ReadonlyArray<string>> = [];
@@ -699,11 +697,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                   stdout: spawned.args.includes("status")
                     ? Stream.make(
                         new TextEncoder().encode(
-                          JSON.stringify(
-                            spawned.args[0] === "serve"
-                              ? null
-                              : { Self: { DNSName: "host.example.ts.net." } },
-                          ),
+                          JSON.stringify({ Self: { DNSName: "host.example.ts.net." } }),
                         ),
                       )
                     : Stream.empty,
@@ -726,7 +720,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
-            Effect.provideService(HostProcess.HomeDirectory, home),
             Effect.provideService(
               HostProcess.Environment,
               input.ambientBundledDev === undefined

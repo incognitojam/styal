@@ -23,9 +23,6 @@ import {
   hasExactTailscaleServe,
   readTailscaleStatus,
   type TailscaleServeError,
-  TailscaleServeRecordError,
-  TailscaleServeRecoveryBusyError,
-  TailscaleServePortOccupiedError,
 } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -139,21 +136,11 @@ export class ServesOtherEnvironmentError extends Schema.TaggedError<ServesOtherE
   }
 }
 
-const isTailscaleSetupDiagnostic = Schema.is(
-  Schema.Union([
-    TailscaleServeRecordError,
-    TailscaleServeRecoveryBusyError,
-    TailscaleServePortOccupiedError,
-  ]),
-);
-
 export class TailscaleServeFailedError extends Schema.TaggedError<TailscaleServeFailedError>()(
   "TailscaleServeFailedError",
   { servePort: Schema.Number, cause: Schema.Defect() },
 ) {
   override get message(): string {
-    if (isTailscaleSetupDiagnostic(this.cause)) return this.cause.message;
-
     return `tailscale serve failed for HTTPS port ${String(this.servePort)}. Run \`tailscale serve --https=${String(this.servePort)} --bg <local-url>\` by hand to see why.`;
   }
 }
@@ -422,11 +409,6 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
         ),
       );
       if (exact) {
-        yield* ensureTailscaleServe({ ...localTarget, servePort: input.servePort }).pipe(
-          Effect.mapError(
-            (cause) => new TailscaleServeFailedError({ servePort: input.servePort, cause }),
-          ),
-        );
         return { baseUrl, notes };
       }
     }

@@ -1,9 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off -- Isolate the native Serve ownership record in a disposable test directory.
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
@@ -78,19 +73,7 @@ const spawnerLayer = (input: {
     }),
   );
 
-const layerServeHome = Layer.mergeAll(
-  Layer.effect(
-    HostProcess.HomeDirectory,
-    Effect.acquireRelease(
-      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "dev-share-test-"))),
-      (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
-    ),
-  ),
-  Layer.succeed(HostProcess.Environment, {}),
-  Layer.succeed(HostProcess.Platform, "linux"),
-);
-
-it.layer(layerServeHome, { buildPerTest: true })("unshareDevServer", (it) => {
+describe("unshareDevServer", () => {
   it.effect("treats a removed mapping as cleared", () =>
     Effect.gen(function* () {
       const result = yield* unshareDevServer(5788).pipe(
@@ -145,13 +128,13 @@ it.layer(layerServeHome, { buildPerTest: true })("unshareDevServer", (it) => {
         Effect.provide(spawnerLayer({ serveStatus: serveStatus("http://127.0.0.1:39831") })),
       );
       assert.isFalse(result.cleared);
-      assert.include(result.explanation, "--tailscale-serve-port");
+      assert.include(result.explanation, "different Tailscale Serve handler");
       assert.equal(result.cause?._tag, "TailscaleServePortOccupiedError");
     }),
   );
 });
 
-it.layer(layerServeHome, { buildPerTest: true })("shareDevServer", (it) => {
+describe("shareDevServer", () => {
   // Vite binds `localhost`, which modern Node resolves to `::1` first, so a
   // 127.0.0.1 target would proxy to a loopback nothing listens on.
   it.effect("proxies to the localhost name Vite binds, not 127.0.0.1", () =>
@@ -217,7 +200,7 @@ it.layer(layerServeHome, { buildPerTest: true })("shareDevServer", (it) => {
       );
 
       assert.instanceOf(error, DevServeFailedError);
-      assert.include(error.message, "--tailscale-serve-port");
+      assert.include(error.message, "different Tailscale Serve handler");
     }),
   );
 });

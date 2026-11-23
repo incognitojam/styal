@@ -7131,14 +7131,15 @@ features:
       retire_when: Upstream has these surfaces and hides tagged threads on them.
 
   - id: tailscale-serve-ownership
-    title: Recover only recorded server-managed Serve handlers after two refused checks
+    title: Recover only unchanged Serve configurations recorded by this styal home
     status: maintained
     tier: keep
     prs: [1722]
     invariants:
-      - Startup may configure an empty port or reuse its exact private mapping; takeover requires a single private root proxy styal recorded writing for an automatically managed server, matching http://<loopback literal>:<port>, and connection refusal on two consecutive checks 30 seconds apart. Startup only makes the first observation. Pairing mappings, unrecorded or legacy mappings, extra mounts, Funnel (including permission without handlers), foreground sessions, and unknown top-level, TCP, or web-site fields are refused. A live or uncertain probe resets the pending observation, and repair leaves an intentionally removed route absent.
-      - The per-account ownership record keeps one current proxy per Serve port, invalidates it durably before any replacement or removal, records only the new proxy after a successful write, and clears it on observed absence, replacement, or protected configuration. Transient status-command failures preserve ownership but reset the consecutive-check observation. Pairing and dev-share writes are recorded as nonrecoverable; pairing an existing recorded mapping makes it nonrecoverable too. Automatic shutdown removes only a matching recorded server-managed mapping.
-      - Serve changes and ownership updates are serialized by a per-account SQLite lock, independent of styal home; the ownership data commits separately so a crash during a daemon write cannot restore the former authorization. A competing operation reports contention and retries on a later tick; storage failures report their actual stage. Takeovers warn with the replaced loopback proxy. Other OS accounts and external writers are not serialized.
+      - Ordinary setup, exact reuse, shutdown, pairing, dev-share, and managed-policy removal keep the permissive ownership behavior without requiring a recovery receipt, its lock, or strict decoding. Receipt capture after a server write and invalidation after its removal are best-effort and never change those outcomes.
+      - Takeover alone requires this canonical server-state home's receipt to match a SHA-256 digest of the complete canonical Serve status, the selected HTTPS port, and the stable node, DNS name, and tailnet identity. It additionally requires strict decoding everywhere (including Services), a single private root proxy to an HTTP loopback literal, and connection refusal on two consecutive checks 30 seconds apart. Startup only observes. Unknown or changed configuration on any port, a different home or identity, and live or uncertain probes refuse takeover; manually removed mappings stay absent.
+      - A per-account SQLite lock serializes takeover rechecks, probes, writes, and receipt updates independently of styal home. The receipt contains only the canonical home and digest; it is invalidated durably before takeover and replaced after verifying the new mapping. A missing, corrupt, unwritable or busy recovery store means no takeover. Warning messages include the recovery path or replaced proxy without describing live mappings as stale.
+      - The digest omits no emitted Serve status fields. Tailscale's ETag is not emitted in JSON and ServeConfig has no timestamps. Configuration equality cannot distinguish removal and identical recreation by another program between observations; external writers and other OS accounts are not serialized.
       - Server shutdown and `dev --share` cleanup remove a mapping only while the port holds a single private root handler that targets their own local port.
       - "`styal pair --tailscale` reuses an exact mapping; a dev server also repoints a simple private root handler once its HTTPS probe shows the same environment; any other handler fails pairing without changing it."
       - "`dev --share` configures its port without clearing an existing mapping first."
@@ -7165,7 +7166,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/35547
         - https://github.com/pingdotgg/t3code/pull/37888
         - https://github.com/pingdotgg/t3code/pull/8338
-      retire_when: Upstream's server, pairing and dev share leave every Serve handler they do not own unchanged, except for a recorded server-managed private root on a loopback literal proven dead by two consecutive refused checks, refuse Funnel, extra mounts and foreground sessions, reject unknown routing fields, serialize competing changes and bounded ownership records per account, and remove only their own mapping.
+      retire_when: Upstream's ordinary Serve paths retain their ownership protections while recovery requires an unchanged complete configuration and identity recorded by the same home, strict full-status decoding, two refused checks, and serialized takeover; cleanup removes its own exact mapping without depending on recovery state.
 
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
