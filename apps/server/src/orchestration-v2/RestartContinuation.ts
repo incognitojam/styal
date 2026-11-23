@@ -196,18 +196,16 @@ export function restartContinuationRun(
 
 /**
  * True when `run` ends a chain of automatic continuations that reached the
- * limit within five minutes. A turn that keeps crashing the server would
- * otherwise restart it forever. A restart preview passes `now` for a run that
- * is still working, because recovery completes it at the restart.
+ * limit within five minutes. Delivery applies it only to continuation intents
+ * recorded without a process-loss count.
  */
-export function restartContinuationChainFull(
+function restartContinuationChainFull(
   run: OrchestrationV2Run,
   runs: ReadonlyArray<OrchestrationV2Run>,
-  now?: DateTime.Utc,
 ): boolean {
   let chainLength = 0;
   const loopWindowStart =
-    DateTime.toEpochMillis(run.completedAt ?? now ?? run.requestedAt) - CONTINUATION_LOOP_WINDOW_MS;
+    DateTime.toEpochMillis(run.completedAt ?? run.requestedAt) - CONTINUATION_LOOP_WINDOW_MS;
   for (
     let current: OrchestrationV2Run | undefined = run;
     current?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;

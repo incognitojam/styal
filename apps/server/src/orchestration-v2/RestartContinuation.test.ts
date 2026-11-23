@@ -26,7 +26,6 @@ import {
   CONTINUE_PROMPT,
   INTERRUPTED_TURN_NOTE,
   restartContinuationRun,
-  restartContinuationChainFull,
   continueRestartedRun,
 } from "./RestartContinuation.ts";
 import { continuationStartRetryDelayMs } from "./RestartBackgroundNote.ts";
@@ -116,6 +115,7 @@ it.effect("skips recovery reads when no displayed project continues after restar
         ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
         // Missing mock methods fail if the disabled path touches recovery state.
         Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+        Layer.mock(EffectOutbox.EffectOutboxV2)({}),
       ),
     ),
   ),
@@ -155,20 +155,21 @@ it.effect.each([false, true])(
               }),
             getThreadRecords: () => Effect.succeed(projection),
           }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({}),
         ),
       ),
     );
   },
 );
 
-it.effect("does not list runs that delivery after the restart skips as continuable", () => {
+it.effect("lists the runs that delivery after a planned restart continues or sends again", () => {
   const base = makeProjection();
   const userMessageId = MessageId.make("message:user");
   const running = {
     ...base,
     runs: [{ ...base.runs[0]!, userMessageId }],
   } as unknown as OrchestrationV2ThreadProjection;
-  // Three automatic continuations in a row: run:chain-3 continued run:chain-2, and so on.
+  // Three recent continuations in a row. A planned restart records no process loss, so it continues.
   const chain = [0, 1, 2].map((index) => ({
     ...base.runs[0]!,
     id: RunId.make(`run:chain-${index}`),
@@ -176,9 +177,15 @@ it.effect("does not list runs that delivery after the restart skips as continuab
     status: "cancelled",
     ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
   }));
+  // Marked running, but the provider never accepted the prompt.
+  const unaccepted = {
+    ...running,
+    providerTurns: [],
+    runs: [{ ...running.runs[0]!, startedAt: now }],
+  };
   const variants = [
     {
-      expected: [],
+      expected: [threadId],
       projection: {
         ...running,
         runs: [
@@ -221,6 +228,21 @@ it.effect("does not list runs that delivery after the restart skips as continuab
         messages: [{ id: userMessageId, role: "user", text: "/compact", attachments: [] }],
       },
     },
+    // An agent's prompt is sent again; a person's waits in the held queue.
+    {
+      expected: [threadId],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "agent", creationSource: "mcp" }],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "user", creationSource: "web" }],
+      },
+    },
   ] as unknown as ReadonlyArray<{
     expected: ThreadId[];
     projection: OrchestrationV2ThreadProjection;
@@ -235,33 +257,20 @@ it.effect("does not list runs that delivery after the restart skips as continuab
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
             getThreadRecords: () => Effect.succeed(projection),
+            getMessagesById: (_threadId, messageIds) =>
+              Effect.succeed(
+                new Map(
+                  projection.messages
+                    .filter((message) => messageIds.includes(message.id))
+                    .map((message) => [message.id, message]),
+                ),
+              ),
           }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({ listByCommandId: () => Effect.succeed([]) }),
         ),
       ),
     ),
   ).pipe(Effect.asVoid);
-});
-
-it("measures a still-working run's continuation window from the restart preview time", () => {
-  const base = makeProjection().runs[0]!;
-  const minutes = (count: number) => DateTime.add(now, { minutes: count });
-  const chain = [0, 1, 2].map((index) => ({
-    ...base,
-    id: RunId.make(`run:chain-${index}`),
-    status: "cancelled" as const,
-    requestedAt: minutes(index),
-    completedAt: minutes(index),
-    ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
-  }));
-  const working = {
-    ...base,
-    requestedAt: minutes(3),
-    restartContinuationOfRunId: RunId.make("run:chain-2"),
-  };
-  const runs = [...chain, working];
-  assert.equal(restartContinuationChainFull(working, runs, minutes(4)), true);
-  // Recovery completes the run at the restart, by which time the chain is outside the window.
-  assert.equal(restartContinuationChainFull(working, runs, minutes(15)), false);
 });
 
 it("requires matching saved native state for an unfinished root run", () => {

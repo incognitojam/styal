@@ -158,6 +158,7 @@ import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as EventStore from "./orchestration-v2/EventStore.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as EventSink from "./orchestration-v2/EventSink.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
@@ -894,6 +895,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(LegacyImportPreview.LegacyImportPreviewService)({}),
   Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+  Layer.mock(EffectOutbox.EffectOutboxV2)({}),
   Layer.mock(ProviderInstallGate.ProviderInstallGate)({}),
   Layer.mock(ServerEnvironment.ServerEnvironmentIdentity)({}),
   Layer.mock(WorkflowRunWatchReactor.WorkflowRunWatchReactor)({}),
