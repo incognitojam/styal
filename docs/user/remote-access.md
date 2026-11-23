@@ -189,8 +189,11 @@ default-port mapping with:
 tailscale serve --https=443 --set-path=/ off
 ```
 
-If that port has a different Serve handler, styal leaves it unchanged even if its
-backend is unavailable. Choose another port with `--tailscale-serve-port`. See
+If that port has a different Serve handler, styal leaves it unchanged. A server
+started with Tailscale HTTPS can recover a single private root mapping after its
+old local backend stops listening, at startup or on a later 30-second check. It
+leaves Funnel, extra mounts, and foreground sessions alone. Choose another port
+with `--tailscale-serve-port`. See
 `npx @styal/cli pair --help` for other pairing options.
 
 ### Hosted web app

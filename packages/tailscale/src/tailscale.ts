@@ -1,3 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Serve recovery needs a native TCP probe and a cross-process SQLite lock.
+import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
+import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isLocalLoopbackHost, normalizeHostname } from "@t3tools/shared/hostClassification";
@@ -491,7 +496,12 @@ const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function*
   );
 });
 
-type TailscaleServePortState = "absent" | "exact" | "funnel" | "occupied" | "replaceable";
+type TailscaleServePortState =
+  | "absent"
+  | "exact"
+  | "funnel"
+  | "occupied"
+  | { readonly proxy: string };
 
 function authorityPort(authority: string): number | null {
   try {
@@ -530,6 +540,9 @@ function servePortState(
   const funnelEnabled = Object.entries(status.AllowFunnel ?? {}).some(
     ([authority, enabled]) => authorityPort(authority) === input.servePort && enabled,
   );
+  if (funnelEnabled) {
+    return "funnel";
+  }
   if (entries.length === 0 && tcpEntries.length === 0) {
     return "absent";
   }
@@ -537,10 +550,7 @@ function servePortState(
     return "occupied";
   }
   const tcp = tcpEntries[0]?.[1];
-  if (funnelEnabled) {
-    return "funnel";
-  }
-  if (tcp?.HTTPS !== true) {
+  if (tcp?.HTTPS !== true || tcp.TCPForward !== undefined) {
     return "occupied";
   }
 
@@ -553,7 +563,8 @@ function servePortState(
     return "occupied";
   }
   const proxy = Reflect.get(root, "Proxy");
-  return proxy === input.proxy ? "exact" : "replaceable";
+  if (typeof proxy !== "string" || Object.keys(root).length !== 1) return "occupied";
+  return proxy === input.proxy ? "exact" : { proxy };
 }
 
 const readTailscaleServePortState = (input: {
@@ -579,25 +590,90 @@ export const hasExactTailscaleServe = (input: {
   readonly proxy: string;
 }) => readTailscaleServePortState(input).pipe(Effect.map((state) => state === "exact"));
 
-export const ensureTailscaleServe = (input: {
+const isDeadLoopbackProxy = Effect.fn("tailscale.isDeadLoopbackProxy")(function* (proxy: string) {
+  const target = dialedHostPort(expandProxy(proxy));
+  if (target === undefined || !isLocalLoopbackHost(target.host)) return false;
+  const port = Number(target.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  return yield* Effect.callback<boolean>((resume) => {
+    const socket = NodeNet.createConnection({ host: normalizeHostname(target.host), port });
+    const settle = (dead: boolean) => {
+      socket.destroy();
+      resume(Effect.succeed(dead));
+    };
+    socket.unref();
+    socket.once("connect", () => settle(false));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", (error) => {
+      const failures: readonly unknown[] = error instanceof AggregateError ? error.errors : [error];
+      settle(
+        failures.length > 0 &&
+          failures.every(
+            (cause) =>
+              typeof cause === "object" &&
+              cause !== null &&
+              Reflect.get(cause, "code") === "ECONNREFUSED",
+          ),
+      );
+    });
+    socket.setTimeout(250);
+    return Effect.sync(() => socket.destroy());
+  });
+});
+
+const withServeRecoveryLock = Effect.fn("tailscale.withServeRecoveryLock")(function* <A, E, R>(
+  servePort: number,
+  effect: Effect.Effect<A, E, R>,
+) {
+  const home = yield* HostProcess.HomeDirectory;
+  return yield* Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        // Shared across styal homes; SQLite releases the lock even after an unclean exit.
+        const directory = NodePath.join(home, ".cache", "styal");
+        NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        const path = NodePath.join(directory, `tailscale-serve-${servePort}.sqlite`);
+        const db = new NodeSqlite.DatabaseSync(path);
+        try {
+          db.exec("BEGIN EXCLUSIVE");
+          return db;
+        } catch (error) {
+          db.close();
+          throw error;
+        }
+      },
+      catch: () => new TailscaleServePortOccupiedError({ servePort }),
+    }),
+    () => effect,
+    (db) => Effect.sync(() => db.close()),
+  );
+});
+
+export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(function* (input: {
   readonly localPort: number;
   readonly servePort?: number;
   readonly localHost?: string;
   /** The caller has already verified that the current handler fronts this exact T3 environment. */
   readonly replaceVerifiedHandler?: boolean;
-}): Effect.Effect<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> => {
+  /** Server startup and repair may reclaim a simple private root on a refused loopback port. */
+  readonly reclaimDeadHandler?: boolean;
+  /** Repair leaves an intentionally removed route absent. */
+  readonly repairOnly?: boolean;
+}): Effect.fn.Return<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
   const proxy = `http://${localHost}:${input.localPort}`;
-  return Effect.gen(function* () {
-    const state = yield* readTailscaleServePortState({ servePort, proxy });
-    if (state === "exact") {
-      return;
-    }
+  const configure = Effect.fn("tailscale.configureServePort")(function* (
+    state: TailscaleServePortState,
+  ) {
+    if (input.repairOnly && typeof state === "string") return;
+    if (state === "exact") return;
     if (
       state === "funnel" ||
       state === "occupied" ||
-      (state === "replaceable" && input.replaceVerifiedHandler !== true)
+      (typeof state === "object" &&
+        input.replaceVerifiedHandler !== true &&
+        !(input.reclaimDeadHandler === true && (yield* isDeadLoopbackProxy(state.proxy))))
     ) {
       return yield* new TailscaleServePortOccupiedError({ servePort });
     }
@@ -605,8 +681,29 @@ export const ensureTailscaleServe = (input: {
       ["serve", "--bg", `--https=${servePort}`, proxy],
       TAILSCALE_SERVE_TIMEOUT,
     );
+    if (input.repairOnly) {
+      yield* Effect.logInfo("Tailscale Serve repaired", { localPort: input.localPort, servePort });
+    }
   });
-};
+  const state = yield* readTailscaleServePortState({ servePort, proxy });
+  return yield* input.reclaimDeadHandler === true && typeof state === "object"
+    ? withServeRecoveryLock(
+        servePort,
+        readTailscaleServePortState({ servePort, proxy }).pipe(Effect.flatMap(configure)),
+      )
+    : configure(state);
+});
+
+export const repairTailscaleServe = (input: {
+  readonly localPort: number;
+  readonly servePort: number;
+  readonly localHost: string;
+}) =>
+  Effect.sleep("30 seconds").pipe(
+    Effect.andThen(ensureTailscaleServe({ ...input, reclaimDeadHandler: true, repairOnly: true })),
+    Effect.ignore,
+    Effect.forever,
+  );
 
 /** A Serve route: a web handler at `mount` on `servePort`, or a TCP forward without one. */
 export interface TailscaleServeRoute {
@@ -653,7 +750,7 @@ export const disableTailscaleServe = Effect.fn("tailscale.disableTailscaleServe"
     if (state === "absent") {
       return;
     }
-    if (state === "occupied" || state === "funnel" || state === "replaceable") {
+    if (state === "occupied" || state === "funnel" || typeof state === "object") {
       return yield* new TailscaleServePortOccupiedError({ servePort });
     }
     yield* runTailscaleCommand(["serve", `--https=${servePort}`, "off"], TAILSCALE_SERVE_TIMEOUT);
@@ -807,61 +904,6 @@ export const readTailscaleServeRoutesTo = (target: {
       return routes === undefined
         ? Effect.fail(new TailscaleStatusParseError({ cause: "unreadable serve status" }))
         : Effect.succeed(routes);
-    }),
-  );
-
-/** A handler at the root of a Serve port: this server's, or another with the loopback port it dials. */
-export type TailscaleServeRootHolder =
-  | { readonly ours: true }
-  | { readonly ours: false; readonly loopback?: { readonly host: string; readonly port: number } };
-
-/**
- * What answers at the root of `servePort` outside any Tailscale Service, where
- * `ensureTailscaleServe` publishes, or undefined when the status cannot be read.
- */
-export const parseTailscaleServeRootHolders = (
-  rawServeStatusJson: string,
-  servePort: number,
-  target: { readonly host: string; readonly port: number },
-): ReadonlyArray<TailscaleServeRootHolder> | undefined => {
-  const status = decodeTailscaleServeStatusOption(rawServeStatusJson);
-  if (Option.isNone(status)) return undefined;
-  const config = status.value ?? undefined;
-  const tcp: ReadonlyArray<TailscaleServeRootHolder> =
-    config?.TCP?.[String(servePort)]?.TCPForward === undefined ? [] : [{ ours: false }];
-  const web = Object.entries(config?.Web ?? {}).flatMap(
-    ([hostPort, site]): ReadonlyArray<TailscaleServeRootHolder> => {
-      const root = site.Handlers?.["/"];
-      if (Number(hostPort.slice(hostPort.lastIndexOf(":") + 1)) !== servePort || root === undefined)
-        return [];
-      const proxy = handlerProxy(root);
-      if (proxy === undefined) return [{ ours: false }];
-      const url = expandProxy(proxy);
-      if (reachesTarget(url, target) !== undefined) return [{ ours: true }];
-      const dialed = dialedHostPort(url);
-      return [
-        dialed !== undefined && isLocalLoopbackHost(dialed.host)
-          ? {
-              ours: false,
-              loopback: { host: normalizeHostname(dialed.host), port: Number(dialed.port) },
-            }
-          : { ours: false },
-      ];
-    },
-  );
-  return [...tcp, ...web];
-};
-
-export const readTailscaleServeRootHolders = (
-  servePort: number,
-  target: { readonly host: string; readonly port: number },
-) =>
-  readTailscaleOutput("serve", ["serve", "status", "--json"]).pipe(
-    Effect.flatMap((status) => {
-      const holders = parseTailscaleServeRootHolders(status, servePort, target);
-      return holders === undefined
-        ? Effect.fail(new TailscaleStatusParseError({ cause: "unreadable serve status" }))
-        : Effect.succeed(holders);
     }),
   );
 
