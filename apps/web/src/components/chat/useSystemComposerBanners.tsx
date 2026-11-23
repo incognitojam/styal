@@ -234,19 +234,31 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         });
       } else {
         const connectionFailed = unavailableConnection.phase === "error";
+        const label = activeEnvironmentUnavailableState.label;
         items.push({
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
           variant: connectionFailed ? "error" : "warning",
           group: "environment",
           icon: <WifiOffIcon />,
-          title: `${activeEnvironmentUnavailableState.label} is ${
-            environmentReconnecting ? "reconnecting" : connectionFailed ? "unavailable" : "offline"
-          }`,
-          description: activeEnvironment ? (
-            <ConnectionDiagnosisHeadline environment={activeEnvironment} />
-          ) : connectionFailed ? (
-            unavailableConnection.error
-          ) : undefined,
+          title:
+            unavailableConnection.phase === "offline"
+              ? "This device is offline"
+              : unavailableConnection.phase === "connecting"
+                ? `Connecting to ${label}`
+                : unavailableConnection.phase === "available"
+                  ? `${label} is not connected`
+                  : `Can't reach ${label}`,
+          description:
+            unavailableConnection.phase === "offline" ? (
+              `Reconnects to ${label} when the network returns.`
+            ) : activeEnvironment ? (
+              <ConnectionDiagnosisHeadline
+                environment={activeEnvironment}
+                retrying={unavailableConnection.phase === "reconnecting"}
+              />
+            ) : connectionFailed ? (
+              unavailableConnection.error
+            ) : undefined,
           actions: (
             <>
               {unavailableConnection.phase !== "connecting" ? (
