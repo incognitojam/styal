@@ -5651,6 +5651,33 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15800
       retire_when: Upstream exposes automatic merge intent in thread badges without replacing the pull request's state or requiring an active agent monitor.
 
+  - id: pull-request-merge-wake
+    title: Wake the watching thread once when its pull request merges
+    status: review-needed
+    tier: keep
+    prs: []
+    invariants:
+      - When a host read or the stored snapshot finds a watched pull request merged and its thread has not settled, the thread gets one wake saying the pull request merged and styal stopped watching it, and the watch ends; a settled thread's watch ends without a wake, and a refused wake still ends the watch.
+      - A merged or closed detail read ends the watch even when the activity read fails.
+      - The merge wake supersedes that pull request's updates queued before it. Queued-wake revalidation cancels them, or drops their section from a wake that covers several pull requests, even when the host read finds the merge before the stored snapshot does, and the merge wake itself is delivered. Other final notices keep the wakes queued before them.
+    rationale: A merge used to end the watch silently, so an agent kept reporting that it was watching CI after the user merged (fork issue 1483). The fix was imported as a snapshot of an upstream proposal that closed unmerged. Upstream later woke on merge in its own way, with richer wording, merge wakes batched with the pass's other news and no wake after the agent's own CLI merge, but it cancels updates queued before the merge only once the stored snapshot says merged.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/PullRequestWatchReactor.ts
+      - packages/contracts/src/orchestrationV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/PullRequestWatchReactor.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/26271
+        - https://github.com/pingdotgg/t3code/pull/32582
+      retire_when: Upstream wakes the watching thread once on merge and cancels that pull request's updates queued before the merge, including when the host read finds the merge before the stored snapshot does.
+
   - id: pull-request-number-search-url
     title: Search pull requests by number from the URL
     status: maintained

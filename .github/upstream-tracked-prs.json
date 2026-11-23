@@ -241,12 +241,8 @@
       }
     },
     {
-      "pr": 32582,
-      "reason": "Imported provisionally as one snapshot to fix fork #1483: a watched merge wakes its thread once, including stored merged snapshots and terminal detail reads with failed activity reads; a refused wake still ends the watch. Adaptations use styal in wake text and retain the fork's direct closed-notice dispatch instead of upstream's later held-wake batching. Merge notices carry a supersedesUpdates stamp so the earlier stale-wake import (#21239) cancels older queued updates even when the host read discovers the merge before the stored snapshot updates; the final notice still delivers. Fork regression coverage verifies that host-read race, queued merge delivery and checks becoming successful in the sweep that discovers the merge. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the fork dispatch integration, rerun runtimeLayer.test.ts including stale queued updates and terminal wakes, then clear this snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior, record the decision and update the ledger where appropriate before clearing the marker.",
-      "snapshot": {
-        "base": "fc2b5de20cb572d2333e03284466e3c804d25c84",
-        "head": "a6acfd331f5fba158c30f0f15a80fce4bf73db83"
-      }
+      "pr": 26271,
+      "reason": "Upstream's own merge wake, after it closed the 32582 proposal the fork imported as a snapshot (ledger pull-request-merge-wake). It names the base branch, merge commit and merger, holds the merge wake for the pass so it combines with news on the thread's other watched pull requests, ends the watch without a wake after the thread's own agent merged or closed with its host's CLI, reads a merged snapshot once before ending, and keeps the watch holding its thread until the reactor ends it. It does not cancel updates queued before the merge until the stored snapshot says merged. When it arrives, the maintainer decides whether to take upstream's wording, batching and quiet end; keep the supersedesUpdates stamp and its revalidation so a merge still cancels that pull request's older queued updates and the merge wake is still delivered, and rerun runtimeLayer.test.ts."
     },
     {
       "pr": 31744,
