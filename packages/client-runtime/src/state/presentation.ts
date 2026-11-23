@@ -171,7 +171,8 @@ export function createEnvironmentPresentationAtoms<E>(input: {
     const next = new Map<EnvironmentId, EnvironmentPresentationWithProviders>();
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const presentation = get(presentationAtom(environmentId));
-      if (presentation === null) continue;
+      // An incompatible machine's accounts stay out of usage limits.
+      if (presentation === null || presentation.entry.unsupportedReason !== undefined) continue;
       const serverConfig = get(input.serverConfigValueAtom(environmentId));
       const prior = previous?.get(environmentId);
       next.set(

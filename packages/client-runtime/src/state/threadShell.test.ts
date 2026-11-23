@@ -470,12 +470,13 @@ describe("v2 thread shell lists", () => {
   });
 
   it.each([
-    { reason: "switched-off", state: { enabled: false } },
+    { reason: "switched-off", state: { enabled: false }, shown: false },
     {
       reason: "unsupported",
       state: { enabled: true, unsupportedReason: "Use a compatible client." },
+      shown: true,
     },
-  ])("leaves $reason environments out of navigation until restored", ({ state }) => {
+  ])("navigation lists $reason environments: $shown", ({ state, shown }) => {
     const { registry, threads, catalogValueAtom } = makeHarness([
       environmentId,
       remoteEnvironmentId,
@@ -495,7 +496,9 @@ describe("v2 thread shell lists", () => {
       registry.set(catalogValueAtom, { ...catalog, entries });
     };
     setRemotePaused(true);
-    expect(environmentsOf()).toEqual(new Set([environmentId]));
+    expect(environmentsOf()).toEqual(
+      new Set(shown ? [environmentId, remoteEnvironmentId] : [environmentId]),
+    );
     setRemotePaused(false);
     expect(environmentsOf()).toEqual(new Set([environmentId, remoteEnvironmentId]));
     dispose();
