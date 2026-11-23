@@ -1,10 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off -- These fixtures exercise the native recovery lock and socket boundary.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeURL from "node:url";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
 import { vi } from "vite-plus/test";
-import { assert, describe, it } from "@effect/vitest";
+import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -33,6 +35,8 @@ import {
   TailscaleCommandExitError,
   TailscaleCommandSpawnError,
   TailscaleServePortOccupiedError,
+  TailscaleServeRecoveryBusyError,
+  TailscaleServeRecordError,
   TailscaleStatusParseError,
 } from "./tailscale.ts";
 
@@ -96,10 +100,7 @@ function mockHandle(result: { stdout?: string; stderr?: string; code?: number })
 // The executable name depends on the host platform (`tailscale.exe` on
 // Windows), so pin it: these tests assert the posix spelling.
 function layerSpawner(spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]) {
-  return Layer.merge(
-    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    Layer.succeed(HostProcess.Platform, "linux"),
-  );
+  return Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
 }
 
 function layerMockSpawner(
@@ -119,20 +120,47 @@ function layerMockSpawner(
   );
 }
 
-const withRecoveryHome = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const scratch = new URL("../../../.scratch/", import.meta.url);
-    NodeFS.mkdirSync(scratch, { recursive: true });
-    const home = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        NodeFS.mkdtempSync(NodeURL.fileURLToPath(new URL("serve-recovery-test-", scratch))),
-      ),
+const layerRecoveryHome = Layer.mergeAll(
+  Layer.effect(
+    HostProcess.HomeDirectory,
+    Effect.acquireRelease(
+      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "serve-recovery-test-"))),
       (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
-    );
-    return yield* effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
-  }).pipe(Effect.scoped);
+    ),
+  ),
+  Layer.succeed(HostProcess.Environment, {}),
+  Layer.succeed(HostProcess.Platform, "linux"),
+);
 
-describe("tailscale", () => {
+function serveFixture() {
+  let status: unknown = null;
+  const writes: ReadonlyArray<string>[] = [];
+  const layer = layerMockSpawner((_command, args) => {
+    if (args[1] === "status") return { stdout: JSON.stringify(status) };
+    writes.push(args);
+    status = args.includes("off") ? null : serveConfig(8443, args.at(-1)!);
+    return {};
+  });
+  return {
+    layer,
+    writes,
+    setStatus: (value: unknown) => {
+      status = value;
+    },
+  };
+}
+
+const serverRoute = { localPort: 13773, servePort: 8443, reclaimDeadHandler: true } as const;
+const oldProxy = "http://127.0.0.1:39831";
+const refusalProbe = () =>
+  vi.spyOn(NodeNet.Socket.prototype, "connect").mockImplementation(function (this: NodeNet.Socket) {
+    queueMicrotask(() =>
+      this.emit("error", Object.assign(new Error("synthetic refusal"), { code: "ECONNREFUSED" })),
+    );
+    return this;
+  });
+
+it.layer(layerRecoveryHome, { buildPerTest: true })("tailscale", (it) => {
   it.effect("does not treat a non-T3 response on the HTTPS probe path as reachable", () =>
     Effect.gen(function* () {
       for (const [body, status] of [
@@ -562,249 +590,548 @@ describe("tailscale", () => {
   });
 
   it.effect.each([
-    { name: "dead private root", probe: "ECONNREFUSED", expected: true },
-    { name: "live private root", probe: "connect", expected: false },
-    { name: "Funnel root", probe: "ECONNREFUSED", expected: false, funnel: true },
-    {
-      name: "Funnel permission without handlers",
-      probe: "ECONNREFUSED",
-      expected: false,
-      funnelOnly: true,
-    },
-    { name: "extra mount", probe: "ECONNREFUSED", expected: false, extraMount: true },
-    { name: "foreground session", probe: "ECONNREFUSED", expected: false, foreground: true },
-    { name: "TCP forward", probe: "ECONNREFUSED", expected: false, tcp: true },
-    { name: "nonlocal backend", probe: "ECONNREFUSED", expected: false, remote: true },
-    { name: "timeout", probe: "timeout", expected: false },
-    { name: "permission failure", probe: "EACCES", expected: false },
-    { name: "unknown failure", probe: "UNKNOWN", expected: false },
-    { name: "mixed connection failures", probe: "mixed", expected: false },
-    {
-      name: "refused connections on both address families",
-      probe: "refusedAggregate",
-      expected: true,
-    },
-  ])("reclaims only a $name", (row) =>
+    { name: "unrecorded root", unrecorded: true },
+    { name: "persistent pairing root", persistent: true },
+    { name: "Funnel root", funnel: true },
+    { name: "Funnel permission without handlers", funnelOnly: true },
+    { name: "extra mount", extraMount: true },
+    { name: "foreground session", foreground: true },
+    { name: "TCP forward", tcp: true },
+    { name: "unix socket", proxy: "unix:/synthetic/app.sock" },
+    { name: "Text root", root: { Text: "other app" } },
+    { name: "Path root", root: { Path: "/synthetic/site" } },
+    { name: "proxy with an extra key", root: { Proxy: oldProxy, FutureHandler: true } },
+    { name: "second hostname", secondHost: true },
+    { name: "insecure HTTPS proxy", proxy: "https+insecure://127.0.0.1:39831" },
+    { name: "localhost proxy", proxy: "http://localhost:39831" },
+    { name: "bare-port proxy", proxy: "39831" },
+    { name: "path-suffixed proxy", proxy: "http://127.0.0.1:39831/app" },
+    { name: "nonlocal backend", proxy: "http://192.0.2.1:39831" },
+    { name: "unknown top-level field", topUnknown: true },
+    { name: "unknown TCP field", tcpUnknown: true },
+    { name: "unknown web-site field", webUnknown: true },
+    { name: "live backend", probe: "connect" },
+    { name: "timeout", probe: "timeout" },
+    { name: "permission failure", probe: "EACCES" },
+    { name: "unknown probe failure", probe: "UNKNOWN" },
+    { name: "synchronous probe failure", probe: "throw" },
+  ])("refuses $name even after repeated checks", (row) =>
     Effect.gen(function* () {
+      const fixture = serveFixture();
+      if (!row.unrecorded) {
+        yield* ensureTailscaleServe({
+          localPort: 39831,
+          servePort: 8443,
+          reclaimDeadHandler: !row.persistent,
+        }).pipe(Effect.provide(fixture.layer));
+      }
+      const config = serveConfig(8443, row.proxy ?? oldProxy);
+      fixture.setStatus({
+        ...(row.funnelOnly ? {} : config),
+        ...(row.funnel || row.funnelOnly
+          ? { AllowFunnel: { "desktop.tail.ts.net:8443": true } }
+          : {}),
+        ...(row.topUnknown ? { FutureRoutingMode: "protected" } : {}),
+        ...(row.tcp || row.tcpUnknown
+          ? {
+              TCP: {
+                8443: {
+                  HTTPS: true,
+                  ...(row.tcp
+                    ? { TCPForward: "127.0.0.1:39831" }
+                    : { FutureRoutingMode: "protected" }),
+                },
+              },
+            }
+          : {}),
+        ...(row.funnelOnly
+          ? {}
+          : {
+              Web: {
+                ...config.Web,
+                "desktop.tail.ts.net:8443": {
+                  ...(row.webUnknown ? { FutureRoutingMode: "protected" } : {}),
+                  Handlers: {
+                    "/": row.root ?? { Proxy: row.proxy ?? oldProxy },
+                    ...(row.extraMount ? { "/api": { Text: "other app" } } : {}),
+                  },
+                },
+                ...(row.secondHost
+                  ? { "other.example.ts.net:8443": { Handlers: { "/": { Proxy: oldProxy } } } }
+                  : {}),
+              },
+            }),
+        ...(row.foreground ? { Foreground: { session: config } } : {}),
+      });
       using _probe = vi.spyOn(NodeNet.Socket.prototype, "connect").mockImplementation(function (
         this: NodeNet.Socket,
       ) {
+        if (row.probe === "throw") throw new Error("synthetic probe failure");
+        const event = row.probe === "connect" || row.probe === "timeout" ? row.probe : "error";
         queueMicrotask(() =>
           this.emit(
-            row.probe === "connect" || row.probe === "timeout" ? row.probe : "error",
-            row.probe === "mixed" || row.probe === "refusedAggregate"
-              ? Object.assign(
-                  new AggregateError([
-                    Object.assign(new Error("synthetic refusal"), { code: "ECONNREFUSED" }),
-                    Object.assign(new Error("synthetic second failure"), {
-                      code: row.probe === "mixed" ? "EACCES" : "ECONNREFUSED",
-                    }),
-                  ]),
-                  { code: "ECONNREFUSED" },
-                )
-              : Object.assign(new Error("synthetic probe failure"), { code: row.probe }),
+            event,
+            Object.assign(new Error("synthetic failure"), { code: row.probe ?? "ECONNREFUSED" }),
           ),
         );
         return this;
       });
-      const commands: ReadonlyArray<string>[] = [];
-      const config = serveConfig(
-        8443,
-        row.remote ? "http://192.0.2.1:39831" : "http://127.0.0.1:39831",
-      );
-      const layer = layerMockSpawner((_command, args) => {
-        commands.push(args);
-        return {
-          stdout: JSON.stringify({
-            ...(row.funnelOnly ? {} : config),
-            ...(row.funnel || row.funnelOnly
-              ? { AllowFunnel: { "desktop.tail.ts.net:8443": true } }
-              : {}),
-            ...(row.extraMount
-              ? {
-                  Web: {
-                    "desktop.tail.ts.net:8443": {
-                      Handlers: {
-                        "/": { Proxy: "http://127.0.0.1:39831" },
-                        "/api": { Text: "other app" },
-                      },
-                    },
-                  },
-                }
-              : {}),
-            ...(row.foreground ? { Foreground: { session: config } } : {}),
-            ...(row.tcp ? { TCP: { 8443: { HTTPS: true, TCPForward: "127.0.0.1:39831" } } } : {}),
-          }),
-        };
-      });
-      const result = yield* ensureTailscaleServe({
-        localPort: 13773,
-        servePort: 8443,
-        reclaimDeadHandler: true,
-      }).pipe(Effect.result, Effect.provide(layer), withRecoveryHome);
-      assert.equal(result._tag === "Success", row.expected);
-      assert.deepEqual(
-        commands.filter((args) => args[1] !== "status"),
-        row.expected ? [["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"]] : [],
-      );
-      if (!row.expected) {
-        assert.equal(
-          result._tag === "Failure" && result.failure._tag,
-          "TailscaleServePortOccupiedError",
-        );
-      }
-    }).pipe(Effect.scoped),
+      const before = fixture.writes.length;
+      yield* ensureTailscaleServe({
+        ...serverRoute,
+        previousDeadProxy: row.proxy ?? oldProxy,
+      }).pipe(Effect.result, Effect.provide(fixture.layer));
+      yield* ensureTailscaleServe({
+        ...serverRoute,
+        previousDeadProxy: row.proxy ?? oldProxy,
+      }).pipe(Effect.result, Effect.provide(fixture.layer));
+      assert.equal(fixture.writes.length, before);
+    }),
   );
 
-  it.effect.each(["live backend", "unreadable status"])(
-    "repairs after a %s on a later tick but leaves a removed route absent",
-    (initial) =>
+  it.effect("reclaims only the recorded root after two consecutive refusals", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
+        servePort: 8443,
+        reclaimDeadHandler: true,
+      }).pipe(Effect.provide(fixture.layer));
+      using _probe = refusalProbe();
+      const first = yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+      assert.equal(first, oldProxy);
+      assert.equal(fixture.writes.length, 1, "one refusal must not write");
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: first }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      assert.deepEqual(fixture.writes, [
+        ["serve", "--bg", "--https=8443", oldProxy],
+        ["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"],
+      ]);
+    }),
+  );
+
+  it.effect.each(["removed", "replaced", "protected", "clean shutdown", "pairing observation"])(
+    "forgets ownership after a %s mapping",
+    (change) =>
       Effect.gen(function* () {
-        let probes = 0;
-        const firstProbe = yield* Deferred.make<void>();
+        const fixture = serveFixture();
+        yield* ensureTailscaleServe({
+          localPort: 39831,
+          servePort: 8443,
+          reclaimDeadHandler: true,
+        }).pipe(Effect.provide(fixture.layer));
+        if (change === "clean shutdown") {
+          yield* disableTailscaleServe({ localPort: 39831, servePort: 8443 }).pipe(
+            Effect.provide(fixture.layer),
+          );
+        } else {
+          fixture.setStatus(
+            change === "removed"
+              ? null
+              : change === "replaced" || change === "pairing observation"
+                ? serveConfig(8443, "http://127.0.0.1:39832")
+                : { ...serveConfig(8443, oldProxy), FutureRoutingMode: "protected" },
+          );
+          yield* (
+            change === "pairing observation"
+              ? hasExactTailscaleServe({ servePort: 8443, proxy: oldProxy }).pipe(Effect.asVoid)
+              : ensureTailscaleServe({ ...serverRoute, repairOnly: true }).pipe(Effect.asVoid)
+          ).pipe(Effect.result, Effect.provide(fixture.layer));
+        }
+        fixture.setStatus(serveConfig(8443, oldProxy));
+        using _probe = refusalProbe();
+        const before = fixture.writes.length;
+        yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+          Effect.result,
+          Effect.provide(fixture.layer),
+        );
+        assert.equal(
+          fixture.writes.length,
+          before,
+          "a reused local port must not restore an old authorization",
+        );
+      }),
+  );
+
+  it.effect("replaces the record on takeover rather than retaining previous targets", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
+        servePort: 8443,
+        reclaimDeadHandler: true,
+      }).pipe(Effect.provide(fixture.layer));
+      using _probe = refusalProbe();
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      fixture.setStatus(serveConfig(8443, oldProxy));
+      const before = fixture.writes.length;
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+        Effect.result,
+        Effect.provide(fixture.layer),
+      );
+      assert.equal(fixture.writes.length, before);
+    }),
+  );
+
+  it.effect(
+    "the repair loop waits for a second refused tick and resets after an uncertain probe",
+    () =>
+      Effect.gen(function* () {
+        const fixture = serveFixture();
+        yield* ensureTailscaleServe({
+          localPort: 39831,
+          servePort: 8443,
+          reclaimDeadHandler: true,
+        }).pipe(Effect.provide(fixture.layer));
+        const probes = yield* Deferred.make<void>();
+        let count = 0;
         using _probe = vi.spyOn(NodeNet.Socket.prototype, "connect").mockImplementation(function (
           this: NodeNet.Socket,
         ) {
-          probes += 1;
           queueMicrotask(() => {
-            if (initial === "live backend" && probes === 1) {
-              this.emit("connect");
-              Deferred.doneUnsafe(firstProbe, Effect.void);
-            } else {
-              this.emit(
-                "error",
-                Object.assign(new Error("synthetic refusal"), { code: "ECONNREFUSED" }),
-              );
-            }
+            count += 1;
+            this.emit(
+              count === 2 ? "timeout" : "error",
+              Object.assign(new Error("synthetic refusal"), { code: "ECONNREFUSED" }),
+            );
+            Deferred.doneUnsafe(probes, Effect.void);
           });
           return this;
         });
-        let unreadable = initial === "unreadable status";
-        let status = serveStatusJson(8443, "http://127.0.0.1:39831");
-        let writes = 0;
-        const repaired = yield* Deferred.make<void>();
-        const absentRead = yield* Deferred.make<void>();
-        const layer = layerSpawner(
-          ChildProcessSpawner.make((command) =>
-            Effect.gen(function* () {
-              assert.equal(command._tag, "StandardCommand");
-              if (command._tag !== "StandardCommand")
-                return yield* Effect.die("unexpected pipeline");
-              if (command.args[1] === "status") {
-                if (unreadable) {
-                  unreadable = false;
-                  yield* Deferred.succeed(firstProbe, undefined);
-                  return mockHandle({ stdout: "invalid status" });
-                }
-                if (status === "null") yield* Deferred.succeed(absentRead, undefined);
-                return mockHandle({ stdout: status });
-              }
-              writes += 1;
-              status = "null";
-              yield* Deferred.succeed(repaired, undefined);
-              return mockHandle({});
-            }),
-          ),
-        );
         yield* repairTailscaleServe({
           localPort: 13773,
           localHost: "127.0.0.1",
           servePort: 8443,
-        }).pipe(Effect.provide(layer), Effect.forkScoped);
+        }).pipe(Effect.provide(fixture.layer), Effect.forkScoped);
         yield* TestClock.adjust("30 seconds");
-        yield* Deferred.await(firstProbe);
+        yield* Deferred.await(probes);
+        assert.equal(fixture.writes.length, 1);
         yield* TestClock.adjust("30 seconds");
-        yield* Deferred.await(repaired);
-        assert.equal(probes, initial === "live backend" ? 2 : 1);
-        assert.equal(writes, 1);
+        assert.equal(fixture.writes.length, 1);
         yield* TestClock.adjust("30 seconds");
-        yield* Deferred.await(absentRead);
-        assert.equal(writes, 1);
-      }).pipe(withRecoveryHome),
+        assert.equal(fixture.writes.length, 1);
+        yield* TestClock.adjust("30 seconds");
+        assert.equal(fixture.writes.length, 2);
+      }),
   );
 
-  it.effect("allows only one overlapping server to reclaim a dead root", () =>
-    Effect.gen(function* () {
-      using _probe = vi.spyOn(NodeNet.Socket.prototype, "connect").mockImplementation(function (
-        this: NodeNet.Socket,
-      ) {
-        queueMicrotask(() =>
-          this.emit(
-            "error",
-            Object.assign(new Error("synthetic refusal"), { code: "ECONNREFUSED" }),
-          ),
+  it.effect(
+    "pairing an existing recorded route keeps it persistent through automatic shutdown",
+    () =>
+      Effect.gen(function* () {
+        const fixture = serveFixture();
+        yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+        yield* ensureTailscaleServe({ localPort: 13773, servePort: 8443 }).pipe(
+          Effect.provide(fixture.layer),
         );
-        return this;
-      });
-      const writing = yield* Deferred.make<void>();
-      const releaseWrite = yield* Deferred.make<void>();
-      let writes = 0;
-      const layer = layerSpawner(
-        ChildProcessSpawner.make((command) =>
-          Effect.gen(function* () {
-            if (command._tag !== "StandardCommand") return yield* Effect.die("unexpected pipeline");
-            if (command.args[1] === "status") {
-              return mockHandle({ stdout: serveStatusJson(8443, "http://127.0.0.1:39831") });
-            }
-            writes += 1;
-            yield* Deferred.succeed(writing, undefined);
-            yield* Deferred.await(releaseWrite);
-            return mockHandle({});
+        const removed = yield* disableTailscaleServe({
+          localPort: 13773,
+          servePort: 8443,
+          recordedOnly: true,
+        }).pipe(Effect.provide(fixture.layer));
+        assert.isFalse(removed);
+        assert.equal(fixture.writes.length, 1);
+        using _probe = refusalProbe();
+        yield* ensureTailscaleServe({
+          localPort: 13774,
+          servePort: 8443,
+          reclaimDeadHandler: true,
+          previousDeadProxy: "http://127.0.0.1:13773",
+        }).pipe(Effect.result, Effect.provide(fixture.layer));
+        assert.equal(fixture.writes.length, 1);
+      }),
+  );
+
+  it.effect.each(["win32", "darwin", "linux"] as const)(
+    "stores one bounded ownership record in the %s account state directory",
+    (platform) =>
+      Effect.gen(function* () {
+        const home = yield* HostProcess.HomeDirectory;
+        const base =
+          platform === "win32"
+            ? NodePath.join(home, "local-data")
+            : platform === "darwin"
+              ? NodePath.join(home, "Library", "Application Support")
+              : NodePath.join(home, "state-data");
+        const fixture = serveFixture();
+        yield* ensureTailscaleServe(serverRoute).pipe(
+          Effect.provide(fixture.layer),
+          Effect.provideService(HostProcess.Platform, platform),
+          Effect.provideService(HostProcess.Environment, {
+            LOCALAPPDATA: base,
+            XDG_STATE_HOME: base,
           }),
-        ),
-      );
-      const first = yield* ensureTailscaleServe({
-        localPort: 13773,
+        );
+        const db = new NodeSqlite.DatabaseSync(
+          NodePath.join(base, "styal", "tailscale-serve-8443.sqlite"),
+        );
+        try {
+          assert.deepEqual(
+            db
+              .prepare("SELECT proxy, managed FROM ownership")
+              .all()
+              .map((row) => ({ ...row })),
+            [{ proxy: "http://127.0.0.1:13773", managed: 1 }],
+          );
+        } finally {
+          db.close();
+        }
+      }),
+  );
+
+  it.effect.each(["directory", "open"] as const)(
+    "reports a %s storage failure without claiming another app owns the port",
+    (stage) =>
+      Effect.gen(function* () {
+        const home = yield* HostProcess.HomeDirectory;
+        const directory = NodePath.join(home, ".local", "state", "styal");
+        if (stage === "directory") {
+          NodeFS.mkdirSync(NodePath.dirname(directory), { recursive: true });
+          NodeFS.writeFileSync(directory, "blocked directory");
+        } else {
+          NodeFS.mkdirSync(NodePath.join(directory, "tailscale-serve-8443.sqlite"), {
+            recursive: true,
+          });
+        }
+        const fixture = serveFixture();
+        const error = yield* ensureTailscaleServe(serverRoute).pipe(
+          Effect.flip,
+          Effect.provide(fixture.layer),
+        );
+        assert.instanceOf(error, TailscaleServeRecordError);
+        assert.equal(error.stage, stage);
+        assert.include(error.message, "permissions");
+        assert.equal(fixture.writes.length, 0);
+      }),
+  );
+
+  it.effect("serializes record changes and distinguishes lock contention across processes", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
         servePort: 8443,
         reclaimDeadHandler: true,
-      }).pipe(Effect.provide(layer), Effect.forkChild);
-      yield* Deferred.await(writing);
+      }).pipe(Effect.provide(fixture.layer));
       const home = yield* HostProcess.HomeDirectory;
-      const second = yield* ensureTailscaleServe({
-        localPort: 13774,
-        servePort: 8443,
-        reclaimDeadHandler: true,
-      }).pipe(Effect.provide(layer), Effect.flip);
-      assert.instanceOf(second, TailscaleServePortOccupiedError);
-      const peer = NodeChildProcess.spawnSync(process.execPath, [
-        "--input-type=module",
-        "-e",
-        `
+      const path = NodePath.join(
+        home,
+        ".local",
+        "state",
+        "styal",
+        "tailscale-serve-8443.sqlite.lock",
+      );
+      const db = new NodeSqlite.DatabaseSync(path);
+      try {
+        db.exec("BEGIN EXCLUSIVE");
+        const error = yield* ensureTailscaleServe(serverRoute).pipe(
+          Effect.flip,
+          Effect.provide(fixture.layer),
+        );
+        assert.instanceOf(error, TailscaleServeRecoveryBusyError);
+        const peer = NodeChildProcess.spawnSync(process.execPath, [
+          "--input-type=module",
+          "-e",
+          `
         import { DatabaseSync } from "node:sqlite";
         const db = new DatabaseSync(process.argv[1]);
         try { db.exec("BEGIN EXCLUSIVE"); process.exitCode = 1; }
         catch (error) { process.exitCode = error.errcode === 5 ? 0 : 2; }
         finally { db.close(); }
       `,
-        `${home}/.cache/styal/tailscale-serve-8443.sqlite`,
-      ]);
-      assert.equal(peer.status, 0, "another process must also be excluded");
-      assert.equal(writes, 1);
-      for (const status of ["null", serveStatusJson(8443, "http://127.0.0.1:13774")]) {
-        let freePortWrites = 0;
-        yield* ensureTailscaleServe({
-          localPort: 13774,
-          servePort: 8443,
-          reclaimDeadHandler: true,
-        }).pipe(
-          Effect.provide(
-            layerMockSpawner((_command, args) => {
-              if (args[1] !== "status") freePortWrites += 1;
-              return { stdout: status };
-            }),
-          ),
-        );
-        assert.equal(freePortWrites, status === "null" ? 1 : 0);
+          path,
+        ]);
+        assert.equal(peer.status, 0);
+        assert.equal(fixture.writes.length, 1);
+      } finally {
+        db.close();
       }
-      yield* Deferred.succeed(releaseWrite, undefined);
-      yield* Fiber.join(first);
+      using _probe = refusalProbe();
+      const first = yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: first }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      assert.equal(fixture.writes.length, 2);
+    }),
+  );
+
+  it.effect("keeps ownership across temporary status-command failures", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
       yield* ensureTailscaleServe({
-        localPort: 13774,
+        localPort: 39831,
         servePort: 8443,
         reclaimDeadHandler: true,
-      }).pipe(Effect.provide(layer));
-      assert.equal(writes, 2);
-    }).pipe(withRecoveryHome),
+      }).pipe(Effect.provide(fixture.layer));
+      yield* ensureTailscaleServe(serverRoute).pipe(
+        Effect.result,
+        Effect.provide(layerMockSpawner(() => ({ code: 1, stderr: "daemon not running" }))),
+      );
+      using _probe = refusalProbe();
+      const first = yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: first }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      assert.equal(fixture.writes.length, 2);
+    }),
+  );
+
+  it.effect("a stale shutdown cannot erase the successor's ownership", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
+        servePort: 8443,
+        reclaimDeadHandler: true,
+      }).pipe(Effect.provide(fixture.layer));
+      using _probe = refusalProbe();
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      yield* disableTailscaleServe({ localPort: 39831, servePort: 8443, recordedOnly: true }).pipe(
+        Effect.flip,
+        Effect.provide(fixture.layer),
+      );
+      const first = yield* ensureTailscaleServe({ ...serverRoute, localPort: 13774 }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      yield* ensureTailscaleServe({
+        ...serverRoute,
+        localPort: 13774,
+        previousDeadProxy: first,
+      }).pipe(Effect.provide(fixture.layer));
+      assert.equal(fixture.writes.length, 3);
+    }),
+  );
+
+  it.effect(
+    "automatic shutdown reconciles a changed proxy before skipping an unrecorded mapping",
+    () =>
+      Effect.gen(function* () {
+        const fixture = serveFixture();
+        yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+        fixture.setStatus(serveConfig(8443, oldProxy));
+        assert.isFalse(
+          yield* disableTailscaleServe({
+            localPort: 39831,
+            servePort: 8443,
+            recordedOnly: true,
+          }).pipe(Effect.provide(fixture.layer)),
+        );
+        fixture.setStatus(serveConfig(8443, "http://127.0.0.1:13773"));
+        using _probe = refusalProbe();
+        yield* ensureTailscaleServe({
+          ...serverRoute,
+          localPort: 13774,
+          previousDeadProxy: "http://127.0.0.1:13773",
+        }).pipe(Effect.result, Effect.provide(fixture.layer));
+        assert.equal(fixture.writes.length, 1);
+      }),
+  );
+
+  it.effect("does not inspect other ports or Tailscale Services", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
+        servePort: 8443,
+        reclaimDeadHandler: true,
+      }).pipe(Effect.provide(fixture.layer));
+      const config = serveConfig(8443, oldProxy);
+      fixture.setStatus({
+        ...config,
+        TCP: { ...config.TCP, 80: { HTTP: true, FutureRoutingMode: "protected" } },
+        Web: { ...config.Web, "other.example.ts.net:80": { FutureRoutingMode: "protected" } },
+        AllowFunnel: { "other.example.ts.net:443": true },
+        Services: { "svc:other": { FutureServiceMode: "protected" } },
+      });
+      using _probe = refusalProbe();
+      const first = yield* ensureTailscaleServe(serverRoute).pipe(Effect.provide(fixture.layer));
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: first }).pipe(
+        Effect.provide(fixture.layer),
+      );
+      assert.equal(fixture.writes.length, 2);
+    }),
+  );
+
+  it.effect("cleans up its recorded non-loopback mapping without making it recoverable", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      const route = { ...serverRoute, localHost: "192.0.2.8" };
+      yield* ensureTailscaleServe(route).pipe(Effect.provide(fixture.layer));
+      using _probe = refusalProbe();
+      yield* ensureTailscaleServe({
+        ...serverRoute,
+        previousDeadProxy: "http://192.0.2.8:13773",
+      }).pipe(Effect.result, Effect.provide(fixture.layer));
+      assert.equal(fixture.writes.length, 1);
+      assert.isTrue(
+        yield* disableTailscaleServe({ ...route, recordedOnly: true }).pipe(
+          Effect.provide(fixture.layer),
+        ),
+      );
+      assert.equal(fixture.writes.length, 2);
+    }),
+  );
+
+  it.effect("invalidates ownership durably before a daemon write even if that command fails", () =>
+    Effect.gen(function* () {
+      const fixture = serveFixture();
+      yield* ensureTailscaleServe({
+        localPort: 39831,
+        servePort: 8443,
+        reclaimDeadHandler: true,
+      }).pipe(Effect.provide(fixture.layer));
+      const home = yield* HostProcess.HomeDirectory;
+      const path = NodePath.join(home, ".local", "state", "styal", "tailscale-serve-8443.sqlite");
+      const failing = layerMockSpawner((_command, args) => {
+        if (args[1] === "status") return { stdout: serveStatusJson(8443, oldProxy) };
+        const reader = new NodeSqlite.DatabaseSync(path, { readOnly: true });
+        try {
+          assert.deepEqual(reader.prepare("SELECT proxy FROM ownership").all(), []);
+        } finally {
+          reader.close();
+        }
+        return { code: 1, stderr: "synthetic write failure" };
+      });
+      using _probe = refusalProbe();
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+        Effect.result,
+        Effect.provide(failing),
+      );
+      yield* ensureTailscaleServe({ ...serverRoute, previousDeadProxy: oldProxy }).pipe(
+        Effect.result,
+        Effect.provide(fixture.layer),
+      );
+      assert.equal(fixture.writes.length, 1);
+    }),
+  );
+
+  it.effect(
+    "does not record a server mapping when the CLI reports success without installing it",
+    () =>
+      Effect.gen(function* () {
+        const fixture = serveFixture();
+        const noOp = layerMockSpawner((_command, args) =>
+          args[1] === "status" ? { stdout: "null" } : {},
+        );
+        const error = yield* ensureTailscaleServe(serverRoute).pipe(
+          Effect.flip,
+          Effect.provide(noOp),
+        );
+        assert.equal(error._tag, "TailscaleServeNotConfiguredError");
+        fixture.setStatus(serveConfig(8443, "http://127.0.0.1:13773"));
+        using _probe = refusalProbe();
+        yield* ensureTailscaleServe({
+          ...serverRoute,
+          localPort: 13774,
+          previousDeadProxy: "http://127.0.0.1:13773",
+        }).pipe(Effect.result, Effect.provide(fixture.layer));
+        assert.equal(fixture.writes.length, 0);
+      }),
   );
 
   it.effect("replaces a handler only when its environment was already verified", () => {

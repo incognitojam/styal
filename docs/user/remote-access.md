@@ -189,12 +189,18 @@ default-port mapping with:
 tailscale serve --https=443 --set-path=/ off
 ```
 
-If that port has a different Serve handler, styal leaves it unchanged. A server
-started with Tailscale HTTPS can recover a single private root mapping after its
-old local backend stops listening, at startup or on a later 30-second check. It
-leaves Funnel, extra mounts, and foreground sessions alone. Choose another port
-with `--tailscale-serve-port`. See
-`npx @styal/cli pair --help` for other pairing options.
+styal only recovers a private root mapping it recorded creating for an
+automatically managed server, targeting an HTTP loopback IP address. Its backend
+must refuse connections on two consecutive checks, 30 seconds apart. Startup
+makes the first observation; it never takes over on that first look. A live
+backend or an uncertain probe resets the two-check requirement. Pairing mappings,
+Funnel, extra mounts, foreground sessions, and unrecognized configuration stay
+unchanged.
+
+Mappings from older releases have no ownership record and are not recovered.
+Choose another port with `--tailscale-serve-port`, or, after verifying that the
+old mapping is no longer needed, remove it manually with the command above and
+restart styal. See `npx @styal/cli pair --help` for other pairing options.
 
 ### Hosted web app
 

@@ -25,8 +25,11 @@ const explainCommandFailure = (error: TailscaleServeError): string | undefined =
   error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
     ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
     : error._tag === "TailscaleServePortOccupiedError"
-      ? "the port already belongs to a different Tailscale Serve handler"
-      : undefined;
+      ? error.message
+      : error._tag === "TailscaleServeRecordError" ||
+          error._tag === "TailscaleServeRecoveryBusyError"
+        ? error.message
+        : undefined;
 
 export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
   "TailscaleUnavailableError",

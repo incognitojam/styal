@@ -145,17 +145,58 @@ export class TailscaleStatusParseError extends Schema.TaggedError<TailscaleStatu
 
 export class TailscaleServePortOccupiedError extends Schema.TaggedError<TailscaleServePortOccupiedError>()(
   "TailscaleServePortOccupiedError",
+  { servePort: Schema.Number, unrecorded: Schema.optional(Schema.Boolean) },
+) {
+  override get message(): string {
+    return this.unrecorded
+      ? `Tailscale Serve port ${this.servePort} is not recorded as server-managed (including mappings from older releases or pairing). Choose --tailscale-serve-port, or remove the stale mapping manually with tailscale serve --https=${this.servePort} --set-path=/ off before restarting.`
+      : `Tailscale Serve port ${this.servePort} has a protected or unrecognized mapping. Choose --tailscale-serve-port, or inspect and remove the stale mapping manually before restarting.`;
+  }
+}
+
+export class TailscaleServeRecoveryBusyError extends Schema.TaggedError<TailscaleServeRecoveryBusyError>()(
+  "TailscaleServeRecoveryBusyError",
   { servePort: Schema.Number },
 ) {
   override get message(): string {
-    return `Tailscale Serve port ${this.servePort} is already configured by another handler.`;
+    return `Another styal process is updating Tailscale Serve port ${this.servePort}; retry after that operation finishes.`;
+  }
+}
+
+export class TailscaleServeRecordError extends Schema.TaggedError<TailscaleServeRecordError>()(
+  "TailscaleServeRecordError",
+  {
+    stage: Schema.Literals(["directory", "open", "lock", "record"]),
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    const action = {
+      directory: "create the per-account Serve state directory",
+      open: "open the per-account Serve ownership record",
+      lock: "lock the per-account Serve ownership record",
+      record: "read or save the per-account Serve ownership record",
+    }[this.stage];
+    return `Could not ${action}; check this account's state-directory permissions and available disk space. Automatic recovery requires a usable ownership record.`;
+  }
+}
+
+export class TailscaleServeNotConfiguredError extends Schema.TaggedError<TailscaleServeNotConfiguredError>()(
+  "TailscaleServeNotConfiguredError",
+  { servePort: Schema.Number },
+) {
+  override get message(): string {
+    return `tailscale serve reported success but port ${this.servePort} does not have the requested mapping. Inspect Serve status and the tailnet's HTTPS settings before retrying; no ownership was recorded.`;
   }
 }
 
 export type TailscaleServeError =
   | TailscaleCommandError
   | TailscaleStatusParseError
-  | TailscaleServePortOccupiedError;
+  | TailscaleServePortOccupiedError
+  | TailscaleServeRecoveryBusyError
+  | TailscaleServeRecordError
+  | TailscaleServeNotConfiguredError;
 
 const TailscaleStatusSelf = Schema.Struct({
   DNSName: Schema.optional(Schema.Unknown),
@@ -222,9 +263,60 @@ const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<s
 const collectStderr = collectStdout;
 
 const decodeTailscaleStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleStatusJson));
+const TailscaleServeRawConfig = Schema.Struct({
+  TCP: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  Web: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  AllowFunnel: TailscaleServeConfigJson.fields.AllowFunnel,
+});
 const decodeTailscaleServeStatusJson = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.NullOr(TailscaleServeStatusJson)),
+  Schema.fromJsonString(
+    Schema.NullOr(
+      Schema.Struct({
+        ...TailscaleServeRawConfig.fields,
+        Services: Schema.optional(Schema.Unknown),
+        Foreground: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+      }),
+    ),
+  ),
+  { onExcessProperty: "error" },
 );
+const decodeServeRawConfig = Schema.decodeUnknownEffect(TailscaleServeRawConfig, {
+  onExcessProperty: "error",
+});
+const decodeServeConfig = Schema.decodeUnknownEffect(TailscaleServeConfigJson, {
+  onExcessProperty: "error",
+});
+
+const selectedServeConfig = Effect.fn("tailscale.selectedServeConfig")(function* (
+  raw: unknown,
+  servePort: number,
+) {
+  const config = yield* decodeServeRawConfig(raw);
+  return yield* decodeServeConfig({
+    TCP:
+      config.TCP === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(config.TCP).filter(([port]) => Number(port) === servePort),
+          ),
+    Web:
+      config.Web === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(config.Web).filter(
+              ([authority]) => authorityPort(authority) === servePort,
+            ),
+          ),
+    AllowFunnel:
+      config.AllowFunnel === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(config.AllowFunnel).filter(
+              ([authority]) => authorityPort(authority) === servePort,
+            ),
+          ),
+  });
+});
 
 function normalizeMagicDnsName(status: TailscaleStatusJson): string | null {
   const dnsName = status.Self?.DNSName;
@@ -513,7 +605,7 @@ function authorityPort(authority: string): number | null {
 }
 
 function servePortState(
-  status: TailscaleServeStatusJson,
+  status: Omit<TailscaleServeStatusJson, "Services">,
   input: { readonly servePort: number; readonly proxy: string },
 ): TailscaleServePortState {
   // Foreground handlers belong to their CLI session and override background mappings.
@@ -572,31 +664,56 @@ const readTailscaleServePortState = (input: {
   readonly proxy: string;
 }): Effect.Effect<
   TailscaleServePortState,
-  TailscaleCommandError | TailscaleStatusParseError,
+  TailscaleCommandError | TailscaleServePortOccupiedError,
   ChildProcessSpawner.ChildProcessSpawner
 > =>
   runTailscaleCommand(["serve", "status", "--json"], TAILSCALE_STATUS_TIMEOUT).pipe(
     Effect.flatMap((stdout) =>
-      decodeTailscaleServeStatusJson(stdout).pipe(
-        Effect.mapError((cause) => new TailscaleStatusParseError({ cause })),
+      Effect.gen(function* () {
+        const raw = yield* decodeTailscaleServeStatusJson(stdout);
+        if (raw === null) return "absent" as const;
+        const config = yield* selectedServeConfig(
+          { TCP: raw.TCP, Web: raw.Web, AllowFunnel: raw.AllowFunnel },
+          input.servePort,
+        );
+        const foreground = yield* Effect.forEach(
+          Object.entries(raw.Foreground ?? {}),
+          ([name, value]) =>
+            selectedServeConfig(value, input.servePort).pipe(
+              Effect.map((config) => [name, config] as const),
+            ),
+        );
+        return servePortState({ ...config, Foreground: Object.fromEntries(foreground) }, input);
+      }).pipe(
+        Effect.mapError(() => new TailscaleServePortOccupiedError({ servePort: input.servePort })),
       ),
     ),
-    Effect.map((status) => (status === null ? "absent" : servePortState(status, input))),
   );
 
 /** Checks the live configuration without changing handlers or probing HTTPS. */
 export const hasExactTailscaleServe = (input: {
   readonly servePort: number;
   readonly proxy: string;
-}) => readTailscaleServePortState(input).pipe(Effect.map((state) => state === "exact"));
+}) =>
+  withServeRecord(input.servePort, (db) =>
+    readRecordedServePortState(db, input).pipe(Effect.map(({ state }) => state === "exact")),
+  );
+
+const loopbackProxyTarget = (proxy: string) => {
+  const match = /^http:\/\/(\[[^\]]+\]|[^:/]+):([1-9]\d*)$/u.exec(proxy);
+  if (match === null) return undefined;
+  const host = normalizeHostname(match[1]!);
+  const port = Number(match[2]);
+  return NodeNet.isIP(host) !== 0 && isLocalLoopbackHost(host) && port <= 65535
+    ? { host, port }
+    : undefined;
+};
 
 const isDeadLoopbackProxy = Effect.fn("tailscale.isDeadLoopbackProxy")(function* (proxy: string) {
-  const target = dialedHostPort(expandProxy(proxy));
-  if (target === undefined || !isLocalLoopbackHost(target.host)) return false;
-  const port = Number(target.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  const target = loopbackProxyTarget(proxy);
+  if (target === undefined) return false;
   return yield* Effect.callback<boolean>((resume) => {
-    const socket = NodeNet.createConnection({ host: normalizeHostname(target.host), port });
+    const socket = NodeNet.createConnection({ host: target.host, port: target.port });
     const settle = (dead: boolean) => {
       socket.destroy();
       resume(Effect.succeed(dead));
@@ -618,35 +735,100 @@ const isDeadLoopbackProxy = Effect.fn("tailscale.isDeadLoopbackProxy")(function*
     });
     socket.setTimeout(250);
     return Effect.sync(() => socket.destroy());
-  });
+  }).pipe(Effect.catchDefect(() => Effect.succeed(false)));
 });
 
-const withServeRecoveryLock = Effect.fn("tailscale.withServeRecoveryLock")(function* <A, E, R>(
+const withServeRecord = Effect.fn("tailscale.withServeRecord")(function* <A, E, R>(
   servePort: number,
-  effect: Effect.Effect<A, E, R>,
+  operation: (db: NodeSqlite.DatabaseSync) => Effect.Effect<A, E, R>,
 ) {
   const home = yield* HostProcess.HomeDirectory;
+  const platform = yield* HostProcess.Platform;
+  const env = yield* HostProcess.Environment;
+  const base =
+    platform === "win32"
+      ? env.LOCALAPPDATA || NodePath.join(home, "AppData", "Local")
+      : platform === "darwin"
+        ? NodePath.join(home, "Library", "Application Support")
+        : env.XDG_STATE_HOME && NodePath.isAbsolute(env.XDG_STATE_HOME)
+          ? env.XDG_STATE_HOME
+          : NodePath.join(home, ".local", "state");
+  const directory = NodePath.join(base, "styal");
+  yield* Effect.try({
+    try: () => NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 }),
+    catch: (cause) => new TailscaleServeRecordError({ stage: "directory", cause }),
+  });
+  const path = NodePath.join(directory, `tailscale-serve-${servePort}.sqlite`);
   return yield* Effect.acquireUseRelease(
     Effect.try({
-      try: () => {
-        // Shared across styal homes; SQLite releases the lock even after an unclean exit.
-        const directory = NodePath.join(home, ".cache", "styal");
-        NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
-        const path = NodePath.join(directory, `tailscale-serve-${servePort}.sqlite`);
-        const db = new NodeSqlite.DatabaseSync(path);
-        try {
-          db.exec("BEGIN EXCLUSIVE");
-          return db;
-        } catch (error) {
-          db.close();
-          throw error;
-        }
-      },
-      catch: () => new TailscaleServePortOccupiedError({ servePort }),
+      try: () => new NodeSqlite.DatabaseSync(`${path}.lock`),
+      catch: (cause) => new TailscaleServeRecordError({ stage: "open", cause }),
     }),
-    () => effect,
-    (db) => Effect.sync(() => db.close()),
+    (lock) =>
+      Effect.gen(function* () {
+        yield* Effect.try({
+          try: () => lock.exec("BEGIN EXCLUSIVE"),
+          catch: (cause) =>
+            typeof cause === "object" &&
+            cause !== null &&
+            [5, 6].includes(Number(Reflect.get(cause, "errcode")))
+              ? new TailscaleServeRecoveryBusyError({ servePort })
+              : new TailscaleServeRecordError({ stage: "lock", cause }),
+        });
+        return yield* Effect.acquireUseRelease(
+          Effect.try({
+            try: () => new NodeSqlite.DatabaseSync(path),
+            catch: (cause) => new TailscaleServeRecordError({ stage: "open", cause }),
+          }),
+          (db) =>
+            Effect.gen(function* () {
+              // Autocommit invalidation survives a crash between the daemon write and recording its result.
+              yield* serveRecordSql(() =>
+                db.exec(
+                  "CREATE TABLE IF NOT EXISTS ownership (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), proxy TEXT NOT NULL, managed INTEGER NOT NULL CHECK (managed IN (0, 1)))",
+                ),
+              );
+              return yield* operation(db);
+            }),
+          (db) => Effect.sync(() => db.close()),
+        );
+      }),
+    (lock) => Effect.sync(() => lock.close()),
   );
+});
+
+const serveRecordSql = <A>(operation: () => A) =>
+  Effect.try({
+    try: operation,
+    catch: (cause) => new TailscaleServeRecordError({ stage: "record", cause }),
+  });
+
+const readRecordedServePortState = Effect.fn("tailscale.readRecordedServePortState")(function* (
+  db: NodeSqlite.DatabaseSync,
+  input: { readonly servePort: number; readonly proxy: string },
+) {
+  const observed = yield* readTailscaleServePortState(input).pipe(Effect.result);
+  const forget = serveRecordSql(() => db.exec("DELETE FROM ownership"));
+  if (observed._tag === "Failure") {
+    if (observed.failure._tag === "TailscaleServePortOccupiedError") yield* forget;
+    return yield* observed.failure;
+  }
+  const state = observed.success;
+  const record = yield* serveRecordSql(() =>
+    db.prepare("SELECT proxy, managed FROM ownership WHERE singleton = 1").get(),
+  );
+  const current =
+    state === "exact" ? input.proxy : typeof state === "object" ? state.proxy : undefined;
+  if (
+    record?.proxy !== current ||
+    state === "absent" ||
+    state === "funnel" ||
+    state === "occupied"
+  ) {
+    yield* forget;
+    return { state, record: undefined };
+  }
+  return { state, record };
 });
 
 export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(function* (input: {
@@ -655,55 +837,103 @@ export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(
   readonly localHost?: string;
   /** The caller has already verified that the current handler fronts this exact T3 environment. */
   readonly replaceVerifiedHandler?: boolean;
-  /** Server startup and repair may reclaim a simple private root on a refused loopback port. */
+  /** Only server-managed writes may be recovered; pairing and dev-share writes stay persistent. */
   readonly reclaimDeadHandler?: boolean;
+  readonly previousDeadProxy?: string | undefined;
   /** Repair leaves an intentionally removed route absent. */
   readonly repairOnly?: boolean;
-}): Effect.fn.Return<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> {
+}): Effect.fn.Return<
+  string | undefined,
+  TailscaleServeError,
+  ChildProcessSpawner.ChildProcessSpawner
+> {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
-  const localHost = input.localHost ?? "127.0.0.1";
-  const proxy = `http://${localHost}:${input.localPort}`;
-  const configure = Effect.fn("tailscale.configureServePort")(function* (
-    state: TailscaleServePortState,
-  ) {
-    if (input.repairOnly && typeof state === "string") return;
-    if (state === "exact") return;
-    if (
-      state === "funnel" ||
-      state === "occupied" ||
-      (typeof state === "object" &&
-        input.replaceVerifiedHandler !== true &&
-        !(input.reclaimDeadHandler === true && (yield* isDeadLoopbackProxy(state.proxy))))
-    ) {
-      return yield* new TailscaleServePortOccupiedError({ servePort });
-    }
-    yield* runTailscaleCommand(
-      ["serve", "--bg", `--https=${servePort}`, proxy],
-      TAILSCALE_SERVE_TIMEOUT,
-    );
-    if (input.repairOnly) {
-      yield* Effect.logInfo("Tailscale Serve repaired", { localPort: input.localPort, servePort });
-    }
-  });
-  const state = yield* readTailscaleServePortState({ servePort, proxy });
-  return yield* input.reclaimDeadHandler === true && typeof state === "object"
-    ? withServeRecoveryLock(
-        servePort,
-        readTailscaleServePortState({ servePort, proxy }).pipe(Effect.flatMap(configure)),
-      )
-    : configure(state);
+  const proxy = `http://${input.localHost ?? "127.0.0.1"}:${input.localPort}`;
+  return yield* withServeRecord(servePort, (db) =>
+    Effect.gen(function* () {
+      const forget = serveRecordSql(() => db.exec("DELETE FROM ownership"));
+      const { state, record } = yield* readRecordedServePortState(db, { servePort, proxy });
+      if (state === "funnel" || state === "occupied")
+        return yield* new TailscaleServePortOccupiedError({ servePort });
+      if (state === "exact") {
+        if (record?.proxy === proxy && input.reclaimDeadHandler !== true) {
+          yield* serveRecordSql(() =>
+            db.exec("UPDATE ownership SET managed = 0 WHERE singleton = 1"),
+          );
+        }
+        return undefined;
+      }
+      if (state === "absent" && input.repairOnly) return undefined;
+      if (typeof state === "object" && input.replaceVerifiedHandler !== true) {
+        if (
+          input.reclaimDeadHandler !== true ||
+          record?.proxy !== state.proxy ||
+          record.managed !== 1
+        ) {
+          return yield* new TailscaleServePortOccupiedError({ servePort, unrecorded: true });
+        }
+        if (loopbackProxyTarget(state.proxy) === undefined)
+          return yield* new TailscaleServePortOccupiedError({ servePort });
+        if (!(yield* isDeadLoopbackProxy(state.proxy)))
+          return yield* new TailscaleServePortOccupiedError({ servePort });
+        if (input.previousDeadProxy !== state.proxy) return state.proxy;
+      }
+      yield* forget;
+      yield* runTailscaleCommand(
+        ["serve", "--bg", `--https=${servePort}`, proxy],
+        TAILSCALE_SERVE_TIMEOUT,
+      );
+      if (typeof state === "object" && input.reclaimDeadHandler === true) {
+        yield* Effect.logWarning(
+          "Tailscale Serve takeover command succeeded for a recorded mapping after two refused checks",
+          { servePort, replacedProxy: state.proxy, proxy },
+        );
+      }
+      if (
+        input.reclaimDeadHandler === true &&
+        (yield* readTailscaleServePortState({ servePort, proxy })) !== "exact"
+      ) {
+        return yield* new TailscaleServeNotConfiguredError({ servePort });
+      }
+      yield* serveRecordSql(() =>
+        db
+          .prepare("INSERT OR REPLACE INTO ownership (singleton, proxy, managed) VALUES (1, ?, ?)")
+          .run(proxy, input.reclaimDeadHandler === true ? 1 : 0),
+      );
+      return undefined;
+    }),
+  );
 });
 
-export const repairTailscaleServe = (input: {
+export const repairTailscaleServe = Effect.fn("tailscale.repairTailscaleServe")(function* (input: {
   readonly localPort: number;
   readonly servePort: number;
   readonly localHost: string;
-}) =>
-  Effect.sleep("30 seconds").pipe(
-    Effect.andThen(ensureTailscaleServe({ ...input, reclaimDeadHandler: true, repairOnly: true })),
-    Effect.ignore,
+  readonly previousDeadProxy?: string | undefined;
+}) {
+  let previousDeadProxy = input.previousDeadProxy;
+  return yield* Effect.sleep("30 seconds").pipe(
+    Effect.andThen(
+      Effect.suspend(() =>
+        ensureTailscaleServe({
+          ...input,
+          previousDeadProxy,
+          reclaimDeadHandler: true,
+          repairOnly: true,
+        }),
+      ),
+    ),
+    Effect.match({
+      onFailure: () => {
+        previousDeadProxy = undefined;
+      },
+      onSuccess: (candidate) => {
+        previousDeadProxy = candidate;
+      },
+    }),
     Effect.forever,
   );
+});
 
 /** A Serve route: a web handler at `mount` on `servePort`, or a TCP forward without one. */
 export interface TailscaleServeRoute {
@@ -742,34 +972,54 @@ export const disableTailscaleServe = Effect.fn("tailscale.disableTailscaleServe"
     readonly servePort?: number;
     readonly localPort: number;
     readonly localHost?: string;
-  }): Effect.fn.Return<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> {
+    readonly recordedOnly?: boolean;
+  }): Effect.fn.Return<boolean, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> {
     const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
-    const localHost = input.localHost ?? "127.0.0.1";
-    const proxy = `http://${localHost}:${input.localPort}`;
-    const state = yield* readTailscaleServePortState({ servePort, proxy });
-    if (state === "absent") {
-      return;
-    }
-    if (state === "occupied" || state === "funnel" || typeof state === "object") {
-      return yield* new TailscaleServePortOccupiedError({ servePort });
-    }
-    yield* runTailscaleCommand(["serve", `--https=${servePort}`, "off"], TAILSCALE_SERVE_TIMEOUT);
+    const proxy = `http://${input.localHost ?? "127.0.0.1"}:${input.localPort}`;
+    return yield* withServeRecord(servePort, (db) =>
+      Effect.gen(function* () {
+        const forget = serveRecordSql(() => db.exec("DELETE FROM ownership"));
+        const { state, record } = yield* readRecordedServePortState(db, { servePort, proxy });
+        if (state === "absent") return false;
+        if (state !== "exact") return yield* new TailscaleServePortOccupiedError({ servePort });
+        if (input.recordedOnly && (record?.proxy !== proxy || record.managed !== 1)) return false;
+        yield* forget;
+        yield* runTailscaleCommand(
+          ["serve", `--https=${servePort}`, "off"],
+          TAILSCALE_SERVE_TIMEOUT,
+        );
+        return true;
+      }),
+    );
   },
 );
 
-/** Removes the web handler at `mount` on `servePort` without reading what the port holds. */
+/** Removes an explicitly selected route, invalidating ownership when its root goes. */
 export const disableTailscaleServeRoute = Effect.fn("tailscale.disableTailscaleServeRoute")(
   function* (input: {
     readonly servePort: number;
     readonly mount: string;
-  }): Effect.fn.Return<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> {
-    yield* runTailscaleCommand(tailscaleServeOffArgs(input)!, TAILSCALE_SERVE_TIMEOUT);
+  }): Effect.fn.Return<void, TailscaleServeError, ChildProcessSpawner.ChildProcessSpawner> {
+    const remove = runTailscaleCommand(tailscaleServeOffArgs(input)!, TAILSCALE_SERVE_TIMEOUT);
+    if (input.mount !== "/") {
+      yield* remove;
+      return;
+    }
+    yield* withServeRecord(input.servePort, (db) =>
+      serveRecordSql(() => db.exec("DELETE FROM ownership")).pipe(Effect.andThen(remove)),
+    );
   },
 );
 
 /** Removes a TCP forward on `servePort`; one port holds one forward, so nothing else goes. */
 export const disableTailscaleServeTcp = (servePort: number) =>
-  runTailscaleCommand(tailscaleServeOffArgs({ servePort })!, TAILSCALE_SERVE_TIMEOUT);
+  withServeRecord(servePort, (db) =>
+    serveRecordSql(() => db.exec("DELETE FROM ownership")).pipe(
+      Effect.andThen(
+        runTailscaleCommand(tailscaleServeOffArgs({ servePort })!, TAILSCALE_SERVE_TIMEOUT),
+      ),
+    ),
+  );
 
 // A node without any Serve configuration prints `null`.
 const decodeTailscaleServeStatusOption = Schema.decodeUnknownOption(

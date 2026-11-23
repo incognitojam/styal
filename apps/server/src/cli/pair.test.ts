@@ -81,7 +81,17 @@ const runCli = (args: ReadonlyArray<string>) =>
   Command.runWith(args[0] === "pair" ? pairCli : cli, { version: "0.0.0" })(args);
 
 const provideCliTestLayers = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.provide(effect, Layer.mergeAll(layerCliRuntime, TestConsole.layer));
+  Effect.gen(function* () {
+    const home = yield* Effect.acquireRelease(
+      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "pair-account-test-"))),
+      (path) => Effect.sync(() => NodeFS.rmSync(path, { recursive: true, force: true })),
+    );
+    return yield* effect.pipe(
+      Effect.provide(Layer.mergeAll(layerCliRuntime, TestConsole.layer)),
+      Effect.provideService(HostProcess.HomeDirectory, home),
+      Effect.provideService(HostProcess.Environment, {}),
+    );
+  }).pipe(Effect.scoped);
 
 const captureStdout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   provideCliTestLayers(
@@ -179,6 +189,8 @@ const withTailscalePairing = <A, E, R>(
     return yield* run(baseDir, commands, requests).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.HomeDirectory, baseDir),
+      Effect.provideService(HostProcess.Environment, {}),
       Effect.provideService(FetchHttpClient.Fetch, (url) => {
         requests.push(String(url));
         expect([
@@ -319,6 +331,7 @@ describe("styal pair", () => {
             expect(requests).toEqual(["http://127.0.0.1:3773/.well-known/t3/environment"]);
             expect(commands).toEqual([
               ["status", "--json"],
+              ["serve", "status", "--json"],
               ["serve", "status", "--json"],
             ]);
           }),
