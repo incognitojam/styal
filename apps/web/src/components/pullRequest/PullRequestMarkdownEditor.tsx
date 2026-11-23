@@ -114,7 +114,6 @@ export function PullRequestMarkdownEditor({
           completionScope={completionScope}
           value={draft}
           rows={6}
-          tall
           placeholder={placeholder}
           aria-label={label}
           onValueChange={setDraft}
