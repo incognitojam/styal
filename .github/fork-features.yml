@@ -6843,7 +6843,7 @@ features:
     title: Keep slow networks from bouncing a connection between routes
     status: maintained
     tier: yield
-    prs: []
+    prs: [1729]
     invariants:
       - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
       - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
