@@ -255,8 +255,8 @@ export interface CapturedSinceLastVisit {
   /** The machines whose threads are in `threadLines`, each read once its snapshot was live. */
   readonly environments: ReadonlySet<EnvironmentId>;
   /**
-   * Settled threads before this time were not on the client, so their changes are not listed: a
-   * pull request can merge long after its thread settled. Null when every thread was there.
+   * Threads that settled after the last visit but before this time were not on the client, so
+   * they are not listed. Null when every thread settled since the last visit was there.
    */
   readonly unloadedBefore: number | null;
 }
@@ -301,6 +301,7 @@ export function addSinceLastVisitEnvironment(
   const older = input.olderSettled;
   const leftOut =
     older !== null &&
+    older.beforeMs > captured.window.since &&
     [...input.projectIds].some((projectId) => (older.counts.get(projectId) ?? 0) > 0);
   // A pull request linked to threads on two machines is one line.
   const listed = new Set(captured.threadLines.map((line) => line.id));

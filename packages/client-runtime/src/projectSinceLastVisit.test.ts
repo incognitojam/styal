@@ -165,7 +165,7 @@ describe("captureSinceLastVisit", () => {
     expect([...both.environments]).toEqual([env, remote]);
   });
 
-  it("says when settled threads that could have changed were not on the client", () => {
+  it("says when threads that settled since the last visit were not on the client", () => {
     const captured = captureSinceLastVisit(
       { lastVisitedAt: at(5), opens: null, updatedAt: at(1) },
       open,
@@ -182,8 +182,8 @@ describe("captureSinceLastVisit", () => {
         },
       }).unloadedBefore;
     expect(add(2, 4)).toBe(open - 2 * HOUR);
-    // Settled before the last visit, but a pull request on one can still merge since.
-    expect(add(6, 4)).toBe(open - 6 * HOUR);
+    // The cut is before the last visit, so every thread that settled since was loaded.
+    expect(add(6, 4)).toBeNull();
     expect(add(2, 0)).toBeNull();
   });
 
