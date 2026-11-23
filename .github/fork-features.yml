@@ -7134,7 +7134,7 @@ features:
     title: Reclaim only simple private Tailscale Serve handlers on dead loopback ports
     status: maintained
     tier: keep
-    prs: []
+    prs: [1722]
     invariants:
       - Server startup configures Tailscale Serve when the port holds nothing or this server's exact private mapping. Startup and the 30-second repair loop may also reclaim a single private root proxy only when its loopback TCP connection is refused; a live backend, any other probe failure, extra mounts, Funnel (including permission without handlers), TCP forwards, and foreground sessions are left unchanged. Repair leaves an intentionally removed route absent.
       - Server recovery serializes the status read, dead-port probe, and write across servers using different styal homes under the same OS account; a competing recovery leaves the route unchanged until a later tick.
