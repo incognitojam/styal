@@ -14,6 +14,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 
+import { derive } from "@t3tools/provider-core/server/IdAllocator";
 import { withCreationProvenance } from "./ThreadManagementService.ts";
 import {
   checkThreadReport,
@@ -96,115 +97,153 @@ describe("runReportKind", () => {
   });
 });
 
-it.effect.each(["restart", "other", "unknown", "continued", "queued"] as const)(
-  "reports %s cancellation after an earlier result was delivered",
-  (cause) =>
-    Effect.gen(function* () {
-      const threadId = ThreadId.make("thread:cancelled-worker");
-      const launcherId = ThreadId.make("thread:launcher");
-      const now = yield* DateTime.now;
-      const previous = {
-        ...base.run,
-        status: cause === "queued" ? "running" : "completed",
-        userMessageId: MessageId.make("message:first"),
-      };
-      const cancelled = {
-        ...previous,
-        id: RunId.make("run:cancelled-follow-up"),
-        ordinal: 2,
-        status: "cancelled",
-        activeAttemptId: RunAttemptId.make("attempt:cancelled-follow-up"),
-        completedAt: now,
-        userMessageId: MessageId.make("message:follow-up"),
-      };
-      const reason =
-        cause === "restart"
-          ? "Cancelled because the server restarted before the provider work completed."
-          : "Cancelled because the provider session was replaced.";
-      const delivered = new Map<string, { text: string }>([
-        [`server:thread-report:${threadId}:${previous.id}`, { text: "Earlier result." }],
-      ]);
-      const threads = {
-        getThreadRecords: () =>
-          Effect.succeed({
-            thread: { id: threadId, title: "Worker", reportTo: { threadId: launcherId } },
-            runs: [
-              previous,
-              cancelled,
-              ...(cause === "continued"
-                ? [
-                    {
-                      ...cancelled,
-                      id: RunId.make("run:continuation"),
-                      ordinal: 3,
-                      status: "running",
-                    },
-                  ]
-                : []),
-            ],
-            subagents: [],
-            runtimeRequests: [],
-            providerTurns: [],
-            messages: [
-              {
-                id: cancelled.userMessageId,
-                role: "user",
-                senderThreadId: launcherId,
-                createdBy: "agent",
-              },
-            ],
-            turnItems:
-              cause === "unknown"
-                ? []
-                : [{ runId: cancelled.id, type: "system_notice", ordinal: 3, message: reason }],
-          }),
-        getThreadShell: () =>
-          Effect.succeed({ archivedAt: null, deletedAt: null, settledOverride: null }),
-        reportRecipient: () => Effect.succeed(launcherId),
-        dispatch: (command: { commandId: string; text: string }) =>
-          Effect.sync(() => {
-            if (!delivered.has(command.commandId)) delivered.set(command.commandId, command);
-          }),
-      } as unknown as Parameters<typeof checkThreadReport>[0];
-      const effect = threadReportEffect(
-        {
-          type: "run.updated",
-          threadId,
-          payload: cancelled,
-        } as never,
-        now,
-      );
-      assert.isNotNull(effect);
-      if (effect?.request.type !== "thread-report.check") return;
-      yield* checkThreadReport(threads, {
+it.effect.each([
+  "restart",
+  "other",
+  "unknown",
+  "continued",
+  "queued",
+  "self",
+  "person",
+  "steered",
+] as const)("reports %s cancellation after an earlier result was delivered", (cause) =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:cancelled-worker");
+    const launcherId = ThreadId.make("thread:launcher");
+    const now = yield* DateTime.now;
+    const previous = {
+      ...base.run,
+      status: cause === "queued" ? "running" : "completed",
+      userMessageId: MessageId.make("message:first"),
+    };
+    const cancelled = {
+      ...previous,
+      id: RunId.make("run:cancelled-follow-up"),
+      ordinal: 2,
+      status: "cancelled",
+      startedAt: cause === "queued" || cause === "restart" || cause === "steered" ? null : now,
+      ...(cause === "self"
+        ? { cancelledByThreadId: launcherId }
+        : cause === "person"
+          ? { cancelledByThreadId: null }
+          : {}),
+      activeAttemptId: RunAttemptId.make("attempt:cancelled-follow-up"),
+      completedAt: now,
+      userMessageId: MessageId.make("message:follow-up"),
+    };
+    const reason =
+      cause === "restart"
+        ? "Cancelled because the server restarted before the provider work completed."
+        : "Cancelled because the provider session was replaced.";
+    const delivered = new Map<string, { text: string }>([
+      [`server:thread-report:${threadId}:${previous.id}`, { text: "Earlier result." }],
+    ]);
+    const threads = {
+      getThreadRecords: (
+        _threadId: unknown,
+        _fields: unknown,
+        filter: { turnItemRunIds?: readonly string[] } | undefined,
+      ) =>
+        Effect.succeed({
+          thread: { id: threadId, title: "Worker", reportTo: { threadId: launcherId } },
+          runs: [
+            previous,
+            cancelled,
+            ...(cause === "continued"
+              ? [
+                  {
+                    ...cancelled,
+                    id: RunId.make("run:continuation"),
+                    ordinal: 3,
+                    status: "running",
+                  },
+                ]
+              : []),
+          ],
+          subagents: [],
+          runtimeRequests: [],
+          providerTurns: [],
+          messages: [
+            {
+              id: cancelled.userMessageId,
+              runId: cause === "steered" ? previous.id : cancelled.id,
+              role: "user",
+              senderThreadId: launcherId,
+              createdBy: "agent",
+            },
+          ],
+          turnItems:
+            cause === "unknown"
+              ? []
+              : [
+                  {
+                    id:
+                      cause === "restart"
+                        ? derive.runSignalTurnItem({
+                            runId: cancelled.id,
+                            signal: "server-recovery",
+                          })
+                        : "unrelated-notice",
+                    runId: cancelled.id,
+                    type: "system_notice",
+                    ordinal: 3,
+                    message: reason,
+                  },
+                ].filter(
+                  (item) =>
+                    filter?.turnItemRunIds === undefined ||
+                    filter.turnItemRunIds.includes(item.runId),
+                ),
+        }),
+      getThreadShell: () =>
+        Effect.succeed({ archivedAt: null, deletedAt: null, settledOverride: null }),
+      reportRecipient: () => Effect.succeed(launcherId),
+      dispatch: (command: { commandId: string; text: string }) =>
+        Effect.sync(() => {
+          if (!delivered.has(command.commandId)) delivered.set(command.commandId, command);
+        }),
+    } as unknown as Parameters<typeof checkThreadReport>[0];
+    const effect = threadReportEffect(
+      {
+        type: "run.updated",
         threadId,
-        environmentId: undefined,
-        trigger: { kind: "idle" },
-      });
-      assert.equal(delivered.size, 1, "idle checks preserve restart grace");
-      yield* TestClock.adjust("30 seconds");
-      for (const trigger of [
-        effect.request.trigger,
-        { kind: "idle" } as const,
-        effect.request.trigger,
-      ]) {
-        yield* checkThreadReport(threads, { threadId, environmentId: undefined, trigger });
-      }
-      if (cause === "continued") {
-        assert.equal(delivered.size, 1, "a later continuation suppresses the stopped report");
-        return;
-      }
-      assert.equal(delivered.size, 2);
-      const report = delivered.get(`server:thread-report:${threadId}:${cancelled.id}`);
-      assert.isDefined(report);
-      assert.include(report!.text, "stopped before finishing");
-      assert.notInclude(report!.text, "is not running");
-      assert.include(report!.text, "Check the reason");
-      assert.include(
-        report!.text,
-        cause === "unknown" ? "No cancellation reason was recorded." : reason,
-      );
-    }),
+        payload: cancelled,
+      } as never,
+      now,
+    );
+    assert.isNotNull(effect);
+    if (effect?.request.type !== "thread-report.check") return;
+    yield* checkThreadReport(threads, {
+      threadId,
+      environmentId: undefined,
+      trigger: { kind: "idle" },
+    });
+    assert.equal(delivered.size, 1, "idle checks preserve restart grace");
+    yield* TestClock.adjust("30 seconds");
+    for (const trigger of [
+      effect.request.trigger,
+      { kind: "idle" } as const,
+      effect.request.trigger,
+    ]) {
+      yield* checkThreadReport(threads, { threadId, environmentId: undefined, trigger });
+    }
+    if (cause === "continued" || cause === "self" || cause === "person" || cause === "steered") {
+      assert.equal(delivered.size, 1, "a later continuation suppresses the stopped report");
+      return;
+    }
+    assert.equal(delivered.size, 2);
+    const report = delivered.get(`server:thread-report:${threadId}:${cancelled.id}`);
+    assert.isDefined(report);
+    assert.include(
+      report!.text,
+      cancelled.startedAt === null ? "cancelled before it was processed" : "stopped midway",
+    );
+    assert.notInclude(report!.text, "is not running");
+    assert.notInclude(report!.text, "<thread-report>");
+    assert.notInclude(report!.text, "Check the reason");
+    if (cause === "restart") assert.include(report!.text, reason);
+    else assert.notInclude(report!.text, reason);
+  }),
 );
 
 it.each([
@@ -279,7 +318,7 @@ describe("launcherTakesReports", () => {
 
 it("delays only what someone may still answer or continue", () => {
   const now = DateTime.makeUnsafe("2026-11-06T00:00:00Z");
-  const delayOf = (status: OrchestrationV2Run["status"]) => {
+  const delayOf = (status: OrchestrationV2Run["status"], cancelledRun = false) => {
     const effect = threadReportEffect(
       {
         type: "run.updated",
@@ -287,6 +326,7 @@ it("delays only what someone may still answer or continue", () => {
         payload: { id: runId, status },
       } as never,
       now,
+      cancelledRun,
     );
     return effect === null
       ? null
@@ -299,6 +339,7 @@ it("delays only what someone may still answer or continue", () => {
   assert.equal(delayOf("interrupted"), 30);
   assert.equal(delayOf("running"), null);
   assert.equal(delayOf("cancelled"), 0);
+  assert.equal(delayOf("cancelled", true), 30);
 });
 
 it("a report keeps the launched agent's text as bounded data, so it cannot start a command", () => {
@@ -322,6 +363,14 @@ it("a client cannot name a report target when it creates a thread", () => {
     { createdBy: "user", creationSource: "web" },
   );
   assert.notProperty(command, "reportTo");
+  assert.isNull(
+    (
+      withCreationProvenance(
+        { type: "queued-run.cancel", cancelledByThreadId: ThreadId.make("thread:forged") } as never,
+        { createdBy: "user", creationSource: "web" },
+      ) as { cancelledByThreadId: null }
+    ).cancelledByThreadId,
+  );
   // Nor answer as an agent thread, which would hide the answer from the thread it reports to.
   const answer = withCreationProvenance(
     {
@@ -425,6 +474,9 @@ it.effect.each([
                     {
                       id: compaction ? compactRunId : RunId.make("run:queued"),
                       userMessageId: compactMessageId,
+                      activeAttemptId: RunAttemptId.make("attempt:queued"),
+                      startedAt: null,
+                      completedAt: pending ? null : now,
                       ordinal: 2,
                       status: pending ? "queued" : compaction ? "completed" : "cancelled",
                     },

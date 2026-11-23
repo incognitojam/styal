@@ -416,7 +416,11 @@ const layerBase: Layer.Layer<
       const now = yield* DateTime.now;
       const owed = storedEvents.flatMap((stored) => {
         const effect = threadReportEffect(stored.event, now);
-        return effect === null ? [] : [effect];
+        const delayed =
+          stored.event.type === "run.updated" && stored.event.payload.status === "cancelled"
+            ? threadReportEffect(stored.event, now, true)
+            : null;
+        return [...(effect === null ? [] : [effect]), ...(delayed === null ? [] : [delayed])];
       });
       for (const threadId of new Set(owed.map((effect) => effect.threadId))) {
         const thread = yield* projectionStore.getThread(threadId).pipe(

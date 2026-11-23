@@ -1,6 +1,7 @@
 import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
+  EventId,
   MessageId,
   NodeId,
   type OrchestrationV2ThreadReportTarget,
@@ -30,6 +31,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as EffectWorker from "./EffectWorker.ts";
+import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { reportRecipient } from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -58,6 +60,7 @@ const makeHelpers = (input: {
   const { name, cwd, events, started } = input;
   return Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const sink = yield* EventSink.EventSinkV2;
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
     const outbox = yield* EffectOutbox.EffectOutboxV2;
     const settings = yield* ServerSettings.ServerSettingsService;
@@ -355,6 +358,7 @@ const makeHelpers = (input: {
       );
 
     return {
+      sink,
       orchestrator,
       settings,
       worker,
@@ -457,7 +461,7 @@ const harness = <A, E>(
               forkThread: () => Effect.die("unused"),
               startTurn,
               compactThread: startTurn,
-              steerTurn: () => Effect.die("unused"),
+              steerTurn: () => Effect.void,
               interruptTurn: () => Effect.void,
               respondToRuntimeRequest: () => Effect.void,
               readThreadSnapshot: () => Effect.die("unused"),
@@ -824,6 +828,114 @@ it.effect("a turn with a pull request watch reports its published work once", ()
       assert.equal((yield* reports()).length, 1, "an identical stop stays quiet");
     }),
   ),
+);
+
+it.effect.each(["person", "server", "launcher", "requested", "steered", "archive"] as const)(
+  "a real %s queue cancellation releases only the report owed",
+  (source) =>
+    harness(`cancelled-queue-${source}`, ({ orchestrator, sink, send, worker, reports }) =>
+      Effect.gen(function* () {
+        const turn = yield* send(launchedId, "First request");
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("queue:follow-up"),
+          threadId: launchedId,
+          messageId: MessageId.make("message:follow-up"),
+          text: "Follow-up",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: source === "person" ? "user" : "agent",
+          creationSource: source === "person" ? "web" : source === "server" ? "server" : "mcp",
+          ...(source === "launcher" || source === "requested" || source === "steered"
+            ? { senderThreadId: launcherId }
+            : {}),
+        });
+        const projection = yield* orchestrator.getThreadProjection(launchedId);
+        const first = projection.runs.find((run) => run.id === turn.runId)!;
+        const queued = projection.runs.at(-1)!;
+        assert.isNotNull(queued.activeAttemptId);
+        if (source === "steered" || source === "archive") {
+          if (source === "archive")
+            yield* orchestrator.dispatch({
+              type: "thread.archive",
+              commandId: CommandId.make("archive:worker"),
+              threadId: launchedId,
+            });
+          else
+            yield* orchestrator.dispatch({
+              type: "queued-message.promote-to-steer",
+              commandId: CommandId.make("steer:follow-up"),
+              threadId: launchedId,
+              queuedRunId: queued.id,
+              targetRunId: first.id,
+            });
+          yield* worker.drain();
+          yield* TestClock.adjust("30 seconds");
+          yield* worker.drain();
+          assert.isEmpty(yield* reports());
+          if (source === "steered")
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(launchedId)).messages.find(
+                (message) => message.id === queued.userMessageId,
+              )?.runId,
+              first.id,
+            );
+          return;
+        }
+        const now = yield* DateTime.now;
+        yield* sink.withProviderBatch(
+          Effect.gen(function* () {
+            yield* sink.write({
+              events: [
+                {
+                  id: EventId.make("event:first-completed"),
+                  type: "run.updated",
+                  threadId: launchedId,
+                  occurredAt: now,
+                  payload: { ...first, status: "completed", completedAt: now },
+                },
+              ],
+            });
+            yield* checkThreadReport(
+              {
+                dispatch: orchestrator.dispatch,
+                getThreadRecords: orchestrator.getThreadRecords,
+                getThreadShell: orchestrator.getThreadShell,
+                reportRecipient: () => Effect.succeed(launcherId),
+              } as never,
+              {
+                threadId: launchedId,
+                environmentId: undefined,
+                trigger: { kind: "run", runId: first.id },
+              },
+            );
+            assert.isEmpty(yield* reports(), "the queued run holds the first result");
+            yield* orchestrator.dispatch({
+              type: "queued-run.cancel",
+              commandId: CommandId.make("cancel:follow-up"),
+              threadId: launchedId,
+              runId: queued.id,
+              ...(source === "person"
+                ? { cancelledByThreadId: null }
+                : source === "launcher"
+                  ? { cancelledByThreadId: launcherId }
+                  : source === "requested"
+                    ? { cancelledByThreadId: ThreadId.make("thread:other") }
+                    : {}),
+            });
+          }),
+        );
+        yield* worker.drain();
+        yield* TestClock.adjust("30 seconds");
+        yield* worker.drain();
+        const delivered = yield* reports();
+        assert.lengthOf(delivered, source === "requested" ? 2 : 1);
+        assert.equal(delivered[0]?.outcome, "completed");
+        if (source === "requested") assert.equal(delivered[1]?.outcome, "cancelled");
+        yield* worker.drain();
+        assert.lengthOf(yield* reports(), delivered.length);
+      }),
+    ),
 );
 
 it.effect("a question stays between the thread and a person for two minutes", () =>

@@ -12626,7 +12626,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : {}),
       });
     }
-    yield* emitQueuedRunCancellation({ command, events, projection, run: queuedRun, now });
+    yield* emitQueuedRunCancellation({
+      command,
+      events,
+      projection,
+      run: { ...queuedRun, cancelledByThreadId: command.cancelledByThreadId },
+      now,
+    });
     const emitEvent = emit(events, command);
     if (queuedMessage?.reportAnswer !== undefined) {
       const { reportAnswer: _reportAnswer, ...message } = queuedMessage;

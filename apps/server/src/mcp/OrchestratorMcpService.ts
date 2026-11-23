@@ -2802,6 +2802,7 @@ const make = Effect.gen(function* () {
           yield* threadManagement
             .dispatch({
               type: "queued-run.cancel",
+              cancelledByThreadId: scope.thread.threadId,
               commandId: stableCommandId({
                 scope,
                 requestKey: key,

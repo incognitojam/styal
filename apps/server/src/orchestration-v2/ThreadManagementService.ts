@@ -103,6 +103,8 @@ export function withCreationProvenance(
     case "thread.merge_back":
     case "delegated_task.request":
       return { ...command, ...provenance };
+    case "queued-run.cancel":
+      return { ...command, cancelledByThreadId: null };
     case "runtime-request.respond": {
       const { senderThreadId: _senderThreadId, ...rest } = command;
       return { ...rest, createdBy: provenance.createdBy };

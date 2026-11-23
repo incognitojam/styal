@@ -60,6 +60,7 @@ import {
   reportAnswerNote,
   reportReplyNote,
   sentReport,
+  reportMessage,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
 import { projectCoordinatorInstructions } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
@@ -370,6 +371,9 @@ export const McpToolUseCase = Schema.Struct({
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
     launchedReport: Schema.optional(Schema.Struct({ question: Schema.Boolean })),
+    cancelledReport: Schema.optional(
+      Schema.Struct({ started: Schema.Boolean, reason: Schema.optional(Schema.String) }),
+    ),
     /** This thread is its project's coordinator: T3 sends its instructions with the session. */
     projectCoordinator: Schema.optional(Schema.Boolean),
     /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
@@ -1210,6 +1214,20 @@ export const buildMessages = (sample: Sample) => {
   const userText = withInlineContext(
     [
       branchNote(testCase),
+      testCase.setup.cancelledReport === undefined
+        ? ""
+        : reportMessage({
+            environmentId: undefined,
+            thread: {
+              id: ThreadId.make("55555555-5555-4555-8555-555555555555"),
+              title: "Fix login",
+            },
+            source: undefined,
+            situation: "had requested work stopped before finishing.",
+            body: undefined,
+            next: "Read more with t3_thread_read.",
+            cancellation: testCase.setup.cancelledReport,
+          }),
       testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
       testCase.setup.reportAnswer === undefined
         ? ""
