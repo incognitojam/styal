@@ -51,7 +51,9 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-task-cancel-" })),
+  Layer.provide(
+    Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/test/managed-worktrees" } as never),
+  ),
   Layer.provide(NodeServices.layer),
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),

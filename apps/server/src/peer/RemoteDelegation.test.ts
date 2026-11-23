@@ -707,7 +707,7 @@ const makeLaptop = (
     );
     const layerHere = McpHttpServer.layerOrchestratorToolkit.pipe(
       Layer.provide(
-        ServerConfig.layerTest(process.cwd(), { prefix: "t3-remote-delegation-here-" }),
+        Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/test/managed-worktrees" } as never),
       ),
       Layer.provide(NodeServices.layer),
       Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),

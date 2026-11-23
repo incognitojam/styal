@@ -1,3 +1,4 @@
+import { ChildProcessSpawner } from "effect/process";
 import {
   fixture as cleanupFixture,
   nodeLayer as cleanupNodeLayer,
@@ -1099,7 +1100,16 @@ function makeLocalCommandHarness(input: {
               createWorktree,
             })
           : Layer.succeed(GitWorkflow.GitWorkflowService, input.gitWorkflow),
-        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({
+          execute: ({ cwd }) =>
+            Effect.succeed({
+              exitCode: ChildProcessSpawner.ExitCode(0),
+              stdout: `${cwd}\n`,
+              stderr: "",
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            }),
+        }),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           consumeStripped: () => Effect.succeed(false),
           isStripped: () => Effect.succeed(false),
@@ -1608,7 +1618,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
       const path = yield* Path.Path;
       const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-start-" });
       const worktreePath = path.join(workspaceRoot, "project", "worktree");
-      yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
       const release = yield* Deferred.make<void>();
       const openEntered = yield* Deferred.make<void>();
       const harness = makeLocalCommandHarness({
@@ -1619,7 +1629,9 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         failReadsAfterRunning: true,
       });
       harness.createWorktree.mockImplementation(() =>
-        fileSystem.makeDirectory(worktreePath).pipe(Effect.as({} as never), Effect.orDie),
+        fileSystem
+          .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
+          .pipe(Effect.as({} as never), Effect.orDie),
       );
       const open = harness.open.getMockImplementation()!;
       harness.open.mockImplementation(() =>

@@ -816,6 +816,11 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
       expect(yield* root(nested)).toBe(nested);
       yield* fs.makeDirectory(`${nested}/subdir`);
       expect(yield* root(`${nested}/subdir`)).toBe(nested);
+      const inner = `${nested}/inner`;
+      yield* fs.makeDirectory(inner);
+      yield* command(inner, ["init", "-b", "main"]);
+      expect(yield* root(inner, true)).toBe(inner);
+      expect(yield* root(inner)).toBe(inner);
       yield* fs.writeFileString(`${nested}/untracked.txt`, "keep this file");
       const before = yield* Effect.all([
         command(enclosing, ["rev-parse", "HEAD"]),
@@ -824,6 +829,7 @@ it.live("refuses a nested managed checkout that lost its Git data", () =>
       ]);
       yield* fs.remove(`${nested}/.git`);
       for (const cwd of [nested, `${nested}/subdir`]) {
+        expect(yield* root(cwd, true)).toBe(nested);
         expect(yield* registry.detect({ cwd })).toBeNull();
         expect(
           (yield* checkpoints.captureCheckpoint({ cwd, checkpointRef }).pipe(Effect.result))._tag,

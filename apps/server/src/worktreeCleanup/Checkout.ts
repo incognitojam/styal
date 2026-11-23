@@ -516,7 +516,7 @@ export const makeCheckoutRoot = Effect.gen(function* () {
       try: run,
       catch: () => fail("Could not identify the workspace checkout."),
     });
-  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string) {
+  const root = Effect.fn("WorktreeCleanup.checkoutRoot")(function* (cwd: string, forLease = false) {
     const resolved = path.resolve(cwd);
     let canonical = resolved;
     let parent = resolved;
@@ -537,7 +537,12 @@ export const makeCheckoutRoot = Effect.gen(function* () {
       parent = path.dirname(parent);
     }
     const owner = yield* managedOwner(resolved);
-    if (owner !== null) {
+    if (owner !== null && forLease) {
+      const relative = path.relative(owner, canonical);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+        return owner;
+    }
+    if (owner !== null && !forLease) {
       if (
         !(yield* io(() =>
           fs.lstat(owner).then(
@@ -571,6 +576,8 @@ export const makeCheckoutRoot = Effect.gen(function* () {
         return yield* fail("This worktree has lost its Git data. Its workspace cannot be used.");
     }
     for (let directory = canonical; ; directory = path.dirname(directory)) {
+      // Cleanup may remove the marker; lease discovery must stop at the managed boundary.
+      if (directory === owner) return owner;
       const marker = yield* io(() =>
         fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;

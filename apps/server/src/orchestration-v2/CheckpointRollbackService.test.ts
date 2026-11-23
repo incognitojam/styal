@@ -1,3 +1,4 @@
+import { ChildProcessSpawner } from "effect/process";
 import { fixture } from "../worktreeCleanup/fixtures.testkit.ts";
 import { makeCheckout } from "../worktreeCleanup/Checkout.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -24,7 +25,6 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Deferred from "effect/Deferred";
@@ -268,10 +268,18 @@ it.effect.each([
         Layer.mergeAll(
           ThreadCommandExecutor.layer,
           NodeServices.layer,
-          Layer.succeed(
-            GitVcsDriver.GitVcsDriver,
-            real?.git ?? ({} as GitVcsDriver.GitVcsDriver["Service"]),
-          ),
+          real
+            ? Layer.succeed(GitVcsDriver.GitVcsDriver, real.git)
+            : Layer.mock(GitVcsDriver.GitVcsDriver)({
+                execute: ({ cwd }) =>
+                  Effect.succeed({
+                    exitCode: ChildProcessSpawner.ExitCode(0),
+                    stdout: `${cwd}\n`,
+                    stderr: "",
+                    stdoutTruncated: false,
+                    stderrTruncated: false,
+                  }),
+              }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -416,6 +424,17 @@ it.effect.each([
       if (order === "rollback-first") assert.isFalse(cleanupEntered);
       yield* Deferred.succeed(release, undefined);
       if (cleanup !== undefined) yield* Fiber.join(cleanup);
+      if (leavesFolder) {
+        const error = yield* Fiber.join(rollback).pipe(Effect.flip);
+        assert.equal(error.reason, "workspace-restore-failed");
+        assert.isTrue(Cause.pretty(Cause.fail(error)).includes("lost its Git data"));
+        assert.deepEqual(calls, ["cleanup"]);
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
+          "keep",
+        );
+        return;
+      }
       if (unmanaged || shared) {
         const error = yield* Fiber.join(rollback).pipe(Effect.flip);
         assert.equal(error._tag, "CheckpointRollbackExecutionError");
@@ -424,20 +443,6 @@ it.effect.each([
           assert.equal(error.reason, "shared-workspace");
           assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
         }
-        return;
-      }
-      if (leavesFolder && restoreFiles) {
-        // The folder is not replaced; outside any checkout, restoring files into it fails.
-        const exit = yield* Fiber.join(rollback).pipe(Effect.exit);
-        assert.isTrue(
-          Exit.isFailure(exit) && Cause.pretty(exit.cause).includes("not a Git checkout"),
-        );
-        assert.deepEqual(calls, ["cleanup", "hold", "session", "files", "release"]);
-        assert.deepEqual(yield* fileSystem.readDirectory(worktreePath), ["unsaved.txt"]);
-        assert.equal(
-          yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
-          "keep",
-        );
         return;
       }
       yield* Fiber.join(rollback);

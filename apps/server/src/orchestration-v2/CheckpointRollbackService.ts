@@ -232,7 +232,8 @@ export const layer: Layer.Layer<
 
       const { worktreePath, branch } = context.thread;
       if (workspace !== undefined) {
-        yield* checkout.restore(workspace).pipe(
+        yield* checkoutRoot(workspace).pipe(
+          Effect.andThen(checkout.restore(workspace)),
           Effect.mapError(
             (cause) =>
               new CheckpointRollbackExecutionError({
@@ -410,7 +411,7 @@ export const layer: Layer.Layer<
               ? Option.getOrUndefined(yield* projects.get(thread.projectId))
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
-          const workspace = cwd === undefined ? undefined : yield* checkoutRoot(cwd);
+          const workspace = cwd === undefined ? undefined : yield* checkoutRoot(cwd, true);
           yield* Effect.scoped(
             workspace === undefined
               ? execute(input)

@@ -747,7 +747,10 @@ export const layer: Layer.Layer<
         return;
       }
       if (workspace !== undefined) {
-        const restored = yield* checkout.restore(workspace).pipe(Effect.result);
+        const restored = yield* checkoutRoot(workspace).pipe(
+          Effect.andThen(checkout.restore(workspace)),
+          Effect.result,
+        );
         if (restored._tag === "Failure") {
           if (input.willRetry === true) return yield* restored.failure;
           yield* settleStartFailure({
@@ -2205,7 +2208,7 @@ export const layer: Layer.Layer<
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
           const resolved =
-            cwd === undefined ? undefined : yield* checkoutRoot(cwd).pipe(Effect.result);
+            cwd === undefined ? undefined : yield* checkoutRoot(cwd, true).pipe(Effect.result);
           if (resolved?._tag === "Failure") {
             yield* Effect.scoped(start(input, undefined, resolved.failure));
             return;
