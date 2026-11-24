@@ -29,7 +29,11 @@ import { cn } from "~/lib/utils";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
+import {
+  manualServerUpdateCommand,
+  ownServerInstallation,
+  type ServerUpdateCapability,
+} from "~/versionSkew";
 import {
   serverUpdateActivity,
   serverUpdateCheckingMessage,
@@ -452,7 +456,8 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: ServerUpdateTarget & UpdateButtonProps) {
-  const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
+  const serverEnvironment = useServerConfigs().get(environmentId)?.environment;
+  const serverVersion = serverEnvironment?.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
@@ -521,11 +526,16 @@ export function ServerUpdateAction({
 
   if (selfUpdate === null || selfUpdate === "service-migration") {
     const serviceMigration = selfUpdate === "service-migration";
-    const globalInstall = !serviceMigration && installation?.kind === "npm-global";
+    const ownInstallation = ownServerInstallation(
+      serverEnvironment?.serverPackageName,
+      installation,
+    );
+    const globalInstall = !serviceMigration && ownInstallation?.kind === "npm-global";
+    const launcherInstall = !serviceMigration && ownInstallation?.kind === "t3-launcher";
     const command = manualServerUpdateCommand(
       targetVersion,
       serviceMigration ? "service" : "foreground",
-      installation,
+      ownInstallation,
     );
     const instructions = (
       <DialogPopup>
@@ -553,8 +563,14 @@ export function ServerUpdateAction({
               ) : globalInstall ? (
                 <>
                   This updates the <code>styal</code> command installed in{" "}
-                  <code>{installation.prefix}</code>. Then stop the existing server and start it
+                  <code>{ownInstallation.prefix}</code>. Then stop the existing server and start it
                   again with the same startup options.
+                </>
+              ) : launcherInstall ? (
+                <>
+                  This updates the <code>styal</code> command at{" "}
+                  <code>{ownInstallation.launcher}</code>. Then stop the existing server and start
+                  it again with the same startup options.
                 </>
               ) : (
                 <>
@@ -573,7 +589,7 @@ export function ServerUpdateAction({
                 aria-label={
                   serviceMigration
                     ? "Copy service update command"
-                    : globalInstall
+                    : globalInstall || launcherInstall
                       ? "Copy update command"
                       : "Copy start command"
                 }
@@ -581,7 +597,7 @@ export function ServerUpdateAction({
                   copyToClipboard(command, {
                     description: serviceMigration
                       ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
-                      : globalInstall
+                      : globalInstall || launcherInstall
                         ? `Run this on ${serverLabel}, then stop the existing server and start styal again with the same startup options.`
                         : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
                   })

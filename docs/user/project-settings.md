@@ -190,7 +190,8 @@ actions, checkouts and removal. **Add to another machine**, under Checkouts, clo
 onto a connected machine that does not have it yet and copies the `.env` files you choose. Actions
 belong to a project: editing them creates the project's own list on each selected environment, and
 reset returns to the environment's shared list. A project's `t3.json` actions can be reviewed and
-imported there.
+imported there. When a project has several checkouts on one environment, choose one in the scope
+line at the top to see or change only that checkout's settings.
 
 Settings a repository can also declare in its project file, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then the project file, then
@@ -325,10 +326,13 @@ project's folder, or, in the flat list, the chat's own row. Each shows how many 
 threads are working or need you; in folders the chat has no row of its own, and the folder's
 chevron still opens and closes it. **Project settings** links open the page, and its gear
 button opens the settings. The coordinator's own links (from search, the palette, another thread,
-or **Make project coordinator** on the thread you have open) open the page too; **Open as thread**
-in the page's header shows it as a thread, with its title, thread menu and details panel. A
+or **Make project coordinator** on the thread you have open) open the page too. The page has the
+thread view's details card, terminal and right panel, with the same toggles and shortcuts. Before
+the chat's first message the card shows its machine and branch without changing them; once it has
+started, the card has the same branch and git controls as any thread. A
 project without a coordinator shows an empty chat: the first message starts a thread in the
-project's folder, without a worktree, and makes it the coordinator. When the project is on more
+project's folder, without a worktree, and makes it the coordinator. The new thread is named after
+the project followed by "chat"; coordinators do not generate titles. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine
 where the project was last active. The chat stays on that machine, and only threads on it report
 to the chat. A machine with project coordinators off is named there instead of offered. **Add to

@@ -9,7 +9,7 @@ import {
   resolveProjectProviderInstanceEnabled,
 } from "@t3tools/contracts";
 import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
-import { defaultTextGenerationModel } from "@t3tools/shared/serverSettings";
+
 import * as ServerSettings from "../serverSettings.ts";
 import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
@@ -209,8 +209,7 @@ export const make = Effect.gen(function* () {
             provider.auth.status === "unauthenticated" ||
             !isProviderAvailable(provider) ||
             !isProviderTextGenerationCapable(provider) ||
-            (operation === "generateReviewGuide" && !INVESTIGATING_DRIVERS.has(provider.driver)) ||
-            exhaustedUsageWindow(provider, now, defaultTextGenerationModel(provider.driver)),
+            (operation === "generateReviewGuide" && !INVESTIGATING_DRIVERS.has(provider.driver)),
         )
         .map((provider) => provider.instanceId);
       // A text generator has no snapshot, so it is excluded by id.
@@ -218,6 +217,11 @@ export const make = Effect.gen(function* () {
         { textGenerationModelSelection: selection },
         snapshots,
         new Set([selection.instanceId, ...excluded]),
+        {
+          providerInstances: settings.providerInstances,
+          defaultModelSelection: settings.defaultModelSelection,
+          isModelUsable: (provider, model) => !exhaustedUsageWindow(provider, now, model),
+        },
       );
     }
     if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {

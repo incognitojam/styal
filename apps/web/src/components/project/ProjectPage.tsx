@@ -171,6 +171,7 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     member.environmentId === draftSession?.environmentId && member.id === draftSession.projectId;
   const unsentDraft =
     chatThreadId === null && draftSession?.promotedTo == null ? draftSession : null;
+  const hasUnsentDraft = unsentDraft !== null;
   // A machine the project was just added to keeps the draft while it clones and until its
   // repository is known, when the checkout joins the project.
   const unsentDraftRef = unsentDraft
@@ -198,14 +199,22 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
       });
       return;
     }
-    if (!openDraft) return;
+    if (!openDraft && !hasUnsentDraft) return;
     ensureProjectChatDraft({
       draftId,
       threadId: newThreadId(),
       projectRef: scopeProjectRef(environmentId, checkout.id),
       logicalProjectKey: page.group.projectKey,
     });
-  }, [checkout.id, draftId, draftOffChoices, environmentId, openDraft, page.group.projectKey]);
+  }, [
+    checkout.id,
+    draftId,
+    draftOffChoices,
+    environmentId,
+    hasUnsentDraft,
+    openDraft,
+    page.group.projectKey,
+  ]);
   const labelOf = (machine: EnvironmentId) =>
     environments.find((entry) => entry.environmentId === machine)?.label ?? machine;
 
@@ -295,15 +304,6 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
       }),
-    onOpenThread:
-      chat === null
-        ? null
-        : () =>
-            void navigate({
-              to: "/$environmentId/$threadId",
-              params: buildThreadRouteParams(chat),
-              search: { view: "thread" },
-            }),
   } as const;
 
   const view =

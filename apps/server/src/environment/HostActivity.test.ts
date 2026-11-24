@@ -18,6 +18,7 @@ import {
   type ProjectionRuntimeRecoveryState,
 } from "../orchestration-v2/ProjectionStore.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { EffectOutboxV2 } from "../orchestration-v2/EffectOutbox.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
@@ -245,6 +246,7 @@ it.effect(
             installsInFlight: Effect.succeed(0),
           }),
           Layer.mock(ProjectStoreV2)({ list: () => Effect.succeed([]) }),
+          Layer.mock(EffectOutboxV2)({}),
           Layer.mock(ProjectionStoreV2)({
             getShellSnapshot: () =>
               Effect.succeed({ threads } as unknown as OrchestrationV2ThreadShellSnapshot),
@@ -314,6 +316,7 @@ it.effect("counts a provider install in flight as work a restart would stop", ()
         }),
         Layer.mock(DeviceSharing)({ environmentsUsingDevices: Effect.succeed(0) }),
         Layer.mock(ProjectStoreV2)({ list: () => Effect.succeed([]) }),
+        Layer.mock(EffectOutboxV2)({}),
         Layer.mock(ProjectionStoreV2)({
           getShellSnapshot: () =>
             Effect.succeed({ threads: [] } as unknown as OrchestrationV2ThreadShellSnapshot),
