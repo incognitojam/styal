@@ -7,11 +7,19 @@ import { machineConnectionEmptyText, machineConnectionLine } from "./machineConn
 const machine = (
   label: string,
   phase: EnvironmentConnectionPhase,
-  flags: { updating?: boolean; awaitingSignIn?: boolean; kind?: EnvironmentMachineKind } = {},
+  flags: {
+    updating?: boolean;
+    awaitingSignIn?: boolean;
+    kind?: EnvironmentMachineKind;
+    outdated?: "client" | "server";
+    hidden?: boolean;
+  } = {},
 ) => ({
   environmentId: EnvironmentId.make(label),
   label,
-  connection: { phase },
+  connection: { phase, error: flags.outdated ? `${label} runs another version.` : null },
+  outdated: flags.outdated ?? null,
+  enabled: flags.hidden !== true,
   serverConfig: flags.kind
     ? {
         environment: {
@@ -27,9 +35,65 @@ describe("machineConnectionLine", () => {
   it.each([
     ["every machine connected", [machine("laptop", "connected")], null],
     [
-      "machines switched off, an offline device and an incompatible version",
+      "machines switched off, an offline device and a client no update fixes",
       [machine("atlas", "available"), machine("mesa", "offline"), machine("pine", "unsupported")],
       null,
+    ],
+    [
+      "this app is older than the machine",
+      [machine("atlas", "unsupported", { outdated: "client" })],
+      "Update this app to use atlas",
+    ],
+    [
+      "the machine is older than this app",
+      [machine("atlas", "unsupported", { outdated: "server" })],
+      "Update styal on atlas",
+    ],
+    [
+      "a hidden machine is neither shown nor counted",
+      [
+        machine("atlas", "unsupported", { outdated: "server" }),
+        machine("mesa", "unsupported", { outdated: "server", hidden: true }),
+      ],
+      "Update styal on atlas",
+    ],
+    [
+      "the machine updating itself",
+      [machine("atlas", "unsupported", { outdated: "server", updating: true })],
+      null,
+    ],
+    [
+      "several machines older than this app",
+      [
+        machine("atlas", "unsupported", { outdated: "server" }),
+        machine("mesa", "unsupported", { outdated: "server" }),
+      ],
+      "Update styal on 2 machines",
+    ],
+    [
+      "several machines newer than this app",
+      [
+        machine("atlas", "unsupported", { outdated: "client" }),
+        machine("mesa", "unsupported", { outdated: "client" }),
+      ],
+      "Update this app to use 2 machines",
+    ],
+    [
+      "machines on both sides of this app's version",
+      [
+        machine("atlas", "unsupported", { outdated: "client" }),
+        machine("mesa", "unsupported", { outdated: "server" }),
+      ],
+      "Can't use 2 machines",
+    ],
+    [
+      "a version beside a failure and a machine still connecting",
+      [
+        machine("pine", "connecting"),
+        machine("mesa", "error"),
+        machine("atlas", "unsupported", { outdated: "server" }),
+      ],
+      "Can't reach or use 2 machines",
     ],
     ["one machine connecting", [machine("atlas", "connecting")], "Connecting to atlas"],
     [
@@ -96,6 +160,19 @@ describe("machineConnectionLine", () => {
     ]);
     expect(line?.retryEnvironmentIds).toEqual([EnvironmentId.make("atlas")]);
     expect(line?.waitingEnvironmentId).toBe(EnvironmentId.make("mesa"));
+  });
+
+  it("names each machine in the tooltip and retries none of the versions", () => {
+    const line = machineConnectionLine([
+      machine("mesa", "error"),
+      machine("atlas", "unsupported", { outdated: "client" }),
+    ]);
+    expect(line?.tooltip).toBe("Can't reach mesa\natlas runs another version.");
+    expect(line?.retryEnvironmentIds).toEqual([EnvironmentId.make("mesa")]);
+    expect(
+      machineConnectionLine([machine("atlas", "unsupported", { outdated: "client" })])
+        ?.retryEnvironmentIds,
+    ).toEqual([]);
   });
 });
 

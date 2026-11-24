@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import * as Predicate from "effect/Predicate";
 import {
   AuthEnvironmentMaintainScope,
   type AuthSessionState,
@@ -712,7 +713,7 @@ export function OutdatedServerUpdateAction({
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
     const confirmed = await requestConfirmDialog(
-      `Update the ${serverLabel} server?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
+      `Update the ${serverLabel}?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
       { confirmLabel: "Update" },
     );
     if (confirmed !== true) {
@@ -727,10 +728,13 @@ export function OutdatedServerUpdateAction({
     pendingUpdateEnvironmentIds.delete(environmentId);
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
         title: `${serverLabel} update failed`,
-        description: updateFailureMessage(squashAtomCommandFailure(result)),
+        description: Predicate.isTagged(error, "EnvironmentAuthorizationError")
+          ? `This pairing can't update the ${serverLabel}.`
+          : updateFailureMessage(error),
       });
       return;
     }
