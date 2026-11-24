@@ -9,19 +9,20 @@ name: Mobile Fingerprint Check
 # inherits the drifted fingerprint and loses OTA reach too — that is why the
 # signal has to fire before merge, not after.)
 #
-# The check is advisory: it always passes, the label is the signal. Both
-# fingerprints are computed in this one job (same OS, same corepack-pinned
-# pnpm), so the comparison is self-consistent; no EXPO_TOKEN needed.
+# Android fingerprint changes also run a release build. Both fingerprints
+# are computed in one job with the same OS and pinned pnpm; no EXPO_TOKEN needed.
 on:
   pull_request:
     # Run even when a rebase or base change removes every native input from the
     # diff, so the label can be cleared without installing Expo dependencies.
     types: [opened, synchronize, reopened, edited]
+  push:
+    branches: ["intake/**"]
 
 concurrency:
   # A title or body edit gets its own group, so it cannot cancel the PR's real
   # run and leave a cancelled check on the head commit.
-  group: mobile-fingerprint-check-${{ github.event.action == 'edited' && !github.event.changes.base && format('edit-{0}', github.run_id) || github.event.pull_request.number }}
+  group: mobile-fingerprint-check-${{ github.event_name }}-${{ github.event.action == 'edited' && !github.event.changes.base && format('edit-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,6 +30,10 @@ jobs:
     name: Native fingerprint diff
     if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-24.04
+    outputs:
+      native_inputs: ${{ steps.changes.outputs.relevant }}
+      android_changed: ${{ steps.changes.outputs.relevant == 'false' && 'false' || steps.compare.outputs.android_changed }}
+      android_fingerprint: ${{ steps.compare.outputs.android_fingerprint }}
     permissions:
       contents: read
     env:
@@ -41,16 +46,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # The merge ref can advance after the event is queued. Pin its commit
-          # and compare against its first parent, rather than the event's base.
+          # Pin the event SHA; intake comparisons need the whole candidate ancestry.
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '2' }}
 
       - id: changes
         name: Detect native fingerprint inputs
         run: |
-          base_sha=$(git rev-parse HEAD^1)
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            base_sha=$(git rev-parse refs/remotes/origin/main)
+            if ! git merge-base --is-ancestor "$base_sha" HEAD; then
+              echo "::error::The intake candidate does not include current main. Rebase it and push again."
+              exit 1
+            fi
+          else
+            base_sha=$(git rev-parse HEAD^1)
+          fi
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "Comparing $base_sha..$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           paths=$(git diff --no-renames --name-only "$base_sha" HEAD -- \
             apps/mobile/ packages/client-runtime/ packages/contracts/ packages/shared/ \
             assets/ scripts/ patches/ package.json pnpm-lock.yaml pnpm-workspace.yaml \
@@ -80,7 +94,7 @@ jobs:
           echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
           "$vp_pnpm_bin/pnpm" --version
 
-      - name: Fingerprint merge result
+      - name: Fingerprint candidate
         if: steps.changes.outputs.relevant == 'true'
         working-directory: apps/mobile
         run: |
@@ -113,8 +127,16 @@ jobs:
             echo "## Native fingerprint diff"
             echo
             for platform in ios android; do
-              head_hash="$(jq -r .hash "$RUNNER_TEMP/fp/head/$platform.json")"
-              base_hash="$(jq -r .hash "$RUNNER_TEMP/fp/base/$platform.json")"
+              head_hash="$(jq -er '.hash | select(test("^[0-9a-f]{40}$"))' "$RUNNER_TEMP/fp/head/$platform.json")"
+              base_hash="$(jq -er '.hash | select(test("^[0-9a-f]{40}$"))' "$RUNNER_TEMP/fp/base/$platform.json")"
+              if [ "$platform" = android ]; then
+                echo "android_fingerprint=$head_hash" >> "$GITHUB_OUTPUT"
+                if [ "$head_hash" = "$base_hash" ]; then
+                  echo "android_changed=false" >> "$GITHUB_OUTPUT"
+                else
+                  echo "android_changed=true" >> "$GITHUB_OUTPUT"
+                fi
+              fi
               if [ "$head_hash" = "$base_hash" ]; then
                 echo "- ✅ **$platform**: unchanged (\`$head_hash\`) — OTA-compatible"
                 continue
@@ -148,3 +170,101 @@ jobs:
           path: ${{ runner.temp }}/fingerprint-result
           if-no-files-found: error
           retention-days: 1
+
+  android_release:
+    # A skipped metadata job must not satisfy the real build's required check.
+    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'Android release build (metadata edit)' || 'Android release build' }}
+    needs: fingerprint
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      T3CODE_RELAY_URL: ${{ vars.RELAY_URL }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      EXPO_NO_GIT_STATUS: "1"
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.fingerprint.outputs.android_fingerprint }}
+      EXPO_UPDATES_WORKFLOW_OVERRIDE: managed
+    steps:
+      - name: Require a successful fingerprint comparison
+        env:
+          RESULT: ${{ needs.fingerprint.result }}
+          NATIVE_INPUTS: ${{ needs.fingerprint.outputs.native_inputs }}
+          ANDROID_CHANGED: ${{ needs.fingerprint.outputs.android_changed }}
+          ANDROID_FINGERPRINT: ${{ needs.fingerprint.outputs.android_fingerprint }}
+        run: |
+          echo "Fingerprint comparison: $RESULT; Android changed: $ANDROID_CHANGED"
+          [[ "$RESULT" == success && ("$ANDROID_CHANGED" == true || "$ANDROID_CHANGED" == false) ]]
+          if [[ "$NATIVE_INPUTS" == true ]]; then
+            [[ "$ANDROID_FINGERPRINT" =~ ^[0-9a-f]{40}$ ]]
+          else
+            [[ "$NATIVE_INPUTS" == false && "$ANDROID_CHANGED" == false ]]
+          fi
+
+      - name: Android fingerprint unchanged
+        if: needs.fingerprint.outputs.android_changed == 'false'
+        run: echo "Android fingerprint unchanged; no release build needed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Setup Java
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Restore Gradle cache
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.gradle/caches/*
+            ~/.gradle/wrapper
+            !~/.gradle/caches/build-cache-1
+          key: gradle-android-deps-v2-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: gradle-android-deps-v2-
+
+      - name: Cache Android build outputs
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        uses: ./.github/actions/cache-android-build
+        with:
+          variant: production
+
+      - name: Generate the native project
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build the release APK
+        if: needs.fingerprint.outputs.android_changed == 'true'
+        working-directory: apps/mobile/android
+        env:
+          TMPDIR: ${{ runner.temp }}/metro
+        run: |
+          mkdir -p "$TMPDIR"
+          ./gradlew :app:assembleRelease --build-cache --profile \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Pexpo.useLegacyPackaging=true
