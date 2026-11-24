@@ -71,11 +71,8 @@ interface ThreadDetailsPanelProps extends Pick<
   workspaceMutationId: string | null;
   isGitRepo: boolean;
   envLocked: boolean;
-  /**
-   * The thread runs in the project's folder as it is: the card shows its machine, branch and pull
-   * requests, but nothing in it moves the thread or switches the folder's branch.
-   */
-  checkoutFixed?: boolean;
+  /** The branch and its pull requests are shown, with no picker and no pull request checkout. */
+  branchReadOnly?: boolean;
   availableEnvironments: readonly EnvironmentOption[];
   autoEnvironmentLabel?: string | undefined;
   onAutoEnvironment?: (() => void) | undefined;
@@ -134,8 +131,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     ...(props.onActiveThreadBranchOverrideChange
       ? { onActiveThreadBranchOverrideChange: props.onActiveThreadBranchOverrideChange }
       : {}),
-    envLocked: props.envLocked || props.checkoutFixed === true,
-    branchReadOnly: props.checkoutFixed === true,
+    envLocked: props.envLocked,
+    branchReadOnly: props.branchReadOnly ?? false,
     forceNewWorktree: props.forceNewWorktree ?? false,
     onComposerFocusRequest: props.onComposerFocusRequest,
     ...(props.onCheckoutPullRequestRequest
@@ -263,7 +260,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         gitCwd={props.gitCwd}
                         workspaceMutationId={props.workspaceMutationId}
                         activeThreadRef={activeThreadRef}
-                        branchFixed={props.checkoutFixed === true}
                         {...(props.draftId ? { draftId: props.draftId } : {})}
                         {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
                       />

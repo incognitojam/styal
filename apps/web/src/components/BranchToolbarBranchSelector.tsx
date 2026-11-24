@@ -43,7 +43,6 @@ import {
   THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
 } from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsThreadPrRows } from "./chat/ThreadDetailsPrRows";
-import { refuseCheckoutChange } from "./project/projectChatCheckout";
 import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -173,8 +172,6 @@ export function BranchToolbarBranchSelector({
   const hasServerThread = serverThread !== null;
   const canUpdateThreadBranch = !hasServerThread || canOperateThread;
   const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch;
-  const refuseChange = (quiet = false) =>
-    refuseCheckoutChange({ threadRef, draftId, isServerThread: hasServerThread }, quiet);
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
     resolveEffectiveEnvMode({
@@ -198,7 +195,6 @@ export function BranchToolbarBranchSelector({
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
     )
       return false;
-    if (refuseChange(automatic)) return false;
     const latest = readLatestThreadState();
     if (automatic && (latest.runtime || latest.worktreePath)) return false;
     if (
@@ -435,7 +431,6 @@ export function BranchToolbarBranchSelector({
 
   const selectBranch = (refName: VcsRef) => {
     if (!canUpdateThreadBranch || !branchCwd || !activeProjectCwd || isBranchActionPending) return;
-    if (refuseChange()) return;
 
     const latest = readLatestThreadState();
     if (isSelectingWorktreeBase) {
@@ -510,7 +505,7 @@ export function BranchToolbarBranchSelector({
   };
 
   const createRef = (rawName: string) => {
-    if (!canChangeThreadBranch || refuseChange()) return;
+    if (!canChangeThreadBranch) return;
     const name = sanitizeNewRefName(rawName);
     if (!branchCwd || !name || isBranchActionPending) return;
 

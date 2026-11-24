@@ -1,7 +1,7 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { UnifiedSettings } from "@t3tools/contracts";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { parseScopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 import { DEFAULT_INTERACTION_MODE } from "../../types";
@@ -18,7 +18,6 @@ import {
   DraftId,
 } from "../../composerDraftStore";
 import { openPullRequestThreadDialog } from "./ChatOverlayHosts";
-import { refuseCheckoutChange } from "../project/projectChatCheckout";
 interface PullRequestDraftThreadInput {
   readonly routeKind: "server" | "draft";
   readonly draftId: DraftId | null;
@@ -60,9 +59,6 @@ export function usePullRequestDraftThread(input: PullRequestDraftThreadInput) {
       return;
     }
     if (activeThreadKey === null) return;
-    const threadRef = parseScopedThreadKey(activeThreadKey);
-    // The dialog checks the pull request out as soon as it is confirmed.
-    if (threadRef === null || refuseCheckoutChange({ threadRef, draftId, isServerThread })) return;
     openPullRequestThreadDialog(activeThreadKey, reference);
   };
   const openPullRequestDialogStable = useStableCallback(openPullRequestDialog);

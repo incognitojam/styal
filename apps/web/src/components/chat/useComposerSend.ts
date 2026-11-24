@@ -9,7 +9,6 @@ import {
   boundAttachmentIds,
   formatOutgoingPrompt,
   optimisticMessageAttachments,
-  composerTurnBootstrap,
   planComposerTurn,
   sendTitleFallbackLabels,
   snapshotComposerSend,
@@ -17,7 +16,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
-import { readCheckoutChangeBlock } from "../project/projectChatCheckout";
+import { isProjectChatDraftId } from "../project/projectPage.logic";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -853,11 +852,6 @@ export function useComposerSend(input: ComposerSendInput) {
       environmentContexts: composerEnvironmentContextsSnapshot,
       messageText: messageTextForSend,
     } = sendSnapshot;
-    const checkoutBlock = readCheckoutChangeBlock({
-      threadRef: scopeThreadRef(environmentId, threadIdForSend),
-      draftId,
-      isServerThread,
-    });
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
@@ -879,15 +873,8 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
-      projectChat: checkoutBlock === "project-chat",
+      projectChatDraft: draftId !== null && isProjectChatDraftId(draftId),
     });
-    if (checkoutBlock === "loading" && baseBranchForWorktree) {
-      setThreadError(
-        threadIdForSend,
-        "Still loading this thread's machine. Send again in a moment.",
-      );
-      return;
-    }
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
       return;
@@ -1343,21 +1330,35 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure === null && turnAttachmentsResult._tag === "Success") {
-      const bootstrap = composerTurnBootstrap({
-        createThread: isLocalDraftThread
+      const bootstrap =
+        isLocalDraftThread || baseBranchForWorktree
           ? {
-              projectId: activeProject.id,
-              title,
-              modelSelection: threadCreateModelSelection,
-              runtimeMode,
-              interactionMode: DEFAULT_INTERACTION_MODE,
-              createdAt: activeThread.createdAt,
+              ...(isLocalDraftThread
+                ? {
+                    createThread: {
+                      projectId: activeProject.id,
+                      title,
+                      modelSelection: threadCreateModelSelection,
+                      runtimeMode,
+                      interactionMode: DEFAULT_INTERACTION_MODE,
+                      branch: threadBranch,
+                      worktreePath: threadWorktreePath,
+                      createdAt: activeThread.createdAt,
+                    },
+                  }
+                : {}),
+              ...(baseBranchForWorktree
+                ? {
+                    prepareWorktree: {
+                      projectCwd: activeProject.workspaceRoot,
+                      baseBranch: baseBranchForWorktree,
+                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                    },
+                    runSetupScript: true,
+                  }
+                : {}),
             }
-          : null,
-        plan: { baseBranchForWorktree, threadBranch, threadWorktreePath },
-        projectCwd: activeProject.workspaceRoot,
-        startFromOrigin,
-      });
+          : undefined;
       const backgroundThreadRef =
         submissionIntent === "background" && isLocalDraftThread
           ? scopeThreadRef(environmentId, threadIdForSend)

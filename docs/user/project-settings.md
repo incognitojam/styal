@@ -327,8 +327,9 @@ threads are working or need you; in folders the chat has no row of its own, and 
 chevron still opens and closes it. **Project settings** links open the page, and its gear
 button opens the settings. The coordinator's own links (from search, the palette, another thread,
 or **Make project coordinator** on the thread you have open) open the page too. The page has the
-thread view's details card, terminal and right panel, with the same toggles and shortcuts; the
-card shows the chat's machine, branch and pull requests but does not change them. A
+thread view's details card, terminal and right panel, with the same toggles and shortcuts. Before
+the chat's first message the card shows its machine and branch without changing them; once it has
+started, the card has the same branch and git controls as any thread. A
 project without a coordinator shows an empty chat: the first message starts a thread in the
 project's folder, without a worktree, and makes it the coordinator. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine

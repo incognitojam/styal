@@ -330,7 +330,6 @@ import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ProjectChatHeader, type ProjectChatHeaderProps } from "./project/ProjectChatHeader";
-import { checkoutChangeBlock } from "./project/projectPage.logic";
 import { useSideChat } from "./chat/useSideChat";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
@@ -821,7 +820,7 @@ export default function ChatView(props: ChatViewProps) {
   const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
   const fanoutSelectionsAtom = draftFanoutSelectionsAtom(routeThreadKey);
   const { sendInFlight: sendInFlightRef } = draftSendState(routeThreadKey);
-  const storedMultipleModelSelections = useAtomValue(fanoutSelectionsAtom);
+  const multipleModelSelections = useAtomValue(fanoutSelectionsAtom);
   const setMultipleModelSelections = (
     selections: SetStateAction<ReadonlyArray<ModelSelection> | null>,
   ) => {
@@ -896,16 +895,8 @@ export default function ChatView(props: ChatViewProps) {
       )
     : undefined;
   const isServerThread = serverThread !== null;
+  const unsentProjectChat = projectChat !== undefined && !isServerThread;
   const activeThread = isServerThread ? serverThread : localDraftThread;
-  // The project's chat, on its page or as a plain thread: nothing here moves it or switches its
-  // branch, and it runs no models in worktrees of their own.
-  const projectChatThread =
-    checkoutChangeBlock({
-      draftId,
-      serverThread: isServerThread ? activeThread : null,
-      settings,
-    }) === "project-chat";
-  const multipleModelSelections = projectChatThread ? null : storedMultipleModelSelections;
   const serverLatestRun =
     serverProjection === null ? null : deriveLatestThreadRun(serverProjection);
   const serverActivityRun =
@@ -1048,8 +1039,7 @@ export default function ChatView(props: ChatViewProps) {
   const threadErrorIsServerRuntimeError =
     localServerError === null && visibleThreadError === serverRuntime?.lastError;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const canCheckoutPullRequestIntoThread =
-    canWriteSourceControl && isLocalDraftThread && !projectChatThread;
+  const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   // Turn items can lag projection hydration; keep the environment locked through that gap.
   const activeMessageCount = isServerThread
@@ -2029,8 +2019,8 @@ export default function ChatView(props: ChatViewProps) {
     projectChatAddTargets.length > 0 && !envLocked && draftId !== null && !draftThread?.promotedTo;
   const showComposerContextStrip =
     !embedded &&
-    (projectChatThread ? canChangeEnvironment || canAddProjectChatMachine : true) &&
-    (projectChatThread ||
+    (projectChat !== undefined ? canChangeEnvironment || canAddProjectChatMachine : true) &&
+    (projectChat !== undefined ||
       shouldShowComposerContextStrip({
         isDraftHeroState,
         persistInActiveThreads: settings.persistComposerContextStrip,
@@ -2557,16 +2547,14 @@ export default function ChatView(props: ChatViewProps) {
     isGitRepo,
     worktreeNeedsFirstCommit: firstCommitNeededForWorktree,
   });
-  // The project's chat has no branch of its own: it runs on whatever its folder is on.
-  const localCheckoutBranchMismatch =
-    isServerThread && !projectChatThread
-      ? resolveLocalCheckoutBranchMismatch({
-          effectiveEnvMode: envMode,
-          activeWorktreePath,
-          activeThreadBranch,
-          currentGitBranch: gitStatusQuery.data?.refName ?? null,
-        })
-      : null;
+  const localCheckoutBranchMismatch = isServerThread
+    ? resolveLocalCheckoutBranchMismatch({
+        effectiveEnvMode: envMode,
+        activeWorktreePath,
+        activeThreadBranch,
+        currentGitBranch: gitStatusQuery.data?.refName ?? null,
+      })
+    : null;
   const publishComposerOverlayHeight = (height: number) => {
     const nextHeight = Math.ceil(height);
     if (nextHeight <= 0) return;
@@ -4077,7 +4065,6 @@ export default function ChatView(props: ChatViewProps) {
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
                                 supportsMultipleModels={
-                                  !projectChatThread &&
                                   serverConfig?.environment.capabilities
                                     .requiredWorktreeBootstrap === true
                                 }
@@ -4265,7 +4252,7 @@ export default function ChatView(props: ChatViewProps) {
                                   projectId={activeThread.projectId}
                                   worktreePath={activeThread.worktreePath}
                                   isServerThread={isServerThread}
-                                  showGitControls={isGitRepo && !projectChatThread}
+                                  showGitControls={isGitRepo && projectChat === undefined}
                                   {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                   onEnvModeChange={onEnvModeChangeStable}
                                   startFromOrigin={startFromOrigin}
@@ -4404,8 +4391,10 @@ export default function ChatView(props: ChatViewProps) {
                   gitCwd={gitCwd}
                   workspaceMutationId={workspaceMutationId}
                   isGitRepo={isGitRepo}
-                  envLocked={envLocked}
-                  checkoutFixed={projectChatThread}
+                  // Until its first message the page's chat starts in the project's folder, as its
+                  // composer offers only the machine.
+                  envLocked={envLocked || unsentProjectChat}
+                  branchReadOnly={unsentProjectChat}
                   availableEnvironments={logicalProjectEnvironments}
                   autoEnvironmentLabel={autoEnvironmentLabel}
                   onAutoEnvironment={

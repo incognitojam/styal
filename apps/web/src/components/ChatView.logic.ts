@@ -1355,15 +1355,18 @@ export function planComposerTurn(input: {
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
   readonly freshContext: boolean;
-  /** A project chat starts in the project's folder, whatever branch or worktree its draft holds. */
-  readonly projectChat: boolean;
+  /** The project page's chat draft starts in the project's folder, whatever it holds. */
+  readonly projectChatDraft: boolean;
 }) {
-  const threadBranch = input.projectChat ? null : input.activeThreadBranch;
-  const threadWorktreePath = input.projectChat ? null : input.worktreePath;
+  const threadBranch = input.projectChatDraft ? null : input.activeThreadBranch;
+  const threadWorktreePath = input.projectChatDraft ? null : input.worktreePath;
   const isFirstMessage =
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
-    isFirstMessage && !input.projectChat && input.sendEnvMode === "worktree" && !threadWorktreePath;
+    isFirstMessage &&
+    !input.projectChatDraft &&
+    input.sendEnvMode === "worktree" &&
+    !threadWorktreePath;
   // A stale Claude session compacts before this message so the turn does not re-read the
   // old history. The message queues behind the /compact run, since steering into it is
   // rejected.
@@ -1393,44 +1396,6 @@ export function planComposerTurn(input: {
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||
       (input.phase === "running" && dispatchMode === "queue"),
-  };
-}
-
-/**
- * What a composer turn starts with: a draft's thread, created where `planComposerTurn` placed it,
- * and the worktree to prepare for it, or undefined when there is neither.
- */
-export function composerTurnBootstrap<CreateThread extends object>(input: {
-  readonly createThread: CreateThread | null;
-  readonly plan: Pick<
-    ReturnType<typeof planComposerTurn>,
-    "baseBranchForWorktree" | "threadBranch" | "threadWorktreePath"
-  >;
-  readonly projectCwd: string;
-  readonly startFromOrigin: boolean;
-}) {
-  const { createThread, plan } = input;
-  if (createThread === null && !plan.baseBranchForWorktree) return undefined;
-  return {
-    ...(createThread === null
-      ? {}
-      : {
-          createThread: {
-            ...createThread,
-            branch: plan.threadBranch,
-            worktreePath: plan.threadWorktreePath,
-          },
-        }),
-    ...(plan.baseBranchForWorktree
-      ? {
-          prepareWorktree: {
-            projectCwd: input.projectCwd,
-            baseBranch: plan.baseBranchForWorktree,
-            ...(input.startFromOrigin ? { startFromOrigin: true } : {}),
-          },
-          runSetupScript: true,
-        }
-      : {}),
   };
 }
 

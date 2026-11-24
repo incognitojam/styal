@@ -239,29 +239,6 @@ export function isProjectChatDraftId(draftId: string): boolean {
   return draftId.startsWith(PROJECT_CHAT_DRAFT_PREFIX);
 }
 
-/**
- * Why a change to where a thread runs, or to the branch its folder is on, is refused: the thread
- * is its project's chat (the page's draft, or the coordinator its machine names), or it is a
- * server thread whose machine settings or shell row have not loaded, so that cannot be told yet.
- * `serverThread`: null for a draft, undefined for a server thread without a shell row.
- */
-export function checkoutChangeBlock(input: {
-  readonly draftId: string | null;
-  readonly serverThread:
-    | { readonly id: ThreadId; readonly projectId: ProjectId }
-    | null
-    | undefined;
-  readonly settings: CoordinatorSettings | undefined;
-}): "project-chat" | "loading" | null {
-  if (input.draftId !== null && isProjectChatDraftId(input.draftId)) return "project-chat";
-  if (input.serverThread === null) return null;
-  if (input.serverThread === undefined || input.settings === undefined) return "loading";
-  return projectCoordinatorThreadId(input.settings, input.serverThread.projectId) ===
-    input.serverThread.id
-    ? "project-chat"
-    : null;
-}
-
 interface ThreadRef {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;

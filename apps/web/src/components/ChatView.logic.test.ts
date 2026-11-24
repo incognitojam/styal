@@ -4,7 +4,6 @@ import {
   formatOutgoingPrompt,
   buildExpiredTerminalContextToastCopy,
   mergeDirectPreviewAnnotation,
-  composerTurnBootstrap,
   planComposerTurn,
   snapshotComposerSend,
   withMessageContext,
@@ -1223,7 +1222,7 @@ describe("planComposerTurn", () => {
     phase: "ready" as const,
     dispatchMode: "auto" as const,
     freshContext: false,
-    projectChat: false,
+    projectChatDraft: false,
   };
 
   it("prepares a worktree from the selected branch on a new thread", () => {
@@ -1234,8 +1233,7 @@ describe("planComposerTurn", () => {
     });
   });
 
-  it("creates a project chat's thread in the project's folder whatever its draft holds", () => {
-    const createThread = { projectId: "project-orchard", title: "Plan the release" };
+  it("starts the project page's chat draft in the project's folder whatever it holds", () => {
     for (const draft of [
       { sendEnvMode: "worktree" as const, worktreePath: null, activeThreadBranch: "main" },
       {
@@ -1244,25 +1242,13 @@ describe("planComposerTurn", () => {
         activeThreadBranch: "feature",
       },
     ]) {
-      const plan = planComposerTurn({ ...base, ...draft, projectChat: true });
-      expect(plan.missingWorktreeBaseBranch).toBe(false);
-      expect(
-        composerTurnBootstrap({ createThread, plan, projectCwd: "/repo", startFromOrigin: false }),
-      ).toEqual({ createThread: { ...createThread, branch: null, worktreePath: null } });
+      expect(planComposerTurn({ ...base, ...draft, projectChatDraft: true })).toMatchObject({
+        missingWorktreeBaseBranch: false,
+        baseBranchForWorktree: null,
+        threadBranch: null,
+        threadWorktreePath: null,
+      });
     }
-    // An ordinary draft in worktree mode still gets its worktree.
-    expect(
-      composerTurnBootstrap({
-        createThread,
-        plan: planComposerTurn(base),
-        projectCwd: "/repo",
-        startFromOrigin: false,
-      }),
-    ).toEqual({
-      createThread: { ...createThread, branch: "main", worktreePath: null },
-      prepareWorktree: { projectCwd: "/repo", baseBranch: "main" },
-      runSetupScript: true,
-    });
   });
 
   it("refuses a new worktree without a base branch", () => {
