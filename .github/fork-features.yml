@@ -3431,7 +3431,7 @@ features:
     invariants:
       - "`reportBack` on `t3_thread_launch` and `create_threads` records the caller as the launched thread's report target; a client's `thread.create` cannot set one, forks do not inherit it, and a delegated child or a launch with `environmentId` is refused."
       - A failed run always reports. A blocking approval or question reports after two minutes and is withdrawn while still queued if it is answered. A stopped run reports after 30 seconds unless a newer run took over.
-      - A completed run reports only when a person did not start it, the thread has no later run, open delegated task, background work or active watch, and that run did not already send a report.
+      - A completed run reports when the thread has no later runnable turn, open delegated task or awaited background work, and that run did not already send a report. Watches do not hold reports. A person-started result in a launched thread waits without waking the launcher; only its latest summary reaches the launcher's next turn, once, unless an ordinary report supersedes it.
       - The check is an outbox row committed with the run end or request, so a restart cannot lose it, and a fixed command id delivers each report once.
       - "The launched thread's `t3_thread_send` to its launcher in `auto` or `queue` mode is delivered as a report, past the mode limit a normal send has. `steer` and `restart` stay under that limit."
       - A launcher that is archived, deleted or settled on purpose takes no reports. A launcher settled automatically gets the report and is unsettled.
@@ -7305,6 +7305,31 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/blob/e3b35d1b2440b104f0bc2e357377c348121234dd/packages/client-runtime/src/state/threadCommands.ts
       retire_when: Upstream presents pending sends as working before handoff dispatch finishes, with rejection rollback and shell reconciliation on every client.
+
+  - id: thread-search-linked-history
+    title: Search thread history across linked machines
+    status: maintained
+    tier: yield
+    prs: [1368]
+    rationale: Agents need to find prior work without knowing which linked machine owns it.
+    invariants:
+      - Search includes settled history across linked machines, labels results by machine, and retains readable results when a peer is offline or refuses access.
+      - Explicit machine or project searches remain scoped, and forwarded searches cannot fan out again.
+    implementation_paths:
+      - apps/server/src/mcp/ThreadSearchMcpService.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+    tests:
+      - apps/server/src/mcp/ThreadSearchMcpService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/35377
+      retire_when: Upstream search aggregates linked history with machine labels, scoped targets, and partial failure handling.
 
   - id: thread-settle-reasons
     title: Show why a thread settled
