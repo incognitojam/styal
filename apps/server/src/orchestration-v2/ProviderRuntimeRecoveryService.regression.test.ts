@@ -55,6 +55,7 @@ it("uses the thread provider for stale background work without provider threads"
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);

@@ -148,8 +148,9 @@ import {
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
+import { isStaleQuestionWake as staleQuestionWake } from "./NotificationWake.ts";
 import { EventSinkV2 } from "./EventSink.ts";
-import { answerNoteEffect } from "./ThreadReports.ts";
+import { answerNoteEffect, skipsThreadReport } from "./ThreadReports.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -2368,41 +2369,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     messageId: MessageId,
     notification: OrchestrationV2ThreadProjection["messages"][number]["notification"],
   ) {
-    if (
-      notification?.source.kind !== "delegated_task" ||
-      notification.outcome !== "updated" ||
-      notification.source.childThreadId === undefined
-    )
-      return false;
-    const source = notification.source;
-    const threadId = projection.thread.id;
-    const task =
-      projection.subagents.find((candidate) => source.taskIds.includes(candidate.id)) ??
-      // Command projections omit settled tasks whose result was already handed over.
-      (yield* projectionStore
-        .getThreadRecords(threadId, ["subagents"], { subagentIds: source.taskIds })
-        .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))))
-        .subagents[0];
-    // An unknown task gives no evidence the question is obsolete.
-    if (task === undefined) return false;
-    const childThreadId = task.childThreadId;
-    if (
-      childThreadId === null ||
-      ["completed", "failed", "cancelled", "interrupted"].includes(task.status)
-    )
-      return true;
-    const child = yield* projectionStore
-      .getThreadRecords(childThreadId, ["runtimeRequests"])
-      .pipe(
-        Effect.mapError(
-          (cause) => new OrchestratorProjectionError({ threadId: childThreadId, cause }),
-        ),
-      );
-    return !child.runtimeRequests.some(
-      (request) =>
-        request.kind === "user_input" &&
-        request.status === "pending" &&
-        messageId === `message:delegated-task-question:${threadId}:${request.id}`,
+    return yield* staleQuestionWake(projection, messageId, notification).pipe(
+      Effect.provideService(ProjectionStoreV2, projectionStore),
+      Effect.mapError(
+        (cause) =>
+          new OrchestratorProjectionError({
+            threadId: "threadId" in cause ? cause.threadId : projection.thread.id,
+            cause,
+          }),
+      ),
     );
   });
 
@@ -4390,6 +4365,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         version,
         question: command.question,
         answers: command.answers,
+        ...(command.blocking ? { blocking: true } : {}),
       },
     };
     yield* emitEvent({
@@ -4491,22 +4467,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.summaryRunId !== undefined
     ) {
       const source = yield* projectionStore
-        .getThreadRecords(command.summaryFor, ["runs"])
+        .getThreadRecords(command.summaryFor, ["runs", "subagents"])
         .pipe(mapDispatchError(command));
       let runs = source.runs;
       let latest = latestExecutedRun(runs);
-      while (latest?.status === "completed" && latest.id !== command.summaryRunId) {
+      while (
+        latest != null &&
+        ["completed", "cancelled"].includes(latest.status) &&
+        latest.id !== command.summaryRunId
+      ) {
         const prompts = yield* projectionStore
           .getThreadRecords(command.summaryFor, ["messages"], {
             messageIds: [latest.userMessageId],
           })
           .pipe(mapDispatchError(command));
         const prompt = prompts.messages.find((message) => message.id === latest?.userMessageId);
-        if (
-          prompt === undefined ||
-          (prompt.idleCompaction === undefined && !isCompactionCommandMessage(prompt))
-        )
-          break;
+        if (!skipsThreadReport(latest, prompt, source)) break;
         const compactedRunId = latest.id;
         runs = runs.filter((run) => run.id !== compactedRunId);
         latest = latestExecutedRun(runs);
@@ -12651,7 +12627,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : {}),
       });
     }
-    yield* emitQueuedRunCancellation({ command, events, projection, run: queuedRun, now });
+    yield* emitQueuedRunCancellation({
+      command,
+      events,
+      projection,
+      run: { ...queuedRun, cancelledByThreadId: command.cancelledByThreadId },
+      now,
+    });
     const emitEvent = emit(events, command);
     if (queuedMessage?.reportAnswer !== undefined) {
       const { reportAnswer: _reportAnswer, ...message } = queuedMessage;

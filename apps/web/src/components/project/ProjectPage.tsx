@@ -1,9 +1,4 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import {
-  addSinceLastVisitEnvironment,
-  type CapturedSinceLastVisit,
-  captureSinceLastVisit,
-} from "@t3tools/client-runtime/project-since-last-visit";
 import { projectCoordinatorPatch } from "@t3tools/client-runtime/state/project-coordinators";
 import {
   type EnvironmentId,
@@ -21,14 +16,12 @@ import { newThreadId } from "../../lib/utils";
 import { useEnvironmentMachines, useEnvironments } from "../../state/environments";
 import {
   useAllEnvironmentProjectSnapshotsReady,
-  useEnvironmentShellStatuses,
   useProject,
   useQuietThreadShell,
   useServerConfigs,
 } from "../../state/entities";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
-import { environmentThreadShells, olderSettledThreads } from "../../state/threads";
 import { useProjectClone } from "../../state/projectClones";
 import { useEnvironmentShellStatus } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -113,36 +106,6 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
   const sentRef = draftSession?.promotedTo ?? draftRedirect;
   const sentShell = useQuietThreadShell(sentRef);
   const chat = chatShell !== null && chatShell.deletedAt == null ? chatRef : null;
-  // Taken once from the chat's live shell, before the page records the visit; each machine's
-  // threads are added once its own snapshot is live.
-  const shellStatuses = useEnvironmentShellStatuses();
-  const [sinceLastVisit, setSinceLastVisit] = useState<CapturedSinceLastVisit | null | undefined>();
-  let nextSinceLastVisit = sinceLastVisit;
-  if (nextSinceLastVisit === undefined && chat !== null && shellLive) {
-    const liveChat = appAtomRegistry.get(environmentThreadShells.threadShellAtom(chat));
-    // oxlint-disable-next-line react/purity -- read once per page view, when the capture is taken
-    const openedAt = Date.now();
-    nextSinceLastVisit = liveChat === null ? undefined : captureSinceLastVisit(liveChat, openedAt);
-  }
-  if (nextSinceLastVisit != null && chat !== null) {
-    for (const member of page.group.memberProjects) {
-      const memberEnvironment = member.environmentId;
-      if (nextSinceLastVisit.environments.has(memberEnvironment)) continue;
-      if (!isThreadRouteSnapshotAuthoritative(shellStatuses.get(memberEnvironment))) continue;
-      nextSinceLastVisit = addSinceLastVisitEnvironment(nextSinceLastVisit, {
-        environmentId: memberEnvironment,
-        projectIds: new Set(
-          page.group.memberProjects
-            .filter((other) => other.environmentId === memberEnvironment)
-            .map((other) => other.id),
-        ),
-        threads: appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
-        chatRef: chat,
-        olderSettled: appAtomRegistry.get(olderSettledThreads.olderSettledAtom(memberEnvironment)),
-      });
-    }
-  }
-  if (nextSinceLastVisit !== sinceLastVisit) setSinceLastVisit(nextSinceLastVisit);
   // The draft's thread this page named as the chat, until the settings stream names it too.
   const [named, setNamed] = useState<ScopedThreadRef | null>(null);
   if (named !== null && chatThreadId === named.threadId) setNamed(null);
@@ -278,6 +241,7 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
     name: page.group.displayName,
     statusLine: page.statusLine,
     needYou: page.needYou,
+    stopped: page.stopped,
     machine:
       environmentLabel === undefined
         ? null
@@ -326,8 +290,6 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         threadId={show.ref.threadId}
         routeKind="server"
         projectChat={projectChat}
-        sinceLastVisit={sinceLastVisit ?? null}
-        holdVisit={sinceLastVisit === undefined}
       />
     ) : null;
   return (

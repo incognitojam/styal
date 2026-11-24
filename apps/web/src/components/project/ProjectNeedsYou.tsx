@@ -24,6 +24,7 @@ import {
   CommandId,
   type MessageId,
   type ProviderApprovalDecision,
+  type TimestampFormat,
 } from "@t3tools/contracts";
 import { deriveToolRowPresentation } from "@t3tools/shared/toolRowPresentation";
 import { useNavigate } from "@tanstack/react-router";
@@ -32,6 +33,7 @@ import { Atom } from "effect/reactivity";
 import { ChevronRightIcon, MessageSquareIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { cn, newMessageId, randomUUID } from "~/lib/utils";
 import {
   dismissCoordinatorReport,
@@ -43,7 +45,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
 import { ChildApproval } from "../chat/ChildThreadApprovals";
 import { ReportAnswerOptions } from "../chat/CoordinatorReports";
 import { followTimelineEnd } from "../chat/timelineScrollAnchoring";
@@ -52,6 +54,7 @@ import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   listProjectNeeds,
+  listStoppedThreadNeeds,
   openReports,
   type ProjectNeed,
   type ThreadNeeds,
@@ -87,12 +90,21 @@ const projectNeedsAtom = Atom.family((keys: string) =>
   }),
 );
 
-/** What the threads in `threads` wait on, oldest first. */
-export function useProjectNeeds(threads: ReadonlyArray<EnvironmentThreadShell>) {
+/**
+ * What the threads in `threads` wait on, oldest first, then the `stopped` threads still to be
+ * seen: a stopped thread holds no turn up, and its row needs no detail to show.
+ */
+export function useProjectNeeds(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  stopped: ReadonlyArray<EnvironmentThreadShell>,
+) {
   const keyOf = (thread: EnvironmentThreadShell) =>
     threadKey(scopeThreadRef(thread.environmentId, thread.id));
   const needs = useAtomValue(projectNeedsAtom(threads.map(keyOf).toSorted().join("\n")));
-  return listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null);
+  return [
+    ...listProjectNeeds(threads, (thread) => needs.get(keyOf(thread)) ?? null),
+    ...listStoppedThreadNeeds(stopped),
+  ];
 }
 
 const APPROVAL_HEADINGS = {
@@ -111,7 +123,7 @@ const DECISION_LABELS = {
   cancel: "Cancelled",
 } satisfies Record<ProviderApprovalDecision, string>;
 
-function summary(need: ProjectNeed): string {
+function summary(need: ProjectNeed, timestampFormat: TimestampFormat): string {
   switch (need.kind) {
     case "approval": {
       const { approval } = need;
@@ -130,6 +142,13 @@ function summary(need: ProjectNeed): string {
       return need.thread.pendingSubagentRequest
         ? "A subagent is waiting for you"
         : "Waiting for you in its thread";
+    case "failed":
+      return need.error ? `Failed: ${need.error}` : "Failed";
+    case "limited":
+      if (need.resetAt === null) return "Hit a usage limit";
+      return Date.parse(need.resetAt) > Date.now()
+        ? `Hit a usage limit · resets ${formatUpcomingTimestamp(need.resetAt, timestampFormat)}`
+        : "Hit a usage limit · it has reset";
   }
 }
 
@@ -163,13 +182,18 @@ export function ProjectNeedRow({
 }) {
   const navigate = useNavigate();
   const ref = scopeThreadRef(need.thread.environmentId, need.thread.id);
+  const { timestampFormat } = useEnvironmentSettings(need.thread.environmentId);
+  const openThread = () =>
+    void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+  // Retrying happens in the thread, so a stopped thread's row opens it.
+  const opensThread = need.kind === "failed" || need.kind === "limited";
   return (
     <div className="min-w-0">
       <button
         type="button"
-        aria-expanded={open}
+        aria-expanded={opensThread ? undefined : open}
         className="flex w-full min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-        onClick={onToggle}
+        onClick={opensThread ? openThread : onToggle}
       >
         <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
         <span className="min-w-0 flex-1">
@@ -179,7 +203,7 @@ export function ProjectNeedRow({
               open ? "whitespace-pre-wrap break-words" : "truncate",
             )}
           >
-            {summary(need)}
+            {summary(need, timestampFormat)}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
             {need.thread.title} · {formatRelativeTimeLabel(need.createdAt)}
@@ -187,23 +211,16 @@ export function ProjectNeedRow({
         </span>
         <ChevronRightIcon
           aria-hidden
-          className={cn("mt-2.5 size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+          className={cn(
+            "mt-2.5 size-3.5 shrink-0 text-muted-foreground",
+            open && !opensThread && "rotate-90",
+          )}
         />
       </button>
-      {open ? (
+      {open && !opensThread ? (
         <div ref={scrollIntoViewOnMount} className="flex flex-col gap-2 px-3 pb-3 ps-6.5">
           <NeedAnswer need={need} onAnswered={onAnswered} />
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            className="-ms-2 self-start"
-            onClick={() =>
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(ref),
-              })
-            }
-          >
+          <Button size="xs" variant="ghost-muted" className="-ms-2 self-start" onClick={openThread}>
             Open thread
           </Button>
         </div>
@@ -255,6 +272,8 @@ function NeedAnswer({
     case "report":
       return <ReportAnswer need={need} onAnswered={onAnswered} />;
     case "thread":
+    case "failed":
+    case "limited":
       return null;
   }
 }

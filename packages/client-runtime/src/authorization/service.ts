@@ -558,7 +558,15 @@ export const make = Effect.gen(function* () {
         yield* Fiber.interrupt(reading);
         return Result.fail(opened.failure);
       }
-      return Result.succeed(authorized(issued.token, opened.success, yield* Fiber.join(reading)));
+      const descriptor = yield* Fiber.join(reading).pipe(
+        Effect.catchTags({
+          ConnectionTransientError: () =>
+            fetchDescriptor(issued.token.endpoint.httpBaseUrl, "relay").pipe(
+              Effect.provideService(HttpClient.HttpClient, httpClient),
+            ),
+        }),
+      );
+      return Result.succeed(authorized(issued.token, opened.success, descriptor));
     });
     let selected = yield* getDpopToken(input);
     if (selected.fromCache) {

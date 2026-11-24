@@ -163,6 +163,7 @@ export function PullRequestReviewForm({
         value={body}
         placeholder={placeholder}
         aria-label="Review summary"
+        tall
         onValueChange={(next) => setSummary(reviewKey, next)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat) return;
