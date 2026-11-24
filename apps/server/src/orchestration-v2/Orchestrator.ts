@@ -4475,8 +4475,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const source = yield* projectionStore
         .getThreadRecords(command.summaryFor, ["runs"])
         .pipe(mapDispatchError(command));
+      let runs = source.runs;
+      let latest = latestExecutedRun(runs);
+      while (latest?.status === "completed" && latest.id !== command.summaryRunId) {
+        const prompts = yield* projectionStore
+          .getThreadRecords(command.summaryFor, ["messages"], {
+            messageIds: [latest.userMessageId],
+          })
+          .pipe(mapDispatchError(command));
+        const prompt = prompts.messages.find((message) => message.id === latest?.userMessageId);
+        if (
+          prompt === undefined ||
+          (prompt.idleCompaction === undefined && !isCompactionCommandMessage(prompt))
+        )
+          break;
+        const compactedRunId = latest.id;
+        runs = runs.filter((run) => run.id !== compactedRunId);
+        latest = latestExecutedRun(runs);
+      }
       if (
-        latestExecutedRun(source.runs)?.id !== command.summaryRunId ||
+        latest?.id !== command.summaryRunId ||
         source.thread.reportTo?.threadId !== thread.id ||
         source.thread.reportTo?.sentInRunId === command.summaryRunId
       )
