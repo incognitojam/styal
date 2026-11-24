@@ -156,14 +156,14 @@ class EnvironmentMetadataApi extends HttpApi.make("environment").add(
 ) {}
 
 describe("environment descriptor", () => {
-  it.effect("keeps a launcher's paths out of the unauthenticated descriptor", () =>
+  it.effect("keeps installation and host details out of the unauthenticated descriptor", () =>
     Effect.gen(function* () {
       const descriptorWith = (
         serverInstallation: ExecutionEnvironmentDescriptor["capabilities"]["serverInstallation"],
       ): ExecutionEnvironmentDescriptor => ({
         environmentId: EnvironmentId.make("descriptor-test"),
         label: "Descriptor test",
-        platform: { os: "linux", arch: "x64" },
+        platform: { os: "linux", arch: "x64", machine: "laptop", timeZone: "Pacific/Auckland" },
         serverVersion: "0.0.0",
         capabilities: { repositoryIdentity: true, serverInstallation },
       });
@@ -190,21 +190,26 @@ describe("environment descriptor", () => {
           return yield* response.text;
         });
 
-      const launcherBody = yield* read(
-        descriptorWith({
-          kind: "t3-launcher",
-          launcher: "/home/example-user/.styal/bin/styal",
-          baseDir: "/home/example-user/.styal",
-        }),
-      );
-      expect(launcherBody).not.toContain("example-user");
-      expect(JSON.parse(launcherBody).capabilities).toEqual({ repositoryIdentity: true });
-
-      const npmBody = yield* read(descriptorWith({ kind: "npm-global", prefix: "/opt/node" }));
-      expect(JSON.parse(npmBody).capabilities.serverInstallation).toEqual({
-        kind: "npm-global",
-        prefix: "/opt/node",
-      });
+      for (const installation of [
+        { kind: "npm-global", prefix: "/opt/node" },
+        { kind: "t3-launcher", launcher: "/opt/styal/bin/styal", baseDir: "/opt/styal" },
+        { kind: "npx" },
+        { kind: "pnpm-dlx" },
+        { kind: "bunx" },
+        undefined,
+      ] as const) {
+        const body = yield* read(descriptorWith(installation));
+        for (const privateField of ["prefix", "launcher", "baseDir", "/opt/"]) {
+          expect(body).not.toContain(privateField);
+        }
+        expect(JSON.parse(body)).toEqual({
+          environmentId: "descriptor-test",
+          label: "Descriptor test",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.0",
+          capabilities: { repositoryIdentity: true },
+        });
+      }
     }),
   );
 });

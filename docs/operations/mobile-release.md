@@ -68,6 +68,19 @@ place of all `.gitignore` files, so keep its exclusions aligned when those chang
 
 ## Build and distribute
 
+Pull requests and `intake/**` pushes compare the Android native fingerprint in
+**Mobile Fingerprint Check**. Intake compares current main with the whole candidate;
+a candidate missing current main must be rebased and pushed for a fresh check on its new SHA.
+Its **Android release build** job builds a production-variant arm64 release APK when
+that fingerprint changes and succeeds without building when it does not. A failed
+fingerprint comparison fails the job. The check uses no production signing credentials
+or private EAS environment; it does not publish an APK or an OTA update.
+
+After merging the workflow, refresh open pull requests and intake candidates to
+obtain the new check. Then add **Android release build** (source: GitHub Actions) to
+**Settings → Rules → Rulesets → Required CI → Require status checks to pass**.
+The optional `preview:android` label still requests an installable preview separately.
+
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
 `all` runs an iOS build with TestFlight submission and an Android APK build.
 

@@ -116,15 +116,18 @@ export interface ProjectThreadCounts {
   readonly working: number;
   /** Waiting on an approval, a question or a report answer, as a thread row's Approval and Input. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** Stopped by a failure or a usage limit, as a thread row's Failed and Limited. */
+  readonly stopped: ReadonlyArray<EnvironmentThreadShell>;
 }
 
-/** Counts a project's listed threads other than its chat; failed threads are not counted. */
+/** Sorts a project's listed threads other than its chat by what they wait on. */
 export function countProjectThreads(
   threads: ReadonlyArray<EnvironmentThreadShell>,
   chatThreadKey: string | null,
 ): ProjectThreadCounts {
   let working = 0;
   const needYou: EnvironmentThreadShell[] = [];
+  const stopped: EnvironmentThreadShell[] = [];
   for (const thread of threads) {
     if (thread.archivedAt != null || thread.deletedAt != null) continue;
     if (!isListedThreadLineage(thread.lineage)) continue;
@@ -138,12 +141,18 @@ export function countProjectThreads(
       case "working":
         working += 1;
         break;
+      case "failed":
+      case "limited":
+        stopped.push(thread);
+        break;
     }
   }
-  return { working, needYou };
+  return { working, needYou, stopped };
 }
 
-export function formatProjectStatusLine(counts: ProjectThreadCounts): string | null {
+export function formatProjectStatusLine(
+  counts: Pick<ProjectThreadCounts, "working" | "needYou">,
+): string | null {
   const needYou = counts.needYou.length;
   const parts = [
     ...(counts.working > 0 ? [`${counts.working} working`] : []),

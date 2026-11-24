@@ -361,8 +361,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               <DialogPanel>
                 <Textarea
                   readOnly
+                  font="mono"
                   value={revealValue}
-                  rows={isRevealValueUrl ? 4 : 3}
+                  rows={isRevealValueUrl ? 4 : 1}
                   onFocus={(event) => event.currentTarget.select()}
                   onClick={(event) => event.currentTarget.select()}
                 />

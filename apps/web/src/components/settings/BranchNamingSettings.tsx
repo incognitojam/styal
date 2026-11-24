@@ -129,7 +129,7 @@ export function BranchNamingSettings() {
             ) : null
           }
         >
-          <div className="mt-3 max-w-2xl pb-3.5">
+          <div className="mt-3 pb-3.5">
             <Textarea
               key={`${scopeKey}:${instructionsMixed}:${settings.branchNameInstructions}`}
               aria-label="Branch naming instructions"
