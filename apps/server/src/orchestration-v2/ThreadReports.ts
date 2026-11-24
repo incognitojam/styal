@@ -4,6 +4,7 @@ import {
   CommandId,
   type CoordinatorReport,
   type EnvironmentId,
+  isCompactionCommandMessage,
   MessageId,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
@@ -453,16 +454,39 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   }
 
   const trigger = input.trigger;
-  const run =
-    trigger.kind === "idle"
-      ? records.runs
-          .filter((candidate) => !["queued", "cancelled", "rolled_back"].includes(candidate.status))
-          .toSorted((a, b) => b.ordinal - a.ordinal)[0]
-      : records.runs.find((candidate) => candidate.id === trigger.runId);
+  let runs = records.runs;
+  let run: OrchestrationV2Run | undefined;
+  for (const candidate of runs
+    .filter((entry) => !["queued", "cancelled", "rolled_back"].includes(entry.status))
+    .toSorted((a, b) => b.ordinal - a.ordinal)) {
+    if (candidate.status === "completed") {
+      const prompts = yield* threads.getThreadRecords(thread.id, ["messages"], {
+        messageIds: [candidate.userMessageId],
+      });
+      const prompt = prompts.messages.find((message) => message.id === candidate.userMessageId);
+      if (
+        prompt !== undefined &&
+        (prompt.idleCompaction !== undefined || isCompactionCommandMessage(prompt))
+      ) {
+        // Compaction cannot supersede an earlier result the launcher has not received.
+        runs = runs.filter((entry) => entry.id !== candidate.id);
+        continue;
+      }
+    }
+    run = candidate;
+    break;
+  }
+  if (trigger.kind === "run") {
+    const requested = records.runs.find((candidate) => candidate.id === trigger.runId);
+    if (requested === undefined || (run !== undefined && run.ordinal > requested.ordinal))
+      return undefined;
+    if (runs.includes(requested)) run = requested;
+  }
+  const compacted = trigger.kind === "run" && run?.id !== trigger.runId;
   if (run === undefined || !["completed", "failed", "interrupted"].includes(run.status))
     return undefined;
   if (
-    trigger.kind === "idle" &&
+    (trigger.kind === "idle" || compacted) &&
     run.status === "interrupted" &&
     run.completedAt !== null &&
     DateTime.isLessThan(
@@ -493,7 +517,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     target.sentInRunId !== run.id;
   const reported = runReportKind({
     run,
-    runs: records.runs,
+    runs,
     reportedInRunId: target.sentInRunId,
     startedByPerson: startedByPerson(startedBy),
     startedByReport: startedByReport(startedBy),

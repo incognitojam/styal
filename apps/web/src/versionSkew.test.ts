@@ -18,6 +18,7 @@ import {
   dismissVersionMismatch,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
+  ownServerInstallation,
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
@@ -27,7 +28,7 @@ const MISMATCH_HINT =
   "Version mismatch. Try syncing the client and server to the same styal version.";
 
 describe("versionSkew", () => {
-  it("updates only the proven npm prefix and safely quotes its path", () => {
+  it("updates only the proven install and safely quotes its paths", () => {
     expect(
       manualServerUpdateCommand("0.0.45", "foreground", {
         kind: "npm-global",
@@ -40,6 +41,24 @@ describe("versionSkew", () => {
         prefix: "/opt/maria's node",
       }),
     ).toBe("npm install --global --prefix '/opt/maria'\\''s node' @styal/cli@0.0.45");
+    expect(
+      manualServerUpdateCommand("0.0.45", "foreground", {
+        kind: "t3-launcher",
+        launcher: "styal",
+        baseDir: "/home/u/.styal",
+      }),
+    ).toBe("'styal' update --base-dir '/home/u/.styal' 0.0.45");
+    expect(
+      manualServerUpdateCommand("0.0.45", "foreground", {
+        kind: "t3-launcher",
+        launcher: "/opt/maria's bin/styal",
+        baseDir: "/data/styal home",
+      }),
+    ).toBe("'/opt/maria'\\''s bin/styal' update --base-dir '/data/styal home' 0.0.45");
+    const launcher = { kind: "t3-launcher" as const, launcher: "/bin/t3", baseDir: "/home/u/.t3" };
+    expect(ownServerInstallation("@styal/cli", launcher)).toBe(launcher);
+    expect(ownServerInstallation("t3", launcher)).toBeUndefined();
+    expect(ownServerInstallation(undefined, launcher)).toBeUndefined();
   });
 
   it("keeps runner and unknown foreground commands as relaunches", () => {
@@ -62,6 +81,13 @@ describe("versionSkew", () => {
     expect(manualServerUpdateCommand("0.0.45", "service", { kind: "bunx" })).toBe(
       "npx @styal/cli@0.0.45 service update",
     );
+    expect(
+      manualServerUpdateCommand("0.0.45", "service", {
+        kind: "t3-launcher",
+        launcher: "/opt/bin/styal",
+        baseDir: "/data/styal",
+      }),
+    ).toBe("npx @styal/cli@0.0.45 service update");
   });
 
   beforeEach(() => {

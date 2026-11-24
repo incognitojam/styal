@@ -107,6 +107,16 @@ export function resolveServerSelfUpdateCapability(
   return capability;
 }
 
+/** Drops a launcher another package reported: its `update` would move that install, not styal's. */
+export function ownServerInstallation(
+  serverPackageName: string | undefined,
+  installation: ServerInstallation | undefined,
+): ServerInstallation | undefined {
+  return installation?.kind === "t3-launcher" && serverPackageName !== CLI_PACKAGE_NAME
+    ? undefined
+    : installation;
+}
+
 export function supportsDesktopAppUpdate(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {
@@ -123,8 +133,9 @@ export function supportsServerUpdateThreadContinuation(
 
 /**
  * Manual commands require an explicit choice of how the server is run. A
- * foreground server that proved a global npm install updates that install;
- * any other foreground server is relaunched with the runner that started it.
+ * foreground server that proved a global npm install or a `styal` launcher
+ * updates that install; any other foreground server is relaunched with the
+ * runner that started it.
  */
 export function manualServerUpdateCommand(
   targetVersion: string,
@@ -132,9 +143,13 @@ export function manualServerUpdateCommand(
   installation?: ServerInstallation,
 ): string {
   if (mode === "service") return `npx ${CLI_PACKAGE_NAME}@${targetVersion} service update`;
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   if (installation?.kind === "npm-global") {
-    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
-    return `npm install --global --prefix ${prefix} ${CLI_PACKAGE_NAME}@${targetVersion}`;
+    return `npm install --global --prefix ${quote(installation.prefix)} ${CLI_PACKAGE_NAME}@${targetVersion}`;
+  }
+  if (installation?.kind === "t3-launcher") {
+    // An inherited STYAL_HOME would otherwise send the update to a home the launcher is not in.
+    return `${quote(installation.launcher)} update --base-dir ${quote(installation.baseDir)} ${targetVersion}`;
   }
   const runner =
     installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";

@@ -20,12 +20,12 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   CONTINUE_PROMPT,
   INTERRUPTED_TURN_NOTE,
   restartContinuationRun,
-  restartContinuationChainFull,
   continueRestartedRun,
 } from "./RestartContinuation.ts";
 import { continuationStartRetryDelayMs } from "./RestartBackgroundNote.ts";
@@ -115,6 +115,7 @@ it.effect("skips recovery reads when no displayed project continues after restar
         ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
         // Missing mock methods fail if the disabled path touches recovery state.
         Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+        Layer.mock(EffectOutbox.EffectOutboxV2)({}),
       ),
     ),
   ),
@@ -154,20 +155,21 @@ it.effect.each([false, true])(
               }),
             getThreadRecords: () => Effect.succeed(projection),
           }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({}),
         ),
       ),
     );
   },
 );
 
-it.effect("does not list runs that delivery after the restart skips as continuable", () => {
+it.effect("lists the runs that delivery after a planned restart continues or sends again", () => {
   const base = makeProjection();
   const userMessageId = MessageId.make("message:user");
   const running = {
     ...base,
     runs: [{ ...base.runs[0]!, userMessageId }],
   } as unknown as OrchestrationV2ThreadProjection;
-  // Three automatic continuations in a row: run:chain-3 continued run:chain-2, and so on.
+  // Three recent continuations in a row. A planned restart records no process loss, so it continues.
   const chain = [0, 1, 2].map((index) => ({
     ...base.runs[0]!,
     id: RunId.make(`run:chain-${index}`),
@@ -175,9 +177,15 @@ it.effect("does not list runs that delivery after the restart skips as continuab
     status: "cancelled",
     ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
   }));
+  // Marked running, but the provider never accepted the prompt.
+  const unaccepted = {
+    ...running,
+    providerTurns: [],
+    runs: [{ ...running.runs[0]!, startedAt: now }],
+  };
   const variants = [
     {
-      expected: [],
+      expected: [threadId],
       projection: {
         ...running,
         runs: [
@@ -220,6 +228,21 @@ it.effect("does not list runs that delivery after the restart skips as continuab
         messages: [{ id: userMessageId, role: "user", text: "/compact", attachments: [] }],
       },
     },
+    // An agent's prompt is sent again; a person's waits in the held queue.
+    {
+      expected: [threadId],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "agent", creationSource: "mcp" }],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "user", creationSource: "web" }],
+      },
+    },
   ] as unknown as ReadonlyArray<{
     expected: ThreadId[];
     projection: OrchestrationV2ThreadProjection;
@@ -234,33 +257,20 @@ it.effect("does not list runs that delivery after the restart skips as continuab
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
             getThreadRecords: () => Effect.succeed(projection),
+            getMessagesById: (_threadId, messageIds) =>
+              Effect.succeed(
+                new Map(
+                  projection.messages
+                    .filter((message) => messageIds.includes(message.id))
+                    .map((message) => [message.id, message]),
+                ),
+              ),
           }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({ listByCommandId: () => Effect.succeed([]) }),
         ),
       ),
     ),
   ).pipe(Effect.asVoid);
-});
-
-it("measures a still-working run's continuation window from the restart preview time", () => {
-  const base = makeProjection().runs[0]!;
-  const minutes = (count: number) => DateTime.add(now, { minutes: count });
-  const chain = [0, 1, 2].map((index) => ({
-    ...base,
-    id: RunId.make(`run:chain-${index}`),
-    status: "cancelled" as const,
-    requestedAt: minutes(index),
-    completedAt: minutes(index),
-    ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
-  }));
-  const working = {
-    ...base,
-    requestedAt: minutes(3),
-    restartContinuationOfRunId: RunId.make("run:chain-2"),
-  };
-  const runs = [...chain, working];
-  assert.equal(restartContinuationChainFull(working, runs, minutes(4)), true);
-  // Recovery completes the run at the restart, by which time the chain is outside the window.
-  assert.equal(restartContinuationChainFull(working, runs, minutes(15)), false);
 });
 
 it("requires matching saved native state for an unfinished root run", () => {
@@ -314,23 +324,65 @@ it("continues a live turn whose session the adapter never marked running", () =>
     assert.isUndefined(restartContinuationRun(withSessionStatus(status), now), status);
 });
 
-it("recovers an admitted continuation after another crash before provider start", () => {
-  const projection = makeProjection();
-  const starting = {
-    ...projection,
-    runs: [
-      {
-        ...projection.runs[0]!,
-        status: "starting" as const,
-        restartContinuationOfRunId: RunId.make("run:previous-crash"),
-      },
-    ],
-    providerThreads: [{ ...projection.providerThreads[0]!, status: "idle" as const }],
-    providerSessions: [{ ...projection.providerSessions[0]!, status: "stopped" as const }],
-    providerTurns: [],
-  };
-  assert.equal(restartContinuationRun(starting, now)?.id, runId);
-});
+it.effect("recovers an admitted continuation after another crash before provider start", () =>
+  Effect.gen(function* () {
+    const projection = makeProjection();
+    const starting = {
+      ...projection,
+      runs: [
+        {
+          ...projection.runs[0]!,
+          status: "starting" as const,
+          restartContinuationOfRunId: RunId.make("run:previous-crash"),
+        },
+      ],
+      providerThreads: [{ ...projection.providerThreads[0]!, status: "idle" as const }],
+      providerSessions: [{ ...projection.providerSessions[0]!, status: "stopped" as const }],
+      providerTurns: [],
+    };
+    assert.equal(restartContinuationRun(starting, now)?.id, runId);
+
+    // Marked running, but the provider never accepted its prompt.
+    const running = {
+      ...projection,
+      runs: [
+        { ...projection.runs[0]!, restartContinuationOfRunId: RunId.make("run:previous-crash") },
+      ],
+      providerTurns: [],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const commits: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0][] = [];
+    const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () => Effect.succeed([threadId]),
+            getRuntimeRecoveryProjection: () => Effect.succeed(running),
+            getThreadRecords: () => Effect.succeed(running),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            commitCommand: (input) =>
+              Effect.sync(() => {
+                commits.push(input);
+                return { committed: true, cancelledEffectCount: 0 } as never;
+              }),
+          }),
+          IdAllocator.layer,
+          Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({
+            get: () => Effect.succeedNone,
+            reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+          }),
+        ),
+      ),
+    );
+    yield* recovery.reconcile("startup");
+    assert.deepEqual(
+      commits.flatMap((commit) => commit.effects.map((effect) => effect.request)),
+      [{ type: "provider-runtime.continue", sourceRunId: runId, processLossCount: 1 }],
+    );
+  }),
+);
 
 it.effect("prompts a settled thread's continuation with the note of its lost work", () =>
   Effect.gen(function* () {
@@ -472,6 +524,7 @@ it.effect.each([
         assert.deepEqual(committed!.effects[0]?.request, {
           type: "provider-runtime.continue",
           sourceRunId: runId,
+          processLossCount: 1,
         });
     }),
 );
@@ -604,7 +657,7 @@ it.effect.each(["running", "waiting"])(
       ]);
       assert.deepEqual(
         committed?.effects.map((effect) => effect.request),
-        [{ type: "provider-runtime.continue", sourceRunId: runId }],
+        [{ type: "provider-runtime.continue", sourceRunId: runId, processLossCount: 1 }],
       );
     }),
 );
@@ -742,6 +795,7 @@ it.effect("prepares no continuation for background work another provider thread 
     assert.deepEqual(writes[0]!.effects[0]?.request, {
       type: "provider-runtime.continue",
       sourceRunId: runId,
+      processLossCount: 0,
     });
   }),
 );
@@ -778,20 +832,39 @@ const devServer = {
   work: { kind: "shell" as const, label: "vp run dev", id: "turn-item:dev-server" },
 };
 
+const unacceptedFollowUp = {
+  id: RunId.make("run:follow-up"),
+  ordinal: 2,
+  activeAttemptId: RunAttemptId.make("attempt:follow-up"),
+  userMessageId: MessageId.make("message:follow-up"),
+  status: "running",
+  startedAt: now,
+};
+
 it.effect.each([
-  ["completed", scratchProjectId, backgroundSubagent, true],
-  ["waiting", ProjectId.make("restart-project"), backgroundSubagent, true],
-  ["completed", ProjectId.make("restart-project"), devServer, false],
-  ["waiting", scratchProjectId, devServer, false],
+  ["completed", scratchProjectId, backgroundSubagent, true, ""],
+  ["waiting", ProjectId.make("restart-project"), backgroundSubagent, true, ""],
+  ["completed", ProjectId.make("restart-project"), devServer, false, ""],
+  ["waiting", scratchProjectId, devServer, false, ""],
+  [
+    "completed",
+    ProjectId.make("restart-project"),
+    backgroundSubagent,
+    true,
+    ", past a later prompt the provider never accepted",
+  ],
 ] as const)(
-  "cleans up background work of a %s run in project %s and wakes it only for awaited work",
-  ([status, projectId, background, wakes]) =>
+  "cleans up background work of a $0 run in project $1 and wakes it only for awaited work$4",
+  ([status, projectId, background, wakes, followUp]) =>
     Effect.gen(function* () {
       const base = makeProjection();
       const projection = {
         ...base,
         thread: { ...base.thread, projectId },
-        runs: [{ ...base.runs[0]!, status }],
+        runs: [
+          { ...base.runs[0]!, status },
+          ...(followUp === "" ? [] : [{ ...base.runs[0]!, ...unacceptedFollowUp }]),
+        ],
         providerTurns: [{ ...base.providerTurns[0]!, status: "completed" }],
         turnItems: [background.turnItem],
         subagents:
@@ -818,6 +891,16 @@ it.effect.each([
               Layer.mock(ProjectionStore.ProjectionStoreV2)({
                 getRecoveryThreadIds: () => Effect.succeed([threadId]),
                 getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+                getThreadRecords: () => Effect.succeed(projection),
+                getMessagesById: () =>
+                  Effect.succeed(
+                    new Map([
+                      [
+                        unacceptedFollowUp.userMessageId,
+                        { id: unacceptedFollowUp.userMessageId, createdBy: "user" } as never,
+                      ],
+                    ]),
+                  ),
               }),
               Layer.mock(EventSink.EventSinkV2)({
                 writeWithEffects: (input) =>
@@ -847,7 +930,15 @@ it.effect.each([
         const recorded = [...writes.flatMap((write) => write.effects), ...commits[0]!.effects];
         assert.deepEqual(
           recorded.map((effect) => effect.request),
-          wakes ? [{ type: "provider-runtime.continue", sourceRunId: runId }] : [],
+          wakes
+            ? [
+                {
+                  type: "provider-runtime.continue",
+                  sourceRunId: runId,
+                  processLossCount: trigger === "shutdown" ? 0 : 1,
+                },
+              ]
+            : [],
         );
         assert.lengthOf(commits, 1);
         const events = commits[0]!.events;
@@ -860,7 +951,9 @@ it.effect.each([
         assert.equal(note?.runId, runId);
         assert.deepEqual(note?.payload.restartCancelledBackgroundWork, [background.work]);
         if (status === "completed")
-          assert.isFalse(events.some((event) => event.type === "run.updated"));
+          assert.isFalse(
+            events.some((event) => event.type === "run.updated" && event.runId === runId),
+          );
       }
     }),
 );
@@ -1046,6 +1139,75 @@ const continuationDispatches = (
     );
     return dispatches;
   });
+
+it.effect.each([
+  [3, "running"],
+  [3, "completed"],
+  [3, "waiting"],
+] as const)("persists recovery after count %s and %s work", ([previousCount, status]) =>
+  Effect.gen(function* () {
+    const base = makeProjection();
+    const source = RunId.make("run:previous-loss");
+    const projection = {
+      ...base,
+      runs: [
+        {
+          ...base.runs[0]!,
+          status,
+          restartContinuationOfRunId: source,
+          requestedAt: DateTime.subtract(now, { minutes: 22 }),
+        },
+      ],
+      providerTurns: [
+        { ...base.providerTurns[0]!, status: status === "running" ? "running" : "completed" },
+      ],
+      turnItems: status === "running" ? [] : [backgroundSubagent.turnItem],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const commits: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0][] = [];
+    const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () => Effect.succeed([threadId]),
+            getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            commitCommand: (input) => {
+              commits.push(input);
+              return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+            },
+          }),
+          IdAllocator.layer,
+          Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({
+            get: (id) => {
+              return Effect.succeed(
+                id === `effect:restart-continuation:${source}`
+                  ? Option.some({
+                      request: {
+                        type: "provider-runtime.continue",
+                        sourceRunId: source,
+                        processLossCount: previousCount,
+                      },
+                    } as EffectOutbox.OrchestrationEffectV2)
+                  : Option.none(),
+              );
+            },
+            listByCommandId: () => Effect.succeed([]),
+            reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+          }),
+        ),
+      ),
+    );
+    yield* recovery.reconcile("startup");
+    assert.deepEqual(commits[0]?.effects[0]?.request, {
+      type: "provider-runtime.continue",
+      sourceRunId: runId,
+      processLossCount: status === "running" ? previousCount + 1 : 1,
+    });
+  }),
+);
 
 const continuationTexts = (projection: OrchestrationV2ThreadProjection) =>
   continuationDispatches(projection).pipe(
@@ -1369,7 +1531,7 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
     yield* recovery.prepareForShutdown;
     assert.deepEqual(
       writes.map((write) => write.effects[0]?.request),
-      [{ type: "provider-runtime.continue", sourceRunId: runId }],
+      [{ type: "provider-runtime.continue", sourceRunId: runId, processLossCount: 0 }],
     );
   }),
 );
