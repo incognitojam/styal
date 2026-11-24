@@ -8,6 +8,7 @@ import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
+import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { threadRouteProjectKey } from "./project/projectPage.logic";
 import { useSettingsProjectGroups } from "./settings/useSettingsProjectGroups";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
@@ -146,12 +147,14 @@ export function ThreadRouteView({
     draftThreadExists: draftThread !== null,
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
-  const href = useLocation({ select: (location) => location.href });
+  const quotesResponse = useLocation({
+    select: (location) => assistantCitationFromLocation(location.href) !== null,
+  });
   const serverConfigs = useServerConfigs();
   const projectGroups = useSettingsProjectGroups();
   // A project's coordinator lives on its project page.
   const coordinatedProject = threadRouteProjectKey(
-    { href, heldOffShell, background },
+    { quotesResponse, heldOffShell, background },
     serverThreadRef === null || serverThreadShell === null
       ? null
       : { ...serverThreadRef, projectId: serverThreadShell.projectId },

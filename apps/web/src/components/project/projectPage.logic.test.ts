@@ -9,9 +9,13 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { assistantCitationRoute } from "../../lib/assistantCitationNavigation";
+import {
+  assistantCitationFromLocation,
+  assistantCitationRoute,
+} from "../../lib/assistantCitationNavigation";
 import { heldOpenThreadKey } from "../../threadRoutes";
 import {
+  checkoutChangeBlock,
   coordinatedProjectKey,
   isProjectPageJob,
   jobThreadStates,
@@ -320,6 +324,34 @@ describe("resolveProjectChatView", () => {
   });
 });
 
+describe("checkoutChangeBlock", () => {
+  const coordinator = { id: chatId, projectId: project };
+  const naming = (threadId: ThreadId | null, enabled = true) => ({
+    projectCoordinatorsEnabled: enabled,
+    projectCoordinators: threadId === null ? {} : { [project]: { threadId } },
+  });
+
+  it("refuses checkout changes for the project's chat, and while that cannot be told yet", () => {
+    const block = (input: Partial<Parameters<typeof checkoutChangeBlock>[0]>) =>
+      checkoutChangeBlock({ draftId: null, serverThread: null, settings: undefined, ...input });
+    // The project page's chat draft, before any setting names it.
+    expect(block({ draftId: projectChatDraftId("orchard-key") })).toBe("project-chat");
+    // Any other draft, even before its machine's settings load.
+    expect(block({ draftId: "draft-1" })).toBeNull();
+    // The coordinator its machine names, wherever it is shown.
+    expect(block({ serverThread: coordinator, settings: naming(chatId) })).toBe("project-chat");
+    // An ordinary thread, and a former coordinator (cleared, or the switch off).
+    expect(
+      block({ serverThread: coordinator, settings: naming(ThreadId.make("other")) }),
+    ).toBeNull();
+    expect(block({ serverThread: coordinator, settings: naming(null) })).toBeNull();
+    expect(block({ serverThread: coordinator, settings: naming(chatId, false) })).toBeNull();
+    // A server thread before its machine's settings, or its shell row, load.
+    expect(block({ serverThread: coordinator })).toBe("loading");
+    expect(block({ serverThread: undefined, settings: naming(chatId) })).toBe("loading");
+  });
+});
+
 describe("coordinatedProjectKey", () => {
   const named = (threadId: ThreadId | null, enabled = true) => ({
     projectCoordinatorsEnabled: enabled,
@@ -403,7 +435,11 @@ describe("coordinatedProjectKey", () => {
     const address = `/${local}/${chatId}`;
     const open = (route: { href: string; heldOffShell?: boolean; background?: boolean }) =>
       threadRouteProjectKey(
-        { heldOffShell: false, background: false, ...route },
+        {
+          quotesResponse: assistantCitationFromLocation(route.href) !== null,
+          heldOffShell: route.heldOffShell ?? false,
+          background: route.background ?? false,
+        },
         thread,
         settingsFor,
         () => group(),
@@ -434,7 +470,7 @@ describe("coordinatedProjectKey", () => {
     const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
     const route = (listed: typeof thread | null, heldOffShell: boolean) =>
       threadRouteProjectKey(
-        { href: `/${local}/${chatId}`, heldOffShell, background: false },
+        { quotesResponse: false, heldOffShell, background: false },
         listed,
         settingsFor,
         () => group(),

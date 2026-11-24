@@ -2,9 +2,7 @@ import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports"
 import {
   type OrchestrationV2ProviderTurn,
   pendingRuntimeRequestKind,
-  projectCoordinatorThreadId,
   type RunAttemptId,
-  type ServerSettings,
 } from "@t3tools/contracts";
 import {
   deriveLatestThreadRun,
@@ -1341,23 +1339,6 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
 }
 
 export type ComposerSendSnapshot = ReturnType<typeof snapshotComposerSend>;
-
-/**
- * Whether the chat view treats a thread as its project's chat, wherever it is shown: the project
- * page's draft or chat, or the coordinator its own machine names for its project. The project's
- * chat is not moved or switched to another branch from the view.
- */
-export function isProjectChatThread(input: {
-  readonly projectPage: boolean;
-  readonly settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">;
-  readonly thread: { readonly id: ThreadId; readonly projectId: ProjectId } | undefined;
-}): boolean {
-  return (
-    input.projectPage ||
-    (input.thread !== undefined &&
-      projectCoordinatorThreadId(input.settings, input.thread.projectId) === input.thread.id)
-  );
-}
 
 /** How a composer send dispatches: where it runs and whether it waits behind other work. */
 export function planComposerTurn(input: {

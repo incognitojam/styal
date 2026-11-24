@@ -10,7 +10,6 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
-import { assistantCitationFromLocation } from "../../lib/assistantCitationNavigation";
 import { startedThreadState } from "../chat/startedThreads.logic";
 
 const RUN_RESULT = {
@@ -73,17 +72,17 @@ export function coordinatedProjectKey(
  * it, even once its family loads), and a view under Settings or Usage. `thread`: null until listed.
  */
 export function threadRouteProjectKey(
-  route: { readonly href: string; readonly heldOffShell: boolean; readonly background: boolean },
+  route: {
+    /** The address quotes one of the thread's responses (`assistantCitationFromLocation`). */
+    readonly quotesResponse: boolean;
+    readonly heldOffShell: boolean;
+    readonly background: boolean;
+  },
   thread: Parameters<typeof coordinatedProjectKey>[0] | null,
   settingsFor: Parameters<typeof coordinatedProjectKey>[1],
   groupOf: Parameters<typeof coordinatedProjectKey>[2],
 ): string | null {
-  if (
-    thread === null ||
-    route.heldOffShell ||
-    route.background ||
-    assistantCitationFromLocation(route.href) !== null
-  ) {
+  if (thread === null || route.heldOffShell || route.background || route.quotesResponse) {
     return null;
   }
   return coordinatedProjectKey(thread, settingsFor, groupOf);
@@ -238,6 +237,29 @@ export function legacyProjectChatDraftId(checkout: ProjectCheckout): string {
 /** The page owns this draft; listing it with the sidebar's drafts would send it as a plain thread. */
 export function isProjectChatDraftId(draftId: string): boolean {
   return draftId.startsWith(PROJECT_CHAT_DRAFT_PREFIX);
+}
+
+/**
+ * Why a change to where a thread runs, or to the branch its folder is on, is refused: the thread
+ * is its project's chat (the page's draft, or the coordinator its machine names), or it is a
+ * server thread whose machine settings or shell row have not loaded, so that cannot be told yet.
+ * `serverThread`: null for a draft, undefined for a server thread without a shell row.
+ */
+export function checkoutChangeBlock(input: {
+  readonly draftId: string | null;
+  readonly serverThread:
+    | { readonly id: ThreadId; readonly projectId: ProjectId }
+    | null
+    | undefined;
+  readonly settings: CoordinatorSettings | undefined;
+}): "project-chat" | "loading" | null {
+  if (input.draftId !== null && isProjectChatDraftId(input.draftId)) return "project-chat";
+  if (input.serverThread === null) return null;
+  if (input.serverThread === undefined || input.settings === undefined) return "loading";
+  return projectCoordinatorThreadId(input.settings, input.serverThread.projectId) ===
+    input.serverThread.id
+    ? "project-chat"
+    : null;
 }
 
 interface ThreadRef {

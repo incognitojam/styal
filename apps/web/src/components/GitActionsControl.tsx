@@ -1,4 +1,5 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
+import { readCheckoutChangeBlock, refuseCheckoutChange } from "./project/projectChatCheckout";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import {
   AuthOrchestrationOperateScope,
@@ -1010,8 +1011,17 @@ export default function GitActionsControl({
   const visibleInlineSuccess =
     inlineSuccess?.scopeKey === successScopeKey && !inlineSuccessExpired ? inlineSuccess : null;
 
+  const checkoutTarget =
+    activeThreadRef === null
+      ? null
+      : { threadRef: activeThreadRef, draftId, isServerThread: activeServerThread !== null };
   const persistThreadBranchSync = (branch: string | null, manualSelection = false) => {
-    if (!activeThreadRef) {
+    // The project's chat has no branch of its own; it runs on whatever its folder is on.
+    if (
+      !activeThreadRef ||
+      checkoutTarget === null ||
+      readCheckoutChangeBlock(checkoutTarget) === "project-chat"
+    ) {
       return;
     }
 
@@ -1238,7 +1248,8 @@ export default function GitActionsControl({
     if (
       activeEnvironmentId === null ||
       !readEnvironmentScope(activeEnvironmentId, AuthSourceControlWriteScope) ||
-      (featureBranch && branchFixed) ||
+      (featureBranch &&
+        (branchFixed || (checkoutTarget !== null && refuseCheckoutChange(checkoutTarget)))) ||
       (featureBranch &&
         !isLocalDraftThread &&
         !readEnvironmentScope(activeEnvironmentId, AuthOrchestrationOperateScope))

@@ -330,6 +330,7 @@ import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ProjectChatHeader, type ProjectChatHeaderProps } from "./project/ProjectChatHeader";
+import { checkoutChangeBlock } from "./project/projectPage.logic";
 import { useSideChat } from "./chat/useSideChat";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
@@ -425,7 +426,6 @@ import { useLocalDispatchState } from "./chat/useLocalDispatchState";
 import { draftFanoutSelectionsAtom, draftSendState } from "./chat/chatViewSend";
 import {
   isCompactCommandMessage,
-  isProjectChatThread,
   type LocalThreadErrorEntry,
   makeThreadErrorSetter,
 } from "./ChatView.logic";
@@ -899,11 +899,12 @@ export default function ChatView(props: ChatViewProps) {
   const activeThread = isServerThread ? serverThread : localDraftThread;
   // The project's chat, on its page or as a plain thread: nothing here moves it or switches its
   // branch, and it runs no models in worktrees of their own.
-  const projectChatThread = isProjectChatThread({
-    projectPage: projectChat !== undefined,
-    settings,
-    thread: activeThread,
-  });
+  const projectChatThread =
+    checkoutChangeBlock({
+      draftId,
+      serverThread: isServerThread ? activeThread : null,
+      settings,
+    }) === "project-chat";
   const multipleModelSelections = projectChatThread ? null : storedMultipleModelSelections;
   const serverLatestRun =
     serverProjection === null ? null : deriveLatestThreadRun(serverProjection);
@@ -2556,14 +2557,16 @@ export default function ChatView(props: ChatViewProps) {
     isGitRepo,
     worktreeNeedsFirstCommit: firstCommitNeededForWorktree,
   });
-  const localCheckoutBranchMismatch = isServerThread
-    ? resolveLocalCheckoutBranchMismatch({
-        effectiveEnvMode: envMode,
-        activeWorktreePath,
-        activeThreadBranch,
-        currentGitBranch: gitStatusQuery.data?.refName ?? null,
-      })
-    : null;
+  // The project's chat has no branch of its own: it runs on whatever its folder is on.
+  const localCheckoutBranchMismatch =
+    isServerThread && !projectChatThread
+      ? resolveLocalCheckoutBranchMismatch({
+          effectiveEnvMode: envMode,
+          activeWorktreePath,
+          activeThreadBranch,
+          currentGitBranch: gitStatusQuery.data?.refName ?? null,
+        })
+      : null;
   const publishComposerOverlayHeight = (height: number) => {
     const nextHeight = Math.ceil(height);
     if (nextHeight <= 0) return;
@@ -3255,7 +3258,6 @@ export default function ChatView(props: ChatViewProps) {
     setThreadError,
   });
   const { onSend } = useComposerSend({
-    projectChat: projectChatThread,
     beforeDraftThreadCreate: routeKind === "draft" ? props.beforeThreadCreate : undefined,
     onDraftThreadNotCreated: routeKind === "draft" ? props.onThreadNotCreated : undefined,
     reportReply: settings.coordinatorReportsEnabled ? activeReportReply : null,

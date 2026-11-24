@@ -8,6 +8,7 @@ import { page } from "vite-plus/test/browser";
 const state = vi.hoisted(() => ({
   childThreadInputs: [] as EnvironmentThreadShell[],
   switchRef: (async () => undefined) as (input: unknown) => Promise<unknown>,
+  refusedCheckoutThreads: new Set<string>(),
 }));
 
 vi.mock(import("../../state/session"), async (importOriginal) => ({
@@ -37,6 +38,12 @@ vi.mock(import("../../state/entities"), async (importOriginal) => ({
   useChildThreadInputs: (() => state.childThreadInputs) as never,
 }));
 
+vi.mock(import("../project/projectChatCheckout"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  refuseCheckoutChange: ((target: { threadRef: { threadId: string } }) =>
+    state.refusedCheckoutThreads.has(target.threadRef.threadId)) as never,
+}));
+
 import { render } from "../../../test/render";
 import { useThreadLifecycle } from "./useThreadLifecycle";
 
@@ -45,6 +52,7 @@ const environmentId = EnvironmentId.make("environment:test");
 function setup() {
   state.childThreadInputs = [];
   state.switchRef = async () => undefined;
+  state.refusedCheckoutThreads = new Set();
 }
 
 function threadInput(threadId: string, branch: string) {
@@ -268,3 +276,22 @@ it.each(["Success", "Failure"] as const)(
     completions[1]!({ _tag: "Success", value: undefined });
   },
 );
+
+it("never switches the checkout for a thread whose checkout change is refused", async () => {
+  setup();
+  const switchRef = vi.fn(async () => ({ _tag: "Success", value: { refName: "feature-a" } }));
+  state.switchRef = switchRef;
+  state.refusedCheckoutThreads = new Set(["thread:chat"]);
+  const thread = threadInput("thread:chat", "feature-a");
+  await using _screen = await render(
+    <RestoreBranchHarness
+      thread={thread}
+      currentRouteThreadKeyRef={{ current: thread.routeThreadKey }}
+      refreshGitStatus={() => undefined}
+      focusComposer={() => undefined}
+    />,
+  );
+  await page.getByRole("button", { name: "Restore branch" }).click();
+  await expect.element(page.getByRole("button", { name: "Restore branch" })).toBeEnabled();
+  expect(switchRef).not.toHaveBeenCalled();
+});

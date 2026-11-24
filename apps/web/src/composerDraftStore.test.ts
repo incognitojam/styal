@@ -105,6 +105,7 @@ import {
   useComposerDraftStore,
   DraftId,
   composerDraftHasUserContent,
+  ensureProjectChatDraft,
 } from "./composerDraftStore";
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
 import { insertInlineContextReference } from "./lib/composerContextReferences";
@@ -3212,6 +3213,43 @@ describe("composerDraftStore checkout pull request", () => {
     liveBranchSync("main");
 
     expect(toLink()).toBeNull();
+  });
+
+  it("never puts a branch, worktree or pull request on a project page's chat draft", () => {
+    const chatDraftId = DraftId.make("project-chat-orchard");
+    ensureProjectChatDraft({
+      draftId: chatDraftId,
+      threadId,
+      projectRef,
+      logicalProjectKey: "orchard",
+    });
+    const checkoutFields = {
+      branch: checkout.branch,
+      worktreePath: "/repo-pr-42",
+      envMode: "worktree" as const,
+      startFromOrigin: true,
+      checkoutPullRequest: checkout,
+    };
+    store().setDraftThreadContext(chatDraftId, {
+      ...checkoutFields,
+      runtimeMode: "approval-required",
+    });
+    store().setLogicalProjectDraftThreadId("orchard", projectRef, chatDraftId, checkoutFields);
+    expect(store().getDraftSession(chatDraftId)).toMatchObject({
+      branch: null,
+      worktreePath: null,
+      envMode: "local",
+      runtimeMode: "approval-required",
+    });
+    expect(store().getDraftSession(chatDraftId)?.checkoutPullRequest).toBeUndefined();
+    // Any other draft still takes them.
+    draftOnMain();
+    store().setDraftThreadContext(draftId, checkoutFields);
+    expect(store().getDraftSession(draftId)).toMatchObject({
+      branch: checkout.branch,
+      worktreePath: "/repo-pr-42",
+      envMode: "worktree",
+    });
   });
 
   it("is dropped when cleared or when the draft moves to another project", () => {

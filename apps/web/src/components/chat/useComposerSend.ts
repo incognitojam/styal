@@ -17,6 +17,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import { readCheckoutChangeBlock } from "../project/projectChatCheckout";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -176,8 +177,6 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
-  /** The project's chat: a first message from its draft always starts in the project's folder. */
-  readonly projectChat: boolean;
   /** Runs before a draft's first message creates its thread; a failure keeps the draft unsent. */
   beforeDraftThreadCreate?:
     | ((threadRef: ScopedThreadRef) => Promise<AtomCommandResult<unknown, unknown>>)
@@ -854,6 +853,11 @@ export function useComposerSend(input: ComposerSendInput) {
       environmentContexts: composerEnvironmentContextsSnapshot,
       messageText: messageTextForSend,
     } = sendSnapshot;
+    const checkoutBlock = readCheckoutChangeBlock({
+      threadRef: scopeThreadRef(environmentId, threadIdForSend),
+      draftId,
+      isServerThread,
+    });
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
@@ -875,8 +879,15 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
-      projectChat: input.projectChat,
+      projectChat: checkoutBlock === "project-chat",
     });
+    if (checkoutBlock === "loading" && baseBranchForWorktree) {
+      setThreadError(
+        threadIdForSend,
+        "Still loading this thread's machine. Send again in a moment.",
+      );
+      return;
+    }
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
       return;
