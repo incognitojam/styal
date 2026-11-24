@@ -102,6 +102,7 @@ it.effect.each([
   "other",
   "unknown",
   "continued",
+  "resent",
   "queued",
   "self",
   "person",
@@ -120,8 +121,13 @@ it.effect.each([
       ...previous,
       id: RunId.make("run:cancelled-follow-up"),
       ordinal: 2,
-      status: "cancelled",
-      startedAt: cause === "queued" || cause === "restart" || cause === "steered" ? null : now,
+      status: cause === "resent" ? "starting" : "cancelled",
+      startedAt:
+        cause === "resent"
+          ? null
+          : cause === "queued" || cause === "restart" || cause === "steered"
+            ? null
+            : now,
       ...(cause === "self"
         ? { cancelledByThreadId: launcherId }
         : cause === "person"
@@ -195,6 +201,7 @@ it.effect.each([
                     filter.turnItemRunIds.includes(item.runId),
                 ),
         }),
+      delegatedTaskResultPending: () => Effect.succeed(false),
       getThreadShell: () =>
         Effect.succeed({ archivedAt: null, deletedAt: null, settledOverride: null }),
       reportRecipient: () => Effect.succeed(launcherId),
@@ -203,6 +210,15 @@ it.effect.each([
           if (!delivered.has(command.commandId)) delivered.set(command.commandId, command);
         }),
     } as unknown as Parameters<typeof checkThreadReport>[0];
+    if (cause === "resent") {
+      for (const trigger of [
+        { kind: "idle" } as const,
+        { kind: "run", runId: cancelled.id } as const,
+      ])
+        yield* checkThreadReport(threads, { threadId, environmentId: undefined, trigger });
+      assert.equal(delivered.size, 1, "same-run resends are not cancellations");
+      return;
+    }
     const effect = threadReportEffect(
       {
         type: "run.updated",
@@ -221,7 +237,7 @@ it.effect.each([
     assert.equal(delivered.size, 1, "idle checks preserve restart grace");
     yield* TestClock.adjust("30 seconds");
     for (const trigger of [
-      effect.request.trigger,
+      { kind: "run", runId: cancelled.id } as const,
       { kind: "idle" } as const,
       effect.request.trigger,
     ]) {
@@ -533,6 +549,7 @@ it.effect.each([
                   filter.messageRunIds.includes(message.runId)),
             ),
           }),
+        delegatedTaskResultPending: () => Effect.succeed(false),
         getThreadShell: () =>
           Effect.succeed({
             archivedAt: null,

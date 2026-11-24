@@ -1,3 +1,4 @@
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
@@ -60,6 +61,7 @@ const makeHelpers = (input: {
   const { name, cwd, events, started } = input;
   return Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const sink = yield* EventSink.EventSinkV2;
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
     const outbox = yield* EffectOutbox.EffectOutboxV2;
@@ -358,6 +360,7 @@ const makeHelpers = (input: {
       );
 
     return {
+      executor,
       sink,
       orchestrator,
       settings,
@@ -491,6 +494,7 @@ const harness = <A, E>(
             ),
             settingsLayer,
             ProjectionStore.layer.pipe(Layer.provide(databaseLayer)),
+            ThreadCommandExecutor.layer,
           ),
         ),
       );
@@ -830,111 +834,222 @@ it.effect("a turn with a pull request watch reports its published work once", ()
   ),
 );
 
-it.effect.each(["person", "server", "launcher", "requested", "steered", "archive"] as const)(
-  "a real %s queue cancellation releases only the report owed",
-  (source) =>
-    harness(`cancelled-queue-${source}`, ({ orchestrator, sink, send, worker, reports }) =>
-      Effect.gen(function* () {
-        const turn = yield* send(launchedId, "First request");
+it.effect.each([
+  "person",
+  "server",
+  "launcher",
+  "requested",
+  "requested-active",
+  "steered",
+  "archive",
+] as const)("a real %s queue cancellation releases only the report owed", (source) =>
+  harness(`cancelled-queue-${source}`, ({ executor, orchestrator, sink, send, worker, reports }) =>
+    Effect.gen(function* () {
+      const turn = yield* send(launchedId, "First request");
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("queue:follow-up"),
+        threadId: launchedId,
+        messageId: MessageId.make("message:follow-up"),
+        text: "Follow-up",
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: source === "person" ? "user" : "agent",
+        creationSource: source === "person" ? "web" : source === "server" ? "server" : "mcp",
+        ...(source === "launcher" || source.startsWith("requested") || source === "steered"
+          ? { senderThreadId: launcherId }
+          : {}),
+      });
+      const projection = yield* orchestrator.getThreadProjection(launchedId);
+      const first = projection.runs.find((run) => run.id === turn.runId)!;
+      const queued = projection.runs.at(-1)!;
+      assert.isNotNull(queued.activeAttemptId);
+      if (source === "requested-active") {
         yield* orchestrator.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make("queue:follow-up"),
+          type: "queued-run.cancel",
+          commandId: CommandId.make("cancel:active-follow-up"),
           threadId: launchedId,
-          messageId: MessageId.make("message:follow-up"),
-          text: "Follow-up",
-          attachments: [],
-          dispatchMode: { type: "queue_after_active" },
-          createdBy: source === "person" ? "user" : "agent",
-          creationSource: source === "person" ? "web" : source === "server" ? "server" : "mcp",
-          ...(source === "launcher" || source === "requested" || source === "steered"
-            ? { senderThreadId: launcherId }
-            : {}),
+          runId: queued.id,
+          cancelledByThreadId: ThreadId.make("thread:other"),
         });
-        const projection = yield* orchestrator.getThreadProjection(launchedId);
-        const first = projection.runs.find((run) => run.id === turn.runId)!;
-        const queued = projection.runs.at(-1)!;
-        assert.isNotNull(queued.activeAttemptId);
-        if (source === "steered" || source === "archive") {
-          if (source === "archive")
-            yield* orchestrator.dispatch({
-              type: "thread.archive",
-              commandId: CommandId.make("archive:worker"),
-              threadId: launchedId,
-            });
-          else
-            yield* orchestrator.dispatch({
-              type: "queued-message.promote-to-steer",
-              commandId: CommandId.make("steer:follow-up"),
-              threadId: launchedId,
-              queuedRunId: queued.id,
-              targetRunId: first.id,
-            });
-          yield* worker.drain();
-          yield* TestClock.adjust("30 seconds");
-          yield* worker.drain();
-          assert.isEmpty(yield* reports());
-          if (source === "steered")
-            assert.equal(
-              (yield* orchestrator.getThreadProjection(launchedId)).messages.find(
-                (message) => message.id === queued.userMessageId,
-              )?.runId,
-              first.id,
-            );
-          return;
-        }
-        const now = yield* DateTime.now;
-        yield* sink.withProviderBatch(
-          Effect.gen(function* () {
-            yield* sink.write({
-              events: [
-                {
-                  id: EventId.make("event:first-completed"),
-                  type: "run.updated",
-                  threadId: launchedId,
-                  occurredAt: now,
-                  payload: { ...first, status: "completed", completedAt: now },
-                },
-              ],
-            });
-            yield* checkThreadReport(
-              {
-                dispatch: orchestrator.dispatch,
-                getThreadRecords: orchestrator.getThreadRecords,
-                getThreadShell: orchestrator.getThreadShell,
-                reportRecipient: () => Effect.succeed(launcherId),
-              } as never,
-              {
-                threadId: launchedId,
-                environmentId: undefined,
-                trigger: { kind: "run", runId: first.id },
-              },
-            );
-            assert.isEmpty(yield* reports(), "the queued run holds the first result");
-            yield* orchestrator.dispatch({
-              type: "queued-run.cancel",
-              commandId: CommandId.make("cancel:follow-up"),
-              threadId: launchedId,
-              runId: queued.id,
-              ...(source === "person"
-                ? { cancelledByThreadId: null }
-                : source === "launcher"
-                  ? { cancelledByThreadId: launcherId }
-                  : source === "requested"
-                    ? { cancelledByThreadId: ThreadId.make("thread:other") }
-                    : {}),
-            });
-          }),
-        );
         yield* worker.drain();
         yield* TestClock.adjust("30 seconds");
         yield* worker.drain();
-        const delivered = yield* reports();
-        assert.lengthOf(delivered, source === "requested" ? 2 : 1);
-        assert.equal(delivered[0]?.outcome, "completed");
-        if (source === "requested") assert.equal(delivered[1]?.outcome, "cancelled");
+        assert.deepEqual(
+          (yield* reports()).map((report) => report.outcome),
+          ["cancelled"],
+        );
+        return;
+      }
+      if (source === "steered" || source === "archive") {
+        if (source === "archive")
+          yield* orchestrator.dispatch({
+            type: "thread.archive",
+            commandId: CommandId.make("archive:worker"),
+            threadId: launchedId,
+          });
+        else
+          yield* orchestrator.dispatch({
+            type: "queued-message.promote-to-steer",
+            commandId: CommandId.make("steer:follow-up"),
+            threadId: launchedId,
+            queuedRunId: queued.id,
+            targetRunId: first.id,
+          });
         yield* worker.drain();
-        assert.lengthOf(yield* reports(), delivered.length);
-      }),
+        yield* TestClock.adjust("30 seconds");
+        yield* worker.drain();
+        assert.isEmpty(yield* reports());
+        if (source === "steered")
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(launchedId)).messages.find(
+              (message) => message.id === queued.userMessageId,
+            )?.runId,
+            first.id,
+          );
+        return;
+      }
+      const now = yield* DateTime.now;
+      const held = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const cancelWaiting = yield* Deferred.make<void>();
+      const withLock = executor.withLock;
+      const lock = yield* withLock(
+        launchedId,
+        Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))),
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* Deferred.await(held);
+      const observeLock: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withLock"] = (
+        key,
+        effect,
+      ) => Deferred.succeed(cancelWaiting, undefined).pipe(Effect.andThen(withLock(key, effect)));
+      using _lock = vi.spyOn(executor, "withLock").mockImplementationOnce(observeLock);
+      const cancel = yield* orchestrator
+        .dispatch({
+          type: "queued-run.cancel",
+          commandId: CommandId.make("cancel:follow-up"),
+          threadId: launchedId,
+          runId: queued.id,
+          ...(source === "person"
+            ? { cancelledByThreadId: null }
+            : source === "launcher"
+              ? { cancelledByThreadId: launcherId }
+              : source === "requested"
+                ? { cancelledByThreadId: ThreadId.make("thread:other") }
+                : {}),
+        })
+        .pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* Deferred.await(cancelWaiting);
+      yield* sink.write({
+        events: [
+          {
+            id: EventId.make("event:first-completed"),
+            type: "run.updated",
+            threadId: launchedId,
+            occurredAt: now,
+            payload: { ...first, status: "completed", completedAt: now },
+          },
+        ],
+      });
+      yield* checkThreadReport(
+        {
+          dispatch: orchestrator.dispatch,
+          getThreadRecords: orchestrator.getThreadRecords,
+          delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+          getThreadShell: orchestrator.getThreadShell,
+          reportRecipient: () => Effect.succeed(launcherId),
+        } as never,
+        {
+          threadId: launchedId,
+          environmentId: undefined,
+          trigger: { kind: "run", runId: first.id },
+        },
+      );
+      assert.isEmpty(yield* reports(), "the queued run holds the first result");
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(lock);
+      yield* Fiber.join(cancel);
+      yield* worker.drain();
+      yield* TestClock.adjust("30 seconds");
+      yield* worker.drain();
+      const delivered = yield* reports();
+      assert.lengthOf(delivered, source === "requested" ? 2 : 1);
+      assert.equal(delivered[0]?.outcome, "completed");
+      if (source === "requested") assert.equal(delivered[1]?.outcome, "cancelled");
+      yield* worker.drain();
+      assert.lengthOf(yield* reports(), delivered.length);
+    }),
+  ),
+);
+
+it.effect(
+  "a delayed restart continuation suppresses both report triggers beyond the grace period",
+  () =>
+    harness(
+      "report-delayed-continuation",
+      ({ orchestrator, sink, send, worker, reports, outbox }) =>
+        Effect.gen(function* () {
+          const turn = yield* send(launchedId, "Continue the fix");
+          const run = (yield* orchestrator.getThreadProjection(launchedId)).runs.find(
+            (row) => row.id === turn.runId,
+          )!;
+          const now = yield* DateTime.now;
+          yield* sink.writeWithEffects({
+            events: [
+              {
+                id: EventId.make("event:restart-cut"),
+                type: "run.updated",
+                threadId: launchedId,
+                occurredAt: now,
+                payload: { ...run, status: "cancelled", completedAt: now },
+              },
+            ],
+            effects: [
+              {
+                id: `effect:restart-continuation:${run.id}`,
+                commandId: CommandId.make("command:delayed-restart"),
+                threadId: launchedId,
+                request: { type: "provider-runtime.continue", sourceRunId: run.id },
+                availableAt: DateTime.add(now, { minutes: 10 }),
+              },
+            ],
+          });
+          yield* worker.drain();
+          yield* TestClock.adjust("90 seconds");
+          yield* worker.drain();
+          assert.isEmpty(
+            yield* reports(),
+            "the delayed per-run check must not report a stopped turn",
+          );
+          const threads = {
+            dispatch: orchestrator.dispatch,
+            getThreadRecords: orchestrator.getThreadRecords,
+            delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+            getThreadShell: orchestrator.getThreadShell,
+            reportRecipient: () => Effect.succeed(launcherId),
+          };
+          yield* checkThreadReport(threads, {
+            threadId: launchedId,
+            environmentId: undefined,
+            trigger: { kind: "idle" },
+          });
+          assert.isEmpty(yield* reports(), "the idle check must also wait structurally");
+          yield* outbox.cancelUnsettled({
+            threadId: launchedId,
+            effectTypes: ["provider-runtime.continue"],
+            reason: "Retry exhausted",
+          });
+          yield* checkThreadReport(threads, {
+            threadId: launchedId,
+            environmentId: undefined,
+            trigger: { kind: "run", runId: run.id },
+          });
+          assert.equal(
+            (yield* reports()).length,
+            1,
+            "a real cancellation is reported once the continuation is no longer pending",
+          );
+        }),
     ),
 );
 
@@ -1443,6 +1558,7 @@ it.effect(
           const threads = {
             dispatch: orchestrator.dispatch,
             getThreadRecords: orchestrator.getThreadRecords,
+            delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
             getThreadShell: orchestrator.getThreadShell,
             reportRecipient: (thread: Parameters<typeof reportRecipient>[1]) =>
               reportRecipient(

@@ -1,3 +1,4 @@
+import { restartSupersededRunIds } from "./RestartBackgroundNote.ts";
 import {
   orchestratorMcpPendingQuestionNext,
   orchestratorMcpPendingApprovalNext,
@@ -312,7 +313,11 @@ const reportCopy = {
 
 type ReportThreads = Pick<
   ThreadManagementServiceShape,
-  "dispatch" | "getThreadRecords" | "getThreadShell" | "reportRecipient"
+  | "dispatch"
+  | "getThreadRecords"
+  | "getThreadShell"
+  | "reportRecipient"
+  | "delegatedTaskResultPending"
 >;
 
 const deliver = Effect.fnUntraced(function* (
@@ -470,6 +475,8 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   if (launcherId === null) return undefined;
   const cancelled = records.runs.filter(
     (run) =>
+      trigger.kind === "run" &&
+      run.id === trigger.runId &&
       run.status === "cancelled" &&
       run.cancelledByThreadId !== null &&
       run.cancelledByThreadId !== launcherId &&
@@ -512,7 +519,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   let runs = records.runs;
   let run: OrchestrationV2Run | undefined;
   for (const candidate of runs
-    .filter((entry) => !["queued", "rolled_back"].includes(entry.status) && (entry.status !== "cancelled" || reportable.has(entry.id)))
+    .filter((entry) => !["queued", "cancelled", "rolled_back"].includes(entry.status))
     .toSorted((a, b) => b.ordinal - a.ordinal)) {
     if (candidate.status === "completed") {
       const prompts = yield* threads.getThreadRecords(thread.id, ["messages"], {
@@ -538,7 +545,11 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     if (runs.includes(requested)) run = requested;
   }
   const compacted = trigger.kind === "run" && run?.id !== trigger.runId;
-  if (run === undefined || !["completed", "failed", "interrupted", "cancelled"].includes(run.status) || (run.status === "cancelled" && !reportable.has(run.id)))
+  if (
+    run === undefined ||
+    !["completed", "failed", "interrupted", "cancelled"].includes(run.status) ||
+    (run.status === "cancelled" && !reportable.has(run.id))
+  )
     return undefined;
   if (
     (trigger.kind === "idle" || compacted) &&
@@ -549,6 +560,11 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       DateTime.addDuration(run.completedAt, INTERRUPTED_REPORT_DELAY),
     )
   )
+    return undefined;
+  const awaitingContinuation =
+    ["cancelled", "interrupted", "failed"].includes(run.status) &&
+    (yield* threads.delegatedTaskResultPending(thread.id, run.delegatedTaskId, run.id));
+  if (restartSupersededRunIds(records.runs, awaitingContinuation ? run : undefined).has(run.id))
     return undefined;
   const history = yield* threads.getThreadRecords(
     thread.id,
