@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import type { ScheduledTaskThread } from "@t3tools/contracts";
@@ -16,6 +17,7 @@ import {
 } from "../../state/entities";
 import { projectJobListsAtom } from "../../state/server";
 import { isThreadRouteSnapshotAuthoritative } from "../../threadRoutes";
+import { useUiStateStore } from "../../uiStateStore";
 import { useSettingsProjectGroups } from "../settings/useSettingsProjectGroups";
 import {
   countProjectThreads,
@@ -29,6 +31,7 @@ import {
   jobRunsAgain,
   jobThreadStates,
 } from "./projectPage.logic";
+import { stoppedThreadsNeedingYou } from "./projectNeedsYou.logic";
 
 /** A task that runs in a thread the project page keeps. */
 export interface ProjectPageJob {
@@ -44,8 +47,10 @@ export interface ProjectPage {
   /** `environmentId:threadId` of the chat, once it exists. */
   readonly chatThreadKey: string | null;
   readonly statusLine: string | null;
-  /** The threads the status line counts as needing you. */
+  /** Threads waiting on an approval, a question or a report answer. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** Failed and usage-limited threads not yet seen; the status line counts them with `needYou`. */
+  readonly stopped: ReadonlyArray<EnvironmentThreadShell>;
   /** Tasks whose threads the page keeps (`isProjectPageJob`), latest thread activity first. */
   readonly jobs: ReadonlyArray<ProjectPageJob>;
   /** `jobThreadStates` of those threads, by `environmentId:threadId`. */
@@ -59,6 +64,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
   const threads = useThreadShells();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const shellStatuses = useEnvironmentShellStatuses();
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const projectByThreadKey = new Map(
     threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread.projectId] as const),
   );
@@ -109,6 +115,7 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
         host.chatThreadId === null ? null : `${host.checkout.environmentId}:${host.chatThreadId}`,
       statusLine: null,
       needYou: [],
+      stopped: [],
       jobs: [],
       jobThreads: new Map(),
     });
@@ -139,6 +146,10 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
   for (const [projectKey, page] of pages) {
     const pageThreads = threadsByPage.get(projectKey) ?? [];
     const counts = countProjectThreads(pageThreads, page.chatThreadKey);
+    const stopped = stoppedThreadsNeedingYou(
+      counts.stopped,
+      (thread) => localVisits[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+    );
     const jobs: ProjectPageJob[] = [];
     const jobThreads = new Map<string, JobThreadState>();
     for (const thread of pageThreads) {
@@ -165,8 +176,12 @@ export function useProjectPages(): ReadonlyMap<string, ProjectPage> {
     }
     pages.set(projectKey, {
       ...page,
-      statusLine: formatProjectStatusLine(counts),
+      statusLine: formatProjectStatusLine({
+        working: counts.working,
+        needYou: [...counts.needYou, ...stopped],
+      }),
       needYou: counts.needYou,
+      stopped,
       jobs: jobs.toSorted(
         (left, right) =>
           getThreadSortTimestamp(right.thread, "updated_at") -

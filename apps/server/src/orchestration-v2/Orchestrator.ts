@@ -4365,6 +4365,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         version,
         question: command.question,
         answers: command.answers,
+        ...(command.blocking ? { blocking: true } : {}),
       },
     };
     yield* emitEvent({

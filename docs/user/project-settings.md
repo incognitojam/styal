@@ -352,7 +352,10 @@ Starting a project's first chat still happens on web or desktop.
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it
 there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the
-page can't answer, such as a subagent's request, offers **Open thread**.
+page can't answer, such as a subagent's request, offers **Open thread**. After those come threads
+that failed or hit a usage limit, with the error or when the limit resets; click one to open the
+thread and retry there. It leaves the list once the thread runs again, or when you open, settle or
+archive it.
 
 Threads the chat launches to report back to it stay off the sidebar while they work or after
 they finish; the chat lists the ones still working or waiting on you right after the reply that
@@ -364,15 +367,6 @@ notification. It comes back the same way, except that only a message you sent af
 latest run started counts, and it leaves again at the next run. A paused task, or a one-time task
 that has run, leaves its thread in the sidebar. **Scheduled** in the page's header lists each task
 with its schedule and how its latest run went.
-
-When you open the page after at least half an hour away, the end of the chat lists what happened
-since you last looked at it on any of your devices: threads that failed or hit a usage limit, the
-chat's reports, threads that finished and you haven't opened, and pull requests that merged. "Last
-looked" is when you last opened the page, or the chat's last change while you had it open. Open
-questions stay in **Needs you**. Long lists fold into groups with **Show all**. If the chat's earlier
-history isn't loaded, **Load earlier** fetches it so older reports can be listed, and the list says
-when threads that settled long ago weren't checked. Each thread counts only its latest turn. The list
-is not saved: it stays until you leave the page, and next time shows only what came after.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.
