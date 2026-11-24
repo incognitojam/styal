@@ -1113,6 +1113,16 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   );
 }
 
+// Until the server takes the send, no provider is running, so nothing is thinking yet.
+export function liveActivityStartingLabel(input: {
+  providerStartingLabel: string | null | undefined;
+  isSendBusy: boolean;
+  phase: SessionPhase;
+}): string | null {
+  if (input.providerStartingLabel) return input.providerStartingLabel;
+  return input.isSendBusy && input.phase !== "running" ? "Sending…" : null;
+}
+
 // Window return puts the caret in the composer unless focus is deliberate: another text field,
 // a terminal, an open dialog, menu, or popup, a region or sidebar row reached from the keyboard,
 // or a region with its own keys (aria-keyshortcuts). A plain focused button or a clicked row

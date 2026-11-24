@@ -39,6 +39,7 @@ import {
 import {
   deriveAvailableRevertTurnCounts,
   deriveThreadPendingBackgroundTasks,
+  liveActivityStartingLabel,
   presentThreadShellFromProjection,
 } from "./ChatView.logic";
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
@@ -3860,7 +3861,11 @@ export default function ChatView(props: ChatViewProps) {
                     activePendingApproval?.requestId ?? activePendingUserInput?.requestId ?? null
                   }
                   activeTurnStartedAt={activeWorkStartedAt}
-                  providerStartingLabel={activeActivityRun?.providerStartingLabel ?? null}
+                  providerStartingLabel={liveActivityStartingLabel({
+                    providerStartingLabel: activeActivityRun?.providerStartingLabel,
+                    isSendBusy,
+                    phase,
+                  })}
                   worktreeSetup={worktreeSetup}
                   onCancelWorktreeSetup={onCancelWorktreeSetupStable}
                   retryableWorkspacePreparationRunIds={retryableWorkspacePreparationRunIds}

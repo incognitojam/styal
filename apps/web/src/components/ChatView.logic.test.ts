@@ -61,6 +61,7 @@ import {
   deriveComposerSendState,
   deriveLockedProvider,
   hasServerAcknowledgedLocalDispatch,
+  liveActivityStartingLabel,
   waitForRevertedMessage,
 } from "./ChatView.logic";
 
@@ -173,6 +174,25 @@ describe("buildExpiredTerminalContextToastCopy", () => {
       "Re-add it if you want that terminal output included.",
     );
   });
+});
+
+describe("liveActivityStartingLabel", () => {
+  it.each([
+    { providerStartingLabel: null, isSendBusy: true, phase: "ready", label: "Sending…" },
+    { providerStartingLabel: null, isSendBusy: true, phase: "running", label: null },
+    { providerStartingLabel: null, isSendBusy: false, phase: "running", label: null },
+    {
+      providerStartingLabel: "Starting Claude",
+      isSendBusy: true,
+      phase: "ready",
+      label: "Starting Claude",
+    },
+  ] as const)(
+    "busy $isSendBusy in $phase with $providerStartingLabel shows $label",
+    ({ label, ...input }) => {
+      expect(liveActivityStartingLabel(input)).toBe(label);
+    },
+  );
 });
 
 describe("hasServerAcknowledgedLocalDispatch", () => {
