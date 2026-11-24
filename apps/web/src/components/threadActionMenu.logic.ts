@@ -100,6 +100,8 @@ export interface ThreadActionMenuState {
   readonly canTurnIntoProject?: boolean;
   /** Set while project coordinators are on in Labs: whether this thread is its project's. */
   readonly projectCoordinator?: { readonly isCoordinator: boolean } | null;
+  /** The only entries a surface offers; a separator before a dropped one moves to the next kept. */
+  readonly only?: ReadonlySet<ThreadActionMenuId>;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -274,9 +276,19 @@ export function buildThreadActionMenuItems(
       icon: "trash",
     },
   ];
+  const kept: Array<ContextMenuItem<ThreadActionMenuId>> = [];
+  let separatorBefore = false;
+  for (const item of items) {
+    if (state.only && !state.only.has(item.id)) {
+      separatorBefore ||= item.separatorBefore === true;
+      continue;
+    }
+    kept.push(separatorBefore ? { ...item, separatorBefore } : item);
+    separatorBefore = false;
+  }
   return state.canOperate
-    ? items
-    : items.map((item) =>
+    ? kept
+    : kept.map((item) =>
         threadActionRequiresOperate(item.id)
           ? {
               ...item,

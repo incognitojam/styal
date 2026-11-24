@@ -3712,7 +3712,16 @@ export default function ChatView(props: ChatViewProps) {
             {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
             {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             {projectChat ? (
-              <ProjectChatHeader {...projectChat} rightPanelOpen={inlineRightPanelOwnsTitleBar} />
+              <ProjectChatHeader
+                {...projectChat}
+                rightPanelOpen={inlineRightPanelOwnsTitleBar}
+                chat={{
+                  environmentId: activeThread.environmentId,
+                  threadRef: isServerThread ? activeThreadRef : null,
+                  projectCwd: activeProject?.workspaceRoot ?? null,
+                  onFindInThread: threadFindEnabled ? openThreadFindStable : undefined,
+                }}
+              />
             ) : (
               <ChatHeader
                 activeThreadEnvironmentId={activeThread.environmentId}
