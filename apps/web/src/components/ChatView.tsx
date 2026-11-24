@@ -4395,7 +4395,8 @@ export default function ChatView(props: ChatViewProps) {
                   // composer offers only the machine.
                   envLocked={envLocked || unsentProjectChat}
                   branchReadOnly={unsentProjectChat}
-                  availableEnvironments={logicalProjectEnvironments}
+                  // Every machine of the project, so a started chat on any of them shows its own.
+                  availableEnvironments={projectEnvironments}
                   autoEnvironmentLabel={autoEnvironmentLabel}
                   onAutoEnvironment={
                     draftId &&

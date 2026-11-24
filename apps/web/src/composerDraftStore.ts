@@ -5133,7 +5133,24 @@ export function ensureProjectChatDraft(input: {
   readonly logicalProjectKey: string;
 }): void {
   useComposerDraftStore.setState((state) => {
-    if (state.draftThreadsByThreadKey[input.draftId] !== undefined) return state;
+    const existing = state.draftThreadsByThreadKey[input.draftId];
+    if (existing !== undefined) {
+      // A draft saved before the page kept its checkout fields out still starts in the folder.
+      if (
+        existing.branch === null &&
+        existing.worktreePath === null &&
+        existing.envMode === "local" &&
+        !existing.checkoutPullRequest
+      )
+        return state;
+      const { checkoutPullRequest: _checkoutPullRequest, ...draft } = existing;
+      return {
+        draftThreadsByThreadKey: {
+          ...state.draftThreadsByThreadKey,
+          [input.draftId]: { ...draft, branch: null, worktreePath: null, envMode: "local" },
+        },
+      };
+    }
     const { [input.draftId]: _sent, ...promotedDraftRedirects } = state.promotedDraftRedirects;
     return {
       draftThreadsByThreadKey: {

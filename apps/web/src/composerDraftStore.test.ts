@@ -3242,6 +3242,26 @@ describe("composerDraftStore checkout pull request", () => {
       runtimeMode: "approval-required",
     });
     expect(store().getDraftSession(chatDraftId)?.checkoutPullRequest).toBeUndefined();
+    // A draft saved with them before the page kept them out loses them when the page opens it.
+    useComposerDraftStore.setState((state) => ({
+      draftThreadsByThreadKey: {
+        ...state.draftThreadsByThreadKey,
+        [chatDraftId]: { ...state.draftThreadsByThreadKey[chatDraftId]!, ...checkoutFields },
+      },
+    }));
+    ensureProjectChatDraft({
+      draftId: chatDraftId,
+      threadId,
+      projectRef,
+      logicalProjectKey: "orchard",
+    });
+    expect(store().getDraftSession(chatDraftId)).toMatchObject({
+      branch: null,
+      worktreePath: null,
+      envMode: "local",
+      runtimeMode: "approval-required",
+    });
+    expect(store().getDraftSession(chatDraftId)?.checkoutPullRequest).toBeUndefined();
     // Any other draft still takes them.
     draftOnMain();
     store().setDraftThreadContext(draftId, checkoutFields);
