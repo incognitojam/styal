@@ -38,7 +38,10 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
-import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
+import {
+  THREAD_DETAILS_PANEL_ICON_CLASS,
+  THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
+} from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsThreadPrRows } from "./chat/ThreadDetailsPrRows";
 import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
@@ -88,6 +91,8 @@ interface BranchToolbarBranchSelectorProps {
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
+  /** The panel shows the branch and its pull requests but offers no picker. */
+  readOnly?: boolean;
 }
 
 const WORKTREE_CHANGE_BLOCKED_MESSAGE = "Stop the current turn to switch worktrees.";
@@ -112,6 +117,7 @@ export function BranchToolbarBranchSelector({
   onStartFromOriginChange,
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
+  readOnly = false,
 }: BranchToolbarBranchSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
@@ -694,6 +700,35 @@ export function BranchToolbarBranchSelector({
     );
   }
 
+  const pullRequestRows = (
+    <ThreadDetailsThreadPrRows
+      threadRef={threadRef}
+      project={activeProject}
+      branchPr={branchPr}
+      branchSourceControlProvider={branchStatusQuery.data?.sourceControlProvider}
+      onActed={() => branchStatusQuery.refresh()}
+    />
+  );
+  if (readOnly) {
+    return (
+      <div className={cn("flex w-full min-w-0 flex-col items-stretch", className)}>
+        <span
+          className={cn(
+            "inline-flex min-w-0 max-w-full items-center justify-start gap-1",
+            THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
+          )}
+          onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
+        >
+          <GitBranchIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+          <ComposerContextLabel displayMode="panel">
+            <MiddleTruncate value={triggerLabel} variant="cap-aligned" className="w-full" />
+          </ComposerContextLabel>
+        </span>
+        {pullRequestRows}
+      </div>
+    );
+  }
+
   return (
     <BranchPicker
       items={branchPickerItems}
@@ -793,15 +828,7 @@ export function BranchToolbarBranchSelector({
             </ComposerContextLabel>
           </ComboboxTrigger>
         </span>
-        {displayMode === "panel" ? (
-          <ThreadDetailsThreadPrRows
-            threadRef={threadRef}
-            project={activeProject}
-            branchPr={branchPr}
-            branchSourceControlProvider={branchStatusQuery.data?.sourceControlProvider}
-            onActed={() => branchStatusQuery.refresh()}
-          />
-        ) : null}
+        {displayMode === "panel" ? pullRequestRows : null}
       </div>
     </BranchPicker>
   );
