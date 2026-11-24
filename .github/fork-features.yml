@@ -3168,6 +3168,35 @@ features:
       retire_when: Upstream recovery bounds automatic compaction provider work and retries, preserves idle eligibility at dispatch and explains skipped retries.
     rationale: Restart continuation may recover many threads together. Automatic compaction spends a provider read without a new user request, so recovery has a stricter budget than user turns.
 
+  - id: incompatible-machine-cached-rows
+    title: Keep an incompatible machine's cached projects and threads listed
+    status: maintained
+    tier: keep
+    prs: [1724]
+    invariants:
+      - A switched-on machine whose protocol version is incompatible keeps its cached projects and threads in the sidebar, project pages, thread lists and the command palette, as an unreachable machine does.
+      - Its connection stays blocked; the client opens no session to it, usage limits leave out its accounts, and its rows' actions fail as not connected until the versions match again.
+      - Readiness that waits for machines to settle, such as opening a prompt link, does not wait for an incompatible machine.
+    rationale: Client and server versions differ for hours whenever one side takes a nightly first. Hiding the machine made its projects and threads look deleted and made a project page offer a second project chat on this device.
+    implementation_paths:
+      - apps/web/src/state/shell.ts
+      - packages/client-runtime/src/state/connections.ts
+      - packages/client-runtime/src/state/presentation.ts
+    upstream_paths:
+      - apps/web/src/state/shell.ts
+      - packages/client-runtime/src/state/connections.ts
+      - packages/client-runtime/src/state/presentation.ts
+    tests:
+      - apps/web/src/state/shell.test.ts
+      - packages/client-runtime/src/connection/registry.test.ts
+      - packages/client-runtime/src/state/presentation.test.ts
+      - packages/client-runtime/src/state/threadShell.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15052
+      retire_when: Upstream lists an incompatible machine's cached projects and threads the way it lists an unreachable machine's, with the connection still blocked.
+
   - id: inline-code-file-chips-need-a-target
     title: Inline-code paths become file chips only when they open something
     status: maintained
