@@ -324,7 +324,8 @@ With the switch on, each project has a page with its coordinator as the project'
 **Open project** in the command palette, the project's name in a thread's header, the name on a
 project's folder, or, in the flat list, the chat's own row. Each shows how many of the project's
 threads are working or need you; in folders the chat has no row of its own, and the folder's
-chevron still opens and closes it. **Project settings** links open the page, and its gear
+chevron still opens and closes it. Changing the sidebar's project filter to just that project opens
+the page too. **Project settings** links open the page, and its gear
 button opens the settings. The coordinator's own links (from search, the palette, another thread,
 or **Make project coordinator** on the thread you have open) open the page too. The page has the
 thread view's details card, terminal and right panel, with the same toggles and shortcuts. Before
