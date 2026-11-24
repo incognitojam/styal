@@ -54,16 +54,17 @@ export function useConnectionDiagnosis(environment: EnvironmentPresentation) {
   return { diagnosis, state, relayOnly };
 }
 
-/** The failure headline alone, for banners outside Settings. */
+/** The failure headline alone, and whether styal is retrying, for banners outside Settings. */
 export function ConnectionDiagnosisHeadline({
   environment,
+  retrying,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly retrying: boolean;
 }) {
-  const { diagnosis } = useConnectionDiagnosis(environment);
-  return environment.connection.unreachable
-    ? "Unreachable on every route"
-    : (diagnosis?.headline ?? null);
+  const headline = useConnectionDiagnosis(environment).diagnosis?.headline ?? null;
+  if (!retrying) return headline;
+  return headline ? `${headline}. Retrying automatically.` : "Retrying automatically.";
 }
 
 const HOP_MARK = { ok: "✓", failed: "✕", unchecked: "–" } as const;

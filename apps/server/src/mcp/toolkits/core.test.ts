@@ -10,6 +10,7 @@ import {
   EnvironmentId,
   NodeId,
   OrchestratorMcpThreadReadResult,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   RunId,
@@ -84,6 +85,9 @@ import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);
+const decodeThreadSearchResult = Schema.decodeUnknownEffect(
+  ThreadToolkit.tools.t3_thread_search.successSchema,
+);
 
 const layerThreadToolkit = McpHttpServer.layerThreadToolkit.pipe(
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
@@ -626,6 +630,65 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
             dispatch: () => Effect.succeed({ sequence: 7, storedEvents: [] }),
           }),
         ),
+      ),
+    ),
+  ),
+);
+
+it.effect("search names the calling thread, so an agent can tell its own match apart", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const search = (invocation: McpInvocationContext.McpInvocationScope) =>
+      server
+        .callTool({ name: "t3_thread_search", arguments: { query: "release notes" } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const fromThread = yield* search(scope);
+    expect(fromThread.isError, JSON.stringify(fromThread)).not.toBe(true);
+    expect(fromThread.structuredContent).toMatchObject({
+      currentThreadId: threadId,
+      matches: [{ threadId }, { threadId: "earlier-thread" }],
+    });
+
+    const fromClient = yield* search(clientScope("auto"));
+    expect(fromClient.structuredContent).toMatchObject({ currentThreadId: null });
+
+    // A linked environment on an older version answers without the field.
+    const fromOlderPeer = yield* decodeThreadSearchResult({ matches: [], machines: [], notes: [] });
+    expect(fromOlderPeer).toEqual({ matches: [], machines: [], notes: [] });
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerThreadToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(
+          Layer.mock(ThreadSearch.ThreadSearch)({
+            searchThreads: () =>
+              Effect.succeed({
+                matches: [threadId, ThreadId.make("earlier-thread")].map((id) => ({
+                  threadId: id,
+                  projectId: ProjectId.make("project:mcp-test"),
+                  title: "Release notes",
+                  source: "title" as const,
+                  snippet: "",
+                  messageCreatedAt: null,
+                })),
+              }),
+          }),
+        ),
+        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(
+          Layer.mock(PeerForwarding.PeerForwarding)({
+            links: () =>
+              Effect.succeed({ environmentId: scope.environmentId, links: [], notListed: "" }),
+          }),
+        ),
+        Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+        Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
       ),
     ),
   ),

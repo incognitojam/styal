@@ -822,7 +822,7 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
   R,
 >(
   tool: T,
-  handle: (payload: Tool.Parameters<T>) => Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
+  handle: (payload: Schema.Json) => Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
   provide: (
     effect: Effect.Effect<{ readonly encodedResult: unknown }, E, R>,
   ) => Effect.Effect<
@@ -857,7 +857,7 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
           fiber.context,
           McpInvocationContext.McpInvocationContext,
         );
-        return provide(handle(payload as Tool.Parameters<T>)).pipe(
+        return provide(handle(payload)).pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.matchCauseEffect({
             onFailure: imageToolFailure(tool.name, operation, failureText),
@@ -1394,7 +1394,8 @@ export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE,
     name: "styal",
     version: packageJson.version,
     path: "/mcp",
-    protocols: [McpProtocol.v2025_06_18],
+    // The first protocol is the fallback for clients that offer an unknown version.
+    protocols: [McpProtocol.v2025_06_18, McpProtocol.v2026_07_28],
     allowSessionTermination: true,
     registrations,
   }).pipe(Layer.provide(layerMcpAuthMiddleware));

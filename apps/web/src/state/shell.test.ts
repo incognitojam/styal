@@ -11,6 +11,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  allReachableShellsLiveAtom,
   createAllEnvironmentProjectSnapshotsReadyAtom,
   expectsPrimaryEnvironment,
   environmentShell,
@@ -157,7 +158,7 @@ it("expects a primary environment only on desktops with the local environment en
 });
 
 it.each([undefined, "", "Server update required"])(
-  "settles fallback for an unsupported remembered environment: %s",
+  "settles readiness for an unsupported remembered environment: %s",
   (unsupportedReason) => {
     const catalog = catalogState([LOCAL, REMOTE]);
     const entries = new Map(catalog.entries);
@@ -170,12 +171,15 @@ it.each([undefined, "", "Server update required"])(
         [environmentCatalog.catalogValueAtom, { ...catalog, entries }],
         [environmentShell.statusAtom(REMOTE), "empty"],
         [environmentCatalog.stateAtom(REMOTE), AsyncResult.success(AVAILABLE_CONNECTION_STATE)],
+        [environmentShell.stateValueAtom(LOCAL), shellState("live")],
       ],
     });
     try {
       expect(registry.get(defaultProjectFallbackReadyAtom("remote:project"))).toBe(
         unsupportedReason !== undefined,
       );
+      // An incompatible machine does not hold up opening a link; a compatible one still connecting does.
+      expect(registry.get(allReachableShellsLiveAtom)).toBe(unsupportedReason !== undefined);
     } finally {
       registry.dispose();
     }

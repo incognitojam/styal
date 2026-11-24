@@ -188,6 +188,7 @@ import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
+import * as SecretCheck from "./secrets/SecretCheck.ts";
 import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
@@ -1184,11 +1185,15 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       const forSubscriber = yield* loadSubscriberShellSnapshot({
         sql,
         listShellIndex: threadManagement.listActiveShellIndex(),
-        readThreads: (threadIds) =>
-          threadManagement.readShellSnapshot({
-            location: "active",
-            ...(threadIds === undefined ? {} : { threadIds }),
-          }),
+        readThreads: threadManagement.prepareShellSnapshot.pipe(
+          Effect.map(
+            (read) => (threadIds) =>
+              read({
+                location: "active",
+                ...(threadIds === undefined ? {} : { threadIds }),
+              }),
+          ),
+        ),
         listProjects: projects.listShells(),
         latestSequence: applicationEvents.latestApplicationSequence,
         options: {
@@ -1595,6 +1600,7 @@ export const layerWsRpc = (
       );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
+      const secretCheck = yield* SecretCheck.SecretCheck;
       const otlpEndpointCheck = yield* OtlpEndpointCheck.OtlpEndpointCheck;
       const textGenerators = yield* TextGenerators.TextGenerators;
       const sourceControlRepositories =
@@ -1930,7 +1936,9 @@ export const layerWsRpc = (
       const getOrchestrationV2ArchivedShellSnapshot = Effect.gen(function* () {
         const { threads, projects, snapshotSequence } = yield* loadShellSnapshotParts({
           sql,
-          readThreads: threadManagement.readShellSnapshot({ location: "archive" }),
+          readThreads: threadManagement.prepareShellSnapshot.pipe(
+            Effect.map((read) => read({ location: "archive" })),
+          ),
           listProjects: projectStore.listShells(),
           latestSequence: applicationEvents.latestApplicationSequence,
         });
@@ -1976,7 +1984,9 @@ export const layerWsRpc = (
         ) {
           const { threads, snapshotSequence } = yield* loadShellSnapshotParts({
             sql,
-            readThreads: threadManagement.readShellSnapshot({ location: "active", ...options }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => read({ location: "active", ...options })),
+            ),
             listProjects: Effect.succeed([]),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
@@ -2118,8 +2128,9 @@ export const layerWsRpc = (
             search: threadSearch.search,
             searchOlderSettled: threadSearch.searchOlderSettled,
             sql,
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+            ),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
             Effect.mapError(
@@ -2158,8 +2169,9 @@ export const layerWsRpc = (
           loadOlderSettledThreadsPage({
             sql,
             listThreads: threadManagement.listOlderSettledThreads(input),
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+            ),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
             Effect.mapError(
@@ -2758,6 +2770,7 @@ export const layerWsRpc = (
             return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
+        [WS_METHODS.serverCheckSecretSource]: (input) => secretCheck.check(input.source),
         [WS_METHODS.serverGetTraceDiagnostics]: (_input) =>
           TraceDiagnostics.readTraceDiagnostics({
             traceFilePath: config.serverTracePath,

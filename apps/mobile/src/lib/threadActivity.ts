@@ -1175,23 +1175,50 @@ export function failedFeedRunIds(
 /**
  * The key a run fold uses for the message `entryId`: its run, or for an
  * imported message with no run, the runless key of the user message before
- * it. Null for user messages, which never fold.
+ * it, or the segment after its run's last steer when `presented` shows that
+ * fold. Null for user messages, which never fold.
  */
 export function messageFoldRunId(
   feed: ReadonlyArray<ThreadFeedEntry>,
   entryId: string,
+  presented: ReadonlyArray<{ readonly type: string; readonly runId?: RunId | null }>,
 ): RunId | null {
   let runlessKey: RunId | null = null;
+  const lastSteerIdByRunId = new Map<RunId, string>();
   for (const entry of feed) {
     if (entry.type !== "message") continue;
     if (entry.message.role === "user") {
       if (entry.id === entryId) return null;
+      if (isSteerMessage(entry.message) && entry.message.runId != null) {
+        lastSteerIdByRunId.set(entry.message.runId, entry.id);
+      }
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
     } else if (entry.id === entryId) {
-      return entry.message.runId ?? runlessKey;
+      const runId = entry.message.runId ?? runlessKey;
+      const steerId = runId === null ? undefined : lastSteerIdByRunId.get(runId);
+      if (runId === null || steerId === undefined) return runId;
+      // Tool visibility can drop all output before the steer, leaving no split.
+      const steerKey = steerFoldRunId(runId, steerId);
+      return presented.some((row) => row.type === "run-fold" && row.runId === steerKey)
+        ? steerKey
+        : runId;
     }
   }
   return null;
+}
+
+function steerFoldRunId(runId: RunId, steerEntryId: string): RunId {
+  return RunId.make(`${runId}:steer:${steerEntryId}`);
+}
+
+function feedEntryFoldRunId(entry: ThreadFeedEntry, runlessKey: RunId | null): RunId | null {
+  if (entry.type === "message") {
+    return entry.message.role === "assistant" ? (entry.message.runId ?? runlessKey) : null;
+  }
+  if (entry.type === "restart-note") return entry.runId;
+  return entry.type === "activity-group" || entry.type === "html-render" || entry.type === "mcp-app"
+    ? (entry.runId ?? runlessKey)
+    : null;
 }
 
 function answersBeforeSteers(feed: ReadonlyArray<ThreadFeedEntry>): ReadonlySet<MessageId> {
@@ -1239,13 +1266,29 @@ function deriveThreadFeedRunFolds(
   }
   const groupsByRunId = new Map<
     RunId,
-    { entries: ThreadFeedEntry[]; startBoundary: string | null }
+    {
+      entries: ThreadFeedEntry[];
+      startBoundary: string | null;
+      /** Each steer after the run has output starts a segment at this index into `entries`. */
+      steerSegments: Array<{ startIndex: number; steer: ThreadFeedEntry }>;
+    }
   >();
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingUserBoundary: string | null = null;
   for (const [index, entry] of feed.entries()) {
     if (entry.type === "message" && entry.message.role === "user") {
+      const steerGroup =
+        isSteerMessage(entry.message) && entry.message.runId != null
+          ? groupsByRunId.get(roots.get(entry.message.runId) ?? entry.message.runId)
+          : undefined;
+      if (steerGroup && steerGroup.entries.length > 0) {
+        // Back-to-back steers split once, after the last of them.
+        if (steerGroup.steerSegments.at(-1)?.startIndex === steerGroup.entries.length) {
+          steerGroup.steerSegments.pop();
+        }
+        steerGroup.steerSegments.push({ startIndex: steerGroup.entries.length, steer: entry });
+      }
       pendingUserBoundary = entry.message.createdAt;
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
       responseKey = entry.message.runId ?? runlessKey;
@@ -1257,16 +1300,7 @@ function deriveThreadFeedRunFolds(
       responseKey = null;
       continue;
     }
-    const entryRunId =
-      entry.type === "message" && entry.message.role === "assistant"
-        ? (entry.message.runId ?? runlessKey)
-        : entry.type === "activity-group" ||
-            entry.type === "html-render" ||
-            entry.type === "mcp-app"
-          ? (entry.runId ?? runlessKey)
-          : entry.type === "restart-note"
-            ? entry.runId
-            : null;
+    const entryRunId = feedEntryFoldRunId(entry, runlessKey);
     const ownRunId = entryRunId ? (roots.get(entryRunId) ?? entryRunId) : null;
     if (!ownRunId) continue;
     // Resumed subagents keep their original turn position and fold, leaving later run folds under their own prompts.
@@ -1276,7 +1310,7 @@ function deriveThreadFeedRunFolds(
         : ownRunId;
     let group = groupsByRunId.get(runId);
     if (!group) {
-      group = { entries: [], startBoundary: pendingUserBoundary };
+      group = { entries: [], startBoundary: pendingUserBoundary, steerSegments: [] };
       pendingUserBoundary = null;
       groupsByRunId.set(runId, group);
     }
@@ -1354,15 +1388,15 @@ function deriveThreadFeedRunFolds(
         .map((entry) => entry.id),
     );
     const firstEntry = group.entries[0];
-    const firstHiddenEntry = group.entries.find((entry) => hiddenEntryIds.has(entry.id));
     const lastEntry = group.entries.at(-1);
-    if (!firstHiddenEntry || !firstEntry || !lastEntry) continue;
-    const hidesNonCompactionWork = group.entries.some(
-      (entry) =>
-        hiddenEntryIds.has(entry.id) &&
-        !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
-    );
-    if (!hidesNonCompactionWork) continue;
+    if (!firstEntry || !lastEntry) continue;
+    const hidesNonCompactionWork = (entries: ReadonlyArray<ThreadFeedEntry>) =>
+      entries.some(
+        (entry) =>
+          hiddenEntryIds.has(entry.id) &&
+          !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
+      );
+    if (!hidesNonCompactionWork(group.entries)) continue;
     const latestRunMatches =
       latestRun !== null && (roots.get(latestRun.runId) ?? latestRun.runId) === runId;
     const responseEndedAt = group.entries.reduce(
@@ -1370,6 +1404,9 @@ function deriveThreadFeedRunFolds(
       (latestRunMatches && latestRun.status !== "cancelled" ? latestRun.completedAt : null) ??
         firstEntry.createdAt,
     );
+    // Outages come from the whole response, so a segment after a steer still
+    // sees the run boundary before it.
+    const outages = feedRestartOutages(group.entries);
     const elapsedMs =
       latestRunMatches &&
       latestRun.status !== "cancelled" &&
@@ -1381,31 +1418,67 @@ function deriveThreadFeedRunFolds(
     const duration =
       elapsedMs === null
         ? null
-        : formatDuration(Math.max(0, elapsedMs - feedRestartDowntime(group.entries)));
+        : formatDuration(Math.max(0, elapsedMs - feedRestartDowntime(outages)));
     const interrupted =
       latestRunMatches && (latestRun.status === "interrupted" || latestRun.status === "cancelled");
-    const deferredWorkItemIds = group.entries.flatMap((entry) =>
-      entry.type === "activity-group"
-        ? entry.activities.flatMap((activity) =>
-            activity.projectedItem.item.deferredWork
-              ? [String(activity.projectedItem.sourceItemId)]
-              : [],
-          )
-        : [],
-    );
-    foldsByAnchorId.set(firstHiddenEntry.id, {
-      ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
-      runId,
-      createdAt: firstHiddenEntry.createdAt,
-      hiddenEntryIds,
-      label: interrupted
-        ? duration
-          ? `You stopped after ${duration}`
-          : "You stopped this response"
-        : duration
-          ? `Worked for ${duration}`
-          : "Worked",
-    });
+    const label = interrupted
+      ? duration
+        ? `You stopped after ${duration}`
+        : "You stopped this response"
+      : duration
+        ? `Worked for ${duration}`
+        : "Worked";
+    // The top row keeps the whole turn's time. Work after a steer folds under
+    // its own row below that steer, keyed apart so each segment opens alone.
+    const segments = [
+      {
+        runId,
+        entries: group.entries.slice(0, group.steerSegments[0]?.startIndex),
+        label,
+      },
+      ...group.steerSegments.map(({ startIndex, steer }, index) => {
+        const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
+        const segmentEndedAt =
+          entries.map(threadFeedEntryEndedAt).reduce<string | null>(maxIsoTimestamp, null) ??
+          steer.createdAt;
+        const segmentMs = computeElapsedMs(steer.createdAt, segmentEndedAt);
+        const segmentDowntime = feedRestartDowntime(
+          outages,
+          Date.parse(steer.createdAt),
+          Date.parse(segmentEndedAt),
+        );
+        return {
+          runId: steerFoldRunId(runId, steer.id),
+          entries,
+          label:
+            segmentMs !== null
+              ? `Continued for ${formatDuration(Math.max(0, segmentMs - segmentDowntime))}`
+              : "Continued",
+        };
+      }),
+    ];
+    for (const segment of segments) {
+      const firstHiddenEntry = segment.entries.find((entry) => hiddenEntryIds.has(entry.id));
+      if (!firstHiddenEntry || !hidesNonCompactionWork(segment.entries)) continue;
+      const deferredWorkItemIds = segment.entries.flatMap((entry) =>
+        entry.type === "activity-group"
+          ? entry.activities.flatMap((activity) =>
+              activity.projectedItem.item.deferredWork
+                ? [String(activity.projectedItem.sourceItemId)]
+                : [],
+            )
+          : [],
+      );
+      foldsByAnchorId.set(firstHiddenEntry.id, {
+        ...(deferredWorkItemIds.length > 0 ? { deferredWorkItemIds } : {}),
+        runId: segment.runId,
+        createdAt: firstHiddenEntry.createdAt,
+        hiddenEntryIds: new Set(
+          segment.entries.flatMap((entry) => (hiddenEntryIds.has(entry.id) ? [entry.id] : [])),
+        ),
+        label: segment.label,
+      });
+    }
   }
   const covered = new Set(
     [...foldsByAnchorId.values()].flatMap((fold) => [...fold.hiddenEntryIds]),
@@ -2844,10 +2917,12 @@ export function deriveFeedContinuedRunRoots(
   return roots;
 }
 
-function feedRestartDowntime(entries: ReadonlyArray<ThreadFeedEntry>): number {
+function feedRestartOutages(
+  entries: ReadonlyArray<ThreadFeedEntry>,
+): ReadonlyArray<readonly [number, number]> {
   let previousRun: RunId | null = null;
   let previousEnd: number | null = null;
-  let downtime = 0;
+  const outages: Array<readonly [number, number]> = [];
   for (const entry of entries) {
     const runId =
       entry.type === "message" ? entry.message.runId : "runId" in entry ? entry.runId : null;
@@ -2856,12 +2931,24 @@ function feedRestartDowntime(entries: ReadonlyArray<ThreadFeedEntry>): number {
       previousRun !== null &&
       runId !== previousRun &&
       previousEnd !== null &&
-      Number.isFinite(start)
+      Number.isFinite(start) &&
+      start > previousEnd
     )
-      downtime += Math.max(0, start - previousEnd);
+      outages.push([previousEnd, start]);
     previousRun = runId;
     const end = Date.parse(threadFeedEntryEndedAt(entry));
     if (Number.isFinite(end)) previousEnd = previousEnd === null ? end : Math.max(previousEnd, end);
   }
-  return downtime;
+  return outages;
+}
+
+function feedRestartDowntime(
+  outages: ReadonlyArray<readonly [number, number]>,
+  from = Number.NEGATIVE_INFINITY,
+  to = Number.POSITIVE_INFINITY,
+): number {
+  return outages.reduce(
+    (total, [start, end]) => total + Math.max(0, Math.min(end, to) - Math.max(start, from)),
+    0,
+  );
 }
