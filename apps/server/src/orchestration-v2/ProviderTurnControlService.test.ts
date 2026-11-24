@@ -219,7 +219,7 @@ it.effect(
           countThreads: () => Effect.die("unused countThreads"),
           listActiveShellIndex: () => Effect.die("unused listActiveShellIndex"),
           listOlderSettledThreads: () => Effect.die("unused listOlderSettledThreads"),
-          readShellSnapshot: () => Effect.die("unused readShellSnapshot"),
+          prepareShellSnapshot: Effect.die("unused prepareShellSnapshot"),
           getThreadShell: () => Effect.die("unused getThreadShell"),
           getThreadTitles: () => Effect.die("unused getThreadTitles"),
           getThreadLinkMetadata: () => Effect.die("unused getThreadLinkMetadata"),

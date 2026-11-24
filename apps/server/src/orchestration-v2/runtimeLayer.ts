@@ -415,6 +415,8 @@ export const layer = Layer.mergeAll(
 export const layerProduction = Layer.mergeAll(
   layerEventSink,
   ProjectionStore.layer,
+  // The restart preview reads earlier resends.
+  EffectOutbox.layer,
   WorktreeBranchSync.layer.pipe(
     Layer.provide(Layer.merge(layerThreadManagementProvided, ProjectionStore.layer)),
   ),

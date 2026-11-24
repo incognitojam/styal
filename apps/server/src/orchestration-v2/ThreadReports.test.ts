@@ -252,13 +252,28 @@ it("a reply's note names every report that shares its title and version", () => 
   assert.include(shared, 'close it with t3_report {key: "<its key>", outcome: "');
 });
 
-it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "command"] as const)(
-  "%s settling delivers the deferred result once",
+it.effect.each([
+  "queue",
+  "failure",
+  "interrupted",
+  "background",
+  "subagent",
+  "command",
+  "idle-compaction",
+  "legacy-compaction",
+  "person-compaction",
+  "agent-compaction",
+] as const)(
+  "%s settling delivers the deferred result once and keeps later compaction quiet",
   (pendingKind) =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread:worker");
       const launcherId = ThreadId.make("thread:launcher");
       const now = yield* DateTime.now;
+      const compaction = pendingKind.endsWith("compaction");
+      const compactRunId = RunId.make("run:compact");
+      const compactMessageId = MessageId.make("message:compact");
+      let sentInRunId: RunId | undefined;
       const run = {
         ...base.run,
         status:
@@ -274,19 +289,32 @@ it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "co
       let pending = true;
       const delivered: unknown[] = [];
       const threads = {
-        getThreadRecords: () =>
+        getThreadRecords: (
+          _threadId: ThreadId,
+          _collections: unknown,
+          filter?: {
+            messageIds?: ReadonlyArray<MessageId>;
+            messageRunIds?: ReadonlyArray<RunId>;
+          },
+        ) =>
           Effect.succeed({
-            thread: { id: threadId, title: "Builder", reportTo: { threadId: launcherId } },
+            thread: {
+              id: threadId,
+              title: "Builder",
+              reportTo: { threadId: launcherId, sentInRunId },
+            },
             runs: [
               run,
               ...(pendingKind === "queue" ||
               pendingKind === "failure" ||
-              pendingKind === "interrupted"
+              pendingKind === "interrupted" ||
+              compaction
                 ? [
                     {
-                      id: RunId.make("run:queued"),
+                      id: compaction ? compactRunId : RunId.make("run:queued"),
+                      userMessageId: compactMessageId,
                       ordinal: 2,
-                      status: pending ? "queued" : "cancelled",
+                      status: pending ? "queued" : compaction ? "completed" : "cancelled",
                     },
                   ]
                 : []),
@@ -305,6 +333,27 @@ it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "co
             providerTurns: [],
             turnItems: [],
             messages: [
+              ...(compaction
+                ? [
+                    {
+                      id: compactMessageId,
+                      role: "user",
+                      runId: compactRunId,
+                      text: "/compact",
+                      attachments: [],
+                      createdBy: pendingKind === "person-compaction" ? "user" : "agent",
+                      creationSource:
+                        pendingKind === "person-compaction"
+                          ? "web"
+                          : pendingKind === "agent-compaction"
+                            ? "mcp"
+                            : "server",
+                      ...(pendingKind === "idle-compaction"
+                        ? { idleCompaction: "beforeCacheExpires" }
+                        : {}),
+                    },
+                  ]
+                : []),
               {
                 id: MessageId.make("message:report"),
                 role: "assistant",
@@ -313,7 +362,12 @@ it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "co
                 createdAt: now,
                 updatedAt: now,
               },
-            ],
+            ].filter(
+              (message) =>
+                (filter?.messageIds === undefined || filter.messageIds.includes(message.id)) &&
+                (filter?.messageRunIds === undefined ||
+                  filter.messageRunIds.includes(message.runId)),
+            ),
           }),
         getThreadShell: () =>
           Effect.succeed({
@@ -372,7 +426,7 @@ it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "co
       yield* checkThreadReport(threads, {
         threadId,
         environmentId: undefined,
-        trigger: effect.request.trigger,
+        trigger: compaction ? { kind: "run", runId: compactRunId } : effect.request.trigger,
       });
       if (pendingKind === "interrupted") {
         assert.equal(delivered.length, 0, "idle checks preserve restart grace");
@@ -389,5 +443,17 @@ it.effect.each(["queue", "failure", "interrupted", "background", "subagent", "co
         (delivered[0] as { commandId: string }).commandId,
         CommandId.make(`server:thread-report:${threadId}:${runId}`),
       );
+      if (compaction) {
+        sentInRunId = runId;
+        for (const trigger of [
+          { kind: "run", runId: compactRunId },
+          { kind: "idle" },
+          { kind: "run", runId },
+        ] as const) {
+          yield* checkThreadReport(threads, { threadId, environmentId: undefined, trigger });
+          assert.equal(delivered.length, 1, "compaction after a reported result stays quiet");
+          assert.equal(sentInRunId, runId, "compaction does not change the explicit-send marker");
+        }
+      }
     }),
 );

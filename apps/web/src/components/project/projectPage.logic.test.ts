@@ -1,8 +1,19 @@
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { EnvironmentId, ProjectId, type ScheduledTaskThread, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  ProjectId,
+  type ScheduledTaskThread,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import {
+  assistantCitationFromLocation,
+  assistantCitationRoute,
+} from "../../lib/assistantCitationNavigation";
+import { heldOpenThreadKey } from "../../threadRoutes";
 import {
   coordinatedProjectKey,
   isProjectPageJob,
@@ -12,6 +23,7 @@ import {
   isProjectChatDraftId,
   projectChatDraftId,
   resolveProjectChatView,
+  threadRouteProjectKey,
 } from "./projectPage.logic";
 
 const local = EnvironmentId.make("env-local");
@@ -387,5 +399,63 @@ describe("coordinatedProjectKey", () => {
         () => group(),
       ),
     ).toBeNull();
+  });
+
+  it("sends the coordinator's thread address to its page unless the thread view must show it", () => {
+    const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
+    const address = `/${local}/${chatId}`;
+    const open = (route: { href: string; heldOffShell?: boolean; background?: boolean }) =>
+      threadRouteProjectKey(
+        {
+          quotesResponse: assistantCitationFromLocation(route.href) !== null,
+          heldOffShell: route.heldOffShell ?? false,
+          background: route.background ?? false,
+        },
+        thread,
+        settingsFor,
+        () => group(),
+      );
+    expect(open({ href: address })).toBe("orchard-key");
+    // The page's old Open as thread address.
+    expect(open({ href: `${address}?view=thread` })).toBe("orchard-key");
+    // A quoted response, which only the thread view reveals.
+    const { hash } = assistantCitationRoute(
+      {
+        version: 1,
+        environmentId: local,
+        threadId: chatId,
+        messageId: MessageId.make("reply"),
+        text: "the plan",
+        start: 0,
+        end: 8,
+        prefix: "",
+        suffix: "",
+      },
+      null,
+    );
+    expect(open({ href: `${address}#${hash}` })).toBeNull();
+    expect(open({ href: address, background: true })).toBeNull();
+  });
+
+  it("keeps an older settled coordinator in the thread view once its family loads", () => {
+    const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
+    const route = (listed: typeof thread | null, heldOffShell: boolean) =>
+      threadRouteProjectKey(
+        { quotesResponse: false, heldOffShell, background: false },
+        listed,
+        settingsFor,
+        () => group(),
+      );
+    const key = `${local}:${chatId}`;
+    // The shell leaves it out, so the route holds its family in.
+    const held = heldOpenThreadKey(key, true, null);
+    expect(held).toBe(key);
+    expect(route(null, held !== null)).toBeNull();
+    // The family brings its row in: no longer missing, still held, still the thread view.
+    const stillHeld = heldOpenThreadKey(key, false, held);
+    expect(stillHeld).toBe(key);
+    expect(route(thread, stillHeld !== null)).toBeNull();
+    // Reached while the shell lists it, the same address opens the page.
+    expect(route(thread, heldOpenThreadKey(key, false, null) !== null)).toBe("orchard-key");
   });
 });
