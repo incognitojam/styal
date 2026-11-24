@@ -229,6 +229,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
+  projectPageOpenedByScopePick,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
@@ -3611,7 +3612,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       eventDetails.cancel();
                       toggleProjectScopeKey(item.value);
                     } else {
+                      const pageKey = projectPageOpenedByScopePick({
+                        previousKeys: projectScopeKeys,
+                        nextKeys: [item.value],
+                        hasPage: (projectKey) => projectPages.has(projectKey),
+                        isShowing: (projectKey) =>
+                          routeProjectKey === projectKey ||
+                          (routeRowThreadKey !== null &&
+                            projectPages.get(projectKey)?.chatThreadKey === routeRowThreadKey),
+                      });
                       setProjectScopeKeys([item.value]);
+                      if (pageKey !== null) void openProjectPage(pageKey);
                     }
                   }}
                 >

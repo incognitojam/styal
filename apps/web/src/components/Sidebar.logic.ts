@@ -1384,6 +1384,19 @@ export function filterSidebarProjectScopeItems<TItem extends { readonly value: s
   return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
 }
 
+/** The project page a pick in the project filter opens: only when it narrows the filter to one project. */
+export function projectPageOpenedByScopePick(input: {
+  readonly previousKeys: readonly string[];
+  readonly nextKeys: readonly string[];
+  readonly hasPage: (projectKey: string) => boolean;
+  readonly isShowing: (projectKey: string) => boolean;
+}): string | null {
+  const [projectKey] = input.nextKeys;
+  if (projectKey === undefined || input.nextKeys.length !== 1) return null;
+  if (input.previousKeys.length === 1 && input.previousKeys[0] === projectKey) return null;
+  return input.hasPage(projectKey) && !input.isShowing(projectKey) ? projectKey : null;
+}
+
 interface SidebarProjectScopeMenuState {
   readonly open: boolean;
   readonly query: string;
