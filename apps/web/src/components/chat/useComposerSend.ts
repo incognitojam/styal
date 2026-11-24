@@ -9,6 +9,7 @@ import {
   boundAttachmentIds,
   formatOutgoingPrompt,
   optimisticMessageAttachments,
+  composerTurnBootstrap,
   planComposerTurn,
   sendTitleFallbackLabels,
   snapshotComposerSend,
@@ -175,7 +176,7 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
-  /** The project page's chat: its first message always starts in the project's folder. */
+  /** The project's chat: a first message from its draft always starts in the project's folder. */
   readonly projectChat: boolean;
   /** Runs before a draft's first message creates its thread; a failure keeps the draft unsent. */
   beforeDraftThreadCreate?:
@@ -593,8 +594,7 @@ export function useComposerSend(input: ComposerSendInput) {
       notifyDirectAnnotationAttached();
       return;
     }
-    // Each model would start in its own worktree; the project chat never does.
-    const multipleModelSelections = input.projectChat ? null : sendCtx.multipleModelSelections;
+    const multipleModelSelections = sendCtx.multipleModelSelections;
     const approvalFeedbackTarget = pendingApprovalsRef.current.find(
       (approval) =>
         approval.supportsFeedback && approval.requestId === sendCtx.shownPendingApprovalIds[0],
@@ -1332,35 +1332,21 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     if (failure === null && turnAttachmentsResult._tag === "Success") {
-      const bootstrap =
-        isLocalDraftThread || baseBranchForWorktree
+      const bootstrap = composerTurnBootstrap({
+        createThread: isLocalDraftThread
           ? {
-              ...(isLocalDraftThread
-                ? {
-                    createThread: {
-                      projectId: activeProject.id,
-                      title,
-                      modelSelection: threadCreateModelSelection,
-                      runtimeMode,
-                      interactionMode: DEFAULT_INTERACTION_MODE,
-                      branch: threadBranch,
-                      worktreePath: threadWorktreePath,
-                      createdAt: activeThread.createdAt,
-                    },
-                  }
-                : {}),
-              ...(baseBranchForWorktree
-                ? {
-                    prepareWorktree: {
-                      projectCwd: activeProject.workspaceRoot,
-                      baseBranch: baseBranchForWorktree,
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
-                    },
-                    runSetupScript: true,
-                  }
-                : {}),
+              projectId: activeProject.id,
+              title,
+              modelSelection: threadCreateModelSelection,
+              runtimeMode,
+              interactionMode: DEFAULT_INTERACTION_MODE,
+              createdAt: activeThread.createdAt,
             }
-          : undefined;
+          : null,
+        plan: { baseBranchForWorktree, threadBranch, threadWorktreePath },
+        projectCwd: activeProject.workspaceRoot,
+        startFromOrigin,
+      });
       const backgroundThreadRef =
         submissionIntent === "background" && isLocalDraftThread
           ? scopeThreadRef(environmentId, threadIdForSend)

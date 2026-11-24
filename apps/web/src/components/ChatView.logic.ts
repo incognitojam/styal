@@ -2,7 +2,9 @@ import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports"
 import {
   type OrchestrationV2ProviderTurn,
   pendingRuntimeRequestKind,
+  projectCoordinatorThreadId,
   type RunAttemptId,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import {
   deriveLatestThreadRun,
@@ -1340,6 +1342,23 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
 
 export type ComposerSendSnapshot = ReturnType<typeof snapshotComposerSend>;
 
+/**
+ * Whether the chat view treats a thread as its project's chat, wherever it is shown: the project
+ * page's draft or chat, or the coordinator its own machine names for its project. The project's
+ * chat is not moved or switched to another branch from the view.
+ */
+export function isProjectChatThread(input: {
+  readonly projectPage: boolean;
+  readonly settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">;
+  readonly thread: { readonly id: ThreadId; readonly projectId: ProjectId } | undefined;
+}): boolean {
+  return (
+    input.projectPage ||
+    (input.thread !== undefined &&
+      projectCoordinatorThreadId(input.settings, input.thread.projectId) === input.thread.id)
+  );
+}
+
 /** How a composer send dispatches: where it runs and whether it waits behind other work. */
 export function planComposerTurn(input: {
   readonly messageText: string;
@@ -1393,6 +1412,44 @@ export function planComposerTurn(input: {
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||
       (input.phase === "running" && dispatchMode === "queue"),
+  };
+}
+
+/**
+ * What a composer turn starts with: a draft's thread, created where `planComposerTurn` placed it,
+ * and the worktree to prepare for it, or undefined when there is neither.
+ */
+export function composerTurnBootstrap<CreateThread extends object>(input: {
+  readonly createThread: CreateThread | null;
+  readonly plan: Pick<
+    ReturnType<typeof planComposerTurn>,
+    "baseBranchForWorktree" | "threadBranch" | "threadWorktreePath"
+  >;
+  readonly projectCwd: string;
+  readonly startFromOrigin: boolean;
+}) {
+  const { createThread, plan } = input;
+  if (createThread === null && !plan.baseBranchForWorktree) return undefined;
+  return {
+    ...(createThread === null
+      ? {}
+      : {
+          createThread: {
+            ...createThread,
+            branch: plan.threadBranch,
+            worktreePath: plan.threadWorktreePath,
+          },
+        }),
+    ...(plan.baseBranchForWorktree
+      ? {
+          prepareWorktree: {
+            projectCwd: input.projectCwd,
+            baseBranch: plan.baseBranchForWorktree,
+            ...(input.startFromOrigin ? { startFromOrigin: true } : {}),
+          },
+          runSetupScript: true,
+        }
+      : {}),
   };
 }
 

@@ -4,6 +4,8 @@ import {
   formatOutgoingPrompt,
   buildExpiredTerminalContextToastCopy,
   mergeDirectPreviewAnnotation,
+  composerTurnBootstrap,
+  isProjectChatThread,
   planComposerTurn,
   snapshotComposerSend,
   withMessageContext,
@@ -1208,6 +1210,33 @@ describe("snapshotComposerSend", () => {
   });
 });
 
+describe("isProjectChatThread", () => {
+  const thread = { id: ThreadId.make("thread-chat"), projectId: ProjectId.make("project-orchard") };
+  const naming = (threadId: string | null, enabled = true) => ({
+    projectCoordinatorsEnabled: enabled,
+    projectCoordinators:
+      threadId === null ? {} : { [thread.projectId]: { threadId: ThreadId.make(threadId) } },
+  });
+
+  it("follows the thread's coordinator setting on its machine, not the view showing it", () => {
+    // The plain thread view of the coordinator (a quote link, a settled one off the shell).
+    expect(
+      isProjectChatThread({ projectPage: false, settings: naming("thread-chat"), thread }),
+    ).toBe(true);
+    // The project page's chat, including its draft before the setting names it.
+    expect(isProjectChatThread({ projectPage: true, settings: naming(null), thread })).toBe(true);
+    // An ordinary thread of the project.
+    expect(
+      isProjectChatThread({ projectPage: false, settings: naming("thread-other"), thread }),
+    ).toBe(false);
+    // A former coordinator: cleared, or project coordinators switched off.
+    expect(isProjectChatThread({ projectPage: false, settings: naming(null), thread })).toBe(false);
+    expect(
+      isProjectChatThread({ projectPage: false, settings: naming("thread-chat", false), thread }),
+    ).toBe(false);
+  });
+});
+
 describe("planComposerTurn", () => {
   const base = {
     messageText: "hello",
@@ -1233,7 +1262,8 @@ describe("planComposerTurn", () => {
     });
   });
 
-  it("starts a project chat in the project's folder whatever its draft holds", () => {
+  it("creates a project chat's thread in the project's folder whatever its draft holds", () => {
+    const createThread = { projectId: "project-orchard", title: "Plan the release" };
     for (const draft of [
       { sendEnvMode: "worktree" as const, worktreePath: null, activeThreadBranch: "main" },
       {
@@ -1242,13 +1272,25 @@ describe("planComposerTurn", () => {
         activeThreadBranch: "feature",
       },
     ]) {
-      expect(planComposerTurn({ ...base, ...draft, projectChat: true })).toMatchObject({
-        missingWorktreeBaseBranch: false,
-        baseBranchForWorktree: null,
-        threadBranch: null,
-        threadWorktreePath: null,
-      });
+      const plan = planComposerTurn({ ...base, ...draft, projectChat: true });
+      expect(plan.missingWorktreeBaseBranch).toBe(false);
+      expect(
+        composerTurnBootstrap({ createThread, plan, projectCwd: "/repo", startFromOrigin: false }),
+      ).toEqual({ createThread: { ...createThread, branch: null, worktreePath: null } });
     }
+    // An ordinary draft in worktree mode still gets its worktree.
+    expect(
+      composerTurnBootstrap({
+        createThread,
+        plan: planComposerTurn(base),
+        projectCwd: "/repo",
+        startFromOrigin: false,
+      }),
+    ).toEqual({
+      createThread: { ...createThread, branch: "main", worktreePath: null },
+      prepareWorktree: { projectCwd: "/repo", baseBranch: "main" },
+      runSetupScript: true,
+    });
   });
 
   it("refuses a new worktree without a base branch", () => {

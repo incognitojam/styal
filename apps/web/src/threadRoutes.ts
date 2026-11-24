@@ -128,3 +128,15 @@ export function resolveActiveThreadRouteRef(
   }
   return draftThread?.promotedTo ?? promotedDraftRedirect;
 }
+
+/**
+ * The open thread kept in the shell rows: one the shell left out, held while the route stays on it
+ * so the row its family brings in does not release it.
+ */
+export function heldOpenThreadKey(
+  routeKey: string | null,
+  missingFromShell: boolean,
+  heldKey: string | null,
+): string | null {
+  return missingFromShell || heldKey === routeKey ? routeKey : null;
+}

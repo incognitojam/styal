@@ -25,6 +25,7 @@ import { useEnvironmentShellStatus } from "../state/shell";
 import { environmentThreadShells, threadFamilies, useEnvironmentThread } from "../state/threads";
 import {
   buildThreadRouteParams,
+  heldOpenThreadKey,
   isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
   type ThreadRouteTarget,
@@ -36,9 +37,8 @@ import {
  */
 function useOpenThreadFamily(threadRef: ScopedThreadRef | null, missing: boolean): boolean {
   const key = threadRef === null ? null : scopedThreadKey(threadRef);
-  // Sticks to the route thread, so the row the family brings in does not release it.
   const [mountedKey, setMountedKey] = useState<string | null>(null);
-  const nextKey = missing || mountedKey === key ? key : null;
+  const nextKey = heldOpenThreadKey(key, missing, mountedKey);
   if (nextKey !== mountedKey) setMountedKey(nextKey);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the open thread's family in the thread family registry until the route leaves it
   useEffect(() => {

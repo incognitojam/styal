@@ -425,6 +425,7 @@ import { useLocalDispatchState } from "./chat/useLocalDispatchState";
 import { draftFanoutSelectionsAtom, draftSendState } from "./chat/chatViewSend";
 import {
   isCompactCommandMessage,
+  isProjectChatThread,
   type LocalThreadErrorEntry,
   makeThreadErrorSetter,
 } from "./ChatView.logic";
@@ -820,7 +821,7 @@ export default function ChatView(props: ChatViewProps) {
   const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
   const fanoutSelectionsAtom = draftFanoutSelectionsAtom(routeThreadKey);
   const { sendInFlight: sendInFlightRef } = draftSendState(routeThreadKey);
-  const multipleModelSelections = useAtomValue(fanoutSelectionsAtom);
+  const storedMultipleModelSelections = useAtomValue(fanoutSelectionsAtom);
   const setMultipleModelSelections = (
     selections: SetStateAction<ReadonlyArray<ModelSelection> | null>,
   ) => {
@@ -896,6 +897,14 @@ export default function ChatView(props: ChatViewProps) {
     : undefined;
   const isServerThread = serverThread !== null;
   const activeThread = isServerThread ? serverThread : localDraftThread;
+  // The project's chat, on its page or as a plain thread: nothing here moves it or switches its
+  // branch, and it runs no models in worktrees of their own.
+  const projectChatThread = isProjectChatThread({
+    projectPage: projectChat !== undefined,
+    settings,
+    thread: activeThread,
+  });
+  const multipleModelSelections = projectChatThread ? null : storedMultipleModelSelections;
   const serverLatestRun =
     serverProjection === null ? null : deriveLatestThreadRun(serverProjection);
   const serverActivityRun =
@@ -1038,9 +1047,8 @@ export default function ChatView(props: ChatViewProps) {
   const threadErrorIsServerRuntimeError =
     localServerError === null && visibleThreadError === serverRuntime?.lastError;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  // The project chat starts in the project's folder as it is, never on a checked-out pull request.
   const canCheckoutPullRequestIntoThread =
-    canWriteSourceControl && isLocalDraftThread && projectChat === undefined;
+    canWriteSourceControl && isLocalDraftThread && !projectChatThread;
   const activeThreadId = activeThread?.id ?? null;
   // Turn items can lag projection hydration; keep the environment locked through that gap.
   const activeMessageCount = isServerThread
@@ -2020,8 +2028,8 @@ export default function ChatView(props: ChatViewProps) {
     projectChatAddTargets.length > 0 && !envLocked && draftId !== null && !draftThread?.promotedTo;
   const showComposerContextStrip =
     !embedded &&
-    (projectChat !== undefined ? canChangeEnvironment || canAddProjectChatMachine : true) &&
-    (projectChat !== undefined ||
+    (projectChatThread ? canChangeEnvironment || canAddProjectChatMachine : true) &&
+    (projectChatThread ||
       shouldShowComposerContextStrip({
         isDraftHeroState,
         persistInActiveThreads: settings.persistComposerContextStrip,
@@ -3247,7 +3255,7 @@ export default function ChatView(props: ChatViewProps) {
     setThreadError,
   });
   const { onSend } = useComposerSend({
-    projectChat: projectChat !== undefined,
+    projectChat: projectChatThread,
     beforeDraftThreadCreate: routeKind === "draft" ? props.beforeThreadCreate : undefined,
     onDraftThreadNotCreated: routeKind === "draft" ? props.onThreadNotCreated : undefined,
     reportReply: settings.coordinatorReportsEnabled ? activeReportReply : null,
@@ -4066,9 +4074,8 @@ export default function ChatView(props: ChatViewProps) {
                                 canOperateThread={canOperateThread}
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
-                                // Each model runs in its own worktree; the project chat has none.
                                 supportsMultipleModels={
-                                  projectChat === undefined &&
+                                  !projectChatThread &&
                                   serverConfig?.environment.capabilities
                                     .requiredWorktreeBootstrap === true
                                 }
@@ -4256,7 +4263,7 @@ export default function ChatView(props: ChatViewProps) {
                                   projectId={activeThread.projectId}
                                   worktreePath={activeThread.worktreePath}
                                   isServerThread={isServerThread}
-                                  showGitControls={isGitRepo && projectChat === undefined}
+                                  showGitControls={isGitRepo && !projectChatThread}
                                   {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                   onEnvModeChange={onEnvModeChangeStable}
                                   startFromOrigin={startFromOrigin}
@@ -4396,7 +4403,7 @@ export default function ChatView(props: ChatViewProps) {
                   workspaceMutationId={workspaceMutationId}
                   isGitRepo={isGitRepo}
                   envLocked={envLocked}
-                  checkoutFixed={projectChat !== undefined}
+                  checkoutFixed={projectChatThread}
                   availableEnvironments={logicalProjectEnvironments}
                   autoEnvironmentLabel={autoEnvironmentLabel}
                   onAutoEnvironment={

@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import { assistantCitationRoute } from "../../lib/assistantCitationNavigation";
+import { heldOpenThreadKey } from "../../threadRoutes";
 import {
   coordinatedProjectKey,
   isProjectPageJob,
@@ -426,17 +427,28 @@ describe("coordinatedProjectKey", () => {
       null,
     );
     expect(open({ href: `${address}#${hash}` })).toBeNull();
-    // An older settled coordinator reached from outside the shell: its family has loaded, so the
-    // shell lists it, and it stays in the thread view.
-    expect(open({ href: address, heldOffShell: true })).toBeNull();
     expect(open({ href: address, background: true })).toBeNull();
-    expect(
+  });
+
+  it("keeps an older settled coordinator in the thread view once its family loads", () => {
+    const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
+    const route = (listed: typeof thread | null, heldOffShell: boolean) =>
       threadRouteProjectKey(
-        { href: address, heldOffShell: false, background: false },
-        null,
+        { href: `/${local}/${chatId}`, heldOffShell, background: false },
+        listed,
         settingsFor,
         () => group(),
-      ),
-    ).toBeNull();
+      );
+    const key = `${local}:${chatId}`;
+    // The shell leaves it out, so the route holds its family in.
+    const held = heldOpenThreadKey(key, true, null);
+    expect(held).toBe(key);
+    expect(route(null, held !== null)).toBeNull();
+    // The family brings its row in: no longer missing, still held, still the thread view.
+    const stillHeld = heldOpenThreadKey(key, false, held);
+    expect(stillHeld).toBe(key);
+    expect(route(thread, stillHeld !== null)).toBeNull();
+    // Reached while the shell lists it, the same address opens the page.
+    expect(route(thread, heldOpenThreadKey(key, false, null) !== null)).toBe("orchard-key");
   });
 });
