@@ -7,6 +7,7 @@ import {
   ConnectionBlockedError,
   ConnectionTransientError,
   Connectivity,
+  Presence,
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import {
@@ -124,6 +125,24 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
     (subscription) => Effect.sync(() => subscription.remove()),
   ).pipe(Effect.asVoid),
 );
+
+// An inactive app, such as under Control Center, keeps running and stays in front.
+const layerPresence = Presence.layer({
+  current: Effect.sync(() =>
+    AppState.currentState === "background" ? "background" : "foreground",
+  ),
+  changes: Stream.callback<Presence.ApplicationPresenceState>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() =>
+        AppState.addEventListener("change", (state) => {
+          if (state === "background") Queue.offerUnsafe(queue, "background");
+          else if (state === "active") Queue.offerUnsafe(queue, "foreground");
+        }),
+      ),
+      (subscription) => Effect.sync(() => subscription.remove()),
+    ).pipe(Effect.asVoid),
+  ),
+});
 
 const layerWakeups = Wakeups.layer({
   changes: Stream.mergeAll(
@@ -269,6 +288,7 @@ type ConnectionPlatformLayerSource =
   | typeof Runtime.layer
   | typeof layerConnectivity
   | typeof layerWakeups
+  | typeof layerPresence
   | typeof layerProvidedCapabilities
   | typeof layerPlatformConnectionSource
   | typeof layerEnvironmentOwnedDataCleanup;
@@ -282,6 +302,7 @@ export const layer: Layer.Layer<
   Runtime.layer,
   layerConnectivity,
   layerWakeups,
+  layerPresence,
   layerProvidedCapabilities,
   layerPlatformConnectionSource,
   layerEnvironmentOwnedDataCleanup,
