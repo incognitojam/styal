@@ -10,6 +10,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
+import { assistantCitationFromLocation } from "../../lib/assistantCitationNavigation";
 import { startedThreadState } from "../chat/startedThreads.logic";
 
 const RUN_RESULT = {
@@ -64,6 +65,28 @@ export function coordinatedProjectKey(
     );
   });
   return otherChat ? null : group.projectKey;
+}
+
+/**
+ * The project page a coordinator's address opens instead of the thread view, except a link quoting
+ * a response the thread view reveals, a thread held from outside the shell (the page cannot show
+ * it, even once its family loads), and a view under Settings or Usage. `thread`: null until listed.
+ */
+export function threadRouteProjectKey(
+  route: { readonly href: string; readonly heldOffShell: boolean; readonly background: boolean },
+  thread: Parameters<typeof coordinatedProjectKey>[0] | null,
+  settingsFor: Parameters<typeof coordinatedProjectKey>[1],
+  groupOf: Parameters<typeof coordinatedProjectKey>[2],
+): string | null {
+  if (
+    thread === null ||
+    route.heldOffShell ||
+    route.background ||
+    assistantCitationFromLocation(route.href) !== null
+  ) {
+    return null;
+  }
+  return coordinatedProjectKey(thread, settingsFor, groupOf);
 }
 
 /**

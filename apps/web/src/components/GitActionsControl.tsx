@@ -136,6 +136,8 @@ interface GitActionsControlProps {
   showChanges?: boolean;
   onOpenChanges?: () => void;
   workspaceMutationId?: string | null;
+  /** Actions run on the current branch; none creates or switches to another. */
+  branchFixed?: boolean;
 }
 
 interface PendingDefaultBranchAction {
@@ -957,6 +959,7 @@ export default function GitActionsControl({
   showChanges = true,
   onOpenChanges,
   workspaceMutationId = null,
+  branchFixed = false,
 }: GitActionsControlProps) {
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
   const updateThreadMetadata = useAtomCommand(
@@ -990,7 +993,8 @@ export default function GitActionsControl({
   const activeServerThread =
     activeServerThreadShell ?? activeServerThreadProjection?.projection.thread ?? null;
   const isLocalDraftThread = activeDraftThread !== null && activeServerThread === null;
-  const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
+  const canChangeThreadBranch =
+    !branchFixed && canWriteSourceControl && (isLocalDraftThread || canOperateThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
@@ -1234,6 +1238,7 @@ export default function GitActionsControl({
     if (
       activeEnvironmentId === null ||
       !readEnvironmentScope(activeEnvironmentId, AuthSourceControlWriteScope) ||
+      (featureBranch && branchFixed) ||
       (featureBranch &&
         !isLocalDraftThread &&
         !readEnvironmentScope(activeEnvironmentId, AuthOrchestrationOperateScope))

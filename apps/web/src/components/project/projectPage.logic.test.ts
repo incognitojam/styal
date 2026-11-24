@@ -1,8 +1,15 @@
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { EnvironmentId, ProjectId, type ScheduledTaskThread, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  MessageId,
+  ProjectId,
+  type ScheduledTaskThread,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { assistantCitationRoute } from "../../lib/assistantCitationNavigation";
 import {
   coordinatedProjectKey,
   isProjectPageJob,
@@ -12,6 +19,7 @@ import {
   isProjectChatDraftId,
   projectChatDraftId,
   resolveProjectChatView,
+  threadRouteProjectKey,
 } from "./projectPage.logic";
 
 const local = EnvironmentId.make("env-local");
@@ -384,6 +392,49 @@ describe("coordinatedProjectKey", () => {
       coordinatedProjectKey(
         thread,
         (id) => (id === local ? named(chatId) : undefined),
+        () => group(),
+      ),
+    ).toBeNull();
+  });
+
+  it("sends the coordinator's thread address to its page unless the thread view must show it", () => {
+    const settingsFor = (id: string) => (id === local ? named(chatId) : named(null));
+    const address = `/${local}/${chatId}`;
+    const open = (route: { href: string; heldOffShell?: boolean; background?: boolean }) =>
+      threadRouteProjectKey(
+        { heldOffShell: false, background: false, ...route },
+        thread,
+        settingsFor,
+        () => group(),
+      );
+    expect(open({ href: address })).toBe("orchard-key");
+    // The page's old Open as thread address.
+    expect(open({ href: `${address}?view=thread` })).toBe("orchard-key");
+    // A quoted response, which only the thread view reveals.
+    const { hash } = assistantCitationRoute(
+      {
+        version: 1,
+        environmentId: local,
+        threadId: chatId,
+        messageId: MessageId.make("reply"),
+        text: "the plan",
+        start: 0,
+        end: 8,
+        prefix: "",
+        suffix: "",
+      },
+      null,
+    );
+    expect(open({ href: `${address}#${hash}` })).toBeNull();
+    // An older settled coordinator reached from outside the shell: its family has loaded, so the
+    // shell lists it, and it stays in the thread view.
+    expect(open({ href: address, heldOffShell: true })).toBeNull();
+    expect(open({ href: address, background: true })).toBeNull();
+    expect(
+      threadRouteProjectKey(
+        { href: address, heldOffShell: false, background: false },
+        null,
+        settingsFor,
         () => group(),
       ),
     ).toBeNull();

@@ -1038,7 +1038,9 @@ export default function ChatView(props: ChatViewProps) {
   const threadErrorIsServerRuntimeError =
     localServerError === null && visibleThreadError === serverRuntime?.lastError;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
+  // The project chat starts in the project's folder as it is, never on a checked-out pull request.
+  const canCheckoutPullRequestIntoThread =
+    canWriteSourceControl && isLocalDraftThread && projectChat === undefined;
   const activeThreadId = activeThread?.id ?? null;
   // Turn items can lag projection hydration; keep the environment locked through that gap.
   const activeMessageCount = isServerThread
@@ -3245,6 +3247,7 @@ export default function ChatView(props: ChatViewProps) {
     setThreadError,
   });
   const { onSend } = useComposerSend({
+    projectChat: projectChat !== undefined,
     beforeDraftThreadCreate: routeKind === "draft" ? props.beforeThreadCreate : undefined,
     onDraftThreadNotCreated: routeKind === "draft" ? props.onThreadNotCreated : undefined,
     reportReply: settings.coordinatorReportsEnabled ? activeReportReply : null,
@@ -4063,7 +4066,9 @@ export default function ChatView(props: ChatViewProps) {
                                 canOperateThread={canOperateThread}
                                 reportedModelSelection={reportedModelSelection}
                                 multipleModelSelections={multipleModelSelections}
+                                // Each model runs in its own worktree; the project chat has none.
                                 supportsMultipleModels={
+                                  projectChat === undefined &&
                                   serverConfig?.environment.capabilities
                                     .requiredWorktreeBootstrap === true
                                 }
@@ -4390,8 +4395,8 @@ export default function ChatView(props: ChatViewProps) {
                   gitCwd={gitCwd}
                   workspaceMutationId={workspaceMutationId}
                   isGitRepo={isGitRepo}
-                  // The project chat runs in the project's folder: its machine is chosen under the composer.
-                  envLocked={envLocked || projectChat !== undefined}
+                  envLocked={envLocked}
+                  checkoutFixed={projectChat !== undefined}
                   availableEnvironments={logicalProjectEnvironments}
                   autoEnvironmentLabel={autoEnvironmentLabel}
                   onAutoEnvironment={

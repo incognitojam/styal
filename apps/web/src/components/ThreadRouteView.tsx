@@ -8,8 +8,7 @@ import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
-import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
-import { coordinatedProjectKey } from "./project/projectPage.logic";
+import { threadRouteProjectKey } from "./project/projectPage.logic";
 import { useSettingsProjectGroups } from "./settings/useSettingsProjectGroups";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { SidebarInset } from "./ui/sidebar";
@@ -147,31 +146,23 @@ export function ThreadRouteView({
     draftThreadExists: draftThread !== null,
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
-  // A project's coordinator lives on its project page. The thread view stays for a quoted response
-  // it must reveal, a thread the shell leaves out (the page cannot show it), and under Settings or
-  // Usage.
-  const citationLink = useLocation({
-    select: (location) => assistantCitationFromLocation(location.href) !== null,
-  });
+  const href = useLocation({ select: (location) => location.href });
   const serverConfigs = useServerConfigs();
   const projectGroups = useSettingsProjectGroups();
-  const coordinatedProject =
-    serverThreadRef === null ||
-    serverThreadShell === null ||
-    citationLink ||
-    heldOffShell ||
-    background
+  // A project's coordinator lives on its project page.
+  const coordinatedProject = threadRouteProjectKey(
+    { href, heldOffShell, background },
+    serverThreadRef === null || serverThreadShell === null
       ? null
-      : coordinatedProjectKey(
-          { ...serverThreadRef, projectId: serverThreadShell.projectId },
-          (environmentId) => serverConfigs.get(environmentId)?.settings,
-          (environmentId, projectId) =>
-            projectGroups.find((group) =>
-              group.memberProjects.some(
-                (member) => member.environmentId === environmentId && member.id === projectId,
-              ),
-            ) ?? null,
-        );
+      : { ...serverThreadRef, projectId: serverThreadShell.projectId },
+    (environmentId) => serverConfigs.get(environmentId)?.settings,
+    (environmentId, projectId) =>
+      projectGroups.find((group) =>
+        group.memberProjects.some(
+          (member) => member.environmentId === environmentId && member.id === projectId,
+        ),
+      ) ?? null,
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
   useEffect(() => {

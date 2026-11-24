@@ -175,6 +175,8 @@ type UsageLimitsPanel = ReturnType<typeof useUsageLimitsPanel>;
 type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
+  /** The project page's chat: its first message always starts in the project's folder. */
+  readonly projectChat: boolean;
   /** Runs before a draft's first message creates its thread; a failure keeps the draft unsent. */
   beforeDraftThreadCreate?:
     | ((threadRef: ScopedThreadRef) => Promise<AtomCommandResult<unknown, unknown>>)
@@ -591,7 +593,8 @@ export function useComposerSend(input: ComposerSendInput) {
       notifyDirectAnnotationAttached();
       return;
     }
-    const multipleModelSelections = sendCtx.multipleModelSelections;
+    // Each model would start in its own worktree; the project chat never does.
+    const multipleModelSelections = input.projectChat ? null : sendCtx.multipleModelSelections;
     const approvalFeedbackTarget = pendingApprovalsRef.current.find(
       (approval) =>
         approval.supportsFeedback && approval.requestId === sendCtx.shownPendingApprovalIds[0],
@@ -854,6 +857,8 @@ export function useComposerSend(input: ComposerSendInput) {
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
+      threadBranch,
+      threadWorktreePath,
       compactBeforeSend,
       turnDispatchMode,
       shouldQueueBehindActiveRun,
@@ -870,6 +875,7 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
+      projectChat: input.projectChat,
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
@@ -1337,8 +1343,8 @@ export function useComposerSend(input: ComposerSendInput) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: DEFAULT_INTERACTION_MODE,
-                      branch: activeThreadBranch,
-                      worktreePath: activeThread.worktreePath,
+                      branch: threadBranch,
+                      worktreePath: threadWorktreePath,
                       createdAt: activeThread.createdAt,
                     },
                   }

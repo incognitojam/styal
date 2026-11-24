@@ -1355,11 +1355,15 @@ export function planComposerTurn(input: {
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
   readonly freshContext: boolean;
+  /** A project chat starts in the project's folder, whatever branch or worktree its draft holds. */
+  readonly projectChat: boolean;
 }) {
+  const threadBranch = input.projectChat ? null : input.activeThreadBranch;
+  const threadWorktreePath = input.projectChat ? null : input.worktreePath;
   const isFirstMessage =
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
-    isFirstMessage && input.sendEnvMode === "worktree" && !input.worktreePath;
+    isFirstMessage && !input.projectChat && input.sendEnvMode === "worktree" && !threadWorktreePath;
   // A stale Claude session compacts before this message so the turn does not re-read the
   // old history. The message queues behind the /compact run, since steering into it is
   // rejected.
@@ -1375,8 +1379,11 @@ export function planComposerTurn(input: {
   return {
     // In worktree mode, require an explicit base branch so we don't silently
     // fall back to local execution when branch selection is missing.
-    missingWorktreeBaseBranch: shouldCreateWorktree && !input.activeThreadBranch,
-    baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
+    missingWorktreeBaseBranch: shouldCreateWorktree && !threadBranch,
+    baseBranchForWorktree: shouldCreateWorktree ? threadBranch : null,
+    /** The branch and worktree a new thread is created with. */
+    threadBranch,
+    threadWorktreePath,
     compactBeforeSend,
     turnDispatchMode:
       compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")

@@ -1222,6 +1222,7 @@ describe("planComposerTurn", () => {
     phase: "ready" as const,
     dispatchMode: "auto" as const,
     freshContext: false,
+    projectChat: false,
   };
 
   it("prepares a worktree from the selected branch on a new thread", () => {
@@ -1230,6 +1231,24 @@ describe("planComposerTurn", () => {
       baseBranchForWorktree: "main",
       shouldQueueBehindActiveRun: false,
     });
+  });
+
+  it("starts a project chat in the project's folder whatever its draft holds", () => {
+    for (const draft of [
+      { sendEnvMode: "worktree" as const, worktreePath: null, activeThreadBranch: "main" },
+      {
+        sendEnvMode: "local" as const,
+        worktreePath: "/repo-feature",
+        activeThreadBranch: "feature",
+      },
+    ]) {
+      expect(planComposerTurn({ ...base, ...draft, projectChat: true })).toMatchObject({
+        missingWorktreeBaseBranch: false,
+        baseBranchForWorktree: null,
+        threadBranch: null,
+        threadWorktreePath: null,
+      });
+    }
   });
 
   it("refuses a new worktree without a base branch", () => {
