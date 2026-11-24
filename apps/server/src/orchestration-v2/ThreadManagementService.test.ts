@@ -1210,6 +1210,8 @@ it.effect.each(["live", "no-session", "unsupported-runtime"] as const)(
 
 it.effect.each([
   { status: "completed" as const, followUp: "none", settles: true },
+  { status: "completed" as const, followUp: "coordinator", settles: false },
+  { status: "completed" as const, followUp: "coordinator-race", settles: false },
   { status: "failed" as const, followUp: "none", settles: false },
   { status: "interrupted" as const, followUp: "none", settles: false },
   { status: "completed" as const, followUp: "notification", settles: true },
@@ -1239,6 +1241,13 @@ it.effect.each([
       userMessageId: MessageId.make("follow-up"),
     };
     const dispatched: Array<string> = [];
+    const settingsLayer = ServerSettings.layerTest({
+      projectCoordinatorsEnabled: true,
+      projectCoordinators: followUp === "coordinator" ? { [projectId]: { threadId } } : {},
+    });
+    const settings = yield* ServerSettings.ServerSettingsService.pipe(
+      Effect.provide(settingsLayer),
+    );
     // The notification starts after the completed run was observed, before settlement commits.
     let raced = false;
     const layerTest = ThreadManagementService.layer.pipe(
@@ -1252,10 +1261,12 @@ it.effect.each([
             }),
           restartContinuationPending: () => Effect.succeed(false),
           streamStoredEventsFrom: () =>
-            Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
-              Stream.drain,
-              Stream.concat(Stream.fromQueue(events)),
-            ),
+            followUp.startsWith("coordinator")
+              ? Stream.die("Coordinator refusal must end deferred settlement without subscribing")
+              : Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                ),
           getThreadRecords: (_threadId, _fields, filter) =>
             Effect.sync(
               () =>
@@ -1294,6 +1305,18 @@ it.effect.each([
             ),
           dispatch: (command) =>
             Effect.gen(function* () {
+              if (followUp === "coordinator-race") {
+                yield* settings
+                  .updateSettings({
+                    projectCoordinators: { [projectId]: { threadId } },
+                  })
+                  .pipe(Effect.orDie);
+                return yield* new Orchestrator.OrchestratorDispatchError({
+                  commandId: command.commandId,
+                  commandType: command.type,
+                  cause: "A project's chat cannot be put away.",
+                });
+              }
               if (followUp !== "none" && !raced) {
                 raced = true;
                 rejectedCommandId = command.commandId;
@@ -1316,7 +1339,7 @@ it.effect.each([
             }),
         }),
       ),
-      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(Layer.succeed(ServerSettings.ServerSettingsService, settings)),
       Layer.provide(layerReceiptsTest),
     );
     const service = yield* ThreadManagementService.ThreadManagementService.pipe(
@@ -1325,7 +1348,7 @@ it.effect.each([
     const fiber = yield* service
       .settleAfterRun({ projectId, threadId, runId })
       .pipe(Effect.forkChild);
-    if (followUp !== "none") {
+    if (followUp !== "none" && !followUp.startsWith("coordinator")) {
       yield* Deferred.await(subscribed);
       expect(dispatched).toEqual([]);
       nextRun.status =
@@ -1681,5 +1704,92 @@ it.effect(
         expect((yield* Fiber.join(f)).threadId).toBe("f");
         expect(yield* Queue.size(started)).toBe(0);
       }).pipe(Effect.provide(layerTest));
+    }),
+);
+
+it.effect.each([true, false])(
+  "project chat refuses self/other agent put-away (self: %s)",
+  (byOwnAgent) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:put-away");
+      const threadId = ThreadId.make("thread:put-away");
+      const dispatched: string[] = [];
+      let activeRunId: RunId | null = RunId.make("run:put-away");
+      const settingsLayer = ServerSettings.layerTest({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: { threadId } },
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadManagementService.ThreadManagementService;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        let ordinal = 0;
+        const common = () => ({ threadId, commandId: CommandId.make(`put-away:${ordinal++}`) });
+        const organize = (action: "settle" | "snooze" | "archive") =>
+          action === "settle"
+            ? service.settleThread({ ...common(), byOwnAgent })
+            : service.dispatch({
+                ...common(),
+                type: `thread.${action}`,
+                snoozedUntil: "2030-01-01T00:00:00.000Z",
+              });
+        const error = yield* organize("settle").pipe(Effect.flip);
+        assert.equal(error._tag, "OrchestratorDispatchError");
+        assert.include("cause" in error ? String(error.cause) : "", "project's chat");
+        assert.deepEqual(dispatched, []);
+        for (const action of [
+          "unsettle",
+          "unsnooze",
+          "unarchive",
+          "pin",
+          "unpin",
+          "mark-unread",
+        ] as const) {
+          yield* service.dispatch(
+            action === "unsettle" || action === "unsnooze"
+              ? { ...common(), type: `thread.${action}`, reason: "user" }
+              : { ...common(), type: `thread.${action}` },
+          );
+        }
+        activeRunId = null;
+        yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
+        for (const action of ["settle", "snooze", "archive"] as const) yield* organize(action);
+        yield* settings.updateSettings({
+          projectCoordinators: { [projectId]: { threadId } },
+          projectCoordinatorsEnabled: false,
+        });
+        for (const action of ["settle", "snooze", "archive"] as const) yield* organize(action);
+        assert.deepEqual(dispatched.slice(-6), [
+          "thread.settle",
+          "thread.snooze",
+          "thread.archive",
+          "thread.settle",
+          "thread.snooze",
+          "thread.archive",
+        ]);
+      }).pipe(
+        Effect.provide(
+          ThreadManagementService.layer.pipe(
+            Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+            Layer.provide(
+              Layer.mock(Orchestrator.OrchestratorV2)({
+                getThreadShell: () =>
+                  Effect.succeed({
+                    id: threadId,
+                    projectId,
+                    deletedAt: null,
+                    activeRunId,
+                  } as never),
+                dispatch: (command) =>
+                  Effect.sync(() => {
+                    dispatched.push(command.type);
+                    return { sequence: 1, storedEvents: [] } as never;
+                  }),
+              }),
+            ),
+            Layer.provideMerge(settingsLayer),
+            Layer.provide(layerReceiptsTest),
+          ),
+        ),
+      );
     }),
 );

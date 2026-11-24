@@ -2,6 +2,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { authRecoveryCommand } from "./ProviderAuthRecoveryWorker.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import { createOrchestrationV2TurnItemVisibility } from "@t3tools/shared/orchestrationV2Timeline";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -368,7 +369,7 @@ const layerTest = Layer.mergeAll(
 ).pipe(
   Layer.provide(McpSessionRegistryTestkit.layer),
   Layer.provide(McpProviderSessions.layer),
-  Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
   Layer.provideMerge(ServerSettings.layerTest()),
@@ -12075,6 +12076,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
 
   it.effect.each([
     "resume",
+    "coordinator",
+    "coordinator-race",
     "resume-started",
     "resume-untagged",
     "queued-resume",
@@ -12221,6 +12224,83 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
       const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
         (thread) => thread.id === threadId,
       )!;
+      if (scenario.startsWith("coordinator")) {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const settings = yield* ServerSettings.ServerSettingsService;
+            const previous = yield* settings.getSettings;
+            yield* settings.updateSettings({
+              projectCoordinatorsEnabled: true,
+              projectCoordinators: {
+                [projectId]: scenario === "coordinator" ? { threadId } : null,
+              },
+              autoResumeLimitedThreads: true,
+              snoozeLimitedThreads: true,
+            });
+            yield* Effect.addFinalizer(() =>
+              settings
+                .updateSettings({
+                  projectCoordinatorsEnabled: previous.projectCoordinatorsEnabled,
+                  projectCoordinators: { ...previous.projectCoordinators, [projectId]: null },
+                  autoResumeLimitedThreads: previous.autoResumeLimitedThreads,
+                  snoozeLimitedThreads: previous.snoozeLimitedThreads,
+                })
+                .pipe(Effect.orDie),
+            );
+            const sql = yield* SqlClient.SqlClient;
+            const sweeps = new Map<string, Effect.Effect<void>>();
+            yield* Layer.build(
+              UsageLimitRecoveryWorker.layer.pipe(
+                Layer.provide(
+                  Layer.succeed(Scheduler.Scheduler, {
+                    register: <E, R>(name: string, work: Effect.Effect<void, E, R>) =>
+                      Effect.gen(function* () {
+                        const context = yield* Effect.context<R>();
+                        sweeps.set(name, work.pipe(Effect.provideContext(context), Effect.orDie));
+                      }),
+                  }),
+                ),
+              ),
+            );
+            const sweep = sweeps.get("usage-limit-recovery")!;
+            const projections = yield* ProjectionStore.ProjectionStoreV2;
+            const getThread = projections.getThread;
+            let reads = 0;
+            using _race = vi.spyOn(projections, "getThread").mockImplementation((id) =>
+              Effect.gen(function* () {
+                // Promote after auto-arm's preflight read, before the mutation decides the command.
+                if (id === threadId && ++reads === 2 && scenario === "coordinator-race") {
+                  yield* settings
+                    .updateSettings({ projectCoordinators: { [projectId]: { threadId } } })
+                    .pipe(Effect.orDie);
+                }
+                return yield* getThread(id);
+              }),
+            );
+            yield* sweep;
+            const armed = (yield* orchestrator.getThreadProjection(threadId)).thread;
+            assert.isNull(armed.snoozedUntil);
+            assert.isTrue(armed.limitRecovery?.autoResume);
+            assert.isFalse(armed.limitRecovery?.snooze);
+            assert.equal(armed.limitRecovery?.runId, run.id);
+            if (scenario === "coordinator-race")
+              yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
+
+            yield* sweep;
+            yield* TestClock.adjust("1 minute");
+            yield* sweep;
+            yield* sweep;
+            const resumed = yield* orchestrator.getThreadProjection(threadId);
+            assert.lengthOf(resumed.runs, 2);
+            assert.equal(resumed.runs[1]?.usageLimitContinuationOfRunId, run.id);
+            assert.isNull(resumed.thread.snoozedUntil);
+            const rejectedAfter =
+              yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE aggregate_id = ${threadId} AND status = 'rejected'`;
+            assert.lengthOf(rejectedAfter, 0);
+          }),
+        );
+        return;
+      }
       assert.isNull(limitRecoveryCommand(shell, false, DateTime.toEpochMillis(now)));
       if (scenario === "invalid-snooze") {
         const result = yield* orchestrator

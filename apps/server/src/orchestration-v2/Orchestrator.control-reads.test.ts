@@ -32,6 +32,7 @@ import {
   orchestrationCommandDuration,
   orchestrationCommandsTotal,
 } from "../observability/Metrics.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
@@ -53,14 +54,16 @@ const adapter = {
   openSession: () => Effect.die("No provider process needed for metadata controls"),
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 const layerDatabase = SqlitePersistence.layerMemory;
+const layerSettings = ServerSettings.layerTest().pipe(Layer.orDie);
 const layerTest = Layer.mergeAll(
   layerDatabase,
+  layerSettings,
   ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
   EffectOutbox.layer.pipe(Layer.provide(layerDatabase)),
   ProviderReplayHarness.layerWithRegistry(
     { name: "control-reads" },
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
-    { databaseLayer: layerDatabase, runEffectWorker: false },
+    { databaseLayer: layerDatabase, runEffectWorker: false, serverSettingsLayer: layerSettings },
   ),
 );
 
@@ -2351,3 +2354,81 @@ it.effect("a user message dispatched first stays run 1 when its lineage read is 
     );
   }).pipe(Effect.provide(layerGatedLineageRead));
 });
+
+it.effect(
+  "project chat rejects put-away mutations including automatic settlement and permits recovery",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const projectId = ProjectId.make("project:coordinator-controls");
+      const threadId = ThreadId.make("thread:coordinator-controls");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("create-coordinator-controls"),
+        threadId,
+        projectId,
+        title: "Project chat",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      let ordinal = 0;
+      const common = () => ({
+        threadId,
+        commandId: CommandId.make(`coordinator-controls:${ordinal++}`),
+      });
+      yield* settings.updateSettings({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: { threadId } },
+      });
+      for (const type of [
+        "thread.settle",
+        "thread.snooze",
+        "thread.archive",
+        "thread.auto-settle",
+      ] as const) {
+        const thread = yield* projections.getThread(threadId);
+        const error = yield* orchestrator
+          .dispatch({
+            ...common(),
+            type,
+            snoozedUntil: "2030-01-01T00:00:00.000Z",
+            snapshotAt: thread.updatedAt,
+          })
+          .pipe(Effect.flip);
+        assert.equal(error._tag, "OrchestratorDispatchError");
+        assert.include("cause" in error ? String(error.cause) : "", "project's chat");
+        assert.deepEqual(yield* projections.getThread(threadId), thread);
+      }
+      const snoozeError = yield* orchestrator
+        .dispatch({
+          ...common(),
+          type: "thread.metadata.update",
+          limitRecovery: {
+            runId: RunId.make("run:coordinator-controls"),
+            resetAt: "2030-01-01T00:00:00.000Z",
+            snooze: true,
+          },
+        })
+        .pipe(Effect.flip);
+      assert.include("cause" in snoozeError ? String(snoozeError.cause) : "", "project's chat");
+      yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
+      for (const type of ["thread.settle", "thread.snooze", "thread.archive"] as const) {
+        yield* orchestrator.dispatch({
+          ...common(),
+          type,
+          snoozedUntil: "2030-01-01T00:00:00.000Z",
+        });
+      }
+      yield* settings.updateSettings({ projectCoordinators: { [projectId]: { threadId } } });
+      yield* orchestrator.dispatch({ ...common(), type: "thread.unarchive" });
+      yield* orchestrator.dispatch({ ...common(), type: "thread.unsettle", reason: "user" });
+      assert.equal((yield* projections.getThread(threadId)).settledAt, null);
+    }).pipe(Effect.provide(layerTest)),
+);
