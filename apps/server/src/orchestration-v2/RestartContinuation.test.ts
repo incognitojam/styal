@@ -228,6 +228,29 @@ it.effect("lists the runs that delivery after a planned restart continues or sen
         messages: [{ id: userMessageId, role: "user", text: "/compact", attachments: [] }],
       },
     },
+    ...(["launched_thread", "delegated_task"] as const).map((kind) => ({
+      expected: [threadId],
+      projection: {
+        ...unaccepted,
+        messages: [
+          {
+            id: userMessageId,
+            createdBy: "agent",
+            creationSource: "server",
+            notification: {
+              source: {
+                kind,
+                childThreadId: ThreadId.make("thread:report-child"),
+                ...(kind === "delegated_task"
+                  ? { taskIds: [NodeId.make("task:report-child")] }
+                  : {}),
+              },
+              outcome: "completed",
+            },
+          },
+        ],
+      },
+    })),
     // An agent's prompt is sent again; a person's waits in the held queue.
     {
       expected: [threadId],

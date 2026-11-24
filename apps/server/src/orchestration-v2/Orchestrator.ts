@@ -148,6 +148,7 @@ import {
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
+import { isStaleQuestionWake as staleQuestionWake } from "./NotificationWake.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import { answerNoteEffect } from "./ThreadReports.ts";
 import {
@@ -2368,41 +2369,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     messageId: MessageId,
     notification: OrchestrationV2ThreadProjection["messages"][number]["notification"],
   ) {
-    if (
-      notification?.source.kind !== "delegated_task" ||
-      notification.outcome !== "updated" ||
-      notification.source.childThreadId === undefined
-    )
-      return false;
-    const source = notification.source;
-    const threadId = projection.thread.id;
-    const task =
-      projection.subagents.find((candidate) => source.taskIds.includes(candidate.id)) ??
-      // Command projections omit settled tasks whose result was already handed over.
-      (yield* projectionStore
-        .getThreadRecords(threadId, ["subagents"], { subagentIds: source.taskIds })
-        .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))))
-        .subagents[0];
-    // An unknown task gives no evidence the question is obsolete.
-    if (task === undefined) return false;
-    const childThreadId = task.childThreadId;
-    if (
-      childThreadId === null ||
-      ["completed", "failed", "cancelled", "interrupted"].includes(task.status)
-    )
-      return true;
-    const child = yield* projectionStore
-      .getThreadRecords(childThreadId, ["runtimeRequests"])
-      .pipe(
-        Effect.mapError(
-          (cause) => new OrchestratorProjectionError({ threadId: childThreadId, cause }),
-        ),
-      );
-    return !child.runtimeRequests.some(
-      (request) =>
-        request.kind === "user_input" &&
-        request.status === "pending" &&
-        messageId === `message:delegated-task-question:${threadId}:${request.id}`,
+    return yield* staleQuestionWake(projection, messageId, notification).pipe(
+      Effect.provideService(ProjectionStoreV2, projectionStore),
+      Effect.mapError(
+        (cause) =>
+          new OrchestratorProjectionError({
+            threadId: "threadId" in cause ? cause.threadId : projection.thread.id,
+            cause,
+          }),
+      ),
     );
   });
 
