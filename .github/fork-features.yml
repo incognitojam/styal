@@ -1013,6 +1013,7 @@ features:
       - An open report question shows Input and blocks auto-settle, can be snoozed, and a newer question wakes it early; with coordinator reports disabled, open questions are ignored.
       - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
       - Dismissals do not wake agents and reach their next prompted turn exactly once.
+      - Open questions are read and answered one report at a time from a pile above the composer, using each report's full message, so a report outside the loaded chat history is still answerable.
     rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.
     implementation_paths:
       - apps/server/src/mcp/toolkits/thread/tools.ts
@@ -1021,12 +1022,14 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/persistence/ForkMigrations/016_ReportQuestionIndexes.ts
       - apps/web/src/components/chat/CoordinatorReports.tsx
+      - apps/web/src/components/chat/ReportStack.tsx
       - packages/client-runtime/src/coordinatorReports.ts
       - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/server/src/orchestration-v2/ProjectionSettlement.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
+      - apps/web/src/components/chat/reportStack.logic.test.ts
       - packages/client-runtime/src/coordinatorReports.test.ts
     upstream_paths:
       - apps/server/src/mcp/McpHttpServer.ts

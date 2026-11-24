@@ -17,13 +17,11 @@ import {
   reportAnswerDisplay,
   reportResponseDelivered,
   reportResponsePending,
-  waitingCoordinatorReports,
 } from "@t3tools/client-runtime/coordinator-reports";
 import { threadReportResponsesAtom } from "../../state/coordinatorReports";
 import { Button } from "../ui/button";
 import { ContextChip, ContextChipLabel } from "../ContextChip";
 import { cn } from "~/lib/utils";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   type AnsweredNeed,
@@ -270,15 +268,11 @@ export function ReportReplyStrip({
 }
 
 export function NeedsYou({
-  reports,
-  scroll,
   runs,
   project = NO_PROJECT_THREADS,
   stopped = NO_PROJECT_THREADS,
   ...reviewProps
 }: {
-  reports: readonly ReportState[];
-  scroll: (id: MessageId) => void;
   runs: ReadonlyArray<ThreadWorkflowRunWatch>;
   /** On a project page: the project's threads that need you, answered here. */
   project?: ReadonlyArray<EnvironmentThreadShell>;
@@ -316,7 +310,6 @@ export function NeedsYou({
   const needs = useProjectNeeds(project, stopped);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
-    ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
     ...needs.map((need) => ({ kind: "need" as const, need })),
   ];
   if (!rows.length && !shownAnswered) return null;
@@ -342,7 +335,7 @@ export function NeedsYou({
                 // The thread's background-work actions belong to the first run only.
                 {...(index === 0 ? {} : { watchActions: undefined })}
               />
-            ) : row.kind === "need" ? (
+            ) : (
               <ProjectNeedRow
                 key={row.need.key}
                 need={row.need}
@@ -356,24 +349,6 @@ export function NeedsYou({
                   })
                 }
               />
-            ) : (
-              <button
-                key={row.report.message.id}
-                type="button"
-                className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent/40"
-                onClick={() => scroll(row.report.message.id)}
-              >
-                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 text-sm text-foreground">
-                    {row.report.message.report!.question}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {row.report.message.report!.title} · v{row.report.message.report!.version} ·{" "}
-                    {formatRelativeTimeLabel(row.report.message.createdAt)}
-                  </span>
-                </span>
-              </button>
             ),
           )}
         </div>
