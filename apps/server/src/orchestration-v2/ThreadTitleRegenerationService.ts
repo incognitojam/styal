@@ -2,6 +2,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { isAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
 import {
   CommandId,
+  projectCoordinatorThreadId,
   type ChatAttachment,
   type MessageId,
   type OrchestrationV2AppThread,
@@ -156,6 +157,13 @@ const make = Effect.gen(function* () {
         return { status: "stale" as const };
       }
 
+      const serverConfig = yield* serverSettings.getSettings;
+      if (
+        projectCoordinatorThreadId(serverConfig, projection.thread.projectId) === input.threadId
+      ) {
+        return { status: "unchanged" as const };
+      }
+
       const project = yield* projects.get(projection.thread.projectId);
       if (Option.isNone(project)) {
         return { status: "failed" as const, message: "This thread's project no longer exists." };
@@ -193,10 +201,7 @@ const make = Effect.gen(function* () {
       const inherited = yield* forkSource(projection.thread).pipe(
         Effect.orElseSucceed(() => undefined),
       );
-      const settings = resolveProjectSettings(
-        yield* serverSettings.getSettings,
-        projection.thread.projectId,
-      ).settings;
+      const settings = resolveProjectSettings(serverConfig, projection.thread.projectId).settings;
       // Storage cleanup removes worktrees but keeps the path; CLIs cannot spawn in a missing cwd.
       const worktreePath = projection.thread.worktreePath;
       const worktreeExists =

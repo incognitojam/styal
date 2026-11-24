@@ -148,6 +148,7 @@ import {
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
+import { isStaleQuestionWake as staleQuestionWake } from "./NotificationWake.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import { answerNoteEffect } from "./ThreadReports.ts";
 import {
@@ -516,10 +517,13 @@ export interface OrchestratorV2Shape {
   readonly listOlderSettledThreads: (
     query: OlderSettledThreadsQuery,
   ) => Effect.Effect<OlderSettledThreadsListing, OrchestratorV2Error>;
-  readonly readShellSnapshot: (
-    options?: ShellSnapshotOptions,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+  readonly prepareShellSnapshot: Effect.Effect<
+    (
+      options?: ShellSnapshotOptions,
+    ) => Effect.Effect<
+      Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+      OrchestratorV2Error
+    >,
     OrchestratorV2Error
   >;
   readonly getThreadShell: (
@@ -1671,14 +1675,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   ) {
     const adapter = yield* providerAdapters.get(providerInstanceId).pipe(mapDispatchError(command));
     const { driver } = adapter;
-    if (driver === "opencode") {
+    if (driver === "opencode" || driver === "antigravity") {
       const capabilities = yield* adapter.getCapabilities().pipe(mapDispatchError(command));
       return capabilities.turns.supportsNativeGoals === true ? driver : undefined;
     }
     return driver === "codex" || driver === "claudeAgent" ? driver : undefined;
   });
 
-  /** Claude Code reads `/goal pause` and `/goal resume` as new goals named "pause" and "resume". */
+  /** Unsupported goal controls can become new objectives in native providers. */
   const ensureGoalCommandSupported = Effect.fn("Orchestrator.ensureGoalCommandSupported")(
     function* (
       command: OrchestrationV2ServerCommand,
@@ -1686,8 +1690,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerInstanceId: ProviderInstanceId,
     ) {
       const goalCommand = parseGoalCommand(message);
-      if (goalCommand?.type !== "pause" && goalCommand?.type !== "resume") return;
-      if ((yield* goalDriverFor(command, providerInstanceId)) !== "claudeAgent") return;
+      if (goalCommand === null || goalCommand.type === "set") return;
+      const driver = yield* goalDriverFor(command, providerInstanceId);
+      if (driver === "antigravity") {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause:
+            "Antigravity accepts /goal followed by an objective. Interrupt the running turn, then ask Antigravity to stop the current goal.",
+        });
+      }
+      if (goalCommand.type !== "pause" && goalCommand.type !== "resume") return;
+      if (driver !== "claudeAgent") return;
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
@@ -2355,41 +2369,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     messageId: MessageId,
     notification: OrchestrationV2ThreadProjection["messages"][number]["notification"],
   ) {
-    if (
-      notification?.source.kind !== "delegated_task" ||
-      notification.outcome !== "updated" ||
-      notification.source.childThreadId === undefined
-    )
-      return false;
-    const source = notification.source;
-    const threadId = projection.thread.id;
-    const task =
-      projection.subagents.find((candidate) => source.taskIds.includes(candidate.id)) ??
-      // Command projections omit settled tasks whose result was already handed over.
-      (yield* projectionStore
-        .getThreadRecords(threadId, ["subagents"], { subagentIds: source.taskIds })
-        .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause }))))
-        .subagents[0];
-    // An unknown task gives no evidence the question is obsolete.
-    if (task === undefined) return false;
-    const childThreadId = task.childThreadId;
-    if (
-      childThreadId === null ||
-      ["completed", "failed", "cancelled", "interrupted"].includes(task.status)
-    )
-      return true;
-    const child = yield* projectionStore
-      .getThreadRecords(childThreadId, ["runtimeRequests"])
-      .pipe(
-        Effect.mapError(
-          (cause) => new OrchestratorProjectionError({ threadId: childThreadId, cause }),
-        ),
-      );
-    return !child.runtimeRequests.some(
-      (request) =>
-        request.kind === "user_input" &&
-        request.status === "pending" &&
-        messageId === `message:delegated-task-question:${threadId}:${request.id}`,
+    return yield* staleQuestionWake(projection, messageId, notification).pipe(
+      Effect.provideService(ProjectionStoreV2, projectionStore),
+      Effect.mapError(
+        (cause) =>
+          new OrchestratorProjectionError({
+            threadId: "threadId" in cause ? cause.threadId : projection.thread.id,
+            cause,
+          }),
+      ),
     );
   });
 
@@ -3304,6 +3292,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const delayMs = continuationStartRetryDelayMs(run, projection);
     if (delayMs === undefined) return;
     const commandId = CommandId.make(`command:restart-continuation-retry:${run.id}`);
+    // A start retry is not a crash: carry the crash budget forward unchanged.
+    const previous =
+      run.restartContinuationOfRunId === undefined
+        ? undefined
+        : Option.getOrUndefined(
+            yield* effectOutbox.get(
+              `effect:restart-continuation:${run.restartContinuationOfRunId}`,
+            ),
+          )?.request;
+    const processLossCount =
+      previous?.type === "provider-runtime.continue" ? previous.processLossCount : undefined;
     yield* writeSystemEvents(
       [],
       [
@@ -3311,7 +3310,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           id: `effect:restart-continuation:${run.id}`,
           commandId,
           threadId,
-          request: { type: "provider-runtime.continue", sourceRunId: run.id },
+          request: {
+            type: "provider-runtime.continue",
+            sourceRunId: run.id,
+            ...(processLossCount === undefined ? {} : { processLossCount }),
+          },
           availableAt: DateTime.add(yield* DateTime.now, { milliseconds: delayMs }),
         },
       ],
@@ -4465,8 +4468,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const source = yield* projectionStore
         .getThreadRecords(command.summaryFor, ["runs"])
         .pipe(mapDispatchError(command));
+      let runs = source.runs;
+      let latest = latestExecutedRun(runs);
+      while (latest?.status === "completed" && latest.id !== command.summaryRunId) {
+        const prompts = yield* projectionStore
+          .getThreadRecords(command.summaryFor, ["messages"], {
+            messageIds: [latest.userMessageId],
+          })
+          .pipe(mapDispatchError(command));
+        const prompt = prompts.messages.find((message) => message.id === latest?.userMessageId);
+        if (
+          prompt === undefined ||
+          (prompt.idleCompaction === undefined && !isCompactionCommandMessage(prompt))
+        )
+          break;
+        const compactedRunId = latest.id;
+        runs = runs.filter((run) => run.id !== compactedRunId);
+        latest = latestExecutedRun(runs);
+      }
       if (
-        latestExecutedRun(source.runs)?.id !== command.summaryRunId ||
+        latest?.id !== command.summaryRunId ||
         source.thread.reportTo?.threadId !== thread.id ||
         source.thread.reportTo?.sentInRunId === command.summaryRunId
       )
@@ -17334,14 +17355,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         .listOlderSettledThreads(query)
         .pipe(Effect.mapError(shellProjectionError));
     }),
-    readShellSnapshot: Effect.fn("OrchestratorV2.readShellSnapshot")(function (options) {
-      return projectionStore
-        .readShellSnapshot(options)
-        .pipe(
-          Effect.mapError(shellProjectionError),
-          Effect.map(Effect.mapError(shellProjectionError)),
-        );
-    }),
+    prepareShellSnapshot: projectionStore.prepareShellSnapshot.pipe(
+      Effect.mapError(shellProjectionError),
+      Effect.map(
+        (read) => (options) =>
+          read(options).pipe(
+            Effect.mapError(shellProjectionError),
+            Effect.map(Effect.mapError(shellProjectionError)),
+            Effect.withSpan("OrchestratorV2.readShellSnapshot"),
+          ),
+      ),
+    ),
     getThreadShell: Effect.fn("OrchestratorV2.getThreadShell")(function (threadId) {
       return projectionStore
         .getThreadShell(threadId)

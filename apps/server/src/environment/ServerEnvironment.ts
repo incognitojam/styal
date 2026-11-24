@@ -59,6 +59,18 @@ export class ServerEnvironmentIdentity extends Context.Service<
   }
 >()("@styal/cli/environment/ServerEnvironment/ServerEnvironmentIdentity") {}
 
+/** Installation paths and host details belong in authenticated server config. */
+export function publicEnvironmentDescriptor(
+  descriptor: ExecutionEnvironmentDescriptor,
+): ExecutionEnvironmentDescriptor {
+  const { serverInstallation: _installation, ...capabilities } = descriptor.capabilities;
+  return {
+    ...descriptor,
+    platform: { os: descriptor.platform.os, arch: descriptor.platform.arch },
+    capabilities,
+  };
+}
+
 /** The host clock's IANA zone; absent when the runtime cannot name one. */
 export function hostTimeZone(): string | undefined {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
@@ -248,6 +260,7 @@ export const make = Effect.gen(function* () {
       storageCleanupRun: true,
       databaseStorage: true,
       otlpEndpointCheck: true,
+      secretSourceCheck: true,
       projectWorktreeCleanup: true,
       regenerableFileCleanup: true,
       settledWorktreeCleanup: true,

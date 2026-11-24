@@ -26,9 +26,17 @@ import {
   injectMcpAppThemeBootstrap,
   MCP_APP_MAX_HTML_BYTES,
 } from "@t3tools/shared/mcpApp";
-import { ORCHESTRATION_PROTOCOL_HEADER } from "@t3tools/contracts";
+import {
+  EnvironmentHttpApi,
+  EnvironmentId,
+  ORCHESTRATION_PROTOCOL_HEADER,
+  type ExecutionEnvironmentDescriptor,
+} from "@t3tools/contracts";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as ServerConfig from "./config.ts";
+import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 
 import { assetResponseHeaders, assetFileResponse, downloadContentDisposition } from "./http.ts";
 import * as ServerHttp from "./http.ts";
@@ -141,6 +149,69 @@ describe("browser API CORS", () => {
       await dispose();
     }
   });
+});
+
+class EnvironmentMetadataApi extends HttpApi.make("environment").add(
+  EnvironmentHttpApi.groups.metadata,
+) {}
+
+describe("environment descriptor", () => {
+  it.effect("keeps installation and host details out of the unauthenticated descriptor", () =>
+    Effect.gen(function* () {
+      const descriptorWith = (
+        serverInstallation: ExecutionEnvironmentDescriptor["capabilities"]["serverInstallation"],
+      ): ExecutionEnvironmentDescriptor => ({
+        environmentId: EnvironmentId.make("descriptor-test"),
+        label: "Descriptor test",
+        platform: { os: "linux", arch: "x64", machine: "laptop", timeZone: "Pacific/Auckland" },
+        serverVersion: "0.0.0",
+        capabilities: { repositoryIdentity: true, serverInstallation },
+      });
+      const read = (descriptor: ExecutionEnvironmentDescriptor) =>
+        Effect.gen(function* () {
+          const services = yield* Layer.build(
+            HttpRouter.serve(
+              HttpApiBuilder.layer(EnvironmentMetadataApi).pipe(
+                Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
+                Layer.provide(
+                  Layer.succeed(ServerEnvironment.ServerEnvironment, {
+                    getEnvironmentId: Effect.succeed(descriptor.environmentId),
+                    getDescriptor: Effect.succeed(descriptor),
+                  }),
+                ),
+              ),
+              { disableListenLog: true, disableLogger: true },
+            ).pipe(Layer.provideMerge(NodeHttpServer.layerTest)),
+          );
+          const response = yield* Context.get(services, HttpClient.HttpClient).execute(
+            HttpClientRequest.get("/.well-known/t3/environment"),
+          );
+          expect(response.status).toBe(200);
+          return yield* response.text;
+        });
+
+      for (const installation of [
+        { kind: "npm-global", prefix: "/opt/node" },
+        { kind: "t3-launcher", launcher: "/opt/styal/bin/styal", baseDir: "/opt/styal" },
+        { kind: "npx" },
+        { kind: "pnpm-dlx" },
+        { kind: "bunx" },
+        undefined,
+      ] as const) {
+        const body = yield* read(descriptorWith(installation));
+        for (const privateField of ["prefix", "launcher", "baseDir", "/opt/"]) {
+          expect(body).not.toContain(privateField);
+        }
+        expect(JSON.parse(body)).toEqual({
+          environmentId: "descriptor-test",
+          label: "Descriptor test",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.0",
+          capabilities: { repositoryIdentity: true },
+        });
+      }
+    }),
+  );
 });
 
 describe("untraced requests", () => {

@@ -1,3 +1,7 @@
+import {
+  restartOutages,
+  restartDowntimeMs,
+} from "@t3tools/client-runtime/work-log/restart-downtime";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import type { ReactNode } from "react";
 import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
@@ -1497,14 +1501,14 @@ function deriveTurnFolds(input: {
       latestRun.completedAt
         ? computeElapsedMs(latestRun.startedAt, latestRun.completedAt)
         : computeElapsedMs(group.startBoundary ?? firstEntry.createdAt, responseEndedAt);
-    const describeRestartEntry = (entry: TimelineEntry) => ({
-      turnId: timelineEntryRunId(entry) ?? runId,
+    const outages = restartOutages(group.entries, (entry) => ({
+      runId: timelineEntryRunId(entry) ?? runId,
       startedAt: entry.createdAt,
       endedAt: timelineEntryEndedAt(entry),
-    });
+    }));
     const workedMs =
       elapsedMs !== null && group.turnIds.size > 1
-        ? Math.max(0, elapsedMs - restartDowntimeMs(group.entries, describeRestartEntry))
+        ? Math.max(0, elapsedMs - restartDowntimeMs(outages))
         : elapsedMs;
     const duration = workedMs !== null ? formatDuration(workedMs) : null;
     const label = isLatestInterruptedTurn
@@ -1536,14 +1540,17 @@ function deriveTurnFolds(input: {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
       const anchorEntry = entries[0];
       if (anchorEntry === undefined || !hidesNonCompactionWork(entries)) continue;
-      const segmentElapsedMs = computeElapsedMs(
-        steer.createdAt,
+      const segmentEndedAt =
         entries.map(timelineEntryEndedAt).reduce<string | null>(maxIsoTimestamp, null) ??
-          steer.createdAt,
-      );
+        steer.createdAt;
+      const segmentElapsedMs = computeElapsedMs(steer.createdAt, segmentEndedAt);
       const segmentMs =
         segmentElapsedMs !== null && group.turnIds.size > 1
-          ? Math.max(0, segmentElapsedMs - restartDowntimeMs(entries, describeRestartEntry))
+          ? Math.max(
+              0,
+              segmentElapsedMs -
+                restartDowntimeMs(outages, Date.parse(steer.createdAt), Date.parse(segmentEndedAt)),
+            )
           : segmentElapsedMs;
       foldsByAnchorEntryId.set(anchorEntry.id, {
         runId: RunId.make(`${runId}:steer:${steer.id}`),
@@ -3355,30 +3362,6 @@ export function deriveContinuedRunRoots(
     roots.set(run.id, root);
   }
   return roots;
-}
-
-function restartDowntimeMs<Entry>(
-  entries: Iterable<Entry>,
-  describe: (entry: Entry) => { turnId: RunId; startedAt: string; endedAt: string },
-): number {
-  let downtime = 0;
-  let previousRun: RunId | null = null;
-  let previousEnd: number | null = null;
-  for (const entry of entries) {
-    const current = describe(entry);
-    const start = Date.parse(current.startedAt);
-    if (
-      previousRun !== null &&
-      previousRun !== current.turnId &&
-      previousEnd !== null &&
-      Number.isFinite(start)
-    )
-      downtime += Math.max(0, start - previousEnd);
-    previousRun = current.turnId;
-    const end = Date.parse(current.endedAt);
-    if (Number.isFinite(end)) previousEnd = previousEnd === null ? end : Math.max(previousEnd, end);
-  }
-  return downtime;
 }
 
 /**

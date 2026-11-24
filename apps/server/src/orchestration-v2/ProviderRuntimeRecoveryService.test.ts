@@ -14,8 +14,8 @@ import {
   TurnItemId,
   type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -459,8 +459,17 @@ it.effect("recovery closes a secret card's form but leaves a link card open", ()
     runtimeRequests: [],
     providerSessions: [],
     providerThreads: [],
-    providerTurns: [],
-    runs: [{ id: runId, status: "running", providerInstanceId: ProviderInstanceId.make("codex") }],
+    providerTurns: [
+      { runAttemptId: RunAttemptId.make("attempt_secret_recovery"), status: "running" },
+    ],
+    runs: [
+      {
+        id: runId,
+        status: "running",
+        activeAttemptId: RunAttemptId.make("attempt_secret_recovery"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      },
+    ],
     attempts: [],
     nodes: [],
     subagents: [],
@@ -538,21 +547,99 @@ it.effect.each([
   "starting",
   "starting-other-request",
   "starting-own-request",
+  "starting-report",
+  "starting-report-manual",
+  "starting-report-answered",
+  "starting-report-expired-approval",
+  "starting-report-valid-question",
+  "starting-report-capped",
+  "starting-report-disabled",
+  "starting-task-wake",
+  "starting-task-settled",
+  "starting-notification",
+  "starting-delivery",
   "starting-scheduled",
+  "starting-steered",
+  "running",
+  "running-delegated",
+  "running-delegated-capped",
+  "running-delegated-snoozed",
+  "running-delegated-stopped",
+  "running-resume",
 ] as const)("recovers $0 work after restart", (scenario) => {
-  const status = scenario.startsWith("starting") ? "starting" : scenario;
+  const status = scenario.startsWith("starting")
+    ? "starting"
+    : scenario.startsWith("running")
+      ? "running"
+      : scenario;
+  const resent = [
+    "starting-report",
+    "starting-report-manual",
+    "starting-report-valid-question",
+    "starting-report-expired-approval",
+    "starting-task-settled",
+    "starting-task-wake",
+    "starting-scheduled",
+    "running-delegated",
+  ].includes(scenario);
   const terminalized =
     status === "preparing" ||
+    [
+      "starting-report-answered",
+      "starting-report-capped",
+      "starting-report-disabled",
+      "starting-notification",
+      "starting-delivery",
+    ].includes(scenario) ||
     scenario === "starting-own-request" ||
-    scenario === "starting-scheduled";
+    scenario === "starting-steered" ||
+    scenario === "running-delegated-capped" ||
+    scenario === "running-delegated-snoozed" ||
+    scenario === "running-delegated-stopped" ||
+    scenario === "running-resume";
+  const startedAt =
+    status === "running" || scenario === "starting-steered"
+      ? DateTime.makeUnsafe("2026-11-01T19:34:40.403Z")
+      : null;
   const threadId = ThreadId.make("thread_queued_restart");
   const runId = RunId.make("run_queued_restart");
+  const childId = ThreadId.make("thread:report-child");
+  const questionId = RuntimeRequestId.make("request:report-question");
+  const question =
+    scenario === "starting-report-answered" ||
+    scenario === "starting-report-valid-question" ||
+    scenario === "starting-report-expired-approval";
+  const messageId = question
+    ? MessageId.make(`message:thread-report:${childId}:${questionId}`)
+    : MessageId.make("message_queued_restart");
   const attemptId = RunAttemptId.make("attempt_queued_restart");
+  const steeredAttemptId = RunAttemptId.make("attempt_queued_restart_steered");
   const rootNodeId = NodeId.make("node_queued_restart");
   let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =
     null;
+  const written: Array<EffectOutbox.PendingOrchestrationEffectV2> = [];
   const projection = {
-    thread: { id: threadId },
+    thread: {
+      id: threadId,
+      archivedAt: null,
+      deletedAt: null,
+      settledOverride: null,
+      snoozedUntil:
+        scenario === "running-delegated-snoozed"
+          ? DateTime.makeUnsafe("2099-07-25T09:00:00.000Z")
+          : null,
+      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+      forkedFrom: null,
+      ...(scenario === "running-resume"
+        ? {
+            limitRecovery: {
+              runId: RunId.make("run_queued_restart_limited"),
+              resetAt: "2026-11-01T19:34:00.000Z",
+              autoResume: true,
+            },
+          }
+        : {}),
+    },
     runtimeRequests: scenario.endsWith("request")
       ? [
           {
@@ -567,16 +654,29 @@ it.effect.each([
       : [],
     providerSessions: [],
     providerThreads: [],
-    providerTurns: [],
+    providerTurns:
+      scenario === "starting-steered"
+        ? [
+            {
+              id: ProviderTurnId.make("provider_turn_queued_restart_steered"),
+              runAttemptId: steeredAttemptId,
+              status: "interrupted",
+            },
+          ]
+        : [],
     runs: [
       {
         id: runId,
         status,
-        startedAt: null,
+        startedAt,
+        rootNodeId,
         activeAttemptId: attemptId,
-        userMessageId: MessageId.make("message_queued_restart"),
+        userMessageId: messageId,
         queuePosition: 1,
         providerInstanceId: ProviderInstanceId.make("codex"),
+        ...(scenario === "running-resume"
+          ? { usageLimitContinuationOfRunId: RunId.make("run_queued_restart_limited") }
+          : {}),
         ...(status === "preparing"
           ? {
               workspacePreparation: {
@@ -589,11 +689,15 @@ it.effect.each([
       },
     ],
     attempts: [
+      ...(scenario === "starting-steered"
+        ? [{ id: steeredAttemptId, runId, rootNodeId, status: "interrupted" }]
+        : []),
       {
         id: attemptId,
         runId,
         rootNodeId,
-        status: "pending",
+        status: status === "running" ? "running" : "pending",
+        startedAt: status === "running" ? startedAt : null,
       },
     ],
     nodes: [
@@ -609,29 +713,113 @@ it.effect.each([
       {
         id: rootNodeId,
         runId,
-        status: "pending",
+        status: status === "running" ? "running" : "pending",
+        startedAt: status === "running" ? startedAt : null,
       },
     ],
-    subagents: [],
+    subagents:
+      scenario === "starting-task-settled"
+        ? [{ id: NodeId.make("task:report-child"), status: "completed" }]
+        : [],
     messages:
-      status === "starting"
+      status === "starting" || status === "running"
         ? [
             {
-              id: MessageId.make("message_queued_restart"),
-              createdBy: "user",
+              id: messageId,
+              ...(scenario.startsWith("running-delegated")
+                ? { createdBy: "agent", creationSource: "mcp" }
+                : scenario === "running-resume"
+                  ? { createdBy: "agent", creationSource: "server" }
+                  : scenario.startsWith("starting-report") ||
+                      scenario.startsWith("starting-task-") ||
+                      scenario === "starting-notification"
+                    ? {
+                        createdBy: "agent",
+                        creationSource: "server",
+                        notification: {
+                          source: {
+                            kind: scenario.startsWith("starting-task-")
+                              ? "delegated_task"
+                              : scenario === "starting-notification"
+                                ? "system"
+                                : "launched_thread",
+                            ...(scenario === "starting-task-settled"
+                              ? {}
+                              : { childThreadId: childId }),
+                            ...(scenario.startsWith("starting-task-")
+                              ? { taskIds: [NodeId.make("task:report-child")] }
+                              : {}),
+                          },
+                          outcome:
+                            question ||
+                            scenario === "starting-task-settled" ||
+                            scenario === "starting-report-manual"
+                              ? "updated"
+                              : "completed",
+                        },
+                      }
+                    : scenario === "starting-delivery"
+                      ? {
+                          createdBy: "agent",
+                          creationSource: "mcp",
+                          delegatedCompletion: {
+                            parentRunId: runId,
+                            generation: 1,
+                            taskIds: [NodeId.make("task:delivery")],
+                          },
+                        }
+                      : { createdBy: "user" }),
               ...(scenario === "starting-scheduled" ? { scheduledTaskId: "scheduled-task" } : {}),
             },
           ]
         : [],
-    turnItems: [],
+    turnItems:
+      scenario === "running-delegated-stopped"
+        ? [
+            {
+              id: TurnItemId.make("turn_item_queued_restart_stop"),
+              type: "run_interrupt_request",
+              runId,
+              nodeId: rootNodeId,
+              status: "completed",
+            },
+          ]
+        : [],
+  } as unknown as OrchestrationV2ThreadProjection;
+  const child = {
+    ...projection,
+    runtimeRequests: question
+      ? [
+          {
+            id: questionId,
+            kind: scenario === "starting-report-expired-approval" ? "command" : "user_input",
+            status:
+              scenario === "starting-report-answered"
+                ? "resolved"
+                : scenario === "starting-report-expired-approval"
+                  ? "expired"
+                  : "pending",
+            responseCapability: { type: "message" },
+          },
+        ]
+      : [],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
-    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      ServerSettings.layerTest({
+        continueThreadsAfterServerUpdate: scenario !== "starting-report-disabled",
+      }),
+    ),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getRecoveryThreadIds: () => Effect.succeed([threadId]),
-          getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+          // Like the store, recovery state carries only provider turns that have not ended.
+          getRuntimeRecoveryProjection: () =>
+            Effect.succeed({
+              ...projection,
+              providerTurns: projection.providerTurns.filter((turn) => turn.status === "running"),
+            }),
           getMessagesById: (requestedThreadId, messageIds) =>
             Effect.succeed(
               new Map(
@@ -642,12 +830,16 @@ it.effect.each([
                   .map((message) => [message.id, message]),
               ),
             ),
-          getThreadRecords: () => Effect.succeed(projection),
+          getThreadRecords: (id) => Effect.succeed(id === childId ? child : projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+          },
+          writeWithEffects: (input) => {
+            written.push(...input.effects);
+            return Effect.succeed([]);
           },
         }),
         IdAllocator.layer,
@@ -655,6 +847,13 @@ it.effect.each([
           runRecoveryOnce: Effect.succeed(false),
         }),
         Layer.mock(EffectOutbox.EffectOutboxV2)({
+          // Three earlier restarts each cut a resend the worker had claimed.
+          listByCommandId: () =>
+            Effect.succeed(
+              scenario === "running-delegated-capped" || scenario === "starting-report-capped"
+                ? ([1, 1, 1].map((attemptCount) => ({ attemptCount })) as never)
+                : [],
+            ),
           reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
         }),
       ),
@@ -671,11 +870,15 @@ it.effect.each([
     const runEvent = command.events.find((event) => event.type === "run.updated");
     const attemptEvent = command.events.find((event) => event.type === "run-attempt.updated");
     const nodeEvent = command.events.find((event) => event.type === "node.updated");
-    assert.equal(
-      runEvent?.type === "run.updated" ? runEvent.payload.status : null,
-      terminalized ? "cancelled" : "queued",
-    );
+    assert.deepInclude(runEvent?.type === "run.updated" ? runEvent.payload : null, {
+      status: terminalized ? "cancelled" : resent ? "starting" : "queued",
+      startedAt: scenario === "starting-steered" ? startedAt : null,
+    });
     assert.isEmpty(command.effects);
+    assert.deepEqual(
+      written.map((effect) => effect.request),
+      resent ? [{ type: "provider-turn.start", runId }] : [],
+    );
     if (terminalized) {
       assert.equal(
         attemptEvent?.type === "run-attempt.updated" ? attemptEvent.payload.status : null,
@@ -686,10 +889,33 @@ it.effect.each([
         scenario === "starting-own-request" ? null : "cancelled",
       );
     } else {
-      assert.equal(runEvent?.type === "run.updated" ? runEvent.payload.queuePosition : null, 1);
-      assert.equal(runEvent?.type === "run.updated" ? runEvent.payload.queueHeld : false, true);
-      assert.isUndefined(attemptEvent);
-      assert.isUndefined(nodeEvent);
+      if (!resent) {
+        assert.equal(runEvent?.type === "run.updated" ? runEvent.payload.queuePosition : null, 1);
+        assert.equal(runEvent?.type === "run.updated" ? runEvent.payload.queueHeld : false, true);
+      }
+      if (status === "running") {
+        assert.deepInclude(
+          attemptEvent?.type === "run-attempt.updated" ? attemptEvent.payload : null,
+          { status: "pending", startedAt: null },
+        );
+        assert.deepInclude(nodeEvent?.type === "node.updated" ? nodeEvent.payload : null, {
+          status: "pending",
+          startedAt: null,
+        });
+      } else {
+        assert.isUndefined(attemptEvent);
+        assert.isUndefined(nodeEvent);
+      }
+    }
+    // The unsent auto-resume gets a fresh request id so the limit worker sends it again.
+    if (scenario === "running-resume") {
+      const rearmed = command.events.find((event) => event.type === "thread.metadata-updated");
+      assert.equal(
+        rearmed?.type === "thread.metadata-updated"
+          ? rearmed.payload.limitRecovery?.requestId
+          : null,
+        command.commandId,
+      );
     }
   }).pipe(Effect.provide(layer));
 });
@@ -739,6 +965,7 @@ it.effect(
         {
           id: runId,
           status: "starting",
+          activeAttemptId: attemptId,
           providerThreadId,
           providerInstanceId: ProviderInstanceId.make("codex"),
         },
@@ -1089,7 +1316,7 @@ it.effect(
           pendingBackgroundTasks: [],
         },
       ],
-      providerTurns: [],
+      providerTurns: [{ runAttemptId: activeAttemptId, status: "running" }],
       runs: [
         {
           id: settledRunId,
@@ -1099,6 +1326,7 @@ it.effect(
         {
           id: activeRunId,
           status: "running",
+          activeAttemptId,
           providerInstanceId: claudeInstanceId,
         },
       ],
@@ -1554,7 +1782,9 @@ it.effect("leaves delegated tasks to their own child threads after process loss"
         pendingBackgroundTasks: [],
       },
     ],
-    providerTurns: [],
+    providerTurns: [
+      { runAttemptId: RunAttemptId.make("attempt_recovery_delegation"), status: "running" },
+    ],
     runs: [
       {
         id: settledRunId,
@@ -1567,6 +1797,7 @@ it.effect("leaves delegated tasks to their own child threads after process loss"
         id: runningRunId,
         ordinal: 2,
         status: "running",
+        activeAttemptId: RunAttemptId.make("attempt_recovery_delegation"),
         providerThreadId,
         providerInstanceId: claudeInstanceId,
       },

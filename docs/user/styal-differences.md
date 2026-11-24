@@ -21,6 +21,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   converted asks you to sign in by email; use the same address to see your machines again.
   [styal Link](./remote-access.md#styal-link).
 
+- **Install locations stay behind pairing.** Someone who reaches your server's address can see
+  its pairing name and connection compatibility information, but must sign in to read its
+  installation details, hardware category, or time zone. This also applies through styal Link.
+  T3 Code publishes installation metadata and detected hardware category before pairing as of
+  [revision 364ca47](https://github.com/pingdotgg/t3code/tree/364ca478682e25c6373c041dc5774d6b726b2c08),
+  checked November 24, 2026.
+
 ## Agent permissions
 
 - **Agents find previous work across machines.** A thread search covers this machine and its linked machines by default, labels results by machine, and reports offline or refused machines. A machine or project can still be searched on its own. Upstream searches one selected machine as of [revision e455200](https://github.com/pingdotgg/t3code/tree/e455200077ce60806a01c8f28435b58860dcfc74), checked November 7, 2026. [Your machines](./remote-access.md#your-machines).
@@ -263,6 +270,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked October 11, 2026, where the report is only visible as a collapsed tool call.
 
 ## Staying oriented while agents work
+
+- **Copy messages as text, or share a thread.** styal omits the prompt-link copy actions from the command palette and message controls on web, desktop, and mobile. Externally authored [prompt links](./prompt-links.md) still open drafts. T3 Code offers prompt-link copying as of [revision f692811](https://github.com/pingdotgg/t3code/tree/f692811b9560283bbeb1804865e2398d05e5caa2), checked November 24, 2026.
 
 - **Documents, web pages and searches the agent used show beside its images.** Under a collapsed tool group, a row of chips names the PDFs and office documents the agent read, the web pages it fetched and the queries it searched, so you can open them without expanding the group. A document opens in the Files panel, a page opens as a chat link does, and a search lists its results. It covers Claude and Codex; pages the reply already links and your own attachments are left out. Upstream shows only images there as of [revision 75cae42](https://github.com/pingdotgg/t3code/tree/75cae42febdbedc2bd39430a1d6f017e38f6bfe0), checked November 18, 2026.
 

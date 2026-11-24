@@ -11,6 +11,11 @@ import { resolveCommandPath } from "@t3tools/shared/shell";
 import { CLI_COMMAND_NAME, CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
 
 import packageJson from "../../package.json" with { type: "json" };
+import { resolveLauncherPath } from "../cloud/pinnedRuntime.ts";
+
+const PINNED_RUNTIME_ENTRY = new RegExp(
+  `^(.*)/runtime/styal-executable/versions/[^/]+/${CLI_COMMAND_NAME}$`,
+);
 
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
@@ -76,6 +81,21 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
+  const runtime = PINNED_RUNTIME_ENTRY.exec(entry);
+  if (runtime) {
+    const launcher = yield* resolveLauncherPath;
+    if (launcher === undefined) return null;
+    // Fails for a runtime started directly, as SSH launches do, or through a copy.
+    const link = yield* fs.readLink(launcher);
+    // Keep the home as the link spells it; `styal update` only repoints links into that spelling.
+    const linked = PINNED_RUNTIME_ENTRY.exec(path.resolve(path.dirname(launcher), link));
+    if (!linked || (yield* fs.realPath(linked[1] || "/")) !== (runtime[1] || "/")) return null;
+    return {
+      kind: "t3-launcher",
+      launcher,
+      baseDir: linked[1] || "/",
+    } satisfies ServerInstallation;
+  }
   const match = GLOBAL_PACKAGE_ENTRY.exec(entry);
   if (!match) {
     const runner = detectCliRunner(entry);

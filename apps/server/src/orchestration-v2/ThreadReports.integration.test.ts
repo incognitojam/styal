@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
@@ -33,9 +33,13 @@ import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { reportRecipient } from "./ProjectCoordinator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { answerNotesText, checkThreadReport } from "./ThreadReports.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
+import { answerNotesText, checkThreadReport, sentReport } from "./ThreadReports.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as Sqlite from "../persistence/Sqlite.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const instanceId = ProviderInstanceId.make("codex");
@@ -55,7 +59,9 @@ const makeHelpers = (input: {
   return Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const recovery = yield* ProviderRuntimeRecovery.make.pipe(Effect.provide(IdAllocator.layer));
     const projectId = ProjectId.make(`project:${name}`);
     const setCoordinator = (threadId: ThreadId | null) =>
       settings.updateSettings({
@@ -91,6 +97,7 @@ const makeHelpers = (input: {
       text: string,
       options?: {
         readonly sender?: "user" | "agent";
+        readonly idleCompaction?: "beforeCacheExpires";
         readonly reportAnswer?: {
           readonly messageId: MessageId;
           readonly key: string;
@@ -121,7 +128,11 @@ const makeHelpers = (input: {
           attachments: [],
           dispatchMode: { type: "start_immediately" },
           createdBy: sender,
-          creationSource: sender === "agent" ? "mcp" : "web",
+          creationSource:
+            options?.idleCompaction !== undefined ? "server" : sender === "agent" ? "mcp" : "web",
+          ...(options?.idleCompaction === undefined
+            ? {}
+            : { idleCompaction: options.idleCompaction }),
           ...(options?.reportAnswer === undefined ? {} : { reportAnswer: options.reportAnswer }),
         });
         yield* worker.drain();
@@ -347,6 +358,8 @@ const makeHelpers = (input: {
       orchestrator,
       settings,
       worker,
+      outbox,
+      recovery,
       started,
       create,
       setCoordinator,
@@ -456,6 +469,7 @@ const harness = <A, E>(
         responseStreamingMode: "turn",
         coordinatorReportsEnabled: true,
       }).pipe(Layer.orDie);
+      const databaseLayer = Sqlite.layerMemory;
       return yield* makeHelpers({
         name,
         cwd,
@@ -465,13 +479,14 @@ const harness = <A, E>(
       }).pipe(
         Effect.flatMap(test),
         Effect.provide(
-          Layer.merge(
+          Layer.mergeAll(
             ProviderReplayHarness.layerWithRegistry(
               { name },
               ProviderAdapterRegistry.layerSingle(adapter),
-              { runEffectWorker: false, serverSettingsLayer: settingsLayer },
+              { runEffectWorker: false, serverSettingsLayer: settingsLayer, databaseLayer },
             ),
             settingsLayer,
+            ProjectionStore.layer.pipe(Layer.provide(databaseLayer)),
           ),
         ),
       );
@@ -479,25 +494,195 @@ const harness = <A, E>(
   );
 
 it.effect("a finished turn with nothing pending wakes the launcher once", () =>
-  harness("report-result", ({ started, send, endTurn, reports, worker }) =>
+  harness("report-result", ({ orchestrator, started, send, endTurn, reports, worker }) =>
     Effect.gen(function* () {
       const turn = yield* send(launchedId, "Fix the login page");
       assert.include(turn.message.text, launcherId, "the first turn names the launcher");
-      yield* endTurn(turn, "completed");
+      yield* endTurn(turn, "completed", ["Fixed the login page."]);
       const delivered = yield* reports();
       assert.equal(delivered.length, 1);
       assert.equal(delivered[0]?.outcome, "completed");
       assert.include(delivered[0]?.text ?? "", "Fix the login page");
+      assert.include(delivered[0]?.text ?? "", "Fixed the login page.");
       const wake = started.find((candidate) => candidate.threadId === launcherId);
       assert.isDefined(wake, "the report starts a turn on the idle launcher");
       yield* worker.drain();
       assert.equal((yield* reports()).length, 1);
+
+      const compact = yield* send(launchedId, "/compact", {
+        idleCompaction: "beforeCacheExpires",
+      });
+      const before = started.length;
+      yield* endTurn(compact, "completed");
+      assert.deepEqual(yield* reports(), delivered, "idle compaction adds no report");
+      assert.equal(started.length, before, "idle compaction does not wake the launcher");
+      assert.isUndefined(
+        (yield* orchestrator.getThreadProjection(launchedId)).thread.reportTo?.sentInRunId,
+        "automatic report delivery does not set the explicit-send marker",
+      );
 
       // Later turns do not repeat the note.
       const next = yield* send(launchedId, "Keep going");
       assert.notInclude(next.message.text, launcherId);
     }),
   ),
+);
+
+it.effect.each(["idle-compaction", "agent-compaction", "person"] as const)(
+  "a queued result survives a later %s run in the child",
+  (followUp) =>
+    harness(
+      `report-queued-result-${followUp}`,
+      ({ orchestrator, started, send, endTurn, reports, worker }) =>
+        Effect.gen(function* () {
+          const busy = yield* send(launcherId, "Finish the current plan");
+          const child = yield* send(launchedId, "Fix the login page");
+          yield* endTurn(child, "completed", ["Fixed the login page."]);
+          const launcher = yield* orchestrator.getThreadProjection(launcherId);
+          const report = launcher.messages.find(
+            (message) => message.notification?.source.kind === "launched_thread",
+          )!;
+          const reportRun = launcher.runs.find((run) => run.id === report.runId)!;
+          assert.equal(reportRun.status, "queued");
+          const next = yield* send(
+            launchedId,
+            followUp === "person" ? "Check another detail" : "/compact",
+            {
+              sender: followUp === "person" ? "user" : "agent",
+              ...(followUp === "idle-compaction" ? { idleCompaction: "beforeCacheExpires" } : {}),
+            },
+          );
+          yield* endTurn(busy, "completed");
+          assert.isTrue(
+            started.some((turn) => turn.runId === reportRun.id),
+            "the queued result reaches the provider",
+          );
+          yield* endTurn(next, "completed");
+          yield* worker.drain();
+          assert.lengthOf(yield* reports(), 1);
+          assert.notEqual(
+            (yield* orchestrator.getThreadProjection(launcherId)).runs.find(
+              (run) => run.id === reportRun.id,
+            )?.status,
+            "cancelled",
+          );
+        }),
+    ),
+);
+
+it.effect.each(["automatic", "explicit"] as const)(
+  "startup resends a cut result ahead of a queued %s report",
+  (secondReport) =>
+    harness(
+      `report-restart-queue-${secondReport}`,
+      ({ orchestrator, started, send, endTurn, reports, worker, outbox, recovery }) =>
+        Effect.gen(function* () {
+          const busy = yield* send(launcherId, "Finish the current plan");
+          const child = yield* send(launchedId, "Fix the login page");
+          yield* endTurn(child, "completed", ["Fixed the login page."]);
+          const next = yield* send(launchedId, "Check another detail");
+          if (secondReport === "explicit") {
+            const source = (yield* orchestrator.getThreadProjection(launchedId)).thread;
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId: CommandId.make("command:explicit-report"),
+              threadId: launcherId,
+              messageId: MessageId.make("message:explicit-report"),
+              senderThreadId: launchedId,
+              ...sentReport({
+                environmentId: undefined,
+                thread: source,
+                source: undefined,
+                message: "Checked another detail.",
+              }),
+              attachments: [],
+              dispatchMode: { type: "queue_after_active" },
+              createdBy: "agent",
+              creationSource: "server",
+            });
+            yield* orchestrator.dispatch({
+              type: "thread.report-target.set",
+              commandId: CommandId.make("command:explicit-report-sent"),
+              threadId: launchedId,
+              reportTo: { threadId: launcherId, sentInRunId: next.runId },
+            });
+          }
+          yield* endTurn(next, "completed", ["Checked another detail."]);
+          const queued = (yield* orchestrator.getThreadProjection(launcherId)).runs.filter(
+            (run) => run.status === "queued",
+          );
+          assert.lengthOf(queued, 2);
+          const enqueue = outbox.enqueue;
+          const afterRestart = DateTime.add(yield* DateTime.now, { minutes: 10 });
+          using pause = vi
+            .spyOn(outbox, "enqueue")
+            .mockImplementation((effects) =>
+              enqueue(
+                effects.map((effect) =>
+                  effect.threadId === launcherId && effect.request.type === "provider-turn.start"
+                    ? { ...effect, availableAt: afterRestart }
+                    : effect,
+                ),
+              ),
+            );
+          yield* endTurn(busy, "completed");
+          const before = yield* orchestrator.getThreadProjection(launcherId);
+          assert.deepEqual(
+            queued.map((run) => before.runs.find((row) => row.id === run.id)?.status),
+            ["starting", "queued"],
+          );
+          assert.isFalse(started.some((turn) => turn.runId === queued[0]!.id));
+          pause.mockRestore();
+          const firstRunning = yield* orchestrator.streamDomainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "provider-turn.updated" &&
+                event.threadId === launcherId &&
+                event.payload.runAttemptId === queued[0]!.activeAttemptId &&
+                event.payload.status === "running",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* recovery.reconcile("startup");
+          yield* worker.drain();
+          const firstDelivery = started.find((turn) => turn.runId === queued[0]!.id);
+          assert.isDefined(
+            firstDelivery,
+            "the cut first report is resent without another launcher turn",
+          );
+          yield* Fiber.join(firstRunning);
+          const secondRunning = yield* orchestrator.streamDomainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "provider-turn.updated" &&
+                event.threadId === launcherId &&
+                event.payload.runAttemptId === queued[1]!.activeAttemptId &&
+                event.payload.status === "running",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* endTurn(firstDelivery!, "completed");
+          const secondDelivery = started.find((turn) => turn.runId === queued[1]!.id);
+          assert.isDefined(
+            secondDelivery,
+            "finishing the resent report releases the held second report",
+          );
+          yield* Fiber.join(secondRunning);
+          yield* endTurn(secondDelivery!, "completed");
+          yield* worker.drain();
+          assert.deepEqual(
+            started
+              .filter((turn) => queued.some((run) => run.id === turn.runId))
+              .map((turn) => turn.runId),
+            queued.map((run) => run.id),
+          );
+          assert.lengthOf(yield* reports(), 2);
+        }),
+    ),
 );
 
 it.effect("person-started summaries wait for the launcher, once, until superseded", () =>
@@ -561,6 +746,56 @@ it.effect("person-started summaries wait for the launcher, once, until supersede
       assert.deepEqual(yield* notes(), [], "threads without report-back are untouched");
     }),
   ),
+);
+
+it.effect.each(["idle", "person", "agent"] as const)(
+  "%s compaction before summary recording preserves the unreported person-started result",
+  (source) =>
+    harness(
+      `report-late-summary-${source}`,
+      ({ orchestrator, send, endTurn, reports, worker, outbox }) =>
+        Effect.gen(function* () {
+          const enqueue = outbox.enqueue;
+          const held: Array<EffectOutbox.PendingOrchestrationEffectV2> = [];
+          using pause = vi.spyOn(outbox, "enqueue").mockImplementation((effects) => {
+            held.push(...effects.filter((effect) => effect.request.type === "thread-report.check"));
+            return enqueue(
+              effects.filter((effect) => effect.request.type !== "thread-report.check"),
+            );
+          });
+          const notes = () =>
+            orchestrator
+              .getThreadProjection(launcherId)
+              .pipe(Effect.map((projection) => projection.thread.answerNotes ?? []));
+          const result = yield* send(launchedId, "Keep JSON", { sender: "user" });
+          yield* endTurn(result, "completed", ["JSON remains the default."]);
+          assert.isEmpty(yield* notes(), "the result's report check has not run yet");
+          const compact = yield* send(launchedId, "/compact", {
+            ...(source === "idle" ? { idleCompaction: "beforeCacheExpires" } : {}),
+            sender: source === "person" ? "user" : "agent",
+          });
+          yield* endTurn(compact, "completed");
+          assert.isEmpty(yield* notes(), "compaction completed before summary recording");
+          assert.isTrue(
+            held.some(
+              (effect) =>
+                effect.request.type === "thread-report.check" &&
+                effect.request.trigger.kind === "run" &&
+                effect.request.trigger.runId === result.runId,
+            ),
+          );
+          pause.mockRestore();
+          yield* enqueue(held);
+          yield* worker.drain();
+          assert.lengthOf(yield* notes(), 1);
+          assert.include((yield* notes())[0]!.text, "JSON remains the default.");
+          assert.isEmpty(yield* reports(), "the summary does not wake the launcher");
+          const next = yield* send(launcherId, "Collect the result", { sender: "user" });
+          assert.include(next.message.text, "JSON remains the default.");
+          yield* endTurn(next, "completed");
+          assert.isEmpty(yield* notes());
+        }),
+    ),
 );
 
 it.effect("a turn with a pull request watch reports its published work once", () =>
