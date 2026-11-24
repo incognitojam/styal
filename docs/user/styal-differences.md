@@ -21,6 +21,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   converted asks you to sign in by email; use the same address to see your machines again.
   [styal Link](./remote-access.md#styal-link).
 
+- **Install locations stay behind pairing.** Someone who reaches your server's address can see
+  its pairing name and connection compatibility information, but must sign in to read its
+  installation details, hardware category, or time zone. This also applies through styal Link.
+  T3 Code publishes installation metadata and detected hardware category before pairing as of
+  [revision 364ca47](https://github.com/pingdotgg/t3code/tree/364ca478682e25c6373c041dc5774d6b726b2c08),
+  checked November 24, 2026.
+
 ## Agent permissions
 
 - **Agents find previous work across machines.** A thread search covers this machine and its linked machines by default, labels results by machine, and reports offline or refused machines. A machine or project can still be searched on its own. Upstream searches one selected machine as of [revision e455200](https://github.com/pingdotgg/t3code/tree/e455200077ce60806a01c8f28435b58860dcfc74), checked November 7, 2026. [Your machines](./remote-access.md#your-machines).
@@ -264,6 +271,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Copy messages as text, or share a thread.** styal omits the prompt-link copy actions from the command palette and message controls on web, desktop, and mobile. Externally authored [prompt links](./prompt-links.md) still open drafts. T3 Code offers prompt-link copying as of [revision f692811](https://github.com/pingdotgg/t3code/tree/f692811b9560283bbeb1804865e2398d05e5caa2), checked November 24, 2026.
+
 - **Documents, web pages and searches the agent used show beside its images.** Under a collapsed tool group, a row of chips names the PDFs and office documents the agent read, the web pages it fetched and the queries it searched, so you can open them without expanding the group. A document opens in the Files panel, a page opens as a chat link does, and a search lists its results. It covers Claude and Codex; pages the reply already links and your own attachments are left out. Upstream shows only images there as of [revision 75cae42](https://github.com/pingdotgg/t3code/tree/75cae42febdbedc2bd39430a1d6f017e38f6bfe0), checked November 18, 2026.
 
 - **Your attachments aren’t repeated in the image strip.** When an agent reads back an image attached to a user message in the same thread, web, desktop and mobile leave it out of the viewed-image strip. Other images the agent reads stay visible beside collapsed tool groups. Upstream repeats attachments there as of [revision 8cf97b5](https://github.com/pingdotgg/t3code/tree/8cf97b5f06f30a872ce30ab8a888f2ff012365a2), checked November 18, 2026.
@@ -277,7 +286,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Threads an agent starts can report back.** An agent can start a thread that wakes it when the thread fails, stays stuck on an approval or question for two minutes, or stops working. Reports include its latest text and any pull request or workflow it is watching; identical consecutive reports stay quiet. When you start a turn in a launched thread, its latest summary waits for the launcher's next turn without waking it; an ordinary report replaces that waiting summary. A thread started on another of your machines can't report back yet. You can stop reports from the thread's details on web and desktop or its menu on mobile. T3 Code has no equivalent as of [revision 6b38ec9](https://github.com/pingdotgg/t3code/tree/6b38ec931aab43077760012d0502514e67f7b7ee), checked November 23, 2026.
 
-- **A project can have a coordinator.** In Labs, one thread per project can be named its coordinator from the thread's menu or the project's settings. It is told to hand work to other threads, and hears from every thread started in the project, including ones you start, through the same reports. Agents can address the current chat by role, without its thread id. Each project gets a page with that thread as its chat, and the page's first message can create it. On mobile the chat opens as the project's screen, from its row or its project header. Opening the page after a while away lists what finished, failed, merged or was reported since you last looked, on any of your devices. T3 Code has an open Home pull request ([#15975](https://github.com/pingdotgg/t3code/pull/15975)) for one fleet-wide agent thread and no per-project coordinator as of [revision fe9baf8](https://github.com/pingdotgg/t3code/tree/fe9baf8cbb6), checked November 20, 2026. [Name a project coordinator](./project-settings.md#name-a-project-coordinator).
+- **A project can have a coordinator.** In Labs, one thread per project can be named its coordinator from the thread's menu or the project's settings. It is told to hand work to other threads, and hears from every thread started in the project, including ones you start, through the same reports. Agents can address the current chat by role, without its thread id. Each project gets a page with that thread as its chat, and the page's first message can create it. On mobile the chat opens as the project's screen, from its row or its project header. T3 Code has an open Home pull request ([#15975](https://github.com/pingdotgg/t3code/pull/15975)) for one fleet-wide agent thread and no per-project coordinator as of [revision fe9baf8](https://github.com/pingdotgg/t3code/tree/fe9baf8cbb6), checked November 20, 2026. [Name a project coordinator](./project-settings.md#name-a-project-coordinator).
 
 - **Warnings for agents that may be stuck.** styal records prolonged startup or inactivity in
   the thread's activity log and shows the warning on web, desktop, and mobile. The notice updates

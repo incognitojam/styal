@@ -4,12 +4,12 @@ import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entitie
 import { visibilityParentKey } from "@t3tools/client-runtime/state/threads";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { Navigate, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
-import { coordinatedProjectKey } from "./project/projectPage.logic";
+import { threadRouteProjectKey } from "./project/projectPage.logic";
 import { useSettingsProjectGroups } from "./settings/useSettingsProjectGroups";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { SidebarInset } from "./ui/sidebar";
@@ -26,6 +26,7 @@ import { useEnvironmentShellStatus } from "../state/shell";
 import { environmentThreadShells, threadFamilies, useEnvironmentThread } from "../state/threads";
 import {
   buildThreadRouteParams,
+  heldOpenThreadKey,
   isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
   type ThreadRouteTarget,
@@ -37,9 +38,8 @@ import {
  */
 function useOpenThreadFamily(threadRef: ScopedThreadRef | null, missing: boolean): boolean {
   const key = threadRef === null ? null : scopedThreadKey(threadRef);
-  // Sticks to the route thread, so the row the family brings in does not release it.
   const [mountedKey, setMountedKey] = useState<string | null>(null);
-  const nextKey = missing || mountedKey === key ? key : null;
+  const nextKey = heldOpenThreadKey(key, missing, mountedKey);
   if (nextKey !== mountedKey) setMountedKey(nextKey);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the open thread's family in the thread family registry until the route leaves it
   useEffect(() => {
@@ -147,36 +147,25 @@ export function ThreadRouteView({
     draftThreadExists: draftThread !== null,
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
-  // A project's coordinator lives on its project page. The thread view stays for `?view=thread`
-  // (the page's Open as thread), a quoted response it must reveal, a thread the shell leaves out
-  // (the page cannot show it), and under Settings or Usage.
-  const threadViewRequested = useSearch({
-    strict: false,
-    select: (search) => search.view === "thread",
-  });
-  const citationLink = useLocation({
+  const quotesResponse = useLocation({
     select: (location) => assistantCitationFromLocation(location.href) !== null,
   });
   const serverConfigs = useServerConfigs();
   const projectGroups = useSettingsProjectGroups();
-  const coordinatedProject =
-    serverThreadRef === null ||
-    serverThreadShell === null ||
-    threadViewRequested ||
-    citationLink ||
-    heldOffShell ||
-    background
+  // A project's coordinator lives on its project page.
+  const coordinatedProject = threadRouteProjectKey(
+    { quotesResponse, heldOffShell, background },
+    serverThreadRef === null || serverThreadShell === null
       ? null
-      : coordinatedProjectKey(
-          { ...serverThreadRef, projectId: serverThreadShell.projectId },
-          (environmentId) => serverConfigs.get(environmentId)?.settings,
-          (environmentId, projectId) =>
-            projectGroups.find((group) =>
-              group.memberProjects.some(
-                (member) => member.environmentId === environmentId && member.id === projectId,
-              ),
-            ) ?? null,
-        );
+      : { ...serverThreadRef, projectId: serverThreadShell.projectId },
+    (environmentId) => serverConfigs.get(environmentId)?.settings,
+    (environmentId, projectId) =>
+      projectGroups.find((group) =>
+        group.memberProjects.some(
+          (member) => member.environmentId === environmentId && member.id === projectId,
+        ),
+      ) ?? null,
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
   useEffect(() => {

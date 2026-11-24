@@ -1,9 +1,11 @@
+import { restartSupersededRunIds } from "./RestartBackgroundNote.ts";
 import {
   orchestratorMcpPendingQuestionNext,
   orchestratorMcpPendingApprovalNext,
   CommandId,
   type CoordinatorReport,
   type EnvironmentId,
+  isCompactionCommandMessage,
   MessageId,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
@@ -12,11 +14,13 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ThreadReportTarget,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   type RunId,
   type RuntimeRequestId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { derive } from "@t3tools/provider-core/server/IdAllocator";
 import { subagentResultForRun } from "@t3tools/provider-core/server/subagentProjection";
 import { reportLabel } from "@t3tools/provider-core/server/notification";
 import {
@@ -36,7 +40,7 @@ import type { ThreadManagementServiceShape } from "./ThreadManagementService.ts"
 
 /** Someone at the keyboard usually answers within this, so the launcher hears only about real stalls. */
 const BLOCKED_REPORT_DELAY = Duration.minutes(2);
-/** A restart interrupts a run and then continues it; the continuation has to appear first. */
+/** Stop allows a follow-up before waking the launcher; restart cuts use continuation state. */
 const INTERRUPTED_REPORT_DELAY = Duration.seconds(30);
 const REPORT_TEXT_LIMIT = 1_500;
 
@@ -74,6 +78,7 @@ const isBlockingRequest = (
 export function threadReportEffect(
   event: OrchestrationV2DomainEvent,
   now: DateTime.Utc,
+  forCancelledRun = false,
 ): PendingOrchestrationEffectV2 | null {
   const make = (
     key: string,
@@ -89,7 +94,7 @@ export function threadReportEffect(
   if (event.type === "run.updated") {
     const { id, status } = event.payload;
     if (
-      status === "cancelled" ||
+      (status === "cancelled" && !forCancelledRun) ||
       status === "rolled_back" ||
       (status === "queued" && event.payload.queueHeld === true)
     ) {
@@ -98,8 +103,12 @@ export function threadReportEffect(
     if (status === "completed" || status === "failed") {
       return make(id, { kind: "run", runId: id });
     }
-    return status === "interrupted"
-      ? make(id, { kind: "run", runId: id }, INTERRUPTED_REPORT_DELAY)
+    return status === "interrupted" || status === "cancelled"
+      ? make(
+          id,
+          { kind: "run", runId: id },
+          status === "interrupted" ? INTERRUPTED_REPORT_DELAY : undefined,
+        )
       : null;
   }
   if (
@@ -141,6 +150,31 @@ const startedByReport = (
   message: Pick<OrchestrationV2ConversationMessage, "notification"> | undefined,
 ) => message?.notification?.source.kind === "launched_thread";
 
+export const skipsThreadReport = (
+  run: Pick<OrchestrationV2Run, "status">,
+  message: OrchestrationV2ConversationMessage | undefined,
+  records: Pick<OrchestrationV2ThreadProjection, "runs" | "subagents">,
+) =>
+  (run.status === "completed" || run.status === "cancelled") &&
+  message !== undefined &&
+  (message.idleCompaction !== undefined ||
+    isCompactionCommandMessage(message) ||
+    (run.status === "cancelled" &&
+      message.delegatedCompletion !== undefined &&
+      records.runs.some(
+        (parent) =>
+          parent.id === message.delegatedCompletion?.parentRunId &&
+          parent.delegatedCompletion?.disposition === "open",
+      ) &&
+      records.subagents.some(
+        (task) =>
+          task.origin === "app_owned" &&
+          task.runId === message.delegatedCompletion?.parentRunId &&
+          message.delegatedCompletion?.taskIds.includes(task.id) &&
+          (task.completionDelivery?.state === "pending" ||
+            task.completionDelivery?.state === "claimed"),
+      )));
+
 /** Usage-limit recovery resends as the user; only a message from a client is a person's turn. */
 export const startedByPerson = (
   message: Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource"> | undefined,
@@ -170,7 +204,7 @@ export function runReportKind(input: {
   // wake that thread again. Only work that did not start from a report reaches it on its own.
   if (input.toCoordinator && input.startedByReport) return null;
   if (input.run.status === "failed") return "failed";
-  if (input.run.status === "interrupted") return "stopped";
+  if (input.run.status === "interrupted" || input.run.status === "cancelled") return "stopped";
   if (
     input.run.status !== "completed" ||
     input.reportedInRunId === input.run.id ||
@@ -229,11 +263,12 @@ export function pendingThreadReportNext(
   );
 }
 
-function reportMessage(input: {
+export function reportMessage(input: {
   readonly environmentId: EnvironmentId | undefined;
   readonly thread: Pick<OrchestrationV2AppThread, "id" | "title">;
   readonly source: ReportSource;
   readonly situation: string;
+  readonly cancellation?: { readonly started: boolean; readonly reason?: string | undefined };
   readonly body: string | undefined;
   readonly next: string;
   readonly pendingRequests?: ReadonlyArray<PendingReportRequest>;
@@ -251,14 +286,25 @@ function reportMessage(input: {
     input.environmentId,
     input.pendingRequests ?? [],
   );
+  const stopped = input.cancellation;
   const situation =
-    pendingNext === undefined ? input.situation : "has pending input and needs attention.";
+    stopped === undefined
+      ? pendingNext === undefined
+        ? input.situation
+        : "has pending input and needs attention."
+      : `${stopped.started ? "had a request stopped midway." : "had a request cancelled before it was processed."}${stopped.reason === undefined ? "" : ` ${excerpt(stopped.reason)}`}`;
   const head = `${who}, "${input.thread.title}" (${input.thread.id}${link}), ${situation}`;
   const body =
     input.body === undefined || input.body.trim() === ""
       ? ""
       : `\n\n${DATA_FRAMING}\n\n<thread-report>\n${excerpt(input.body)}\n</thread-report>`;
-  return `${head}${body}\n\n${pendingNext ?? input.next}`;
+  const next =
+    stopped === undefined
+      ? input.next
+      : stopped.started
+        ? "Read the thread with t3_thread_read before deciding whether to retry; work may already have taken effect."
+        : "The request was not processed. Send it again with t3_thread_send if it is still needed.";
+  return `${head}${body}\n\n${pendingNext ?? next}`;
 }
 
 const reportNotification = (
@@ -299,7 +345,11 @@ const reportCopy = {
 
 type ReportThreads = Pick<
   ThreadManagementServiceShape,
-  "dispatch" | "getThreadRecords" | "getThreadShell" | "reportRecipient"
+  | "dispatch"
+  | "getThreadRecords"
+  | "getThreadShell"
+  | "reportRecipient"
+  | "restartContinuationPending"
 >;
 
 const deliver = Effect.fnUntraced(function* (
@@ -453,16 +503,83 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   }
 
   const trigger = input.trigger;
-  const run =
-    trigger.kind === "idle"
-      ? records.runs
-          .filter((candidate) => !["queued", "cancelled", "rolled_back"].includes(candidate.status))
-          .toSorted((a, b) => b.ordinal - a.ordinal)[0]
-      : records.runs.find((candidate) => candidate.id === trigger.runId);
-  if (run === undefined || !["completed", "failed", "interrupted"].includes(run.status))
+  const launcherId = yield* recipient();
+  if (launcherId === null) return undefined;
+  const cancelled = records.runs.filter(
+    (run) =>
+      trigger.kind === "run" &&
+      run.id === trigger.runId &&
+      run.status === "cancelled" &&
+      run.cancelledByThreadId !== null &&
+      run.cancelledByThreadId !== launcherId &&
+      thread.archivedAt == null &&
+      thread.deletedAt == null,
+  );
+  const cancellation =
+    cancelled.length === 0
+      ? undefined
+      : yield* threads.getThreadRecords(thread.id, ["messages", "turnItems"], {
+          messageIds: cancelled.map((run) => run.userMessageId),
+          turnItemRunIds: cancelled.map((run) => run.id),
+          turnItemTypes: ["system_notice"],
+        });
+  const recovery = new Map(
+    cancellation?.turnItems.flatMap((item) =>
+      item.type === "system_notice" &&
+      item.runId !== null &&
+      item.id === derive.runSignalTurnItem({ runId: item.runId, signal: "server-recovery" })
+        ? [[item.runId, item.message] as const]
+        : [],
+    ),
+  );
+  const reportable = new Set(
+    cancelled
+      .filter(
+        (run) =>
+          run.startedAt != null ||
+          cancellation?.messages.some(
+            (message) =>
+              message.id === run.userMessageId &&
+              message.runId === run.id &&
+              message.senderThreadId === launcherId &&
+              message.notification === undefined,
+          ),
+      )
+      .map((run) => run.id),
+  );
+  let runs = records.runs;
+  let run: OrchestrationV2Run | undefined;
+  for (const candidate of runs
+    .filter((entry) => !["queued", "rolled_back"].includes(entry.status))
+    .toSorted((a, b) => b.ordinal - a.ordinal)) {
+    if (candidate.status === "completed" || candidate.status === "cancelled") {
+      const prompts = yield* threads.getThreadRecords(thread.id, ["messages"], {
+        messageIds: [candidate.userMessageId],
+      });
+      const prompt = prompts.messages.find((message) => message.id === candidate.userMessageId);
+      if (skipsThreadReport(candidate, prompt, records)) {
+        // Internal work cannot supersede an earlier result the launcher has not received.
+        runs = runs.filter((entry) => entry.id !== candidate.id);
+        continue;
+      }
+    }
+    if (candidate.status === "cancelled") continue;
+    run = candidate;
+    break;
+  }
+  if (trigger.kind === "run") {
+    const requested = records.runs.find((candidate) => candidate.id === trigger.runId);
+    if (requested === undefined || (run !== undefined && run.ordinal > requested.ordinal))
+      return undefined;
+    if (runs.includes(requested)) run = requested;
+  }
+  if (
+    run === undefined ||
+    !["completed", "failed", "interrupted", "cancelled"].includes(run.status) ||
+    (run.status === "cancelled" && !reportable.has(run.id))
+  )
     return undefined;
   if (
-    trigger.kind === "idle" &&
     run.status === "interrupted" &&
     run.completedAt !== null &&
     DateTime.isLessThan(
@@ -471,8 +588,22 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     )
   )
     return undefined;
-  const launcherId = yield* recipient();
-  if (launcherId === null) return undefined;
+  if (restartSupersededRunIds(records.runs).has(run.id)) return undefined;
+  if (["cancelled", "interrupted", "failed"].includes(run.status)) {
+    const chainIds = new Set([run.id]);
+    const chain = records.runs
+      .toSorted((a, b) => a.ordinal - b.ordinal)
+      .filter((candidate) => {
+        if (
+          candidate.restartContinuationOfRunId !== undefined &&
+          chainIds.has(candidate.restartContinuationOfRunId)
+        )
+          chainIds.add(candidate.id);
+        return chainIds.has(candidate.id);
+      });
+    if ((yield* Effect.forEach(chain, threads.restartContinuationPending)).some(Boolean))
+      return undefined;
+  }
   const history = yield* threads.getThreadRecords(
     thread.id,
     ["messages", "turnItems", "providerTurns"],
@@ -493,7 +624,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     target.sentInRunId !== run.id;
   const reported = runReportKind({
     run,
-    runs: records.runs,
+    runs,
     reportedInRunId: target.sentInRunId,
     startedByPerson: startedByPerson(startedBy),
     startedByReport: startedByReport(startedBy),
@@ -529,6 +660,9 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     environmentId,
     thread,
     source,
+    ...(run.status === "cancelled"
+      ? { cancellation: { started: run.startedAt !== null, reason: recovery.get(run.id) } }
+      : {}),
     situation:
       kind === "result" && waiting.length > 0
         ? "ended a turn and is waiting on background work."
@@ -536,7 +670,9 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     body:
       kind === "result" && result.messageId === null && result.turnItemId === null
         ? "The turn ended without assistant text."
-        : result.text,
+        : run.status === "cancelled" && result.messageId === null && result.turnItemId === null
+          ? undefined
+          : result.text,
     next: [...waiting, copy.next].join("\n\n"),
     pendingRequests: records.runtimeRequests,
   });

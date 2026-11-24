@@ -6,7 +6,7 @@ import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
  * Twitter and GitHub make clickable; `styal://` carries the same paths into desktop and mobile.
  */
 
-export const PROMPT_LINK_MAX_PROMPT_LENGTH = 8_000;
+const PROMPT_LINK_MAX_PROMPT_LENGTH = 8_000;
 
 export interface PromptLinkRepository {
   readonly owner: string;
@@ -81,7 +81,7 @@ function repositoryOf(owner: string, name: string): PromptLinkRepository | null 
   return { owner, name: trimmedName };
 }
 
-export function parsePromptLinkRepository(value: string): PromptLinkRepository | null {
+function parsePromptLinkRepository(value: string): PromptLinkRepository | null {
   const trimmed = value.trim();
   const url = /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(trimmed);
   const short = /^([^/\s]+)\/([^/\s]+)$/.exec(trimmed);

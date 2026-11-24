@@ -142,8 +142,8 @@ environment. Pinned and active reordering require server support. Threads from o
 their default order until the server is updated.
 
 To generate a fresh title from the conversation, open a thread's menu and choose
-**Regenerate title**. The action is unavailable while title generation is in progress
-or when the connected environment needs a server update.
+**Regenerate title**. The action is unavailable while title generation is in progress,
+for a project's coordinator, or when the connected environment needs a server update.
 
 To change how titles are written, add **Thread title instructions** in **Settings → Threads →
 Text generation**, under Advanced, such as a length limit or an identifier to put first. They apply to new and
@@ -180,9 +180,10 @@ it asks which project to use. The **new thread in current project** shortcut use
 open thread's project, or the first selected project when no thread is open. Choose
 **All projects** to clear the filter.
 
-With one project selected on web and desktop, its name appears above search instead of
-on every thread. Right-click the named filter for the project's folder actions. Selecting several
-projects or **All projects** shows every project's name again.
+With one project selected on web and desktop, threads no longer show its name. In the flat list the
+name appears above search instead; right-click it for the project's folder actions. In project
+folders, the project's folder is the only one shown and names it. Selecting several projects or
+**All projects** shows every project's name again.
 
 ## Project folders
 

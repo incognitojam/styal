@@ -884,6 +884,7 @@ describe("orchestrator MCP toolkit", () => {
                 { key: "pr:1", outcome: "Merged", question: "Q?", answers: ["A"] },
                 "drop `question`, `answers`",
               ],
+              [{ key: "pr:1", outcome: "Merged", blocking: true }, "drop `blocking`"],
               [{ key: "pr:1", title: "T", body: "B", outcome: "Merged" }, "not with a new version"],
               [{ key: "pr:1", body: "B" }, "missing `title`"],
               [{ key: "pr:1" }, "send only `key` and a one-line `outcome`"],
@@ -905,8 +906,20 @@ describe("orchestrator MCP toolkit", () => {
               title: "Release",
               body: "Ready.",
               question: "Merge?",
+              blocking: true,
             });
             expect(posted.structuredContent).toMatchObject({ version: 2 });
+            const reportVersion = (version: number) =>
+              orchestrator
+                .getThreadProjection(parentThreadId)
+                .pipe(
+                  Effect.map(
+                    (projection) =>
+                      projection.messages.find((message) => message.report?.version === version)
+                        ?.report,
+                  ),
+                );
+            expect((yield* reportVersion(2))?.blocking).toBe(true);
             // A session that still sends the old `resolved` is told the arguments that exist.
             expect(
               String(
@@ -915,11 +928,10 @@ describe("orchestrator MCP toolkit", () => {
             ).toContain('Unknown argument "resolved". Accepted arguments: key, title, body');
             const resolved = yield* report({ key: "pr:1", outcome: "Merged\n  as abc123" });
             expect(resolved.structuredContent).toEqual(posted.structuredContent);
-            expect(
-              (yield* orchestrator.getThreadProjection(parentThreadId)).messages.find(
-                (message) => message.report?.version === 2,
-              )?.report?.resolved?.outcome,
-            ).toBe("Merged as abc123");
+            expect((yield* reportVersion(2))?.resolved?.outcome).toBe("Merged as abc123");
+            // A later version without the flag is no longer blocking.
+            yield* report({ key: "pr:1", title: "Release", body: "Merged." });
+            expect((yield* reportVersion(3))?.blocking).toBeUndefined();
 
             const deferredSettle = yield* invoke("t3_thread_organize", { action: "settle" });
             expect(deferredSettle.isError).toBe(false);
@@ -1272,7 +1284,7 @@ describe("orchestrator MCP toolkit", () => {
               (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
                 (task) => task.id === directRead.task.id,
               )?.completionDelivery?.state,
-            ).toBe("claimed");
+            ).toBe("acknowledged");
 
             const terminalResultReadCall = yield* invoke("t3_thread_read", {
               threadId: directChildThreadId,
@@ -4609,6 +4621,11 @@ describe("orchestrator MCP toolkit", () => {
     { label: "distinct", result: queuedFollowupResult, latestSummary: queuedFollowupResult },
     { label: "identical", result: delegatedResult, latestSummary: null },
     { label: "emoji", result: "😀", latestSummary: "😀" },
+    {
+      label: "paginated",
+      result: "git safety ".repeat(120),
+      latestSummary: "git safety ".repeat(120),
+    },
   ])("reports $label child results", ({ result, latestSummary }) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -5134,11 +5151,40 @@ describe("orchestrator MCP toolkit", () => {
           const read = yield* invoke("t3_thread_read", {
             threadId: delegated.childThreadId,
             limit: 100,
-            maxCharsPerItem: result === "😀" ? 1 : 20_000,
+            ...(result === "😀" ? { maxCharsPerItem: 1 } : {}),
           }).pipe(Effect.withTracer(tracer));
           expect(read.isError).not.toBe(true);
           expect(transferReads.length).toBeGreaterThan(0);
-          expect(read.structuredContent).toEqual(parentlessRead.structuredContent);
+          const firstPage = yield* decodeThreadReadResult(read.structuredContent);
+          const finalItem = firstPage.items.find((item) => item.text === result.slice(0, 500));
+          expect(finalItem).toBeDefined();
+          if (result.length > 500) {
+            yield* invoke("t3_thread_read", {
+              threadId: delegated.childThreadId,
+              itemId: finalItem!.itemId,
+              textOffset: result.length,
+            });
+          } else {
+            expect(read.structuredContent).toEqual(parentlessRead.structuredContent);
+          }
+          let text = finalItem!.text ?? "";
+          let nextTextOffset = finalItem?.nextTextOffset ?? null;
+          while (nextTextOffset !== null) {
+            const beforeContinuation = yield* orchestrator.getThreadProjection(parentThreadId);
+            expect(
+              beforeContinuation.subagents.find((task) => task.id === queuedFollowup.taskId)
+                ?.completionDelivery?.state,
+            ).toBe("claimed");
+            const continuation = yield* invoke("t3_thread_read", {
+              threadId: delegated.childThreadId,
+              itemId: finalItem!.itemId,
+              textOffset: nextTextOffset,
+            }).pipe(Effect.withTracer(tracer));
+            const nextPage = yield* decodeThreadReadResult(continuation.structuredContent);
+            text += nextPage.items[0]?.text ?? "";
+            nextTextOffset = nextPage.items[0]?.nextTextOffset ?? null;
+          }
+          expect(text).toBe(result);
           // The acknowledgement reads the task and its spawning run by id, not the parent's history.
           expect(acknowledgementReads.length).toBeGreaterThan(0);
           expect(

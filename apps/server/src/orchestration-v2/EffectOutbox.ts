@@ -35,6 +35,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
   /** Whether a thread with a report target owes its launcher a report for this run or request. */
   Schema.Struct({
     type: Schema.Literal("thread-report.check"),
+    afterEffectId: Schema.optional(Schema.String),
     trigger: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("run"), runId: RunId }),
       Schema.Struct({ kind: Schema.Literal("idle") }),
@@ -66,6 +67,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("provider-runtime.continue"),
     sourceRunId: RunId,
+    processLossCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-session.detach"),
@@ -380,6 +382,11 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             : sql`candidate.available_at <= ${availableBefore}`
         }
         AND candidate.status = 'pending'
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_effect_outbox AS dependency
+          WHERE dependency.effect_id = json_extract(candidate.payload_json, '$.afterEffectId')
+            AND dependency.status IN ('pending', 'running')
+        )
         AND (
           -- These wait on their own availableAt, often for minutes, and read current state,
           -- so they neither wait behind the thread's other effects nor hold them up.
@@ -751,6 +758,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
         const cutoff = DateTime.formatIso(
           DateTime.subtractDuration(yield* DateTime.now, SETTLED_EFFECT_RETENTION),
         );
+        // Live continuations retain their preceding intent's cumulative crash budget.
         // Separate batch statements release the write lock between batches.
         const deleteBatch = sql<{ readonly effect_id: string }>`
           DELETE FROM orchestration_v2_effect_outbox
@@ -759,6 +767,16 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             FROM orchestration_v2_effect_outbox
             WHERE status IN ('succeeded', 'cancelled')
               AND completed_at < ${cutoff}
+              AND NOT (
+                effect_type = 'provider-runtime.continue'
+                AND EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_runs AS recovery_run
+                  WHERE recovery_run.thread_id = orchestration_v2_effect_outbox.thread_id
+                    AND recovery_run.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+                    AND json_extract(recovery_run.payload_json, '$.restartContinuationOfRunId') =
+                      json_extract(orchestration_v2_effect_outbox.payload_json, '$.sourceRunId')
+                )
+              )
             LIMIT ${PRUNE_BATCH_SIZE}
           )
           RETURNING effect_id

@@ -1,6 +1,9 @@
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
-import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
+import {
+  composerFileAttachmentMimeType,
+  composerImageDedupKey,
+} from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ResponseContextRecord,
@@ -57,6 +60,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
+import { isProjectChatDraftId } from "./components/project/projectPage.logic";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
 import {
@@ -966,11 +970,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
   };
 }
 
-function composerAttachmentDedupKey(image: ComposerAttachment): string {
-  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
-  return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
-}
-
 export function composerFileDedupKey(
   file: Pick<ComposerFileAttachment, "mimeType" | "sizeBytes" | "name">,
 ): string {
@@ -1667,6 +1666,31 @@ function toProjectDraftSession(
     draftId,
     ...draftSession,
   };
+}
+
+/**
+ * A project page's chat draft starts in the project's folder as it is, so no branch, worktree,
+ * mode or pull request reaches it, whichever control asked.
+ */
+function withoutProjectChatCheckout<
+  Options extends {
+    readonly branch?: string | null;
+    readonly worktreePath?: string | null;
+    readonly envMode?: DraftThreadEnvMode;
+    readonly startFromOrigin?: boolean;
+    readonly checkoutPullRequest?: DraftCheckoutPullRequest | null;
+  },
+>(draftKey: string, options: Options): Options {
+  if (!isProjectChatDraftId(draftKey)) return options;
+  const {
+    branch: _branch,
+    worktreePath: _worktreePath,
+    envMode: _envMode,
+    startFromOrigin: _startFromOrigin,
+    checkoutPullRequest: _checkoutPullRequest,
+    ...rest
+  } = options;
+  return rest as Options;
 }
 
 function createDraftThreadState(
@@ -2915,11 +2939,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           Object.values(get().draftThreadsByThreadKey).some(
             (draftThread) => draftThread.environmentId === environmentId,
           ),
-        setLogicalProjectDraftThreadId: (logicalProjectKey, projectRef, draftId, options) => {
+        setLogicalProjectDraftThreadId: (logicalProjectKey, projectRef, draftId, requested) => {
           const normalizedLogicalProjectKey = logicalProjectDraftKey(logicalProjectKey);
           if (normalizedLogicalProjectKey.length === 0 || draftId.length === 0) {
             return;
           }
+          const options =
+            requested === undefined ? undefined : withoutProjectChatCheckout(draftId, requested);
           set((state) => {
             const existingThread = state.draftThreadsByThreadKey[draftId];
             const previousThreadKeyForLogicalProject =
@@ -3016,11 +3042,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             options,
           );
         },
-        setDraftThreadContext: (threadRef, options) => {
+        setDraftThreadContext: (threadRef, requestedOptions) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
             return;
           }
+          const options = withoutProjectChatCheckout(threadKey, requestedOptions);
           set((state) => {
             const existing = state.draftThreadsByThreadKey[threadKey];
             if (!existing) {
@@ -3628,9 +3655,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               [...existing.images, ...existing.files].map((image) => image.id),
             );
             const existingDedupKeys = new Set(
-              [...existing.images, ...existing.files].map((image) =>
-                composerAttachmentDedupKey(image),
-              ),
+              [...existing.images, ...existing.files].map((image) => composerImageDedupKey(image)),
             );
             const acceptedPreviewUrls = new Set(
               existing.images.flatMap((image) =>
@@ -3645,7 +3670,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               0,
             );
             for (const image of images) {
-              const dedupKey = composerAttachmentDedupKey(image);
+              const dedupKey = composerImageDedupKey(image);
               if (
                 existingIds.has(image.id) ||
                 (!options?.allowDuplicates && existingDedupKeys.has(dedupKey))
@@ -5108,7 +5133,24 @@ export function ensureProjectChatDraft(input: {
   readonly logicalProjectKey: string;
 }): void {
   useComposerDraftStore.setState((state) => {
-    if (state.draftThreadsByThreadKey[input.draftId] !== undefined) return state;
+    const existing = state.draftThreadsByThreadKey[input.draftId];
+    if (existing !== undefined) {
+      // A draft saved before the page kept its checkout fields out still starts in the folder.
+      if (
+        existing.branch === null &&
+        existing.worktreePath === null &&
+        existing.envMode === "local" &&
+        !existing.checkoutPullRequest
+      )
+        return state;
+      const { checkoutPullRequest: _checkoutPullRequest, ...draft } = existing;
+      return {
+        draftThreadsByThreadKey: {
+          ...state.draftThreadsByThreadKey,
+          [input.draftId]: { ...draft, branch: null, worktreePath: null, envMode: "local" },
+        },
+      };
+    }
     const { [input.draftId]: _sent, ...promotedDraftRedirects } = state.promotedDraftRedirects;
     return {
       draftThreadsByThreadKey: {

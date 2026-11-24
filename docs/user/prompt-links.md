@@ -8,11 +8,7 @@ change your permission mode, branch, or worktree. Your own defaults apply.
 
 ## Make a link
 
-Open the command palette and choose **Copy prompt link**. It copies the draft in the composer.
-When the project is on GitHub, **Copy prompt link with repo and model** also adds the repository
-and the model you picked. Sent messages have a **Copy prompt link** button too.
-
-You can also write a link by hand:
+Write a link by hand:
 
 ```
 https://app.styal.build/new?prompt=Rate%20my%20swearing

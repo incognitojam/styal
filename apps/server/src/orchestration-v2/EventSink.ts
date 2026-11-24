@@ -107,6 +107,7 @@ export interface EventSinkV2Shape {
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
+  readonly recheckRestartContinuations: () => Effect.Effect<void, EventSinkWriteError>;
   readonly writeWithEffects: (input: {
     /**
      * Rebuilds each run.updated from the stored row with only its delegatedCompletion replaced.
@@ -166,6 +167,17 @@ export interface EventSinkV2Shape {
   /** Commits only if the full provider row equals expected; some writers do not advance updatedAt. */
   readonly writeIfProviderThreadUnchanged: (input: {
     readonly expected: OrchestrationV2ProviderThread;
+    readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+  }) => Effect.Effect<
+    {
+      readonly committed: boolean;
+      readonly storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>;
+    },
+    EventSinkV2Error
+  >;
+  /** Commits only if the stored turn item still equals expected. */
+  readonly writeIfTurnItemUnchanged: (input: {
+    readonly expected: OrchestrationV2TurnItem;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
   }) => Effect.Effect<
     {
@@ -401,12 +413,33 @@ const layerBase: Layer.Layer<
     // check it owes a thread that reports back, and a crash after the commit cannot lose it.
     const enqueueThreadReportChecks = Effect.fnUntraced(function* (
       storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
+      effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2> = [],
     ) {
       const now = yield* DateTime.now;
       const owed = storedEvents.flatMap((stored) => {
         const effect = threadReportEffect(stored.event, now);
-        return effect === null ? [] : [effect];
+        const cancellation =
+          stored.event.type === "run.updated" && stored.event.payload.status === "cancelled"
+            ? threadReportEffect(stored.event, now, true)
+            : null;
+        return [
+          ...(effect === null ? [] : [effect]),
+          ...(cancellation === null ? [] : [cancellation]),
+        ];
       });
+      for (const effect of effects) {
+        if (effect.request.type !== "provider-runtime.continue") continue;
+        owed.push({
+          id: `effect:thread-report:restart-settled:${effect.id}`,
+          commandId: CommandId.make(`server:thread-report-check:restart-settled:${effect.id}`),
+          threadId: effect.threadId,
+          request: {
+            type: "thread-report.check",
+            trigger: { kind: "run", runId: effect.request.sourceRunId },
+            afterEffectId: effect.id,
+          },
+        });
+      }
       for (const threadId of new Set(owed.map((effect) => effect.threadId))) {
         const thread = yield* projectionStore.getThread(threadId).pipe(
           // An event ordered before its thread exists must not fail the commit.
@@ -419,11 +452,14 @@ const layerBase: Layer.Layer<
 
     const applyStoredEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
-      Effect.fnUntraced(function* (storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>) {
+      Effect.fnUntraced(function* (
+        storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
+        effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2> = [],
+      ) {
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });
-        yield* enqueueThreadReportChecks(storedEvents);
+        yield* enqueueThreadReportChecks(storedEvents, effects);
         const sequence = storedEvents.at(-1)?.sequence;
         if (sequence !== undefined) {
           const now = DateTime.formatIso(yield* DateTime.now);
@@ -514,7 +550,7 @@ const layerBase: Layer.Layer<
             ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
             events: normalized,
           });
-          const outcomes = yield* applyStoredEvents(committed);
+          const outcomes = yield* applyStoredEvents(committed, input.effects);
           yield* effectOutbox.enqueue(input.effects);
           return { committed, outcomes };
         }).pipe(Effect.withTracerEnabled(false)),
@@ -607,7 +643,7 @@ const layerBase: Layer.Layer<
               ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
               events: normalized,
             });
-            const outcomes = yield* applyStoredEvents(storedEvents);
+            const outcomes = yield* applyStoredEvents(storedEvents, input.effects);
             yield* effectOutbox.enqueue(input.effects ?? []);
             return { committed: true as const, storedEvents, outcomes };
           }),
@@ -682,23 +718,15 @@ const layerBase: Layer.Layer<
       );
     });
 
-    const writeIfProviderThreadUnchangedEffect = Effect.fn(
-      "orchestrationV2.EventSink.writeIfProviderThreadUnchanged",
-    )(function* (input: Parameters<EventSinkV2Shape["writeIfProviderThreadUnchanged"]>[0]) {
-      yield* Effect.annotateCurrentSpan({
-        "orchestration_v2.event_count": input.events.length,
-        "orchestration_v2.provider_thread_id": input.expected.id,
-      });
-      const expectedJson = yield* ProjectionStore.encodeProviderThreadPayload(input.expected);
-
-      return yield* commitThenPublish(
+    // Appends the events only if the stored payload still matches, in one transaction.
+    const writeIfStoredPayloadMatches = <E>(
+      readStoredPayload: Effect.Effect<ReadonlyArray<{ readonly payload_json: string }>, E>,
+      expectedJson: string,
+      events: ReadonlyArray<OrchestrationV2DomainEvent>,
+    ) =>
+      commitThenPublish(
         Effect.gen(function* () {
-          const rows = yield* sql<{ readonly payload_json: string }>`
-            SELECT payload_json
-            FROM orchestration_v2_projection_provider_threads
-            WHERE provider_thread_id = ${input.expected.id}
-            LIMIT 1
-          `;
+          const rows = yield* readStoredPayload;
           if (rows[0]?.payload_json !== expectedJson) {
             return {
               committed: false as const,
@@ -706,7 +734,7 @@ const layerBase: Layer.Layer<
             };
           }
 
-          const normalized = yield* normalizeEvents(input.events);
+          const normalized = yield* normalizeEvents(events);
           const storedEvents = yield* eventStore.append({ events: normalized });
           const outcomes = yield* applyStoredEvents(storedEvents);
           return { committed: true as const, storedEvents, outcomes };
@@ -715,6 +743,45 @@ const layerBase: Layer.Layer<
           result.committed
             ? publishStoredEvents(result.storedEvents, result.outcomes)
             : Effect.void,
+      );
+
+    const writeIfProviderThreadUnchangedEffect = Effect.fn(
+      "orchestrationV2.EventSink.writeIfProviderThreadUnchanged",
+    )(function* (input: Parameters<EventSinkV2Shape["writeIfProviderThreadUnchanged"]>[0]) {
+      yield* Effect.annotateCurrentSpan({
+        "orchestration_v2.event_count": input.events.length,
+        "orchestration_v2.provider_thread_id": input.expected.id,
+      });
+      const expectedJson = yield* ProjectionStore.encodeProviderThreadPayload(input.expected);
+      return yield* writeIfStoredPayloadMatches(
+        sql<{ readonly payload_json: string }>`
+          SELECT payload_json
+          FROM orchestration_v2_projection_provider_threads
+          WHERE provider_thread_id = ${input.expected.id}
+          LIMIT 1
+        `,
+        expectedJson,
+        input.events,
+      );
+    });
+
+    const writeIfTurnItemUnchangedEffect = Effect.fn(
+      "orchestrationV2.EventSink.writeIfTurnItemUnchanged",
+    )(function* (input: Parameters<EventSinkV2Shape["writeIfTurnItemUnchanged"]>[0]) {
+      yield* Effect.annotateCurrentSpan({
+        "orchestration_v2.event_count": input.events.length,
+        "orchestration_v2.turn_item_id": input.expected.id,
+      });
+      const expectedJson = yield* ProjectionStore.encodeTurnItemPayload(input.expected);
+      return yield* writeIfStoredPayloadMatches(
+        sql<{ readonly payload_json: string }>`
+          SELECT payload_json
+          FROM orchestration_v2_projection_turn_items
+          WHERE turn_item_id = ${input.expected.id}
+          LIMIT 1
+        `,
+        expectedJson,
+        input.events,
       );
     });
 
@@ -774,7 +841,7 @@ const layerBase: Layer.Layer<
               new Error(`Command ${input.commandId} produced no orchestration events.`),
             );
           }
-          const outcomes = yield* applyStoredEvents(storedEvents);
+          const outcomes = yield* applyStoredEvents(storedEvents, input.effects);
           yield* effectOutbox.enqueue(input.effects);
           const receipt: CommandReceiptStore.CommandReceiptV2 = {
             commandId: input.commandId,
@@ -1066,6 +1133,35 @@ const layerBase: Layer.Layer<
     );
 
     return EventSinkV2.of({
+      recheckRestartContinuations: Effect.fn("EventSink.recheckRestartContinuations")(function* () {
+        yield* commitThenPublish(
+          Effect.gen(function* () {
+            const rows = yield* sql<{
+              effect_id: string;
+              command_id: string;
+              thread_id: string;
+              source_run_id: string;
+            }>`
+              SELECT effect_id, command_id, thread_id, json_extract(payload_json, '$.sourceRunId') AS source_run_id
+              FROM orchestration_v2_effect_outbox
+              WHERE effect_type = 'provider-runtime.continue' AND status IN ('pending', 'running')
+            `;
+            yield* enqueueThreadReportChecks(
+              [],
+              rows.map((row) => ({
+                id: row.effect_id,
+                commandId: CommandId.make(row.command_id),
+                threadId: ThreadId.make(row.thread_id),
+                request: {
+                  type: "provider-runtime.continue",
+                  sourceRunId: RunId.make(row.source_run_id),
+                },
+              })),
+            );
+          }),
+          () => effectOutbox.notifyAvailable(),
+        ).pipe(Effect.mapError((cause) => new EventSinkWriteError({ eventCount: 0, cause })));
+      }),
       consumeProviderEvents: coordinator.consume,
       withProviderBatch,
       write: (input) =>
@@ -1114,6 +1210,12 @@ const layerBase: Layer.Layer<
         ),
       writeIfProviderThreadUnchanged: (input) =>
         writeIfProviderThreadUnchangedEffect(input).pipe(
+          Effect.mapError(
+            (cause) => new EventSinkWriteError({ eventCount: input.events.length, cause }),
+          ),
+        ),
+      writeIfTurnItemUnchanged: (input) =>
+        writeIfTurnItemUnchangedEffect(input).pipe(
           Effect.mapError(
             (cause) => new EventSinkWriteError({ eventCount: input.events.length, cause }),
           ),

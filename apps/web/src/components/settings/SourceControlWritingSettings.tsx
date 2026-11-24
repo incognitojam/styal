@@ -250,7 +250,7 @@ export function SourceControlWritingSettingsSection() {
         }
       >
         {writingStyleMixed ? (
-          <div className="mt-3 max-w-2xl space-y-2 pb-3.5">
+          <div className="mt-3 space-y-2 pb-3.5">
             {editingAllInstructions ? (
               <>
                 <Textarea
@@ -292,7 +292,7 @@ export function SourceControlWritingSettingsSection() {
             )}
           </div>
         ) : style.mode === "custom" ? (
-          <div className="mt-3 max-w-2xl pb-3.5">
+          <div className="mt-3 pb-3.5">
             <Textarea
               key={style.customInstructions}
               ref={customInstructionsRef}
@@ -442,7 +442,7 @@ export function SourceControlWritingSettingsSection() {
               ) : null
             }
           >
-            <div className="mt-3 max-w-2xl pb-3.5">
+            <div className="mt-3 pb-3.5">
               <Textarea
                 key={`${scopeKey}:${mixedReviewGuideInstructions}:${settings.reviewGuideInstructions}`}
                 aria-label="Review guide instructions"

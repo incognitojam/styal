@@ -129,6 +129,7 @@ export function PullRequestCommentForm({
         value={body}
         rows={3}
         placeholder="Leave a comment"
+        tall
         aria-label={`Comment on this ${sourceControlClients.get(detail.provider).changeRequest.singular}`}
         onValueChange={(next) => setConversationDraft(draftKey, next)}
         onKeyDown={(event) => {
