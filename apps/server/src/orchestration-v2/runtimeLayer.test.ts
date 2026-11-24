@@ -12077,9 +12077,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
   it.effect.each([
     "resume",
     "coordinator",
-    "coordinator-rejected",
-    "coordinator-rejected-after-reset",
-    "coordinator-rejected-former",
+    "coordinator-race",
     "resume-started",
     "resume-untagged",
     "queued-resume",
@@ -12233,7 +12231,9 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
             const previous = yield* settings.getSettings;
             yield* settings.updateSettings({
               projectCoordinatorsEnabled: true,
-              projectCoordinators: { [projectId]: { threadId } },
+              projectCoordinators: {
+                [projectId]: scenario === "coordinator" ? { threadId } : null,
+              },
               autoResumeLimitedThreads: true,
               snoozeLimitedThreads: true,
             });
@@ -12248,20 +12248,6 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
                 .pipe(Effect.orDie),
             );
             const sql = yield* SqlClient.SqlClient;
-            const oldArm = {
-              ...limitRecoveryCommand(shell, true, DateTime.toEpochMillis(now), true)!,
-              commandId: CommandId.make(`limit-arm:${threadId}:${run.id}:${Date.parse(resetAt)}`),
-            };
-            if (scenario !== "coordinator") {
-              const error = yield* orchestrator.dispatch(oldArm).pipe(Effect.flip);
-              assert.equal(error._tag, "OrchestratorDispatchError");
-            }
-            const rejectedBefore =
-              yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE aggregate_id = ${threadId} AND status = 'rejected'`;
-            assert.lengthOf(rejectedBefore, scenario !== "coordinator" ? 1 : 0);
-            const former = scenario === "coordinator-rejected-former";
-            if (former)
-              yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
             const sweeps = new Map<string, Effect.Effect<void>>();
             yield* Layer.build(
               UsageLimitRecoveryWorker.layer.pipe(
@@ -12277,14 +12263,29 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
               ),
             );
             const sweep = sweeps.get("usage-limit-recovery")!;
-            if (scenario === "coordinator-rejected-after-reset")
-              yield* TestClock.adjust("1 minute");
+            const projections = yield* ProjectionStore.ProjectionStoreV2;
+            const getThread = projections.getThread;
+            let reads = 0;
+            using _race = vi.spyOn(projections, "getThread").mockImplementation((id) =>
+              Effect.gen(function* () {
+                // Promote after auto-arm's preflight read, before the mutation decides the command.
+                if (id === threadId && ++reads === 2 && scenario === "coordinator-race") {
+                  yield* settings
+                    .updateSettings({ projectCoordinators: { [projectId]: { threadId } } })
+                    .pipe(Effect.orDie);
+                }
+                return yield* getThread(id);
+              }),
+            );
             yield* sweep;
             const armed = (yield* orchestrator.getThreadProjection(threadId)).thread;
-            assert.deepEqual(armed.snoozedUntil, former ? DateTime.makeUnsafe(resetAt) : null);
+            assert.isNull(armed.snoozedUntil);
             assert.isTrue(armed.limitRecovery?.autoResume);
-            assert.equal(armed.limitRecovery?.snooze, former);
+            assert.isFalse(armed.limitRecovery?.snooze);
             assert.equal(armed.limitRecovery?.runId, run.id);
+            if (scenario === "coordinator-race")
+              yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
+
             yield* sweep;
             yield* TestClock.adjust("1 minute");
             yield* sweep;
@@ -12295,7 +12296,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
             assert.isNull(resumed.thread.snoozedUntil);
             const rejectedAfter =
               yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE aggregate_id = ${threadId} AND status = 'rejected'`;
-            assert.deepEqual(rejectedAfter, rejectedBefore);
+            assert.lengthOf(rejectedAfter, 0);
           }),
         );
         return;

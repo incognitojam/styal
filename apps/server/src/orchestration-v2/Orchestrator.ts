@@ -4445,6 +4445,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
     /** For `thread.settle`: why it settles. An explicit settle records `user`. */
     settleReason: OrchestrationV2ThreadSettleReason | null = { kind: "user" },
+    automaticLimitRecovery = false,
   ) {
     const thread = yield* projectionStore.getThread(command.threadId).pipe(
       Effect.mapError(
@@ -4462,6 +4463,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is deleted.`,
       });
     }
+    let suppressAutomaticSnooze = false;
     if (
       command.type === "thread.settle" ||
       command.type === "thread.snooze" ||
@@ -4473,11 +4475,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         thread,
       );
       if (refusal !== null) {
-        return yield* new OrchestratorDispatchError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: refusal,
-        });
+        if (automaticLimitRecovery && command.type === "thread.metadata.update") {
+          suppressAutomaticSnooze = true;
+        } else {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: refusal,
+          });
+        }
       }
     }
     if (
@@ -5231,7 +5237,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ...command.limitRecovery,
                     autoResume:
                       command.limitRecovery.autoResume ?? previousRecovery?.autoResume ?? false,
-                    snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
+                    snooze: suppressAutomaticSnooze
+                      ? false
+                      : (command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false),
                     requestId: command.commandId,
                   };
           const previousAuthRecovery =
@@ -15944,6 +15952,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const dispatchOnce = Effect.fn("orchestrationV2.dispatch.once")(function* (
     command: OrchestrationV2ServerCommand,
     sideChatIds: ReadonlyArray<ThreadId>,
+    automaticLimitRecovery: boolean,
   ): Effect.fn.Return<
     {
       readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
@@ -16099,7 +16108,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.interaction-mode.set":
       case "thread.model-selection.set":
       case "provider.switch":
-        yield* dispatchThreadMutation(command, events, effects);
+        yield* dispatchThreadMutation(command, events, effects, undefined, automaticLimitRecovery);
         break;
       case "thread.pull-request-watch.checks-reopen":
         yield* dispatchThreadMutation(command, events, effects);
@@ -16462,6 +16471,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     command: OrchestrationV2ServerCommand,
     sideChatIds: ReadonlyArray<ThreadId> = [],
     cancelledTask?: OrchestrationV2Subagent,
+    automaticLimitRecovery = false,
   ): Effect.fn.Return<OrchestratorV2DispatchResult, OrchestratorV2Error> {
     yield* Effect.annotateCurrentSpan({
       "orchestration_v2.command_id": command.commandId,
@@ -16495,7 +16505,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (shell !== null) yield* refuseAboveDispatchModeLimit(command, threadId, shell);
     }
 
-    const plan = yield* dispatchOnce(command, sideChatIds).pipe(
+    const plan = yield* dispatchOnce(command, sideChatIds, automaticLimitRecovery).pipe(
       Effect.tap((planned) => refuseAboveRuntimeModeCeiling(command, planned.events)),
       Effect.filterOrFail(
         (planned) =>
@@ -17231,22 +17241,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             thread.limitRecovery.resetAt === input.limitRecovery.resetAt
           )
             return;
-          const coordinator =
-            ProjectCoordinator.putAwayRefusal(
-              yield* serverSettings.getSettings.pipe(Effect.orDie),
-              thread,
-            ) !== null;
-          const command = {
-            type: "thread.metadata.update",
-            ...input,
-            // Keep visible recovery distinct if a coordinator change rejects an in-flight snooze.
-            commandId: coordinator
-              ? CommandId.make(`${input.commandId}:coordinator`)
-              : input.commandId,
-            limitRecovery: coordinator
-              ? { ...input.limitRecovery, snooze: false }
-              : input.limitRecovery,
-          } as const;
+          const command = { type: "thread.metadata.update", ...input } as const;
           // A Stop that reached the run before its limit failure landed had nothing to disarm.
           const stopped = yield* stopReachedRun(command, input.threadId, input.limitRecovery.runId);
           yield* dispatchWithReceiptEffect(
@@ -17256,6 +17251,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   limitRecovery: { ...input.limitRecovery, autoResume: false, snooze: false },
                 }
               : command,
+            [],
+            undefined,
+            true,
           );
         }),
       );

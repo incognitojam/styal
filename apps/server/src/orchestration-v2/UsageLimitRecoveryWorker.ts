@@ -44,8 +44,7 @@ export function limitRecoveryCommand(
     if (!autoResume && (!snooze || resetMs <= nowMs)) return null;
     return {
       type: "thread.metadata.update",
-      // A rejected pre-coordinator-fix arm must not block recovery, even after its role changes.
-      commandId: CommandId.make(`limit-arm-v2:${identity}`),
+      commandId: CommandId.make(`limit-arm:${identity}`),
       threadId: thread.id,
       limitRecovery: {
         runId: thread.latestRunId,
