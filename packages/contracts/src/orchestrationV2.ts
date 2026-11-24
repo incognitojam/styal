@@ -109,6 +109,8 @@ export const CoordinatorReportInput = Schema.Struct({
   answers: Schema.optional(
     Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(80))).check(Schema.isMaxLength(4)),
   ),
+  /** Other work waits on the answer, so the report is read first. */
+  blocking: Schema.optional(Schema.Boolean),
 });
 export const CoordinatorReportOutcome = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const CoordinatorReport = Schema.Struct({
@@ -117,6 +119,7 @@ export const CoordinatorReport = Schema.Struct({
   version: PositiveInt,
   question: CoordinatorReportInput.fields.question,
   answers: CoordinatorReportInput.fields.answers,
+  blocking: CoordinatorReportInput.fields.blocking,
   /** The agent closed this version's question without a new version. */
   resolved: Schema.optional(
     Schema.Struct({ at: IsoDateTime, outcome: Schema.optional(CoordinatorReportOutcome) }),
