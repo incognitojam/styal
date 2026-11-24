@@ -413,21 +413,25 @@ export const loadSubscriberShellSnapshot = Effect.fn("ShellStream.loadSubscriber
   function* <E1, E2, E3, E4, E5>(input: {
     readonly sql: SqlClient.SqlClient;
     readonly listShellIndex: Effect.Effect<ReadonlyArray<ActiveShellIndexEntry>, E1>;
-    readonly readThreads: (
-      threadIds: ReadonlyArray<ThreadId> | undefined,
-    ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E3>, E2>;
+    readonly readThreads: Effect.Effect<
+      (
+        threadIds: ReadonlyArray<ThreadId> | undefined,
+      ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E3>, E2>,
+      E2
+    >;
     readonly listProjects: Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, E4>;
     readonly latestSequence: Effect.Effect<number, E5>;
     readonly options: ShellSubscriberOptions;
   }) {
     const trims = input.options.omitIdleSubagents || input.options.omitOlderSettled;
+    const readThreads = yield* input.readThreads;
     const read = yield* input.sql
       .withTransaction(
         Effect.gen(function* () {
           const index = trims ? yield* input.listShellIndex : null;
           return {
             index,
-            decodeThreads: yield* input.readThreads(
+            decodeThreads: yield* readThreads(
               index === null ? undefined : shellSubscriberThreadIds(index, input.options),
             ),
             projects: yield* input.listProjects,
@@ -461,14 +465,18 @@ export const loadShellSnapshotParts = Effect.fn("ShellStream.loadShellSnapshotPa
   E4,
 >(input: {
   readonly sql: SqlClient.SqlClient;
-  readonly readThreads: Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E2>, E1>;
+  readonly readThreads: Effect.Effect<
+    Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E2>, E1>,
+    E1
+  >;
   readonly listProjects: Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, E3>;
   readonly latestSequence: Effect.Effect<number, E4>;
 }) {
+  const readThreads = yield* input.readThreads;
   const read = yield* input.sql
     .withTransaction(
       Effect.all({
-        decodeThreads: input.readThreads,
+        decodeThreads: readThreads,
         projects: input.listProjects,
         snapshotSequence: input.latestSequence,
       }),
@@ -492,11 +500,15 @@ export const loadOlderSettledThreadsPage = Effect.fn("ShellStream.loadOlderSettl
       },
       E1
     >;
-    readonly readThreads: (
-      threadIds: ReadonlyArray<ThreadId>,
-    ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E3>, E2>;
+    readonly readThreads: Effect.Effect<
+      (
+        threadIds: ReadonlyArray<ThreadId>,
+      ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E3>, E2>,
+      E2
+    >;
     readonly latestSequence: Effect.Effect<number, E4>;
   }) {
+    const readThreads = yield* input.readThreads;
     const read = yield* input.sql
       .withTransaction(
         Effect.gen(function* () {
@@ -504,7 +516,7 @@ export const loadOlderSettledThreadsPage = Effect.fn("ShellStream.loadOlderSettl
           return {
             listed,
             decodeThreads:
-              listed.threadIds.length === 0 ? null : yield* input.readThreads(listed.threadIds),
+              listed.threadIds.length === 0 ? null : yield* readThreads(listed.threadIds),
             snapshotSequence: yield* input.latestSequence,
           };
         }),

@@ -673,9 +673,12 @@ export const searchThreadsWithOlderSettledRows = Effect.fn(
     input: Parameters<ThreadSearch["Service"]["searchOlderSettled"]>[0],
   ) => Effect.Effect<ReadonlyArray<ThreadId>, E2>;
   readonly sql: SqlClient.SqlClient;
-  readonly readThreads: (
-    threadIds: ReadonlyArray<ThreadId>,
-  ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E4>, E3>;
+  readonly readThreads: Effect.Effect<
+    (
+      threadIds: ReadonlyArray<ThreadId>,
+    ) => Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E4>, E3>,
+    E3
+  >;
   readonly latestSequence: Effect.Effect<number, E5>;
 }) {
   const { olderSettledBefore, projectIds, environmentLabel, titlesOnly, ...request } =
