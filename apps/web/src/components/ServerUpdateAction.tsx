@@ -712,7 +712,7 @@ export function OutdatedServerUpdateAction({
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
     const confirmed = await requestConfirmDialog(
-      `Update the ${serverLabel} server?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
+      `Update the ${serverLabel}?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
       { confirmLabel: "Update" },
     );
     if (confirmed !== true) {
