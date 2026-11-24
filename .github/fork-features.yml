@@ -7277,6 +7277,31 @@ features:
         - https://github.com/pingdotgg/t3code/blob/e3b35d1b2440b104f0bc2e357377c348121234dd/packages/client-runtime/src/state/threadCommands.ts
       retire_when: Upstream presents pending sends as working before handoff dispatch finishes, with rejection rollback and shell reconciliation on every client.
 
+  - id: thread-search-linked-history
+    title: Search thread history across linked machines
+    status: maintained
+    tier: yield
+    prs: [1368]
+    rationale: Agents need to find prior work without knowing which linked machine owns it.
+    invariants:
+      - Search includes settled history across linked machines, labels results by machine, and retains readable results when a peer is offline or refuses access.
+      - Explicit machine or project searches remain scoped, and forwarded searches cannot fan out again.
+    implementation_paths:
+      - apps/server/src/mcp/ThreadSearchMcpService.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+    tests:
+      - apps/server/src/mcp/ThreadSearchMcpService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/35377
+      retire_when: Upstream search aggregates linked history with machine labels, scoped targets, and partial failure handling.
+
   - id: thread-settle-reasons
     title: Show why a thread settled
     status: maintained

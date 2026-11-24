@@ -1,6 +1,9 @@
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
-import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
+import {
+  composerFileAttachmentMimeType,
+  composerImageDedupKey,
+} from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ResponseContextRecord,
@@ -964,11 +967,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     runtimeMode: null,
     interactionMode: null,
   };
-}
-
-function composerAttachmentDedupKey(image: ComposerAttachment): string {
-  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
-  return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
 }
 
 export function composerFileDedupKey(
@@ -3628,9 +3626,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               [...existing.images, ...existing.files].map((image) => image.id),
             );
             const existingDedupKeys = new Set(
-              [...existing.images, ...existing.files].map((image) =>
-                composerAttachmentDedupKey(image),
-              ),
+              [...existing.images, ...existing.files].map((image) => composerImageDedupKey(image)),
             );
             const acceptedPreviewUrls = new Set(
               existing.images.flatMap((image) =>
@@ -3645,7 +3641,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               0,
             );
             for (const image of images) {
-              const dedupKey = composerAttachmentDedupKey(image);
+              const dedupKey = composerImageDedupKey(image);
               if (
                 existingIds.has(image.id) ||
                 (!options?.allowDuplicates && existingDedupKeys.has(dedupKey))
