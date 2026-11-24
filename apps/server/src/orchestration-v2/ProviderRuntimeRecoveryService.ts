@@ -1,3 +1,4 @@
+import { isStaleRestartNotificationWake } from "./NotificationWake.ts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
@@ -201,16 +202,33 @@ const restartResendCommandId = (runId: RunId) => CommandId.make(`command:restart
 const admitRestartResends = Effect.fn("ProviderRuntimeRecoveryService.admitRestartResends")(
   function* (
     services: {
-      readonly projections: Pick<ProjectionStore.ProjectionStoreV2Shape, "getThreadRecords">;
+      readonly projections: ProjectionStore.ProjectionStoreV2Shape;
       readonly outbox: Pick<EffectOutbox.EffectOutboxV2Shape, "listByCommandId">;
     },
     projection: ProjectionStore.ProjectionRuntimeRecoveryState,
     runs: ReadonlyArray<OrchestrationV2ThreadProjection["runs"][number]>,
+    messages: ReadonlyArray<OrchestrationV2ConversationMessage>,
     now: DateTime.Utc,
   ) {
     const admitted: Array<OrchestrationV2ThreadProjection["runs"][number]> = [];
     for (const run of runs) {
+      const message = messages.find((candidate) => candidate.id === run.userMessageId);
+      const stale =
+        message !== undefined &&
+        (yield* isStaleRestartNotificationWake(projection, message.id, message.notification).pipe(
+          Effect.provideService(ProjectionStore.ProjectionStoreV2, services.projections),
+          Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(false) }),
+          Effect.mapError(
+            (cause) =>
+              new ProviderRuntimeRecoveryError({
+                operation: "read-projections",
+                threadId: projection.thread.id,
+                cause,
+              }),
+          ),
+        ));
       if (
+        stale ||
         restartContinuationBlocked(projection, run, now, false) ||
         (yield* restartStopRequested(
           services.projections.getThreadRecords,
@@ -313,6 +331,7 @@ export const listContinuableThreadIds = Effect.fn(
       { projections, outbox },
       projection,
       unstarted.filter((candidate) => isResentAfterRestart(messages.get(candidate.userMessageId))),
+      [...messages.values()],
       now,
     );
     if (resent.length > 0) eligible.add(threadId);
@@ -618,6 +637,7 @@ export const make = Effect.gen(function* () {
                 queuedMessages.find((message) => message.id === run.userMessageId),
               ),
             ),
+            queuedMessages,
             now,
           )
         : [];

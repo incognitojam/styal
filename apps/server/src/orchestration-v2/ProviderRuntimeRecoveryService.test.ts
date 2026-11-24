@@ -548,9 +548,14 @@ it.effect.each([
   "starting-other-request",
   "starting-own-request",
   "starting-report",
+  "starting-report-manual",
+  "starting-report-answered",
+  "starting-report-expired-approval",
+  "starting-report-valid-question",
   "starting-report-capped",
   "starting-report-disabled",
   "starting-task-wake",
+  "starting-task-settled",
   "starting-notification",
   "starting-delivery",
   "starting-scheduled",
@@ -569,6 +574,10 @@ it.effect.each([
       : scenario;
   const resent = [
     "starting-report",
+    "starting-report-manual",
+    "starting-report-valid-question",
+    "starting-report-expired-approval",
+    "starting-task-settled",
     "starting-task-wake",
     "starting-scheduled",
     "running-delegated",
@@ -576,6 +585,7 @@ it.effect.each([
   const terminalized =
     status === "preparing" ||
     [
+      "starting-report-answered",
       "starting-report-capped",
       "starting-report-disabled",
       "starting-notification",
@@ -593,6 +603,15 @@ it.effect.each([
       : null;
   const threadId = ThreadId.make("thread_queued_restart");
   const runId = RunId.make("run_queued_restart");
+  const childId = ThreadId.make("thread:report-child");
+  const questionId = RuntimeRequestId.make("request:report-question");
+  const question =
+    scenario === "starting-report-answered" ||
+    scenario === "starting-report-valid-question" ||
+    scenario === "starting-report-expired-approval";
+  const messageId = question
+    ? MessageId.make(`message:thread-report:${childId}:${questionId}`)
+    : MessageId.make("message_queued_restart");
   const attemptId = RunAttemptId.make("attempt_queued_restart");
   const steeredAttemptId = RunAttemptId.make("attempt_queued_restart_steered");
   const rootNodeId = NodeId.make("node_queued_restart");
@@ -652,7 +671,7 @@ it.effect.each([
         startedAt,
         rootNodeId,
         activeAttemptId: attemptId,
-        userMessageId: MessageId.make("message_queued_restart"),
+        userMessageId: messageId,
         queuePosition: 1,
         providerInstanceId: ProviderInstanceId.make("codex"),
         ...(scenario === "running-resume"
@@ -698,36 +717,45 @@ it.effect.each([
         startedAt: status === "running" ? startedAt : null,
       },
     ],
-    subagents: [],
+    subagents:
+      scenario === "starting-task-settled"
+        ? [{ id: NodeId.make("task:report-child"), status: "completed" }]
+        : [],
     messages:
       status === "starting" || status === "running"
         ? [
             {
-              id: MessageId.make("message_queued_restart"),
+              id: messageId,
               ...(scenario.startsWith("running-delegated")
                 ? { createdBy: "agent", creationSource: "mcp" }
                 : scenario === "running-resume"
                   ? { createdBy: "agent", creationSource: "server" }
                   : scenario.startsWith("starting-report") ||
-                      scenario === "starting-task-wake" ||
+                      scenario.startsWith("starting-task-") ||
                       scenario === "starting-notification"
                     ? {
                         createdBy: "agent",
                         creationSource: "server",
                         notification: {
                           source: {
-                            kind:
-                              scenario === "starting-task-wake"
-                                ? "delegated_task"
-                                : scenario === "starting-notification"
-                                  ? "system"
-                                  : "launched_thread",
-                            childThreadId: ThreadId.make("thread:report-child"),
-                            ...(scenario === "starting-task-wake"
+                            kind: scenario.startsWith("starting-task-")
+                              ? "delegated_task"
+                              : scenario === "starting-notification"
+                                ? "system"
+                                : "launched_thread",
+                            ...(scenario === "starting-task-settled"
+                              ? {}
+                              : { childThreadId: childId }),
+                            ...(scenario.startsWith("starting-task-")
                               ? { taskIds: [NodeId.make("task:report-child")] }
                               : {}),
                           },
-                          outcome: "completed",
+                          outcome:
+                            question ||
+                            scenario === "starting-task-settled" ||
+                            scenario === "starting-report-manual"
+                              ? "updated"
+                              : "completed",
                         },
                       }
                     : scenario === "starting-delivery"
@@ -758,6 +786,24 @@ it.effect.each([
           ]
         : [],
   } as unknown as OrchestrationV2ThreadProjection;
+  const child = {
+    ...projection,
+    runtimeRequests: question
+      ? [
+          {
+            id: questionId,
+            kind: scenario === "starting-report-expired-approval" ? "command" : "user_input",
+            status:
+              scenario === "starting-report-answered"
+                ? "resolved"
+                : scenario === "starting-report-expired-approval"
+                  ? "expired"
+                  : "pending",
+            responseCapability: { type: "message" },
+          },
+        ]
+      : [],
+  } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
     Layer.provide(
       ServerSettings.layerTest({
@@ -784,7 +830,7 @@ it.effect.each([
                   .map((message) => [message.id, message]),
               ),
             ),
-          getThreadRecords: () => Effect.succeed(projection),
+          getThreadRecords: (id) => Effect.succeed(id === childId ? child : projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
           commitCommand: (input) => {
