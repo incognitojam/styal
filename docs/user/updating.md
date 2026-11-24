@@ -99,8 +99,10 @@ A thread whose turn continues shows **Continued after server restart** where
 the agent picked up again, and a thread asked to restart background work shows
 **Asked to restart background work after server restart**.
 A thread is not resumed while it waits for your approval, answer, or secret, or
-while it is archived, snoozed, or settled. After three automatic resumes in a row,
-the thread waits for your next message.
+while it is archived, snoozed, or settled. After three consecutive crash recoveries
+of an unfinished turn, the thread waits for your next message, even when crashes
+are more than five minutes apart. A completed turn or a planned shutdown resets
+that limit.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
@@ -145,6 +147,12 @@ npm prefix the server runs from. Run it on the host, then stop the server and
 start `styal` again with your usual options. On Windows, or when the server
 cannot confirm its npm installation, the instructions show the relaunch command
 below instead; update a global install with `npm install -g @styal/cli@<client-version>`.
+
+For a foreground server started through the `styal` command that the install
+script or `styal update` set up, the instructions show
+`'<launcher>' update --base-dir '<data directory>' <client-version>` with the
+launcher and data directory the server runs from. Run it on the host, then stop
+the server and start `styal` again with your usual options.
 
 For a foreground server started with `npx`, `pnpm dlx`, or `bunx`, stop it, then
 relaunch with the same runner, for example `npx @styal/cli@<client-version> serve`,

@@ -58,6 +58,7 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
 import * as EnvironmentRegistry from "./registry.ts";
+import { enabledEnvironmentIds } from "../state/connections.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import { retireLegacyPairing } from "./legacyPairing.ts";
 import {
@@ -1007,6 +1008,11 @@ describe("EnvironmentRegistry", () => {
           (state) => !state.desired && state.phase === "available",
         );
         expect(yield* Ref.get(harness.sessions)).toHaveLength(0);
+        // Its cached projects and threads stay listed, as for an unreachable machine.
+        const entries = yield* SubscriptionRef.get(registry.entries);
+        expect([...enabledEnvironmentIds({ isReady: true, entries })]).toContain(
+          RELAY_TARGET.environmentId,
+        );
 
         yield* Ref.set(rejection, undefined);
         yield* registry.setCompatibility(RELAY_TARGET.environmentId, null);
