@@ -120,7 +120,7 @@ export interface ProjectThreadCounts {
   readonly stopped: ReadonlyArray<EnvironmentThreadShell>;
 }
 
-/** Counts a project's listed threads other than its chat; failed threads are not counted. */
+/** Sorts a project's listed threads other than its chat by what they wait on. */
 export function countProjectThreads(
   threads: ReadonlyArray<EnvironmentThreadShell>,
   chatThreadKey: string | null,

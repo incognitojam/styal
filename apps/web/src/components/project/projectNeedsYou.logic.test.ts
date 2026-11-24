@@ -16,6 +16,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   listProjectNeeds,
   listStoppedThreadNeeds,
+  stoppedThreadsNeedingYou,
   openReports,
   type ThreadNeeds,
 } from "./projectNeedsYou.logic";
@@ -138,19 +139,29 @@ describe("listStoppedThreadNeeds", () => {
     ]);
   });
 
-  it("drops a thread once it is opened after it stopped or settled", () => {
+  it("keeps a stopped thread, in the list and the status line, until it is opened or settled", () => {
     const failedAt = "2026-11-18T10:05:00.000Z";
+    const noLocalVisit = () => undefined;
     expect(
-      listStoppedThreadNeeds([
-        stopped("opened-after", failedAt, { lastVisitedAt: "2026-11-18T10:06:00.000Z" }),
-        stopped("settled", failedAt, { settledAt: "2026-11-18T10:07:00.000Z" }),
-        stopped("opened-before", failedAt, { lastVisitedAt: "2026-11-18T10:04:00.000Z" }),
-        stopped("never-opened", failedAt, { lastVisitedAt: null }),
-      ]).map((need) => need.thread.id),
-    ).toEqual(["never-opened", "opened-before"]);
+      stoppedThreadsNeedingYou(
+        [
+          stopped("opened-after", failedAt, { lastVisitedAt: "2026-11-18T10:06:00.000Z" }),
+          stopped("settled", failedAt, { settledAt: "2026-11-18T10:07:00.000Z" }),
+          stopped("opened-before", failedAt, { lastVisitedAt: "2026-11-18T10:04:00.000Z" }),
+          stopped("never-opened", failedAt, { lastVisitedAt: null }),
+          stopped(
+            "limit-opened-after",
+            failedAt,
+            { lastVisitedAt: "2026-11-18T10:06:00.000Z" },
+            { lastErrorClass: "usage_limit" },
+          ),
+        ],
+        noLocalVisit,
+      ).map((thread) => thread.id),
+    ).toEqual(["opened-before", "never-opened"]);
     // A server that predates visit marks leaves the field out; this client's own visit counts.
     const older = stopped("older-server", failedAt);
-    expect(listStoppedThreadNeeds([older], () => "2026-11-18T10:06:00.000Z")).toEqual([]);
+    expect(stoppedThreadsNeedingYou([older], () => "2026-11-18T10:06:00.000Z")).toEqual([]);
   });
 });
 

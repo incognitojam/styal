@@ -127,17 +127,25 @@ export function listProjectNeeds(
 }
 
 /**
- * The threads a failure or a usage limit stopped that the user hasn't dealt with, oldest first.
- * One leaves once it is settled or opened after it stopped, when its sidebar row recedes too.
+ * The failed and usage-limited threads the user hasn't dealt with. One leaves once it is settled
+ * or opened after it stopped, when its sidebar row recedes too.
  */
+export function stoppedThreadsNeedingYou(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  localVisitedAt: (thread: EnvironmentThreadShell) => string | undefined,
+): ReadonlyArray<EnvironmentThreadShell> {
+  return threads.filter((thread) => {
+    const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localVisitedAt(thread));
+    return thread.settledAt == null && !isLatestFailureSeen({ ...thread, lastVisitedAt });
+  });
+}
+
+/** Rows for {@link stoppedThreadsNeedingYou}, oldest first. */
 export function listStoppedThreadNeeds(
   threads: ReadonlyArray<EnvironmentThreadShell>,
-  localVisitedAt: (thread: EnvironmentThreadShell) => string | undefined = () => undefined,
 ): ReadonlyArray<ProjectNeed> {
   const needs: ProjectNeed[] = [];
   for (const thread of threads) {
-    const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localVisitedAt(thread));
-    if (thread.settledAt != null || isLatestFailureSeen({ ...thread, lastVisitedAt })) continue;
     const base = {
       key: `${thread.environmentId}:${thread.id}`,
       thread,
