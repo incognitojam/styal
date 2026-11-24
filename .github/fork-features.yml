@@ -4013,6 +4013,31 @@ features:
       tracking: []
       retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
 
+  - id: no-copy-prompt-link
+    title: Do not offer Copy prompt link
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - Command palettes and message actions on web, desktop, and mobile do not offer to copy prompt links.
+      - Ordinary message copying, thread sharing, and opening externally authored prompt links remain available.
+    rationale: Copying a prompt as an app-opening URL is an unwanted action in styal.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    tests:
+      - packages/client-runtime/src/promptLinks.test.ts
+      - packages/shared/src/promptLinks.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18454
+      retire_when: Upstream stops offering Copy prompt link on all clients.
   - id: notice-details-when-clipped
     title: Composer notice details appear only for clipped text
     status: maintained
