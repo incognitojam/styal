@@ -16,6 +16,7 @@ import { useDeadlinePassed, useNowAfter } from "../../hooks/useDeadline";
 import type { usePendingThreadRequests } from "./usePendingThreadRequests";
 import {
   AuthOrchestrationOperateScope,
+  projectCoordinatorThreadId,
   AuthSourceControlWriteScope,
   type EnvironmentId,
   type ScopedThreadRef,
@@ -691,7 +692,12 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     "thread.regenerateTitle": () => {
       if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
       if (!activeThreadShell || !activeThreadRef || !serverConfigLoaded) return;
-      if (activeThreadShell.titleRegeneration != null) return;
+      if (
+        activeThreadShell.titleRegeneration != null ||
+        projectCoordinatorThreadId(serverConfig.settings, activeThreadShell.projectId) ===
+          activeThreadShell.id
+      )
+        return;
       void regenerateThreadTitle({
         environmentId: activeThreadRef.environmentId,
         input: { threadId: activeThreadRef.threadId },

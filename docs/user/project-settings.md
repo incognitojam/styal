@@ -331,7 +331,8 @@ thread view's details card, terminal and right panel, with the same toggles and 
 the chat's first message the card shows its machine and branch without changing them; once it has
 started, the card has the same branch and git controls as any thread. A
 project without a coordinator shows an empty chat: the first message starts a thread in the
-project's folder, without a worktree, and makes it the coordinator. When the project is on more
+project's folder, without a worktree, and makes it the coordinator. The new thread is named after
+the project followed by "chat"; coordinators do not generate titles. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine
 where the project was last active. The chat stays on that machine, and only threads on it report
 to the chat. A machine with project coordinators off is named there instead of offered. **Add to
