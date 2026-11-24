@@ -894,6 +894,31 @@ export function draftAdaptationNote(
   return { note: sentences.length === 0 ? null : sentences.join(" "), features: [...features] };
 }
 
+function splitCommitTrailers(message: string) {
+  const trimmed = message.trimEnd();
+  const separator = [...trimmed.matchAll(/\n[\t ]*\n/gu)].at(-1);
+  const paragraph = separator ? trimmed.slice(separator.index + separator[0].length) : "";
+  const isTrailerBlock =
+    separator !== undefined &&
+    /^[A-Za-z0-9-]+[\t ]*:|^\(cherry picked from commit /u.test(paragraph) &&
+    paragraph
+      .split("\n")
+      .every((line) =>
+        /^[A-Za-z0-9-]+[\t ]*:|^[\t ]|^\(cherry picked from commit [0-9a-f]{40}\)$/u.test(line),
+      );
+  return isTrailerBlock
+    ? { body: trimmed.slice(0, separator.index), trailers: paragraph }
+    : { body: trimmed, trailers: "" };
+}
+
+export function withForkAdaptationNote(message: string, note: string): string {
+  const { body, trailers } = splitCommitTrailers(message);
+  const updated = /^Fork adaptation: /mu.test(body)
+    ? body.replace(/^(Fork adaptation: .*?)(\n\n|\n?$)/msu, `$1 ${note}$2`)
+    : `${body}\n\nFork adaptation: ${note}`;
+  return `${updated}${trailers ? `\n\n${trailers}` : ""}\n`;
+}
+
 export function intakeCommitMessage(input: {
   readonly upstreamMessage: string;
   readonly upstreamSha: string;
@@ -901,18 +926,15 @@ export function intakeCommitMessage(input: {
   readonly note: string | null;
   readonly features: ReadonlyArray<string>;
 }): string {
-  const body = input.upstreamMessage.replace(/\s+$/u, "");
-  const trailers = [
+  const { body, trailers } = splitCommitTrailers(input.upstreamMessage);
+  const finalTrailers = [
+    ...(trailers ? [trailers] : []),
     `(cherry picked from commit ${input.upstreamSha})`,
     input.pr === null ? `Upstream-Commit: ${input.upstreamSha}` : `Upstream-PR: ${input.pr}`,
     ...(input.features.length > 0 ? [`Fork-Feature: ${input.features.join(", ")}`] : []),
   ].join("\n");
-  if (input.note) return `${body}\n\nFork adaptation: ${input.note}\n\n${trailers}\n`;
-  // Like `cherry-pick -x`, provenance joins a trailer block that ends upstream's message.
-  const lastParagraph = body.split(/\n\n/u).at(-1) ?? "";
-  const endsWithTrailers =
-    body.includes("\n\n") && lastParagraph.split("\n").every((line) => /^[\w-]+: /u.test(line));
-  return `${body}${endsWithTrailers ? "\n" : "\n\n"}${trailers}\n`;
+  const message = `${body}\n\n${finalTrailers}\n`;
+  return input.note ? withForkAdaptationNote(message, input.note) : message;
 }
 
 function commitPick(
@@ -2866,12 +2888,7 @@ function noteReferenceFixes(
         .toSorted()
         .map((file) => `\`${file}\``)
         .join(", ")}.`;
-      const updated = /^Fork adaptation: /mu.test(message)
-        ? message.replace(/^(Fork adaptation: .*?)(\n\n|\n?$)/msu, `$1 ${sentence}$2`)
-        : message.replace(
-            /\n\n(\(cherry picked from commit )/u,
-            `\n\nFork adaptation: ${sentence}\n\n$1`,
-          );
+      const updated = withForkAdaptationNote(message, sentence);
       git(cwd, ["commit", "-q", "--amend", "--no-verify", "-F", "-"], updated);
     }
   } catch (error) {

@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - Checks commit metadata with Git's trailer parser.
+import * as NodeChildProcess from "node:child_process";
+
 import { assert, describe, it } from "@effect/vitest";
 
 import {
@@ -25,6 +28,7 @@ import {
   summarizeSurvey,
   touchesNativeFingerprint,
   verificationEnvironment,
+  withForkAdaptationNote,
 } from "./intake-run.ts";
 
 describe("lockfilePackages", () => {
@@ -90,16 +94,34 @@ describe("draftAdaptationNote", () => {
 });
 
 describe("intakeCommitMessage", () => {
-  it("keeps upstream's message and adds provenance after any fork note", () => {
+  it("keeps co-authors and provenance in the final trailer block after a fork note", () => {
+    const upstreamTrailers = [
+      "Co-authored-by: A <a@example.com>",
+      "Co-authored-by: B <b@example.com>",
+      "Signed-off-by: C <c@example.com>",
+      "Early-Import: Fixes an imported regression.",
+      "Reviewed-by: D <d@example.com>",
+      "Custom-Trailer: first line",
+      " second line",
+    ];
+    const message = intakeCommitMessage({
+      upstreamMessage: `fix(server): a fix (#123)\n\nUpstream body.\n\n${upstreamTrailers.join("\n")}\n`,
+      upstreamSha: "a".repeat(40),
+      pr: 123,
+      note: "Keeps the fork's name.",
+      features: ["fork-distribution-identity"],
+    });
     assert.strictEqual(
-      intakeCommitMessage({
-        upstreamMessage: "fix(server): a fix (#123)\n\nCo-authored-by: A <a@example.com>\n",
-        upstreamSha: "a".repeat(40),
-        pr: 123,
-        note: "Keeps the fork's name.",
-        features: ["fork-distribution-identity"],
-      }),
-      `fix(server): a fix (#123)\n\nCo-authored-by: A <a@example.com>\n\nFork adaptation: Keeps the fork's name.\n\n(cherry picked from commit ${"a".repeat(40)})\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
+      message,
+      `fix(server): a fix (#123)\n\nUpstream body.\n\nFork adaptation: Keeps the fork's name.\n\n${upstreamTrailers.join("\n")}\n(cherry picked from commit ${"a".repeat(40)})\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
+    );
+    const parsed = NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+      input: message,
+      encoding: "utf8",
+    });
+    assert.strictEqual(
+      parsed,
+      `${upstreamTrailers.join("\n").replace("\n second line", " second line")}\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
     );
   });
 
@@ -116,16 +138,43 @@ describe("intakeCommitMessage", () => {
     );
   });
 
+  it("adds and extends reference-fix notes above existing trailers", () => {
+    for (const separator of ["\n\n", "\n \n"]) {
+      const trailers = `Co-authored-by:A <a@example.com>\nEmpty:\nCustom-Key : value\n(cherry picked from commit ${"d".repeat(40)})\nUpstream-PR: 1\nEarly-Import: Needed by this batch.\n`;
+      const message = `fix: x${separator}${trailers}`;
+      const noted = withForkAdaptationNote(message, "Updates fork references.");
+      assert.strictEqual(
+        noted,
+        `fix: x\n\nFork adaptation: Updates fork references.\n\n${trailers}`,
+      );
+      assert.strictEqual(
+        withForkAdaptationNote(noted, "Keeps the fork's name."),
+        `fix: x\n\nFork adaptation: Updates fork references. Keeps the fork's name.\n\n${trailers}`,
+      );
+      assert.strictEqual(
+        NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+          input: noted,
+          encoding: "utf8",
+        }),
+        "Co-authored-by: A <a@example.com>\nEmpty: \nCustom-Key: value\nUpstream-PR: 1\nEarly-Import: Needed by this batch.\n",
+      );
+    }
+  });
+
   it("cites a direct upstream commit by SHA", () => {
-    assert.include(
-      intakeCommitMessage({
-        upstreamMessage: "fix: direct\n",
-        upstreamSha: "b".repeat(40),
-        pr: null,
-        note: null,
-        features: [],
+    const message = intakeCommitMessage({
+      upstreamMessage: "fix: direct\n",
+      upstreamSha: "b".repeat(40),
+      pr: null,
+      note: "Keeps the fork's behavior.",
+      features: [],
+    });
+    assert.strictEqual(
+      NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+        input: message,
+        encoding: "utf8",
       }),
-      `Upstream-Commit: ${"b".repeat(40)}`,
+      `Upstream-Commit: ${"b".repeat(40)}\n`,
     );
   });
 });
