@@ -17231,7 +17231,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             thread.limitRecovery.resetAt === input.limitRecovery.resetAt
           )
             return;
-          const command = { type: "thread.metadata.update", ...input } as const;
+          const coordinator =
+            ProjectCoordinator.putAwayRefusal(
+              yield* serverSettings.getSettings.pipe(Effect.orDie),
+              thread,
+            ) !== null;
+          const command = {
+            type: "thread.metadata.update",
+            ...input,
+            // Keep visible recovery distinct if a coordinator change rejects an in-flight snooze.
+            commandId: coordinator
+              ? CommandId.make(`${input.commandId}:coordinator`)
+              : input.commandId,
+            limitRecovery: coordinator
+              ? { ...input.limitRecovery, snooze: false }
+              : input.limitRecovery,
+          } as const;
           // A Stop that reached the run before its limit failure landed had nothing to disarm.
           const stopped = yield* stopReachedRun(command, input.threadId, input.limitRecovery.runId);
           yield* dispatchWithReceiptEffect(

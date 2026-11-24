@@ -1210,6 +1210,8 @@ it.effect.each(["live", "no-session", "unsupported-runtime"] as const)(
 
 it.effect.each([
   { status: "completed" as const, followUp: "none", settles: true },
+  { status: "completed" as const, followUp: "coordinator", settles: false },
+  { status: "completed" as const, followUp: "coordinator-race", settles: false },
   { status: "failed" as const, followUp: "none", settles: false },
   { status: "interrupted" as const, followUp: "none", settles: false },
   { status: "completed" as const, followUp: "notification", settles: true },
@@ -1239,6 +1241,13 @@ it.effect.each([
       userMessageId: MessageId.make("follow-up"),
     };
     const dispatched: Array<string> = [];
+    const settingsLayer = ServerSettings.layerTest({
+      projectCoordinatorsEnabled: true,
+      projectCoordinators: followUp === "coordinator" ? { [projectId]: { threadId } } : {},
+    });
+    const settings = yield* ServerSettings.ServerSettingsService.pipe(
+      Effect.provide(settingsLayer),
+    );
     // The notification starts after the completed run was observed, before settlement commits.
     let raced = false;
     const layerTest = ThreadManagementService.layer.pipe(
@@ -1252,10 +1261,12 @@ it.effect.each([
             }),
           restartContinuationPending: () => Effect.succeed(false),
           streamStoredEventsFrom: () =>
-            Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
-              Stream.drain,
-              Stream.concat(Stream.fromQueue(events)),
-            ),
+            followUp.startsWith("coordinator")
+              ? Stream.die("Coordinator refusal must end deferred settlement without subscribing")
+              : Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                ),
           getThreadRecords: (_threadId, _fields, filter) =>
             Effect.sync(
               () =>
@@ -1294,6 +1305,18 @@ it.effect.each([
             ),
           dispatch: (command) =>
             Effect.gen(function* () {
+              if (followUp === "coordinator-race") {
+                yield* settings
+                  .updateSettings({
+                    projectCoordinators: { [projectId]: { threadId } },
+                  })
+                  .pipe(Effect.orDie);
+                return yield* new Orchestrator.OrchestratorDispatchError({
+                  commandId: command.commandId,
+                  commandType: command.type,
+                  cause: "A project's chat cannot be put away.",
+                });
+              }
               if (followUp !== "none" && !raced) {
                 raced = true;
                 rejectedCommandId = command.commandId;
@@ -1316,7 +1339,7 @@ it.effect.each([
             }),
         }),
       ),
-      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(Layer.succeed(ServerSettings.ServerSettingsService, settings)),
       Layer.provide(layerReceiptsTest),
     );
     const service = yield* ThreadManagementService.ThreadManagementService.pipe(
@@ -1325,7 +1348,7 @@ it.effect.each([
     const fiber = yield* service
       .settleAfterRun({ projectId, threadId, runId })
       .pipe(Effect.forkChild);
-    if (followUp !== "none") {
+    if (followUp !== "none" && !followUp.startsWith("coordinator")) {
       yield* Deferred.await(subscribed);
       expect(dispatched).toEqual([]);
       nextRun.status =

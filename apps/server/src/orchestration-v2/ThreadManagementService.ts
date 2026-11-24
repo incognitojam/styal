@@ -1347,6 +1347,13 @@ const make = Effect.gen(function* () {
     const trySettle = Effect.gen(function* () {
       const sequence = yield* orchestrator.getThreadEventSequence(input.threadId);
       const records = yield* getProjectThreadRecords(input, ["runs"]);
+      const isCoordinator = serverSettings.getSettings.pipe(
+        Effect.orDie,
+        Effect.map(
+          (settings) => ProjectCoordinator.putAwayRefusal(settings, records.thread) !== null,
+        ),
+      );
+      if (yield* isCoordinator) return true;
       // Settling ends every watch; one the agent started after asking to settle must outlive it.
       if (
         threadPullRequestsOf(records.thread).some(
@@ -1401,8 +1408,8 @@ const make = Effect.gen(function* () {
         Effect.as(true),
         // A notification can start between the projection read and the guarded dispatch.
         Effect.catchTags({
-          OrchestratorDispatchError: () => Effect.succeed(false),
-          OrchestratorCommandPreviouslyRejectedError: () => Effect.succeed(false),
+          OrchestratorDispatchError: () => isCoordinator,
+          OrchestratorCommandPreviouslyRejectedError: () => isCoordinator,
         }),
       );
     });
