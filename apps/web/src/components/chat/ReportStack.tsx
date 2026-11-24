@@ -17,10 +17,17 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ReportReference, ReportState } from "./CoordinatorReports";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
-  deferReport,
+  answerReportStack,
+  closedReportStack,
+  closeReportStack,
+  deferReportStack,
+  landReportStack,
+  openReportStack,
   reportAfter,
   reportStackEdges,
+  reportStackKey,
   reportStackOrder,
+  type ReportStackView,
   reportStackTop,
 } from "./reportStack.logic";
 import { MESSAGE_HEADING_LEVEL } from "./TimelineRowParts";
@@ -32,27 +39,9 @@ export type ReportStackActions = {
   scroll: (id: MessageId) => void;
 };
 
-type View = {
-  readonly threadKey: string | null;
-  readonly open: boolean;
-  readonly all: boolean;
-  /** The topic being read; the stack keeps it on top while it is open. */
-  readonly current: string | null;
-  readonly later: readonly string[];
-  /** The report just answered, lifting off the top of the stack. */
-  readonly leaving: ReportState | null;
-  readonly answered: string | null;
-};
+type View = ReportStackView<ReportState> & { readonly threadKey: string | null };
 
-const closed = (threadKey: string | null): View => ({
-  threadKey,
-  open: false,
-  all: false,
-  current: null,
-  later: [],
-  leaving: null,
-  answered: null,
-});
+const closed = (threadKey: string | null): View => ({ ...closedReportStack, threadKey });
 
 const reference = (report: ReportState): ReportReference => {
   const tag = report.message.report!;
@@ -74,10 +63,19 @@ export function useReportStack(
   // The pile's button, focused again when the stack closes.
   const [pile, setPile] = useState<HTMLButtonElement | null>(null);
   const order = actions ? reportStackOrder(reports, view.later) : [];
-  const top = reportStackTop(order, view.current);
-  const update = (patch: Partial<View>) => setView((previous) => ({ ...previous, ...patch }));
+  const top = reportStackTop(order, view);
+  // Once the topic being read closes some other way, the report now on screen is the one read.
+  const topKey = top === null ? null : top.message.report!.key;
+  if (view.open && topKey !== null && view.current !== topKey)
+    setView({ ...view, current: topKey });
+  const apply = (next: ReportStackView<ReportState> | null) => {
+    if (next !== null) setView({ ...next, threadKey: view.threadKey });
+    return next !== null;
+  };
+  const landed = (report: ReportState) =>
+    setView((previous) => ({ ...previous, leaving: landReportStack(previous, report).leaving }));
   const close = () => {
-    flushSync(() => update({ open: false, all: false, leaving: null, answered: null }));
+    flushSync(() => apply(closeReportStack(view)));
     if (pile) pile.focus();
     else focusComposer();
   };
@@ -86,35 +84,31 @@ export function useReportStack(
     order,
     top,
     setPile,
-    open: () => update({ open: true, all: false }),
+    open: () => apply(openReportStack(view, order)),
     close,
-    showAll: (all: boolean) => update({ all, leaving: null }),
-    pick: (key: string) => update({ current: key, all: false, leaving: null, answered: null }),
-    later: (report: ReportState) => {
-      const key = report.message.report!.key;
-      update({
-        current: reportAfter(order, key),
-        later: deferReport(view.later, key),
-        leaving: null,
-        answered: null,
-      });
-    },
+    showAll: (all: boolean) => setView({ ...view, all, leaving: null }),
+    pick: (key: string) =>
+      setView({ ...view, current: key, all: false, leaving: null, answered: null }),
+    later: (report: ReportState) => apply(deferReportStack(view, order, report)),
     answer: (report: ReportState, answer: string) => {
+      const motion = !prefersReducedMotion();
+      if (!apply(answerReportStack(view, order, report, answer, motion))) return;
+      // Clears the lift even if its animation never reports its end.
+      if (motion) window.setTimeout(() => landed(report), 500);
       const tag = report.message.report!;
-      update({
-        current: reportAfter(order, tag.key),
-        leaving: prefersReducedMotion() ? null : report,
-        answered: answer,
-      });
       actions?.answer(formatReportAnswer(tag, answer), reference(report));
     },
-    landed: () => update({ leaving: null }),
+    landed,
     reply: (report: ReportState) => {
       close();
       actions?.reply(reference(report), report.message.report!.title);
     },
     dismiss: (report: ReportState) => {
-      update({ current: reportAfter(order, report.message.report!.key), answered: null });
+      setView({
+        ...view,
+        current: reportAfter(order, report.message.report!.key),
+        answered: null,
+      });
       actions?.dismiss(reference(report));
     },
     showInChat: (report: ReportState) => {
@@ -207,26 +201,19 @@ export function ReportStack({
     const target = event.target as HTMLElement;
     if (target.closest("input, textarea, [contenteditable='true'], [role='menu']")) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (view.all) stack.showAll(false);
-      else stack.close();
-      return;
-    }
-    if (view.all || top === null) return;
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      stack.later(top);
-      return;
-    }
-    const answer = /^[1-4]$/.test(event.key)
-      ? top.message.report!.answers?.[Number(event.key) - 1]
-      : undefined;
-    if (answer !== undefined && canOperate) {
-      event.preventDefault();
-      stack.answer(top, answer);
-    }
+    const action = reportStackKey(
+      event,
+      view,
+      top === null ? [] : (top.message.report!.answers ?? []),
+    );
+    if (action === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (action.kind === "close") stack.close();
+    else if (action.kind === "back") stack.showAll(false);
+    else if (top === null) return;
+    else if (action.kind === "later") stack.later(top);
+    else if (action.kind === "answer" && canOperate) stack.answer(top, action.answer);
   };
   return (
     <div
@@ -267,7 +254,7 @@ export function ReportStack({
             <AllWaiting stack={stack} />
           ) : top ? (
             <Sheet
-              key={top.message.id}
+              key={top.message.report!.key}
               report={top}
               stack={stack}
               remaining={stack.order.length}
@@ -323,7 +310,7 @@ function Sheet({
           : "relative transition-[opacity,translate] duration-200 ease-out starting:translate-y-1.5 starting:opacity-0 motion-reduce:transition-none",
       )}
       onAnimationEnd={(event) => {
-        if (leaving && event.target === event.currentTarget) stack.landed();
+        if (leaving && event.target === event.currentTarget) stack.landed(report);
       }}
     >
       <PileEdges count={reportStackEdges(remaining)} onShowAll={() => stack.showAll(true)} />

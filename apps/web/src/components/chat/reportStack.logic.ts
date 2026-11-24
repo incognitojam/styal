@@ -34,9 +34,108 @@ export function reportStackOrder<R extends StackReport>(
     });
 }
 
-/** The report on top: the topic being read while it is still open, otherwise the first. */
-export function reportStackTop<R extends StackReport>(order: readonly R[], current: string | null) {
-  return order.find((report) => topic(report) === current) ?? order[0] ?? null;
+export type ReportStackView<R> = {
+  readonly open: boolean;
+  readonly all: boolean;
+  /** The topic on screen. New arrivals join the pile and never take its place. */
+  readonly current: string | null;
+  readonly later: readonly string[];
+  /** The report just answered, lifting off the top; the next one takes no input until it lands. */
+  readonly leaving: R | null;
+  readonly answered: string | null;
+};
+
+export const closedReportStack: ReportStackView<never> = {
+  open: false,
+  all: false,
+  current: null,
+  later: [],
+  leaving: null,
+  answered: null,
+};
+
+/**
+ * The report on top. While the stack is open it is the topic being read, for as long as that is
+ * open; closed, the pile shows the first in order.
+ */
+export function reportStackTop<R extends StackReport>(
+  order: readonly R[],
+  view: Pick<ReportStackView<R>, "open" | "current">,
+) {
+  return (
+    (view.open ? order.find((report) => topic(report) === view.current) : undefined) ??
+    order[0] ??
+    null
+  );
+}
+
+export function openReportStack<R extends StackReport>(
+  view: ReportStackView<R>,
+  order: readonly R[],
+): ReportStackView<R> {
+  const top = order[0];
+  return { ...view, open: true, all: false, current: top ? topic(top) : null, answered: null };
+}
+
+export function closeReportStack<R>(view: ReportStackView<R>): ReportStackView<R> {
+  return { ...view, open: false, all: false, current: null, leaving: null, answered: null };
+}
+
+/** Answers the top report and moves on, or null while the last answer is still lifting off. */
+export function answerReportStack<R extends StackReport>(
+  view: ReportStackView<R>,
+  order: readonly R[],
+  report: R,
+  answer: string,
+  motion: boolean,
+): ReportStackView<R> | null {
+  if (view.leaving !== null) return null;
+  return {
+    ...view,
+    current: reportAfter(order, topic(report)),
+    leaving: motion ? report : null,
+    answered: answer,
+  };
+}
+
+/** Puts the top report at the bottom of the pile, or null while an answer is still lifting off. */
+export function deferReportStack<R extends StackReport>(
+  view: ReportStackView<R>,
+  order: readonly R[],
+  report: R,
+): ReportStackView<R> | null {
+  if (view.leaving !== null) return null;
+  const key = topic(report);
+  return {
+    ...view,
+    current: reportAfter(order, key),
+    later: deferReport(view.later, key),
+    answered: null,
+  };
+}
+
+/** The answered report has lifted off; a later answer's sheet is not cleared by an earlier one. */
+export function landReportStack<R extends StackReport>(
+  view: ReportStackView<R>,
+  report: R,
+): ReportStackView<R> {
+  return view.leaving?.message.id === report.message.id ? { ...view, leaving: null } : view;
+}
+
+/** What a key does on the open stack: one press per report, nothing while a sheet lifts off. */
+export function reportStackKey(
+  event: { readonly key: string; readonly repeat: boolean },
+  view: Pick<ReportStackView<unknown>, "all" | "leaving">,
+  answers: readonly string[],
+):
+  | { readonly kind: "close" | "back" | "later" }
+  | { readonly kind: "answer"; readonly answer: string }
+  | null {
+  if (event.key === "Escape") return { kind: view.all ? "back" : "close" };
+  if (event.repeat || view.all || view.leaving !== null) return null;
+  if (event.key === "ArrowRight") return { kind: "later" };
+  const answer = /^[1-4]$/.test(event.key) ? answers[Number(event.key) - 1] : undefined;
+  return answer === undefined ? null : { kind: "answer", answer };
 }
 
 /** The topic to read once `key` leaves the top: the one after it, or else the first other one. */
