@@ -123,7 +123,8 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
     detail: Schema.String,
     traceId: Schema.optionalKey(Schema.String),
     ...ConnectionFailureFields,
-
+    /** Which side's version is too old, when the versions are what is incompatible. */
+    outdated: Schema.optionalKey(Schema.Literals(["client", "server"])),
     serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
   },
 ) {

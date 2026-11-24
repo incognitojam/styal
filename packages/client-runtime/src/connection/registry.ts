@@ -64,11 +64,12 @@ const isBearerCredential = Schema.is(BearerConnectionCredential);
 
 function unsupportedState(
   entry: ConnectionCatalogEntry,
-): Pick<ConnectionCatalogEntry, "unsupportedReason" | "serverUpdateRequired"> {
+): Pick<ConnectionCatalogEntry, "unsupportedReason" | "outdated" | "serverUpdateRequired"> {
   return {
     ...(entry.unsupportedReason === undefined
       ? {}
       : { unsupportedReason: entry.unsupportedReason }),
+    ...(entry.outdated === undefined ? {} : { outdated: entry.outdated }),
     ...(entry.serverUpdateRequired === true ? { serverUpdateRequired: true } : {}),
   };
 }
@@ -556,7 +557,12 @@ export const make = Effect.gen(function* () {
     if (pullRequestRoutingConnectionKey(previous) === pullRequestRoutingConnectionKey(next)) {
       return { entry: next, addressesChanged: false };
     }
-    const { unsupportedReason: _reason, serverUpdateRequired: _update, ...rest } = next;
+    const {
+      unsupportedReason: _reason,
+      outdated: _outdated,
+      serverUpdateRequired: _update,
+      ...rest
+    } = next;
     return { entry: rest, addressesChanged: true };
   };
 
@@ -1131,7 +1137,12 @@ export const make = Effect.gen(function* () {
           yield* registrations.setEnabled(environmentId, enabled);
         }
         // A cached rejection can outlive a server update.
-        const { unsupportedReason: _reason, serverUpdateRequired: _update, ...rest } = entry;
+        const {
+          unsupportedReason: _reason,
+          outdated: _outdated,
+          serverUpdateRequired: _update,
+          ...rest
+        } = entry;
         const next: ConnectionCatalogEntry = { ...(retryUnsupported ? rest : entry), enabled };
         // Update the lease in place so the supervisor keeps its generation and
         // durable streams; `installEntryLocked` would tear it down instead.
@@ -1207,11 +1218,13 @@ export const make = Effect.gen(function* () {
         if (
           entry === undefined ||
           (entry.unsupportedReason === (error?.message ?? undefined) &&
+            entry.outdated === (error?.outdated ?? undefined) &&
             entry.serverUpdateRequired === (error?.serverUpdateRequired ?? undefined))
         )
           return;
         const {
           unsupportedReason: _previousReason,
+          outdated: _previousOutdated,
           serverUpdateRequired: _previousUpdateRequired,
           ...rest
         } = entry;
@@ -1222,6 +1235,7 @@ export const make = Effect.gen(function* () {
             : {
                 ...rest,
                 unsupportedReason: error.message,
+                ...(error.outdated === undefined ? {} : { outdated: error.outdated }),
                 ...(error.serverUpdateRequired === true ? { serverUpdateRequired: true } : {}),
               };
         const lease = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);

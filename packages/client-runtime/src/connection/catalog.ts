@@ -54,6 +54,7 @@ export interface ConnectionCatalogEntry {
   readonly alternateRoutes?: ReadonlyArray<ConnectionRoute>;
   readonly enabled: boolean;
   readonly unsupportedReason?: string;
+  readonly outdated?: "client" | "server";
   readonly serverUpdateRequired?: boolean;
 }
 

@@ -49,7 +49,7 @@ describe("orchestration protocol compatibility", () => {
     const error = orchestrationProtocolCompatibilityError(
       descriptor(ORCHESTRATION_PROTOCOL_VERSION + 1),
     );
-    expect(error).toMatchObject({ reason: "unsupported" });
+    expect(error).toMatchObject({ reason: "unsupported", outdated: "client" });
     expect(error?.message).toContain("This client is not supported");
     expect(error).not.toHaveProperty("serverUpdateRequired");
   });
@@ -61,7 +61,8 @@ describe("orchestration protocol compatibility", () => {
 
     expect(
       withCapabilities({ repositoryIdentity: true, serverSelfUpdate: "boot-service" }),
-    ).toMatchObject({ serverUpdateRequired: true });
+    ).toMatchObject({ outdated: "server", serverUpdateRequired: true });
+    expect(withCapabilities({ repositoryIdentity: true })).toMatchObject({ outdated: "server" });
     expect(withCapabilities({ repositoryIdentity: true })).not.toHaveProperty(
       "serverUpdateRequired",
     );
