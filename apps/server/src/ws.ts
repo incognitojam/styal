@@ -1185,11 +1185,15 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       const forSubscriber = yield* loadSubscriberShellSnapshot({
         sql,
         listShellIndex: threadManagement.listActiveShellIndex(),
-        readThreads: (threadIds) =>
-          threadManagement.readShellSnapshot({
-            location: "active",
-            ...(threadIds === undefined ? {} : { threadIds }),
-          }),
+        readThreads: threadManagement.prepareShellSnapshot.pipe(
+          Effect.map(
+            (read) => (threadIds) =>
+              read({
+                location: "active",
+                ...(threadIds === undefined ? {} : { threadIds }),
+              }),
+          ),
+        ),
         listProjects: projects.listShells(),
         latestSequence: applicationEvents.latestApplicationSequence,
         options: {
@@ -1932,7 +1936,9 @@ export const layerWsRpc = (
       const getOrchestrationV2ArchivedShellSnapshot = Effect.gen(function* () {
         const { threads, projects, snapshotSequence } = yield* loadShellSnapshotParts({
           sql,
-          readThreads: threadManagement.readShellSnapshot({ location: "archive" }),
+          readThreads: threadManagement.prepareShellSnapshot.pipe(
+            Effect.map((read) => read({ location: "archive" })),
+          ),
           listProjects: projectStore.listShells(),
           latestSequence: applicationEvents.latestApplicationSequence,
         });
@@ -1978,7 +1984,9 @@ export const layerWsRpc = (
         ) {
           const { threads, snapshotSequence } = yield* loadShellSnapshotParts({
             sql,
-            readThreads: threadManagement.readShellSnapshot({ location: "active", ...options }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => read({ location: "active", ...options })),
+            ),
             listProjects: Effect.succeed([]),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
@@ -2120,8 +2128,9 @@ export const layerWsRpc = (
             search: threadSearch.search,
             searchOlderSettled: threadSearch.searchOlderSettled,
             sql,
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+            ),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
             Effect.mapError(
@@ -2160,8 +2169,9 @@ export const layerWsRpc = (
           loadOlderSettledThreadsPage({
             sql,
             listThreads: threadManagement.listOlderSettledThreads(input),
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
+            readThreads: threadManagement.prepareShellSnapshot.pipe(
+              Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+            ),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
             Effect.mapError(
