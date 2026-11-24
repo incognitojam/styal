@@ -101,11 +101,15 @@ export const layer = HttpApiBuilder.group(
         const { snapshot } = yield* loadSubscriberShellSnapshot({
           sql,
           listShellIndex: threadManagement.listActiveShellIndex(),
-          readThreads: (threadIds) =>
-            threadManagement.readShellSnapshot({
-              location: "active",
-              ...(threadIds === undefined ? {} : { threadIds }),
-            }),
+          readThreads: threadManagement.prepareShellSnapshot.pipe(
+            Effect.map(
+              (read) => (threadIds) =>
+                read({
+                  location: "active",
+                  ...(threadIds === undefined ? {} : { threadIds }),
+                }),
+            ),
+          ),
           listProjects: projectStore.listShells(),
           latestSequence: applicationEvents.latestApplicationSequence,
           options,

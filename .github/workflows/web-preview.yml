@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           sparse-checkout: |
@@ -85,7 +85,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
@@ -100,7 +100,7 @@ jobs:
         run: vp run --filter @t3tools/web build
 
       - name: Upload web build
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-preview-dist
           path: apps/web/dist
@@ -128,7 +128,7 @@ jobs:
       PREVIEW_URL: https://styal-web-pr-${{ github.event.pull_request.number }}.${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}.workers.dev
     steps:
       - name: Download web build
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: web-preview-dist
           path: dist
@@ -189,7 +189,7 @@ jobs:
 
       - name: Comment preview URL
         if: steps.deploy.outputs.preview_url != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         with:
@@ -301,7 +301,7 @@ jobs:
 
       - name: Mark the preview comment as removed
         if: steps.delete.outputs.removed == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const marker = "<!-- web-preview-deploy -->";

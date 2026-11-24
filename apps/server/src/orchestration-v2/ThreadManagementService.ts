@@ -449,12 +449,7 @@ export interface ThreadManagementServiceShape {
   readonly countThreads: Orchestrator.OrchestratorV2["Service"]["countThreads"];
   readonly listActiveShellIndex: Orchestrator.OrchestratorV2["Service"]["listActiveShellIndex"];
   readonly listOlderSettledThreads: Orchestrator.OrchestratorV2["Service"]["listOlderSettledThreads"];
-  readonly readShellSnapshot: (
-    options?: Pick<ShellSnapshotOptions, "location" | "familyOf" | "worktreePath" | "threadIds">,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, Orchestrator.OrchestratorV2Error>,
-    Orchestrator.OrchestratorV2Error
-  >;
+  readonly prepareShellSnapshot: Orchestrator.OrchestratorV2["Service"]["prepareShellSnapshot"];
   readonly getThreadShell: Orchestrator.OrchestratorV2["Service"]["getThreadShell"];
   /** Who the thread's reports go to now: its launcher or its project's current coordinator. */
   readonly reportRecipient: (
@@ -1911,7 +1906,7 @@ const make = Effect.gen(function* () {
     countThreads: orchestrator.countThreads,
     listActiveShellIndex: orchestrator.listActiveShellIndex,
     listOlderSettledThreads: orchestrator.listOlderSettledThreads,
-    readShellSnapshot: orchestrator.readShellSnapshot,
+    prepareShellSnapshot: orchestrator.prepareShellSnapshot,
     getThreadShell: orchestrator.getThreadShell,
     reportRecipient: Effect.fn("ThreadManagementService.reportRecipient")(function* (thread) {
       return yield* ProjectCoordinator.reportRecipient(

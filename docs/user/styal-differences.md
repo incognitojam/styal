@@ -264,6 +264,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Copy messages as text, or share a thread.** styal omits the prompt-link copy actions from the command palette and message controls on web, desktop, and mobile. Externally authored [prompt links](./prompt-links.md) still open drafts. T3 Code offers prompt-link copying as of [revision f692811](https://github.com/pingdotgg/t3code/tree/f692811b9560283bbeb1804865e2398d05e5caa2), checked November 24, 2026.
+
 - **Documents, web pages and searches the agent used show beside its images.** Under a collapsed tool group, a row of chips names the PDFs and office documents the agent read, the web pages it fetched and the queries it searched, so you can open them without expanding the group. A document opens in the Files panel, a page opens as a chat link does, and a search lists its results. It covers Claude and Codex; pages the reply already links and your own attachments are left out. Upstream shows only images there as of [revision 75cae42](https://github.com/pingdotgg/t3code/tree/75cae42febdbedc2bd39430a1d6f017e38f6bfe0), checked November 18, 2026.
 
 - **Your attachments aren’t repeated in the image strip.** When an agent reads back an image attached to a user message in the same thread, web, desktop and mobile leave it out of the viewed-image strip. Other images the agent reads stay visible beside collapsed tool groups. Upstream repeats attachments there as of [revision 8cf97b5](https://github.com/pingdotgg/t3code/tree/8cf97b5f06f30a872ce30ab8a888f2ff012365a2), checked November 18, 2026.

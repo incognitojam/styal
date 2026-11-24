@@ -16,6 +16,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import { isProjectChatDraftId } from "../project/projectPage.logic";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -854,6 +855,8 @@ export function useComposerSend(input: ComposerSendInput) {
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
+      threadBranch,
+      threadWorktreePath,
       compactBeforeSend,
       turnDispatchMode,
       shouldQueueBehindActiveRun,
@@ -870,6 +873,7 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
+      projectChatDraft: draftId !== null && isProjectChatDraftId(draftId),
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
@@ -1337,8 +1341,8 @@ export function useComposerSend(input: ComposerSendInput) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: DEFAULT_INTERACTION_MODE,
-                      branch: activeThreadBranch,
-                      worktreePath: activeThread.worktreePath,
+                      branch: threadBranch,
+                      worktreePath: threadWorktreePath,
                       createdAt: activeThread.createdAt,
                     },
                   }

@@ -97,6 +97,8 @@ interface BranchToolbarProps {
   autoEnvironmentLabel?: string | undefined;
   onAutoEnvironment?: (() => void) | undefined;
   envLocked: boolean;
+  /** The branch is shown but not changed: no picker and no pull request checkout. */
+  branchReadOnly?: boolean;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
   /** Shown at the end of the composer strip, such as the new thread's permissions. */
@@ -633,6 +635,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   autoEnvironmentLabel,
   onAutoEnvironment,
   envLocked,
+  branchReadOnly = false,
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
   availableEnvironments,
@@ -759,7 +762,10 @@ export const BranchToolbar = memo(function BranchToolbar({
             {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
             startFromOrigin={startFromOrigin}
             onStartFromOriginChange={onStartFromOriginChange}
-            {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
+            readOnly={branchReadOnly}
+            {...(onCheckoutPullRequestRequest && !branchReadOnly
+              ? { onCheckoutPullRequestRequest }
+              : {})}
             {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
           />
         ) : null}
