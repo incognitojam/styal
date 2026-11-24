@@ -5526,8 +5526,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ...(existing.endedWatch?.approvalAnnounced !== undefined && {
                       approvalAnnounced: existing.endedWatch.approvalAnnounced,
                     }),
-                    // A finished-checks answer may be an older head's; a fresh read decides.
-                    ...(existing.endedWatch?.checksPending === true && { checksPending: true }),
+                    // A caller's fresh CI read beats the link's last sync; a pending start
+                    // can fail before the first baseline read.
+                    ...((command.type === "thread.pull-request.watch" &&
+                    command.checksPending !== undefined
+                      ? command.checksPending
+                      : existing.snapshot?.checksState === "pending" ||
+                        existing.endedWatch?.checksPending === true) && { checksPending: true }),
                     ...(existing.endedWatch?.checksAwaitedSince !== undefined && {
                       checksAwaitedSince: existing.endedWatch.checksAwaitedSince,
                     }),

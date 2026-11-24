@@ -333,6 +333,17 @@ const make = Effect.gen(function* () {
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
+    const checksPendingAtStart =
+      watching && before?.watch === undefined
+        ? yield* pullRequests.summary({ projectId: thread.projectId, ...target }).pipe(
+            Effect.map((summary) => summary.checksState === "pending"),
+            Effect.catchTags({
+              PullRequestOperationError: () => Effect.undefined,
+              PullRequestUnavailableError: (cause) =>
+                Effect.fail(new PullRequestWatchFailedError({ cause })),
+            }),
+          )
+        : undefined;
     yield* engine
       .dispatch({
         type: "thread.pull-request.watch",
@@ -342,6 +353,7 @@ const make = Effect.gen(function* () {
         repository: target.repository,
         number: target.number,
         watching,
+        ...(checksPendingAtStart !== undefined && { checksPending: checksPendingAtStart }),
         ...(watching ? { link: { url: target.url, source: "agent" as const } } : {}),
       })
       .pipe(Effect.catchCause(dispatchFailure(PullRequestWatchFailedError)));

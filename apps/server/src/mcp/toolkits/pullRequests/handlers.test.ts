@@ -3,10 +3,12 @@ import {
   ProjectId,
   ProviderInstanceId,
   PullRequestOperationError,
+  PullRequestUnavailableError,
   ThreadId,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
   type PullRequestRef,
+  type PullRequestSummary,
   type PullRequestReviewGuideResult,
   type ThreadPullRequestLink,
   type ThreadWorkflowRunWatch,
@@ -142,6 +144,8 @@ function makeLink(
 }
 
 interface HarnessOptions {
+  readonly summary?: PullRequestSummary;
+  readonly summaryFailure?: PullRequestService.PullRequestError;
   readonly enrichment?: ProjectEnrichment.ProjectEnrichmentService["Service"];
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
@@ -248,6 +252,14 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       dispatch,
     }),
     Layer.mock(PullRequestService.PullRequestService)({
+      summary: () =>
+        options.summaryFailure
+          ? Effect.fail(options.summaryFailure)
+          : options.summary
+            ? Effect.succeed(options.summary)
+            : Effect.fail(
+                new PullRequestOperationError({ operation: "summary", detail: "Unavailable" }),
+              ),
       workflowRun: (input) =>
         Ref.update(workflowRunReads, (reads) => [...reads, input.runId]).pipe(
           Effect.andThen(
@@ -453,7 +465,21 @@ describe("pull request toolkit handlers", () => {
 
   it.effect("watching an unlinked pull request links it first", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness();
+      const harness = yield* makeHarness({
+        summary: {
+          provider: SourceControlProviderKind.make("github"),
+          projectId: PROJECT_ID,
+          repository: "t3tools/t3code",
+          number: 9,
+          title: "Pull request",
+          url: "https://github.com/t3tools/t3code/pull/9",
+          state: "open",
+          headBranch: "feature",
+          baseBranch: "main",
+          updatedAt: "2026-08-20T00:00:00.000Z",
+          checksState: "pending",
+        },
+      });
       const result = yield* harness.call("watch_pull_request", {
         url: "https://github.com/t3tools/t3code/pull/9",
       });
@@ -463,9 +489,24 @@ describe("pull request toolkit handlers", () => {
           type: "thread.pull-request.watch",
           number: 9,
           watching: true,
+          checksPending: true,
           link: { url: "https://github.com/t3tools/t3code/pull/9", source: "agent" },
         },
       ]);
+      const unavailable = yield* makeHarness({
+        summaryFailure: new PullRequestUnavailableError({
+          provider: SourceControlProviderKind.make("github"),
+          requirement: "gh",
+          reason: "cli-missing",
+        }),
+      });
+      const failure = yield* unavailable
+        .call("watch_pull_request", {
+          url: "https://github.com/t3tools/t3code/pull/9",
+        })
+        .pipe(Effect.flip);
+      expect(failure).toMatchObject({ _tag: "PullRequestWatchFailedError" });
+      expect(yield* Ref.get(unavailable.commands)).toEqual([]);
     }),
   );
 
