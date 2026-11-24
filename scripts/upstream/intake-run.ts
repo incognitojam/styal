@@ -1583,6 +1583,57 @@ export function ledgerFeaturesByPath(ledger: string): ReadonlyMap<string, Readon
   return byPath;
 }
 
+export function fetchPRDescriptions(
+  numbers: ReadonlyArray<number>,
+  repository: string,
+  execute: (command: string, args: ReadonlyArray<string>) => Run,
+): ReadonlyMap<number, { readonly title: string; readonly body: string } | null> {
+  const [owner, name] = repository.split("/");
+  const pullRequests = new Map<number, { readonly title: string; readonly body: string } | null>();
+  const unique = [...new Set(numbers)];
+  for (let start = 0; start < unique.length; start += 100) {
+    const chunk = unique.slice(start, start + 100);
+    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${chunk.map((number) => `p${number}: pullRequest(number:${number}) { title body }`).join("\n")} } }`;
+    const result = execute("gh", ["api", "graphql", "-f", `query=${query}`]);
+    const failure = new Error(
+      `Could not read upstream PR descriptions: ${result.stderr.trim() || result.stdout.trim()}`,
+    );
+    let response: {
+      data?: { repository?: Record<string, { title: string; body: string } | null> };
+      errors?: Array<{ type?: string; path?: ReadonlyArray<string> }>;
+    };
+    try {
+      response = JSON.parse(result.stdout);
+    } catch {
+      throw failure;
+    }
+    const data = response?.data?.repository;
+    if (!data || (response.errors !== undefined && !Array.isArray(response.errors))) throw failure;
+    const missing = new Set<string>();
+    for (const error of response.errors ?? []) {
+      const alias = error?.path?.[1];
+      if (
+        typeof alias !== "string" ||
+        error?.type !== "NOT_FOUND" ||
+        error.path?.length !== 2 ||
+        error.path[0] !== "repository" ||
+        !chunk.some((number) => `p${number}` === alias) ||
+        data[alias] !== null
+      )
+        throw failure;
+      missing.add(alias);
+    }
+    if (result.status !== 0 && missing.size === 0) throw failure;
+    for (const number of chunk) {
+      const alias = `p${number}`;
+      const pullRequest = data[alias];
+      if (pullRequest === undefined || (pullRequest === null && !missing.has(alias))) throw failure;
+      pullRequests.set(number, pullRequest);
+    }
+  }
+  return pullRequests;
+}
+
 /** First-parent upstream commits after `after`, each with its PR description. */
 function laterUpstreamCommits(
   cwd: string,
@@ -1604,28 +1655,16 @@ function laterUpstreamCommits(
       const pr = /\(#(\d+)\)$|^Merge pull request #(\d+) /u.exec(subject);
       return { sha, pr: pr ? Number(pr[1] ?? pr[2]) : null, subject, message };
     });
-  const [owner, name] = repository.split("/");
   const numbers = commits.flatMap((commit) => (commit.pr === null ? [] : [commit.pr]));
-  const pullRequests = new Map<number, { readonly title: string; readonly body: string }>();
-  for (let start = 0; start < numbers.length; start += 100) {
-    const chunk = numbers.slice(start, start + 100);
-    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${chunk.map((number) => `p${number}: pullRequest(number:${number}) { title body }`).join("\n")} } }`;
-    const result = run(cwd, "gh", ["api", "graphql", "-f", `query=${query}`]);
-    if (result.status !== 0)
-      throw new Error(`Could not read upstream PR descriptions: ${result.stderr.trim()}`);
-    const data = (
-      JSON.parse(result.stdout) as {
-        data?: { repository?: Record<string, { title: string; body: string } | null> };
-      }
-    ).data?.repository;
-    if (!data) throw new Error("Could not read upstream PR descriptions.");
-    for (const number of chunk) {
-      const pullRequest = data[`p${number}`];
-      if (pullRequest) pullRequests.set(number, pullRequest);
-    }
-  }
+  const pullRequests = fetchPRDescriptions(numbers, repository, (command, args) =>
+    run(cwd, command, args),
+  );
   return commits.map((commit) => {
     const pullRequest = commit.pr === null ? undefined : pullRequests.get(commit.pr);
+    if (pullRequest === null)
+      process.stderr.write(
+        `${commit.sha.slice(0, 10)} ${commit.subject}: #${commit.pr} does not resolve to an upstream pull request; using the commit message.\n`,
+      );
     return {
       sha: commit.sha,
       pr: commit.pr,
