@@ -4858,3 +4858,31 @@ it("grades coordinator decision reports and routine updates", () => {
   assert.deepEqual(failed({ notCalls: ["t3_report"] }, { ...good, calls: [] }), []);
   assert.isNotEmpty(failed({ notCalls: ["t3_report"] }, good));
 });
+
+it.each([
+  { tools: ["t3_thread_read"], failedRead: false, passes: true },
+  { tools: ["t3_thread_read", "t3_thread_send"], failedRead: false, passes: true },
+  { tools: ["t3_thread_send", "t3_thread_read"], failedRead: false, passes: false },
+  { tools: ["t3_thread_read", "t3_thread_send"], failedRead: true, passes: false },
+])(
+  "grades inspection before an optional follow-up: $tools ($failedRead)",
+  ({ tools, failedRead, passes }) => {
+    const checks = gradeSample(
+      { before: ["t3_thread_read", "t3_thread_send"] },
+      {
+        calls: tools.map((tool, step) => ({
+          tool,
+          step,
+          input: {},
+          ...(tool === "t3_thread_read" ? { failed: failedRead } : {}),
+        })),
+        text: "",
+        stopReason: "end_turn",
+      },
+    );
+    assert.equal(
+      checks.every((check) => check.pass),
+      passes,
+    );
+  },
+);

@@ -17,6 +17,7 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { derive } from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
@@ -148,7 +149,7 @@ const makeHelpers = (input: {
 
     const endTurn = (
       turn: ProviderAdapter.ProviderAdapterV2TurnInput,
-      outcome: "completed" | "failed",
+      outcome: "completed" | "failed" | "interrupted",
       texts: ReadonlyArray<string> = [],
     ) =>
       Effect.gen(function* () {
@@ -163,6 +164,7 @@ const makeHelpers = (input: {
               event.payload.id === turn.runId &&
               (event.payload.status === "waiting" ||
                 event.payload.status === "completed" ||
+                event.payload.status === "interrupted" ||
                 event.payload.status === "failed"),
           ),
           Stream.take(1),
@@ -216,7 +218,7 @@ const makeHelpers = (input: {
                   class: "permission_error",
                 }),
               }
-            : { ...terminal, status: "completed", failure: null },
+            : { ...terminal, status: outcome, failure: null },
         );
         yield* Fiber.join(settled);
         yield* worker.drain();
@@ -756,12 +758,16 @@ it.effect("person-started summaries wait for the launcher, once, until supersede
   ),
 );
 
-it.effect.each(["idle", "person", "agent"] as const)(
-  "%s compaction before summary recording preserves the unreported person-started result",
-  (source) =>
+it.effect.each(
+  ["idle", "person", "agent"].flatMap((source) =>
+    ["completed", "cancelled"].map((status) => ({ source, status })),
+  ),
+)(
+  "$status $source compaction preserves the unreported person-started result",
+  ({ source, status }) =>
     harness(
-      `report-late-summary-${source}`,
-      ({ orchestrator, send, endTurn, reports, worker, outbox }) =>
+      `report-late-summary-${source}-${status}`,
+      ({ orchestrator, sink, send, endTurn, reports, worker, outbox }) =>
         Effect.gen(function* () {
           const enqueue = outbox.enqueue;
           const held: Array<EffectOutbox.PendingOrchestrationEffectV2> = [];
@@ -782,7 +788,23 @@ it.effect.each(["idle", "person", "agent"] as const)(
             ...(source === "idle" ? { idleCompaction: "beforeCacheExpires" } : {}),
             sender: source === "person" ? "user" : "agent",
           });
-          yield* endTurn(compact, "completed");
+          if (status === "completed") yield* endTurn(compact, "completed");
+          else {
+            const run = (yield* orchestrator.getThreadProjection(launchedId)).runs.find(
+              (row) => row.id === compact.runId,
+            )!;
+            yield* sink.write({
+              events: [
+                {
+                  id: EventId.make("event:compact-cut"),
+                  type: "run.updated",
+                  threadId: launchedId,
+                  occurredAt: yield* DateTime.now,
+                  payload: { ...run, status: "cancelled", completedAt: yield* DateTime.now },
+                },
+              ],
+            });
+          }
           assert.isEmpty(yield* notes(), "compaction completed before summary recording");
           assert.isTrue(
             held.some(
@@ -955,7 +977,7 @@ it.effect.each([
         {
           dispatch: orchestrator.dispatch,
           getThreadRecords: orchestrator.getThreadRecords,
-          delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+          restartContinuationPending: orchestrator.restartContinuationPending,
           getThreadShell: orchestrator.getThreadShell,
           reportRecipient: () => Effect.succeed(launcherId),
         } as never,
@@ -982,18 +1004,229 @@ it.effect.each([
   ),
 );
 
-it.effect(
-  "a delayed restart continuation suppresses both report triggers beyond the grace period",
-  () =>
+it.effect.each([false, true])(
+  "an explicit Stop gives a follow-up grace (follow-up: %s)",
+  (followUp) =>
+    harness(`report-stop-grace-${followUp}`, ({ orchestrator, send, endTurn, worker, reports }) =>
+      Effect.gen(function* () {
+        const turn = yield* send(launchedId, "Fix the login page");
+        yield* orchestrator.dispatch({
+          type: "run.interrupt",
+          commandId: CommandId.make("command:stop-turn"),
+          threadId: launchedId,
+          runId: turn.runId,
+        });
+        yield* endTurn(turn, "interrupted");
+        assert.isEmpty(yield* reports());
+        if (followUp) yield* send(launchedId, "Try another approach", { sender: "user" });
+        yield* TestClock.adjust("30 seconds");
+        yield* worker.drain();
+        assert.lengthOf(yield* reports(), followUp ? 0 : 1);
+      }),
+    ),
+);
+
+it.effect.each([
+  { source: "launcher", started: false, report: true },
+  { source: "report", started: false, report: false },
+  { source: "system", started: false, report: false },
+  { source: "report", started: true, report: true },
+])(
+  "recovery of $source wake (started: $started) reports only launcher work",
+  ({ source, started, report }) =>
     harness(
-      "report-delayed-continuation",
-      ({ orchestrator, sink, send, worker, reports, outbox }) =>
+      `report-recovery-wake-${source}-${started}`,
+      ({ orchestrator, sink, send, worker, reports }) =>
+        Effect.gen(function* () {
+          const turn = yield* send(launchedId, "A request");
+          const projection = yield* orchestrator.getThreadProjection(launchedId);
+          const run = projection.runs.find((row) => row.id === turn.runId)!;
+          const message = projection.messages.find((row) => row.id === run.userMessageId)!;
+          const now = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("event:recovery-input"),
+                type: "message.updated",
+                threadId: launchedId,
+                occurredAt: now,
+                payload: {
+                  ...message,
+                  ...(source === "launcher" ? { senderThreadId: launcherId } : {}),
+                  ...(source === "report"
+                    ? {
+                        notification: {
+                          outcome: "completed",
+                          summary: "Grandchild finished",
+                          source: {
+                            kind: "launched_thread",
+                            childThreadId: ThreadId.make("thread:grandchild"),
+                          },
+                        },
+                      }
+                    : {}),
+                },
+              },
+              {
+                id: EventId.make("event:recovery-cut"),
+                type: "run.updated",
+                threadId: launchedId,
+                occurredAt: now,
+                payload: {
+                  ...run,
+                  status: "cancelled",
+                  startedAt: started ? now : null,
+                  completedAt: now,
+                },
+              },
+              {
+                id: EventId.make("event:recovery-notice"),
+                type: "turn-item.updated",
+                threadId: launchedId,
+                occurredAt: now,
+                payload: {
+                  id: derive.runSignalTurnItem({ runId: run.id, signal: "server-recovery" }),
+                  threadId: launchedId,
+                  runId: run.id,
+                  nodeId: run.rootNodeId!,
+                  providerThreadId: run.providerThreadId!,
+                  providerTurnId: null,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal: 1,
+                  status: "completed",
+                  title: "Server restarted",
+                  startedAt: now,
+                  completedAt: now,
+                  updatedAt: now,
+                  type: "system_notice",
+                  message: "Cancelled because the server restarted.",
+                },
+              },
+            ],
+          });
+          yield* worker.drain();
+          assert.lengthOf(yield* reports(), report ? 1 : 0);
+        }),
+    ),
+);
+
+it.effect.each(["claimed", "delivered"] as const)(
+  "a cancelled completion delivery with task state %s reports only if redelivery is no longer pending",
+  (state) =>
+    harness(`report-delivery-${state}`, ({ orchestrator, sink, send, endTurn, worker, reports }) =>
+      Effect.gen(function* () {
+        const origin = yield* send(launchedId, "Delegate the check");
+        yield* endTurn(origin, "completed", ["Delegated check finished."]);
+        assert.lengthOf(yield* reports(), 1);
+        const turn = yield* send(launchedId, "Use the delegated result");
+        const projection = yield* orchestrator.getThreadProjection(launchedId);
+        const parent = projection.runs.find((row) => row.id === origin.runId)!;
+        const run = projection.runs.find((row) => row.id === turn.runId)!;
+        const message = projection.messages.find((row) => row.id === run.userMessageId)!;
+        const taskId = NodeId.make("task:completion-delivery");
+        const now = yield* DateTime.now;
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make("event:delivery-cohort"),
+              type: "run.updated",
+              threadId: launchedId,
+              occurredAt: now,
+              payload: {
+                ...parent,
+                delegatedCompletion: { disposition: "open", nextGeneration: 2, delivery: null },
+              },
+            },
+            {
+              id: EventId.make("event:delivery-task"),
+              type: "subagent.updated",
+              threadId: launchedId,
+              occurredAt: now,
+              payload: {
+                id: taskId,
+                threadId: launchedId,
+                runId: parent.id,
+                parentNodeId: parent.rootNodeId!,
+                origin: "app_owned",
+                createdBy: "agent",
+                driver,
+                providerInstanceId: instanceId,
+                providerThreadId: null,
+                childThreadId: null,
+                nativeTaskRef: null,
+                prompt: "Check the login fix.",
+                title: null,
+                model: null,
+                completionDelivery: { state, observedByRunId: null },
+                status: "completed",
+                result: "Check finished.",
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+              },
+            },
+            {
+              id: EventId.make("event:delivery-ownership"),
+              type: "message.updated",
+              threadId: launchedId,
+              occurredAt: now,
+              payload: {
+                ...message,
+                delegatedCompletion: { parentRunId: parent.id, generation: 1, taskIds: [taskId] },
+              },
+            },
+            {
+              id: EventId.make("event:delivery-cut"),
+              type: "run.updated",
+              threadId: launchedId,
+              occurredAt: now,
+              payload: { ...run, status: "cancelled", completedAt: now },
+            },
+          ],
+        });
+        yield* worker.drain();
+        assert.deepEqual(
+          (yield* reports()).map((report) => report.outcome),
+          state === "claimed" ? ["completed"] : ["completed", "cancelled"],
+        );
+        yield* worker.drain();
+        assert.lengthOf(yield* reports(), state === "claimed" ? 1 : 2);
+      }),
+    ),
+);
+
+it.effect.each([
+  "cancelled",
+  "declined",
+  "exhausted",
+  "legacy-cancelled",
+  "failed-cancelled",
+] as const)(
+  "a delayed restart continuation that is %s rechecks its source through the worker",
+  (outcome) =>
+    harness(
+      `report-delayed-continuation-${outcome}`,
+      ({ orchestrator, settings, sink, send, worker, reports, outbox }) =>
         Effect.gen(function* () {
           const turn = yield* send(launchedId, "Continue the fix");
           const run = (yield* orchestrator.getThreadProjection(launchedId)).runs.find(
             (row) => row.id === turn.runId,
           )!;
           const now = yield* DateTime.now;
+          const intent: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2> = [
+            {
+              id: `effect:restart-continuation:${run.id}`,
+              commandId: CommandId.make("command:delayed-restart"),
+              threadId: launchedId,
+              request: {
+                type: "provider-runtime.continue",
+                sourceRunId: run.id,
+                ...(outcome === "exhausted" ? { processLossCount: 4 } : {}),
+              },
+              availableAt: DateTime.add(now, { minutes: 10 }),
+            },
+          ];
           yield* sink.writeWithEffects({
             events: [
               {
@@ -1001,19 +1234,23 @@ it.effect(
                 type: "run.updated",
                 threadId: launchedId,
                 occurredAt: now,
-                payload: { ...run, status: "cancelled", completedAt: now },
+                payload: {
+                  ...run,
+                  status: outcome === "failed-cancelled" ? "failed" : "cancelled",
+                  completedAt: now,
+                  ...(outcome === "failed-cancelled"
+                    ? {
+                        startedAt: null,
+                        activeAttemptId: null,
+                        restartContinuationOfRunId: RunId.make("run:retry-source"),
+                      }
+                    : {}),
+                },
               },
             ],
-            effects: [
-              {
-                id: `effect:restart-continuation:${run.id}`,
-                commandId: CommandId.make("command:delayed-restart"),
-                threadId: launchedId,
-                request: { type: "provider-runtime.continue", sourceRunId: run.id },
-                availableAt: DateTime.add(now, { minutes: 10 }),
-              },
-            ],
+            effects: outcome === "legacy-cancelled" ? [] : intent,
           });
+          if (outcome === "legacy-cancelled") yield* outbox.enqueue(intent);
           yield* worker.drain();
           yield* TestClock.adjust("90 seconds");
           yield* worker.drain();
@@ -1021,34 +1258,38 @@ it.effect(
             yield* reports(),
             "the delayed per-run check must not report a stopped turn",
           );
-          const threads = {
-            dispatch: orchestrator.dispatch,
-            getThreadRecords: orchestrator.getThreadRecords,
-            delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
-            getThreadShell: orchestrator.getThreadShell,
-            reportRecipient: () => Effect.succeed(launcherId),
-          };
-          yield* checkThreadReport(threads, {
-            threadId: launchedId,
-            environmentId: undefined,
-            trigger: { kind: "idle" },
-          });
-          assert.isEmpty(yield* reports(), "the idle check must also wait structurally");
-          yield* outbox.cancelUnsettled({
-            threadId: launchedId,
-            effectTypes: ["provider-runtime.continue"],
-            reason: "Retry exhausted",
-          });
-          yield* checkThreadReport(threads, {
-            threadId: launchedId,
-            environmentId: undefined,
-            trigger: { kind: "run", runId: run.id },
-          });
+          if (outcome === "legacy-cancelled") {
+            yield* sink.recheckRestartContinuations();
+            yield* worker.drain();
+            assert.isEmpty(yield* reports(), "backfill still waits for the old intent");
+          }
+          if (
+            outcome === "cancelled" ||
+            outcome === "legacy-cancelled" ||
+            outcome === "failed-cancelled"
+          ) {
+            yield* outbox.cancelUnsettled({
+              threadId: launchedId,
+              effectTypes: ["provider-runtime.continue"],
+              reason: "Retry exhausted",
+            });
+          } else {
+            if (outcome === "declined")
+              yield* settings.updateSettings({ continueThreadsAfterServerUpdate: false });
+            yield* TestClock.adjust("10 minutes");
+          }
+          yield* worker.drain();
           assert.equal(
             (yield* reports()).length,
             1,
             "a real cancellation is reported once the continuation is no longer pending",
           );
+          assert.equal(
+            (yield* reports())[0]?.outcome,
+            outcome === "failed-cancelled" ? "failed" : "cancelled",
+          );
+          yield* worker.drain();
+          assert.equal((yield* reports()).length, 1);
         }),
     ),
 );
@@ -1558,7 +1799,7 @@ it.effect(
           const threads = {
             dispatch: orchestrator.dispatch,
             getThreadRecords: orchestrator.getThreadRecords,
-            delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
+            restartContinuationPending: orchestrator.restartContinuationPending,
             getThreadShell: orchestrator.getThreadShell,
             reportRecipient: (thread: Parameters<typeof reportRecipient>[1]) =>
               reportRecipient(

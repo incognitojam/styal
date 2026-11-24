@@ -384,6 +384,7 @@ it.effect("recovers an admitted continuation after another crash before provider
             getThreadRecords: () => Effect.succeed(running),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) =>
               Effect.sync(() => {
                 commits.push(input);
@@ -520,6 +521,7 @@ it.effect.each([
               getRuntimeRecoveryProjection: () => Effect.succeed(makeProjection()),
             }),
             Layer.mock(EventSink.EventSinkV2)({
+              recheckRestartContinuations: () => Effect.void,
               commitCommand: (input) => {
                 committed = input;
                 return Effect.succeed({ committed: true, cancelledEffectCount: 1 } as never);
@@ -584,6 +586,7 @@ it.effect("lets a cut blocking delegate_task wake its parent like an async task"
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committed = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -649,6 +652,7 @@ it.effect.each(["running", "waiting"])(
               getRuntimeRecoveryProjection: () => Effect.succeed(projection),
             }),
             Layer.mock(EventSink.EventSinkV2)({
+              recheckRestartContinuations: () => Effect.void,
               commitCommand: (input) => {
                 committed = input;
                 return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -774,6 +778,7 @@ it.effect("prepares no continuation for background work another provider thread 
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             writeWithEffects: (input) =>
               Effect.sync(() => {
                 writes.push(input);
@@ -801,6 +806,7 @@ it.effect("prepares no continuation for background work another provider thread 
             getRuntimeRecoveryProjection: () => Effect.succeed(ownWork),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             writeWithEffects: (input) =>
               Effect.sync(() => {
                 writes.push(input);
@@ -926,6 +932,7 @@ it.effect.each([
                   ),
               }),
               Layer.mock(EventSink.EventSinkV2)({
+                recheckRestartContinuations: () => Effect.void,
                 writeWithEffects: (input) =>
                   Effect.sync(() => {
                     writes.push(input);
@@ -1087,6 +1094,7 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
             getRuntimeRecoveryProjection: () => Effect.sync(() => projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             writeWithEffects: (input) =>
               Effect.sync(() => {
                 assert.lengthOf(input.events, 0);
@@ -1196,6 +1204,7 @@ it.effect.each([
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               commits.push(input);
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1539,6 +1548,7 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
                 : Effect.succeed(makeProjection()),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             writeWithEffects: (input) =>
               Effect.sync(() => {
                 writes.push(input);
@@ -1675,6 +1685,7 @@ it.effect("prepares independent continuations together and waits for durable wri
               }),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             writeWithEffects: () =>
               Effect.gen(function* () {
                 if (++writes === 2) yield* Deferred.succeed(bothWriting, undefined);
@@ -1704,7 +1715,9 @@ it.effect("skips restart discovery when no project enables continuation", () =>
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
-          Layer.mock(EventSink.EventSinkV2)({}),
+          Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
+          }),
           IdAllocator.layer,
           Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
           Layer.mock(EffectOutbox.EffectOutboxV2)({}),

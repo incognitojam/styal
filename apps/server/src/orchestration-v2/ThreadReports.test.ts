@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
+  NodeId,
   ProviderSessionId,
   RunAttemptId,
   RunId,
@@ -107,6 +108,9 @@ it.effect.each([
   "self",
   "person",
   "steered",
+  "delivery",
+  "delivery-accepted",
+  "waiting",
 ] as const)("reports %s cancellation after an earlier result was delivered", (cause) =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:cancelled-worker");
@@ -116,6 +120,9 @@ it.effect.each([
       ...base.run,
       status: cause === "queued" ? "running" : "completed",
       userMessageId: MessageId.make("message:first"),
+      ...(cause.startsWith("delivery")
+        ? { delegatedCompletion: { disposition: "open", nextGeneration: 2, delivery: null } }
+        : {}),
     };
     const cancelled = {
       ...previous,
@@ -166,7 +173,20 @@ it.effect.each([
                 ]
               : []),
           ],
-          subagents: [],
+          subagents: cause.startsWith("delivery")
+            ? [
+                {
+                  id: NodeId.make("task:delivery"),
+                  runId: previous.id,
+                  origin: "app_owned",
+                  status: "completed",
+                  completionDelivery: {
+                    state: cause === "delivery" ? "claimed" : "delivered",
+                    observedByRunId: null,
+                  },
+                },
+              ]
+            : [],
           runtimeRequests: [],
           providerTurns: [],
           messages: [
@@ -174,9 +194,32 @@ it.effect.each([
               id: cancelled.userMessageId,
               runId: cause === "steered" ? previous.id : cancelled.id,
               role: "user",
+              text: "Continue the requested fix",
+              attachments: [],
               senderThreadId: launcherId,
               createdBy: "agent",
+              ...(cause.startsWith("delivery")
+                ? {
+                    delegatedCompletion: {
+                      parentRunId: previous.id,
+                      generation: 1,
+                      taskIds: [NodeId.make("task:delivery")],
+                    },
+                  }
+                : {}),
             },
+            ...(cause === "waiting"
+              ? [
+                  {
+                    id: MessageId.make("message:final"),
+                    role: "assistant",
+                    runId: cancelled.id,
+                    text: "The patch is applied; verification remains.",
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                ]
+              : []),
           ],
           turnItems:
             cause === "unknown"
@@ -201,7 +244,7 @@ it.effect.each([
                     filter.turnItemRunIds.includes(item.runId),
                 ),
         }),
-      delegatedTaskResultPending: () => Effect.succeed(false),
+      restartContinuationPending: () => Effect.succeed(false),
       getThreadShell: () =>
         Effect.succeed({ archivedAt: null, deletedAt: null, settledOverride: null }),
       reportRecipient: () => Effect.succeed(launcherId),
@@ -234,7 +277,7 @@ it.effect.each([
       environmentId: undefined,
       trigger: { kind: "idle" },
     });
-    assert.equal(delivered.size, 1, "idle checks preserve restart grace");
+    assert.equal(delivered.size, 1, "idle checks keep the earlier result");
     yield* TestClock.adjust("30 seconds");
     for (const trigger of [
       { kind: "run", runId: cancelled.id } as const,
@@ -243,7 +286,13 @@ it.effect.each([
     ]) {
       yield* checkThreadReport(threads, { threadId, environmentId: undefined, trigger });
     }
-    if (cause === "continued" || cause === "self" || cause === "person" || cause === "steered") {
+    if (
+      cause === "continued" ||
+      cause === "self" ||
+      cause === "person" ||
+      cause === "steered" ||
+      cause === "delivery"
+    ) {
       assert.equal(delivered.size, 1, "a later continuation suppresses the stopped report");
       return;
     }
@@ -255,7 +304,9 @@ it.effect.each([
       cancelled.startedAt === null ? "cancelled before it was processed" : "stopped midway",
     );
     assert.notInclude(report!.text, "is not running");
-    assert.notInclude(report!.text, "<thread-report>");
+    if (cause === "waiting")
+      assert.include(report!.text, "The patch is applied; verification remains.");
+    else assert.notInclude(report!.text, "<thread-report>");
     assert.notInclude(report!.text, "Check the reason");
     if (cause === "restart") assert.include(report!.text, reason);
     else assert.notInclude(report!.text, reason);
@@ -355,7 +406,7 @@ it("delays only what someone may still answer or continue", () => {
   assert.equal(delayOf("interrupted"), 30);
   assert.equal(delayOf("running"), null);
   assert.equal(delayOf("cancelled"), 0);
-  assert.equal(delayOf("cancelled", true), 30);
+  assert.equal(delayOf("cancelled", true), 0);
 });
 
 it("a report keeps the launched agent's text as bounded data, so it cannot start a command", () => {
@@ -549,7 +600,7 @@ it.effect.each([
                   filter.messageRunIds.includes(message.runId)),
             ),
           }),
-        delegatedTaskResultPending: () => Effect.succeed(false),
+        restartContinuationPending: () => Effect.succeed(false),
         getThreadShell: () =>
           Effect.succeed({
             archivedAt: null,
@@ -604,20 +655,12 @@ it.effect.each([
       );
       assert.isNotNull(effect, "settling work must owe a fresh check");
       if (effect?.request.type !== "thread-report.check") return;
+      if (pendingKind === "interrupted") yield* TestClock.adjust("30 seconds");
       yield* checkThreadReport(threads, {
         threadId,
         environmentId: undefined,
         trigger: compaction ? { kind: "run", runId: compactRunId } : effect.request.trigger,
       });
-      if (pendingKind === "interrupted") {
-        assert.equal(delivered.length, 0, "idle checks preserve restart grace");
-        yield* TestClock.adjust("30 seconds");
-        yield* checkThreadReport(threads, {
-          threadId,
-          environmentId: undefined,
-          trigger: effect.request.trigger,
-        });
-      }
       assert.equal(delivered.length, 1);
       assert.include((delivered[0] as { text: string }).text, "Published the change.");
       assert.equal(

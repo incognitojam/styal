@@ -235,6 +235,8 @@ const McpToolUseExpect = Schema.Struct({
   ),
   /** First calls of these tools happen in this order. */
   order: Schema.optional(Schema.Array(Schema.String)),
+  /** If the second tool is used, the first must have succeeded before it. */
+  before: Schema.optional(Schema.Tuple([Schema.String, Schema.String])),
   minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   maxCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   /**
@@ -2149,6 +2151,12 @@ export const gradeSample = (
         (answered === -1 || at < answered),
     );
     add(`answerBeforeWait ${requestId}`, answered !== -1 && !waitedFirst);
+  }
+  if (expect.before !== undefined) {
+    const [first, second] = expect.before;
+    const before = attempted.findIndex((call) => call.tool === first && call.failed !== true);
+    const after = attempted.findIndex((call) => call.tool === second);
+    add(`before ${first} > ${second}`, after === -1 || (before !== -1 && before < after));
   }
   if (expect.order !== undefined) {
     const firsts = expect.order.map((tool) => calls.findIndex((call) => call.tool === tool));

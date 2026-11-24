@@ -150,7 +150,7 @@ import {
 } from "./NotificationMailbox.ts";
 import { isStaleQuestionWake as staleQuestionWake } from "./NotificationWake.ts";
 import { EventSinkV2 } from "./EventSink.ts";
-import { answerNoteEffect } from "./ThreadReports.ts";
+import { answerNoteEffect, skipsThreadReport } from "./ThreadReports.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -414,7 +414,6 @@ export interface OrchestratorV2Shape {
   readonly delegatedTaskResultPending: (
     childThreadId: ThreadId,
     taskId?: NodeId,
-    afterRunId?: RunId,
   ) => Effect.Effect<boolean, OrchestratorProjectionError>;
   readonly restartContinuationPending: (run: OrchestrationV2Run) => Effect.Effect<boolean>;
   /** Declined continuations emit no thread event; this still wakes waiters. */
@@ -4467,22 +4466,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.summaryRunId !== undefined
     ) {
       const source = yield* projectionStore
-        .getThreadRecords(command.summaryFor, ["runs"])
+        .getThreadRecords(command.summaryFor, ["runs", "subagents"])
         .pipe(mapDispatchError(command));
       let runs = source.runs;
       let latest = latestExecutedRun(runs);
-      while (latest?.status === "completed" && latest.id !== command.summaryRunId) {
+      while (
+        latest != null &&
+        ["completed", "cancelled"].includes(latest.status) &&
+        latest.id !== command.summaryRunId
+      ) {
         const prompts = yield* projectionStore
           .getThreadRecords(command.summaryFor, ["messages"], {
             messageIds: [latest.userMessageId],
           })
           .pipe(mapDispatchError(command));
         const prompt = prompts.messages.find((message) => message.id === latest?.userMessageId);
-        if (
-          prompt === undefined ||
-          (prompt.idleCompaction === undefined && !isCompactionCommandMessage(prompt))
-        )
-          break;
+        if (!skipsThreadReport(latest, prompt, source)) break;
         const compactedRunId = latest.id;
         runs = runs.filter((run) => run.id !== compactedRunId);
         latest = latestExecutedRun(runs);
@@ -17032,12 +17031,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   const delegatedTaskResultPending = Effect.fn("Orchestrator.delegatedTaskResultPending")(
-    function* (childThreadId: ThreadId, taskId?: NodeId, afterRunId?: RunId) {
-      if (afterRunId !== undefined) {
-        const { runs } = yield* projectionStore.getThreadRecords(childThreadId, ["runs"]);
-        const run = runs.find((candidate) => candidate.id === afterRunId);
-        return run !== undefined && (yield* childAwaitsRestartContinuation(runs, run));
-      }
+    function* (childThreadId: ThreadId, taskId?: NodeId) {
       const child = yield* projectionStore.getThreadRecords(
         childThreadId,
         ["runs", "messages", "subagents", "providerThreads", "providerTurns", "attempts"],
@@ -17054,7 +17048,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (progress.resultRun === undefined) return false;
       return yield* childAwaitsRestartContinuation(child.runs, progress.resultRun);
     },
-    (effect, childThreadId, _taskId?, _afterRunId?) =>
+    (effect, childThreadId, _taskId?) =>
       effect.pipe(
         Effect.mapError(
           (cause) => new OrchestratorProjectionError({ threadId: childThreadId, cause }),

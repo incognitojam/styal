@@ -14,6 +14,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ThreadReportTarget,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   type RunId,
   type RuntimeRequestId,
@@ -39,7 +40,7 @@ import type { ThreadManagementServiceShape } from "./ThreadManagementService.ts"
 
 /** Someone at the keyboard usually answers within this, so the launcher hears only about real stalls. */
 const BLOCKED_REPORT_DELAY = Duration.minutes(2);
-/** A restart interrupts a run and then continues it; the continuation has to appear first. */
+/** Stop allows a follow-up before waking the launcher; restart cuts use continuation state. */
 const INTERRUPTED_REPORT_DELAY = Duration.seconds(30);
 const REPORT_TEXT_LIMIT = 1_500;
 
@@ -103,7 +104,11 @@ export function threadReportEffect(
       return make(id, { kind: "run", runId: id });
     }
     return status === "interrupted" || status === "cancelled"
-      ? make(id, { kind: "run", runId: id }, INTERRUPTED_REPORT_DELAY)
+      ? make(
+          id,
+          { kind: "run", runId: id },
+          status === "interrupted" ? INTERRUPTED_REPORT_DELAY : undefined,
+        )
       : null;
   }
   if (
@@ -144,6 +149,31 @@ export function requestReportKind(input: {
 const startedByReport = (
   message: Pick<OrchestrationV2ConversationMessage, "notification"> | undefined,
 ) => message?.notification?.source.kind === "launched_thread";
+
+export const skipsThreadReport = (
+  run: Pick<OrchestrationV2Run, "status">,
+  message: OrchestrationV2ConversationMessage | undefined,
+  records: Pick<OrchestrationV2ThreadProjection, "runs" | "subagents">,
+) =>
+  (run.status === "completed" || run.status === "cancelled") &&
+  message !== undefined &&
+  (message.idleCompaction !== undefined ||
+    isCompactionCommandMessage(message) ||
+    (run.status === "cancelled" &&
+      message.delegatedCompletion !== undefined &&
+      records.runs.some(
+        (parent) =>
+          parent.id === message.delegatedCompletion?.parentRunId &&
+          parent.delegatedCompletion?.disposition === "open",
+      ) &&
+      records.subagents.some(
+        (task) =>
+          task.origin === "app_owned" &&
+          task.runId === message.delegatedCompletion?.parentRunId &&
+          message.delegatedCompletion?.taskIds.includes(task.id) &&
+          (task.completionDelivery?.state === "pending" ||
+            task.completionDelivery?.state === "claimed"),
+      )));
 
 /** Usage-limit recovery resends as the user; only a message from a client is a person's turn. */
 export const startedByPerson = (
@@ -265,13 +295,15 @@ export function reportMessage(input: {
       : `${stopped.started ? "had a request stopped midway." : "had a request cancelled before it was processed."}${stopped.reason === undefined ? "" : ` ${excerpt(stopped.reason)}`}`;
   const head = `${who}, "${input.thread.title}" (${input.thread.id}${link}), ${situation}`;
   const body =
-    stopped !== undefined || input.body === undefined || input.body.trim() === ""
+    input.body === undefined || input.body.trim() === ""
       ? ""
       : `\n\n${DATA_FRAMING}\n\n<thread-report>\n${excerpt(input.body)}\n</thread-report>`;
   const next =
     stopped === undefined
       ? input.next
-      : "Read more with t3_thread_read. Retry only if the request is still needed.";
+      : stopped.started
+        ? "Read the thread with t3_thread_read before deciding whether to retry; work may already have taken effect."
+        : "The request was not processed. Send it again with t3_thread_send if it is still needed.";
   return `${head}${body}\n\n${pendingNext ?? next}`;
 }
 
@@ -317,7 +349,7 @@ type ReportThreads = Pick<
   | "getThreadRecords"
   | "getThreadShell"
   | "reportRecipient"
-  | "delegatedTaskResultPending"
+  | "restartContinuationPending"
 >;
 
 const deliver = Effect.fnUntraced(function* (
@@ -505,7 +537,6 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       .filter(
         (run) =>
           run.startedAt != null ||
-          recovery.has(run.id) ||
           cancellation?.messages.some(
             (message) =>
               message.id === run.userMessageId &&
@@ -519,22 +550,20 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   let runs = records.runs;
   let run: OrchestrationV2Run | undefined;
   for (const candidate of runs
-    .filter((entry) => !["queued", "cancelled", "rolled_back"].includes(entry.status))
+    .filter((entry) => !["queued", "rolled_back"].includes(entry.status))
     .toSorted((a, b) => b.ordinal - a.ordinal)) {
-    if (candidate.status === "completed") {
+    if (candidate.status === "completed" || candidate.status === "cancelled") {
       const prompts = yield* threads.getThreadRecords(thread.id, ["messages"], {
         messageIds: [candidate.userMessageId],
       });
       const prompt = prompts.messages.find((message) => message.id === candidate.userMessageId);
-      if (
-        prompt !== undefined &&
-        (prompt.idleCompaction !== undefined || isCompactionCommandMessage(prompt))
-      ) {
-        // Compaction cannot supersede an earlier result the launcher has not received.
+      if (skipsThreadReport(candidate, prompt, records)) {
+        // Internal work cannot supersede an earlier result the launcher has not received.
         runs = runs.filter((entry) => entry.id !== candidate.id);
         continue;
       }
     }
+    if (candidate.status === "cancelled") continue;
     run = candidate;
     break;
   }
@@ -544,7 +573,6 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
       return undefined;
     if (runs.includes(requested)) run = requested;
   }
-  const compacted = trigger.kind === "run" && run?.id !== trigger.runId;
   if (
     run === undefined ||
     !["completed", "failed", "interrupted", "cancelled"].includes(run.status) ||
@@ -552,8 +580,7 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
   )
     return undefined;
   if (
-    (trigger.kind === "idle" || compacted) &&
-    (run.status === "interrupted" || run.status === "cancelled") &&
+    run.status === "interrupted" &&
     run.completedAt !== null &&
     DateTime.isLessThan(
       yield* DateTime.now,
@@ -561,11 +588,22 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     )
   )
     return undefined;
-  const awaitingContinuation =
-    ["cancelled", "interrupted", "failed"].includes(run.status) &&
-    (yield* threads.delegatedTaskResultPending(thread.id, run.delegatedTaskId, run.id));
-  if (restartSupersededRunIds(records.runs, awaitingContinuation ? run : undefined).has(run.id))
-    return undefined;
+  if (restartSupersededRunIds(records.runs).has(run.id)) return undefined;
+  if (["cancelled", "interrupted", "failed"].includes(run.status)) {
+    const chainIds = new Set([run.id]);
+    const chain = records.runs
+      .toSorted((a, b) => a.ordinal - b.ordinal)
+      .filter((candidate) => {
+        if (
+          candidate.restartContinuationOfRunId !== undefined &&
+          chainIds.has(candidate.restartContinuationOfRunId)
+        )
+          chainIds.add(candidate.id);
+        return chainIds.has(candidate.id);
+      });
+    if ((yield* Effect.forEach(chain, threads.restartContinuationPending)).some(Boolean))
+      return undefined;
+  }
   const history = yield* threads.getThreadRecords(
     thread.id,
     ["messages", "turnItems", "providerTurns"],
@@ -632,7 +670,9 @@ export const checkThreadReport = Effect.fn("ThreadReports.check")(function* (
     body:
       kind === "result" && result.messageId === null && result.turnItemId === null
         ? "The turn ended without assistant text."
-        : result.text,
+        : run.status === "cancelled" && result.messageId === null && result.turnItemId === null
+          ? undefined
+          : result.text,
     next: [...waiting, copy.next].join("\n\n"),
     pendingRequests: records.runtimeRequests,
   });
