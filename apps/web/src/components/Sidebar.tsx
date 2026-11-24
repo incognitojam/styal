@@ -3618,8 +3618,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         hasPage: (projectKey) => projectPages.has(projectKey),
                         isShowing: (projectKey) =>
                           routeProjectKey === projectKey ||
-                          (routeRowThreadKey !== null &&
-                            projectPages.get(projectKey)?.chatThreadKey === routeRowThreadKey),
+                          (routeThreadKey !== null &&
+                            projectPages.get(projectKey)?.chatThreadKey === routeThreadKey),
                       });
                       setProjectScopeKeys([item.value]);
                       if (pageKey !== null) void openProjectPage(pageKey);
