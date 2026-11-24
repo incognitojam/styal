@@ -1014,6 +1014,7 @@ features:
       - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
       - Dismissals do not wake agents and reach their next prompted turn exactly once.
       - Open questions are read and answered one report at a time from a pile above the composer, using each report's full message, so a report outside the loaded chat history is still answerable.
+      - Reports the agent marks blocking come first; each version sets or clears the flag.
     rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.
     implementation_paths:
       - apps/server/src/mcp/toolkits/thread/tools.ts

@@ -110,11 +110,11 @@ export const declarations = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "t3_report");
       const { threads } = yield* readThread(thread.threadId);
       const commandId = yield* newCommandId();
-      const { key, title, body, question, answers, outcome } = input;
+      const { key, title, body, question, answers, blocking, outcome } = input;
       const invalid = (message: string) =>
         new OrchestratorMcpFailure({ code: "invalid_request", message });
       if (outcome !== undefined && !title && !body) {
-        const extra = Object.entries({ question, answers }).flatMap(([name, value]) =>
+        const extra = Object.entries({ question, answers, blocking }).flatMap(([name, value]) =>
           value === undefined ? [] : [`\`${name}\``],
         );
         if (extra.length > 0)
@@ -155,6 +155,7 @@ export const declarations = {
           body,
           ...(question === undefined ? {} : { question }),
           ...(answers === undefined ? {} : { answers }),
+          ...(blocking ? { blocking } : {}),
         })
         .pipe(Effect.mapError(dispatchFailure));
       const message = storedEvents

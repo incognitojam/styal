@@ -3,15 +3,15 @@ type StackReport = {
   readonly message: {
     readonly id: string;
     readonly createdAt: string;
-    readonly report?: { readonly key: string } | undefined;
+    readonly report?: { readonly key: string; readonly blocking?: boolean | undefined } | undefined;
   };
 };
 
 const topic = (report: StackReport) => report.message.report!.key;
 
 /**
- * The open reports, each topic where its first version arrived, so a new version keeps its place.
- * Topics put off with Later follow, in the order they were put off.
+ * The open reports: blocking ones first, then each topic where its first version arrived, so a new
+ * version keeps its place. Topics put off with Later follow, in the order they were put off.
  */
 export function reportStackOrder<R extends StackReport>(
   reports: readonly R[],
@@ -30,6 +30,8 @@ export function reportStackOrder<R extends StackReport>(
       const laterA = deferred(a);
       const laterB = deferred(b);
       if (laterA !== laterB) return laterA === -1 ? -1 : laterB === -1 ? 1 : laterA - laterB;
+      const blockingA = a.message.report!.blocking === true;
+      if (blockingA !== (b.message.report!.blocking === true)) return blockingA ? -1 : 1;
       return arrived.get(topic(a))!.localeCompare(arrived.get(topic(b))!);
     });
 }

@@ -19,12 +19,19 @@ import {
   reportStackTop,
 } from "./reportStack.logic";
 
-const report = (id: string, key: string, version: number, createdAt: string) => ({
+const report = (id: string, key: string, version: number, createdAt: string, blocking?: true) => ({
   id,
   role: "assistant",
   text: "Report",
   createdAt,
-  report: { key, title: key, version, question: "Merge?", answers: ["Yes", "No"] },
+  report: {
+    key,
+    title: key,
+    version,
+    question: "Merge?",
+    answers: ["Yes", "No"],
+    ...(blocking ? { blocking } : {}),
+  },
 });
 
 const messages = [
@@ -49,6 +56,30 @@ describe("report stack order", () => {
       "pr:212",
     ]);
     expect(deferReport(["deploy", "pr:212"], "deploy")).toEqual(["pr:212", "deploy"]);
+  });
+
+  it("puts blocking reports first and lets a later version set or clear the flag", () => {
+    const blockedCrash = [
+      ...messages,
+      report("crash-2", "crash", 2, "2026-11-24T09:00:00.000Z", true),
+    ];
+    expect(topics(reportStackOrder(coordinatorReports(blockedCrash, []), []))).toEqual([
+      "crash",
+      "deploy",
+      "pr:212",
+    ]);
+    // Later still wins over blocking for this visit.
+    expect(topics(reportStackOrder(coordinatorReports(blockedCrash, []), ["crash"]))).toEqual([
+      "deploy",
+      "pr:212",
+      "crash",
+    ]);
+    const cleared = [...blockedCrash, report("crash-3", "crash", 3, "2026-11-24T11:00:00.000Z")];
+    expect(topics(reportStackOrder(coordinatorReports(cleared, []), []))).toEqual([
+      "deploy",
+      "pr:212",
+      "crash",
+    ]);
   });
 
   it("moves to the next topic after the top one leaves, wrapping to the first", () => {
@@ -166,5 +197,21 @@ describe("report stack order", () => {
     expect(retried.lift).toBe(first.lift + 1);
     expect(landReportStack(retried, first.lift)).toBe(retried);
     expect(landReportStack(retried, retried.lift).leaving).toBeNull();
+  });
+
+  it("keeps a picked report off the closed pile's top and the open sheet when a blocking report arrives", () => {
+    const blocked = [...messages, report("crash-2", "crash", 2, "2026-11-24T09:00:00.000Z", true)];
+    const order = reportStackOrder(coordinatorReports(blocked, []), []);
+    const picked = { ...openReportStack(closedReportStack, order), current: "pr:212" };
+    expect(reportStackTop(order, picked)?.message.report?.key).toBe("pr:212");
+    expect(reportStackTop(order, closeReportStack(picked))?.message.report?.key).toBe("crash");
+
+    // Reading the deploy report when the crash report becomes blocking: the deploy report stays.
+    const reading = openReportStack(
+      closedReportStack,
+      reportStackOrder(coordinatorReports(messages, []), []),
+    );
+    expect(reading.current).toBe("deploy");
+    expect(reportStackTop(order, reading)?.message.report?.key).toBe("deploy");
   });
 });

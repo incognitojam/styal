@@ -158,6 +158,22 @@ function PileEdges({ count, onShowAll }: { count: number; onShowAll?: () => void
   );
 }
 
+/** A report other work waits on: a short amber tab on the left edge, no label. */
+function BlockingMark({ className }: { className: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className={cn("absolute left-0 w-[3px] rounded-r-full bg-warning", className)} />
+        }
+      >
+        <span className="sr-only">Other work is waiting on this.</span>
+      </TooltipTrigger>
+      <TooltipPopup side="left">Other work is waiting on this</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 /** Above the composer: the report on top of the pile, opening the stack. */
 export function ReportPile({ stack }: { stack: ReportStackState }) {
   const { top, order, open, setPile } = stack;
@@ -173,6 +189,7 @@ export function ReportPile({ stack }: { stack: ReportStackState }) {
         aria-label={`Open reports waiting on you: ${tag.title}`}
         className="relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-border/80 bg-card px-4 py-2.5 text-left shadow-xs/5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
+        {tag.blocking ? <BlockingMark className="inset-y-2.5" /> : null}
         <span className="min-w-0 flex-1 truncate text-sm">
           <span className="font-medium text-foreground">{tag.title}</span>
           <span className="ms-2 text-muted-foreground">{tag.question}</span>
@@ -325,6 +342,7 @@ function Sheet({
     >
       <PileEdges count={reportStackEdges(remaining)} onShowAll={() => stack.showAll(true)} />
       <article className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm/5 dark:shadow-none">
+        {tag.blocking ? <BlockingMark className="top-6 h-6 sm:top-9" /> : null}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-8 sm:px-9 sm:pt-8">
           <div className="flex items-start gap-3">
             <h2 className="min-w-0 flex-1 text-balance font-semibold text-foreground text-xl tracking-tight">
@@ -458,6 +476,7 @@ function AllWaiting({ stack }: { stack: ReportStackState }) {
                   onClick={() => stack.pick(tag.key)}
                   className="relative flex w-full cursor-pointer flex-col gap-0.5 overflow-hidden rounded-lg px-3 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-4"
                 >
+                  {tag.blocking ? <BlockingMark className="inset-y-2.5" /> : null}
                   <span className="truncate font-medium text-foreground text-sm">{tag.title}</span>
                   <span className="truncate text-muted-foreground text-sm">{tag.question}</span>
                 </button>
