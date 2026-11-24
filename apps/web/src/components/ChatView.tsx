@@ -13,7 +13,7 @@ import {
   respondToReport,
   threadReportResponsesAtom,
 } from "../state/coordinatorReports";
-import { CommandId } from "@t3tools/contracts";
+import { CommandId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { projectFileActions } from "~/state/projectFileActions";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
@@ -1342,6 +1342,7 @@ export default function ChatView(props: ChatViewProps) {
     return {
       environmentId: activeEnvironment.environmentId,
       label: activeEnvironmentUnavailableLabel,
+      machineKind: resolveEnvironmentMachineKind(activeEnvironment.serverConfig),
       connection: activeEnvironment.connection,
       missingCloudSession:
         !requiresCloudSession || managedRelaySession !== null
