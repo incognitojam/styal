@@ -3599,8 +3599,8 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     ...ThreadPullRequestKey.fields,
     watching: Schema.Boolean,
-    /** Whether CI was pending with no failure yet when the watch started, so any failure is news. */
-    checksPending: Schema.optional(Schema.Boolean),
+    /** A new watch's state, recorded from the caller's read of the pull request at the start. */
+    start: Schema.optional(ThreadPullRequestWatch),
     link: Schema.optional(
       Schema.Struct({
         url: TrimmedNonEmptyString,

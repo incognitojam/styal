@@ -8,13 +8,14 @@ import {
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
   type PullRequestRef,
-  type PullRequestSummary,
+  type PullRequestCheck,
+  type PullRequestDetail,
   type PullRequestReviewGuideResult,
   type ThreadPullRequestLink,
   type ThreadWorkflowRunWatch,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,6 +28,7 @@ import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentity
 import type { Tool } from "effect/ai";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import { evaluatePullRequestWatch } from "../../../orchestration-v2/pullRequestWatch.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import {
   type PullRequestTestThread,
@@ -43,7 +45,11 @@ import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
 import { listThreadPullRequests } from "./handlers.ts";
 import * as PullRequestsHandlers from "./handlers.ts";
 import { parseWorkflowRunUrl } from "./handlers.ts";
-import { CHILD_PULL_REQUEST_REPORT_NEXT, PullRequestsToolkit } from "./tools.ts";
+import {
+  CHECKS_ALREADY_PASSED_WATCH_NEXT,
+  CHILD_PULL_REQUEST_REPORT_NEXT,
+  PullRequestsToolkit,
+} from "./tools.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
@@ -143,9 +149,58 @@ function makeLink(
   };
 }
 
+const pullRequestDetail = (
+  checks: ReadonlyArray<PullRequestCheck>,
+  mergeability: "mergeable" | "conflicting" = "mergeable",
+): PullRequestDetail => ({
+  provider: SourceControlProviderKind.make("github"),
+  capabilities: {
+    diff: true,
+    comment: true,
+    actions: [],
+    mergeMethods: [],
+    search: false,
+    review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
+    reviewers: { request: false, listCandidates: false },
+  },
+  viewerPermissions: {
+    actions: [],
+    comment: true,
+    resolve: false,
+    verdicts: [],
+    requestReviewers: false,
+  },
+  projectId: PROJECT_ID,
+  projectTitle: "Project",
+  workspaceRoot: "/workspace/project",
+  repository: "t3tools/t3code",
+  number: 9,
+  title: "Pull request",
+  body: "",
+  url: "https://github.com/t3tools/t3code/pull/9",
+  author: null,
+  state: "open",
+  isDraft: false,
+  mergeability,
+  additions: 0,
+  deletions: 0,
+  changedFiles: 0,
+  headBranch: "feature",
+  baseBranch: "main",
+  createdAt: "2026-08-20T00:00:00.000Z",
+  updatedAt: "2026-08-20T00:00:00.000Z",
+  mergedAt: null,
+  closedAt: null,
+  reviewers: [],
+  labels: [],
+  checks,
+  mergeCapabilities: { merge: true, squash: true, rebase: true },
+});
+
 interface HarnessOptions {
-  readonly summary?: PullRequestSummary;
-  readonly summaryFailure?: PullRequestService.PullRequestError;
+  readonly detailFailure?: PullRequestService.PullRequestError;
+  readonly checks?: ReadonlyArray<PullRequestCheck>;
+  readonly mergeability?: "mergeable" | "conflicting";
   readonly enrichment?: ProjectEnrichment.ProjectEnrichmentService["Service"];
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
@@ -252,14 +307,10 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       dispatch,
     }),
     Layer.mock(PullRequestService.PullRequestService)({
-      summary: () =>
-        options.summaryFailure
-          ? Effect.fail(options.summaryFailure)
-          : options.summary
-            ? Effect.succeed(options.summary)
-            : Effect.fail(
-                new PullRequestOperationError({ operation: "summary", detail: "Unavailable" }),
-              ),
+      detail: () =>
+        options.detailFailure
+          ? Effect.fail(options.detailFailure)
+          : Effect.succeed(pullRequestDetail(options.checks ?? [], options.mergeability)),
       workflowRun: (input) =>
         Ref.update(workflowRunReads, (reads) => [...reads, input.runId]).pipe(
           Effect.andThen(
@@ -465,21 +516,7 @@ describe("pull request toolkit handlers", () => {
 
   it.effect("watching an unlinked pull request links it first", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness({
-        summary: {
-          provider: SourceControlProviderKind.make("github"),
-          projectId: PROJECT_ID,
-          repository: "t3tools/t3code",
-          number: 9,
-          title: "Pull request",
-          url: "https://github.com/t3tools/t3code/pull/9",
-          state: "open",
-          headBranch: "feature",
-          baseBranch: "main",
-          updatedAt: "2026-08-20T00:00:00.000Z",
-          checksState: "pending",
-        },
-      });
+      const harness = yield* makeHarness();
       const result = yield* harness.call("watch_pull_request", {
         url: "https://github.com/t3tools/t3code/pull/9",
       });
@@ -489,12 +526,12 @@ describe("pull request toolkit handlers", () => {
           type: "thread.pull-request.watch",
           number: 9,
           watching: true,
-          checksPending: true,
+          start: { failedChecks: [], passed: false, conflicting: false },
           link: { url: "https://github.com/t3tools/t3code/pull/9", source: "agent" },
         },
       ]);
       const unavailable = yield* makeHarness({
-        summaryFailure: new PullRequestUnavailableError({
+        detailFailure: new PullRequestUnavailableError({
           provider: SourceControlProviderKind.make("github"),
           requirement: "gh",
           reason: "cli-missing",
@@ -507,6 +544,108 @@ describe("pull request toolkit handlers", () => {
         .pipe(Effect.flip);
       expect(failure).toMatchObject({ _tag: "PullRequestWatchFailedError" });
       expect(yield* Ref.get(unavailable.commands)).toEqual([]);
+    }),
+  );
+
+  // The watch records only what the reply told, so anything else wakes the agent later.
+  it.effect.each([
+    {
+      label: "failed while others run",
+      atStart: { lint: "failure", build: "cancelled", test: "pending" },
+      checksState: "failing",
+      told: ["lint", "build"],
+      later: { lint: "failure", build: "cancelled", test: "failure" },
+      wakes: ["checks-failed"],
+    },
+    {
+      label: "passing",
+      atStart: { lint: "success", test: "success" },
+      checksState: "passing",
+      told: [],
+      later: { lint: "success", test: "success" },
+      wakes: [],
+    },
+    {
+      label: "running",
+      atStart: { lint: "success", test: "pending" },
+      checksState: "pending",
+      told: [],
+      later: { lint: "success", test: "success" },
+      wakes: ["checks-passed"],
+    },
+    {
+      label: "unread",
+      atStart: null,
+      checksState: undefined,
+      told: [],
+      later: { lint: "failure", test: "success" },
+      wakes: ["checks-failed", "conflicting"],
+    },
+  ] as const)("reports $label checks at the start and wakes only on news", (row) =>
+    Effect.gen(function* () {
+      const checksOf = (statuses: Record<string, PullRequestCheck["status"]>) =>
+        Object.entries(statuses).map(([name, status]) => ({
+          name,
+          status,
+          description: null,
+          url: null,
+        }));
+      const harness = yield* makeHarness(
+        row.atStart === null
+          ? {
+              detailFailure: new PullRequestOperationError({
+                operation: "detail",
+                detail: "Unavailable",
+              }),
+            }
+          : { checks: checksOf(row.atStart) },
+      );
+      const result = yield* harness.call("watch_pull_request", {
+        url: "https://github.com/t3tools/t3code/pull/9",
+      });
+      expect(result.checksState).toBe(row.checksState);
+      expect(result.failedChecks?.map((check) => check.name)).toEqual(
+        row.told.length > 0 ? row.told : undefined,
+      );
+      if (row.checksState === "passing") expect(result.next).toBe(CHECKS_ALREADY_PASSED_WATCH_NEXT);
+      if (row.atStart === null) expect(result.next).toContain("could not read");
+      const [command] = yield* Ref.get(harness.commands);
+      const start = command?.type === "thread.pull-request.watch" ? command.start : undefined;
+      assert(start !== undefined);
+      const later = evaluatePullRequestWatch(
+        start,
+        pullRequestDetail(checksOf(row.later), row.atStart === null ? "conflicting" : "mergeable"),
+        [],
+        Date.parse(start.startedAt) + 60_000,
+      );
+      expect(later.changes.map((change) => change.kind)).toEqual(row.wakes);
+      if (row.wakes[0] === "checks-failed") {
+        expect(later.changes[0]).toMatchObject({
+          failed: [{ name: row.label === "unread" ? "lint" : "test" }],
+        });
+      }
+    }),
+  );
+
+  it.effect("reports runs already awaiting approval and an existing conflict", () =>
+    Effect.gen(function* () {
+      const awaiting = {
+        name: "e2e",
+        status: "action-required" as const,
+        description: null,
+        url: "https://github.com/t3tools/t3code/actions/runs/7",
+      };
+      const harness = yield* makeHarness({
+        checks: [awaiting, { name: "test", status: "pending", description: null, url: null }],
+        mergeability: "conflicting",
+      });
+      const result = yield* harness.call("watch_pull_request", {
+        url: "https://github.com/t3tools/t3code/pull/9",
+      });
+      expect(result).toMatchObject({ awaitingApproval: [awaiting], conflicting: true });
+      expect(result.next).toContain("require action");
+      expect(result.next).toContain("e2e");
+      expect(result.next).toContain("conflicts with its base");
     }),
   );
 

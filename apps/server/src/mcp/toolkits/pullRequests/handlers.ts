@@ -8,11 +8,13 @@ import {
 } from "@t3tools/contracts";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import { startedPullRequestWatch } from "../../../orchestration-v2/pullRequestWatch.ts";
 import * as ProjectEnrichment from "../../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
@@ -54,6 +56,7 @@ import {
   WorkflowRunUrlInvalidError,
   WorkflowRunWatchFailedError,
   CHILD_PULL_REQUEST_REPORT_NEXT,
+  CHECKS_ALREADY_PASSED_WATCH_NEXT,
 } from "./tools.ts";
 
 interface ResolvedTarget {
@@ -333,17 +336,54 @@ const make = Effect.gen(function* () {
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
-    const checksPendingAtStart =
-      watching && before?.watch === undefined
-        ? yield* pullRequests.summary({ projectId: thread.projectId, ...target }).pipe(
-            Effect.map((summary) => summary.checksState === "pending"),
-            Effect.catchTags({
-              PullRequestOperationError: () => Effect.undefined,
-              PullRequestUnavailableError: (cause) =>
-                Effect.fail(new PullRequestWatchFailedError({ cause })),
-            }),
-          )
-        : undefined;
+    // The watch records exactly what this read shows, so the reply has to say all of it.
+    const fresh = watching && before?.watch === undefined;
+    const read = fresh
+      ? yield* pullRequests.detail({ projectId: thread.projectId, ...target }).pipe(
+          Effect.catchTags({
+            PullRequestOperationError: () => Effect.undefined,
+            PullRequestUnavailableError: (cause) =>
+              Effect.fail(new PullRequestWatchFailedError({ cause })),
+          }),
+        )
+      : undefined;
+    const start = fresh ? startedPullRequestWatch(read, yield* Clock.currentTimeMillis) : undefined;
+    const checks = read?.checks.filter((check) => check.placeholder !== true) ?? [];
+    const failed = checks.filter(
+      (check) => check.status === "failure" || check.status === "cancelled",
+    );
+    const failedChecks = failed.length > 0 ? failed : undefined;
+    const awaiting = checks.filter((check) => check.status === "action-required");
+    const awaitingApproval = awaiting.length > 0 ? awaiting : undefined;
+    const conflicting = start?.conflicting === true;
+    const checksState = failedChecks
+      ? ("failing" as const)
+      : start?.passed
+        ? ("passing" as const)
+        : checks.some((check) => check.status === "pending")
+          ? ("pending" as const)
+          : undefined;
+    const names = (checks: ReadonlyArray<{ readonly name: string }>) =>
+      checks.map((check) => check.name).join(", ");
+    const facts = [
+      ...(failedChecks
+        ? [`Checks already failed: ${names(failedChecks)}. No wake will repeat these failures.`]
+        : []),
+      ...(awaitingApproval
+        ? [`Checks already require action: ${names(awaitingApproval)}. No wake will repeat this.`]
+        : []),
+      ...(conflicting
+        ? ["The pull request already conflicts with its base. No wake will repeat this."]
+        : []),
+    ];
+    const next =
+      fresh && read === undefined
+        ? "styal could not read the pull request yet, so the watch's first update reports the checks and conflicts it finds."
+        : facts.length > 0
+          ? `${facts.join(" ")} Act on that now; the watch still wakes you on later changes.`
+          : checksState === "passing"
+            ? CHECKS_ALREADY_PASSED_WATCH_NEXT
+            : undefined;
     yield* engine
       .dispatch({
         type: "thread.pull-request.watch",
@@ -353,7 +393,7 @@ const make = Effect.gen(function* () {
         repository: target.repository,
         number: target.number,
         watching,
-        ...(checksPendingAtStart !== undefined && { checksPending: checksPendingAtStart }),
+        ...(start !== undefined && { start }),
         ...(watching ? { link: { url: target.url, source: "agent" as const } } : {}),
       })
       .pipe(Effect.catchCause(dispatchFailure(PullRequestWatchFailedError)));
@@ -365,6 +405,11 @@ const make = Effect.gen(function* () {
       url: target.url,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching: before?.watch !== undefined,
+      ...(checksState !== undefined && { checksState }),
+      ...(failedChecks !== undefined && { failedChecks }),
+      ...(awaitingApproval !== undefined && { awaitingApproval }),
+      ...(conflicting && { conflicting }),
+      ...(next !== undefined && { next }),
     };
   });
 

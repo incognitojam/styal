@@ -5492,6 +5492,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : linked;
           const existing = links.find(visible);
           if (existing === undefined) return thread;
+          const started =
+            command.type === "thread.pull-request.watch" && command.start !== undefined
+              ? { ...command.start, startedAt, remarksThrough: startedAt, remarkIds: [], wakes: 0 }
+              : undefined;
           const watch =
             command.type === "thread.pull-request-watch.sync"
               ? existing.watch?.startedAt === command.startedAt
@@ -5499,7 +5503,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : existing.watch
               : !command.watching
                 ? undefined
-                : (existing.watch ?? {
+                : (existing.watch ??
+                  started ?? {
                     startedAt,
                     headSha: null,
                     failedChecks: [],
@@ -5526,13 +5531,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ...(existing.endedWatch?.approvalAnnounced !== undefined && {
                       approvalAnnounced: existing.endedWatch.approvalAnnounced,
                     }),
-                    // A caller's fresh CI read beats the link's last sync; a pending start
-                    // can fail before the first baseline read.
-                    ...((command.type === "thread.pull-request.watch" &&
-                    command.checksPending !== undefined
-                      ? command.checksPending
-                      : existing.snapshot?.checksState === "pending" ||
-                        existing.endedWatch?.checksPending === true) && { checksPending: true }),
+                    // A pending start can fail before the first baseline read.
+                    ...((existing.snapshot?.checksState === "pending" ||
+                      existing.endedWatch?.checksPending === true) && { checksPending: true }),
                     ...(existing.endedWatch?.checksAwaitedSince !== undefined && {
                       checksAwaitedSince: existing.endedWatch.checksAwaitedSince,
                     }),

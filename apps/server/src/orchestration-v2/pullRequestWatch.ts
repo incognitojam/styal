@@ -255,6 +255,37 @@ export function evaluatePullRequestWatch(
   };
 }
 
+/**
+ * A new watch that has recorded what one read at its start showed and nothing else, so a caller
+ * that reports the read leaves nothing true that never wakes. Without a read, everything wakes.
+ */
+export function startedPullRequestWatch(
+  detail: Parameters<typeof evaluatePullRequestWatch>[1] | undefined,
+  now: number,
+): ThreadPullRequestWatch {
+  const at = DateTime.formatIso(DateTime.makeUnsafe(now));
+  const fresh = {
+    startedAt: at,
+    headSha: null,
+    failedChecks: [],
+    passed: false,
+    passedChecks: [],
+    remarksThrough: at,
+    remarkIds: [],
+    conflicting: false,
+    wakes: 0,
+    checksAwaitedSince: at,
+  };
+  if (detail === undefined) return fresh;
+  const { awaitingBaseline: _, ...read } = evaluatePullRequestWatch(
+    { ...fresh, awaitingBaseline: "all" },
+    detail,
+    null,
+    now,
+  ).next;
+  return read;
+}
+
 function snippet(body: string): string {
   const text = body
     .replaceAll(/<!--[\s\S]*?-->/g, " ")

@@ -6,6 +6,8 @@ import {
   PullRequestReviewGuide,
   PullRequestReviewGuideRun,
   PullRequestState,
+  PullRequestChecksState,
+  PullRequestCheck,
   ThreadPullRequestLinkSource,
   TrimmedNonEmptyString,
   ThreadId,
@@ -299,8 +301,16 @@ export const WatchPullRequestResult = Schema.Struct({
   ...PullRequestIdentity,
   watching: Schema.Boolean,
   wasWatching: Schema.Boolean,
+  checksState: Schema.optional(PullRequestChecksState),
+  failedChecks: Schema.optional(Schema.Array(PullRequestCheck)),
+  awaitingApproval: Schema.optional(Schema.Array(PullRequestCheck)),
+  conflicting: Schema.optional(Schema.Boolean),
+  next: Schema.optional(Schema.String),
 });
 export type WatchPullRequestResult = typeof WatchPullRequestResult.Type;
+
+export const CHECKS_ALREADY_PASSED_WATCH_NEXT =
+  "Checks already pass the gate. Act on that now; the watch still wakes you on later changes, including remaining checks.";
 
 /** Either the run's URL or its repository and run ID, as `gh run list` prints them. */
 export const WorkflowRunTargetInput = Schema.Struct({
@@ -462,11 +472,11 @@ const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
 
 const WatchPullRequestTool = Tool.make("watch_pull_request", {
   description:
-    "Watch an open PR for this thread, linking it first if needed. T3 wakes you on failed checks, passed required checks, new comments or reviews, or conflicts. Handle old comments first. Only later ones wake you. After this call, end your turn. The watch stays on after each wake, so do not call this again on a wake. A wake is not a merge decision. Check readiness yourself.",
+    "Watch an open PR for this thread, linking it first if needed. T3 wakes you on later check failures, passed required checks, new comments or reviews, or conflicts. Existing checks and conflicts are baselined. Handle old comments first. Act on the result, then end your turn. The watch stays on after each wake, so do not call this again on a wake. A wake is not a merge decision. Check readiness yourself.",
   parameters: PullRequestTargetInput,
   success: WatchPullRequestResult,
   failure: PullRequestToolError,
-  dependencies,
+  dependencies: workflowRunDependencies,
 })
   .annotate(Tool.Title, "Watch pull request")
   .annotate(Tool.Readonly, false)

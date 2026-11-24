@@ -3937,11 +3937,16 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
         reason: "user",
       });
+      // The caller's read at the restart replaces what the ended watch had recorded.
+      const { awaitingBaseline: _, ...read } = { ...started, failedChecks: ["lint"] };
       yield* orchestrator.dispatch({
         ...restart,
         commandId: CommandId.make(`pr-watch-settle-restart-${mode}`),
+        start: read,
       });
-      assert.isDefined((yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch);
+      const restarted = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+      assert.deepEqual(restarted?.failedChecks, ["lint"]);
+      assert.isUndefined(restarted?.awaitingBaseline);
     }),
   );
 

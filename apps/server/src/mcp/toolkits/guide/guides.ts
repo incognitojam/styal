@@ -186,7 +186,8 @@ especially work that needs a pull request or workflow watch. If you need to hear
 \`reportBack\`. styal reports failures, unanswered blocking approvals or questions, and results when
 the thread stops working. A pull request or workflow watch does not hold a report: it includes
 the last assistant text and what the thread waits on. Do not repeat automatic reports with
-\`t3_thread_send\`. End your turn after starting a watch and let it wake you.
+\`t3_thread_send\`. Act on the watch result before ending your turn; existing PR checks and
+conflicts do not wake you.
 
 A thread launched on another linked machine cannot report back yet. Use a delegated task when its
 automatic cross-machine result is sufficient; it still cannot watch PRs.
