@@ -159,16 +159,16 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         ) : (
           <>
             {props.statusLine ? (
-              <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+              <span className="shrink-0 text-xs text-sidebar-muted-foreground group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
                 {props.statusLine}
               </span>
             ) : null}
-            {/* The New thread action takes this place on hover, as it does the count's. */}
-            <span className="contents group-hover/project-folder:hidden pointer-coarse:hidden">
+            {/* The New thread action takes this place on hover or focus, as it does the count's. */}
+            <span className="contents group-hover/project-folder:hidden group-has-[[data-sidebar-action-for]:focus]/project-folder:hidden pointer-coarse:hidden">
               <SidebarFolderDot dot={dot} />
             </span>
             {collapsed && hiddenThreads.length > 0 ? (
-              <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible pointer-coarse:invisible">
+              <span className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground group-hover/project-folder:invisible group-has-[[data-sidebar-action-for]:focus]/project-folder:invisible pointer-coarse:invisible">
                 {hiddenThreads.length}
               </span>
             ) : null}
@@ -204,7 +204,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           />
         </button>
       ) : null}
-      {/* Sits over the count, which hides on hover, and left of the chevron. */}
+      {/* Sits over the count, which hides on hover or focus, and left of the chevron. */}
       <span
         className={cn(
           "absolute right-6 bottom-0 flex h-8 items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100",

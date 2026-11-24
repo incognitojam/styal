@@ -626,15 +626,14 @@ export interface ProjectionStoreV2Shape {
   readonly listOlderSettledThreads: (
     query: OlderSettledThreadsQuery,
   ) => Effect.Effect<OlderSettledThreadsListing, ProjectionStoreV2Error>;
-  /**
-   * Callers that combine the shell with other reads run this inside their own
-   * transaction and the returned decode after it commits, so the shared
-   * connection is not held while thousands of rows are converted.
-   */
-  readonly readShellSnapshot: (
-    options?: ShellSnapshotOptions,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, ProjectionStoreV2Error>,
+  /** Resolve settings before the caller's transaction; read rows inside it and decode after it. */
+  readonly prepareShellSnapshot: Effect.Effect<
+    (
+      options?: ShellSnapshotOptions,
+    ) => Effect.Effect<
+      Effect.Effect<OrchestrationV2ThreadShellSnapshot, ProjectionStoreV2Error>,
+      ProjectionStoreV2Error
+    >,
     ProjectionStoreV2Error
   >;
   readonly getThreadShell: (
@@ -1308,7 +1307,7 @@ const encodeMentionedTimes = Schema.encodeEffect(
 const encodePlanPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2PlanArtifactSchema),
 );
-const encodeTurnItemPayload = Schema.encodeEffect(
+export const encodeTurnItemPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2TurnItemJsonSchema),
 );
 // The codec every *Json payload schema uses for timestamps, so index columns match payload_json.
@@ -2010,6 +2009,7 @@ export function threadShellFromProjection(
     lastVisitedAt: projection.thread.lastVisitedAt,
     opens: projection.thread.opens ?? null,
     titleRegeneration: projection.thread.titleRegeneration ?? null,
+    lastTitleRegeneration: projection.thread.lastTitleRegeneration ?? null,
     limitRecovery: projection.thread.limitRecovery ?? null,
     authRecovery: projection.thread.authRecovery ?? null,
     deletedAt: projection.thread.deletedAt,
@@ -2325,6 +2325,7 @@ function shellFromState(input: {
     lastVisitedAt: input.state.thread.lastVisitedAt,
     opens: input.state.thread.opens ?? null,
     titleRegeneration: input.state.thread.titleRegeneration ?? null,
+    lastTitleRegeneration: input.state.thread.lastTitleRegeneration ?? null,
     limitRecovery: input.state.thread.limitRecovery ?? null,
     authRecovery: input.state.thread.authRecovery ?? null,
     deletedAt: input.state.thread.deletedAt,
@@ -5609,14 +5610,17 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     WHERE latest.thread_id = ${threadId}
                     ORDER BY latest.ordinal DESC LIMIT 1
                   )
-                  -- Retain the latest run for each provider thread with lost
-                  -- background work, including owners used before a handoff.
+                  -- Retain the latest ended run for each provider thread with lost
+                  -- background work, including owners used before a handoff. An
+                  -- unfinished run is read above and may prove never started.
                   OR run.run_id IN (
                     SELECT (
                       SELECT ended.run_id FROM orchestration_v2_projection_runs AS ended
                       WHERE ended.thread_id = ${threadId}
                         AND ended.provider_thread_id = roster.provider_thread_id
-                        AND ended.status NOT IN ('queued', 'rolled_back')
+                        AND ended.status NOT IN (
+                          'queued', 'preparing', 'starting', 'running', 'waiting', 'rolled_back'
+                        )
                         -- A run that never started (see neverStarted) owns no work.
                         AND NOT (
                           json_type(ended.payload_json, '$.startedAt') = 'null'
@@ -7417,6 +7421,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   const historyItems =
                     workMode === "deferred" ? deferWorkHistoryRows(indexed) : indexed;
                   const policy = olderHistoryPagePolicy({ items: indexed, cursor, throughEntryId });
+                  // Folding can hide the cursor's row: a snapshot folds no work in a thread with no
+                  // user turn. The page then ends at the first row kept from the cursor on.
+                  const cursorRow =
+                    indexed[findCursorEndIndex(indexed, decodeThreadHistoryCursor(cursor))];
+                  const end =
+                    cursorRow === undefined
+                      ? -1
+                      : historyItems.findIndex(
+                          (row) => row.canonicalPosition >= cursorRow.canonicalPosition,
+                        );
                   const page =
                     workMode === "work"
                       ? selectDeferredWorkPage({
@@ -7429,6 +7443,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       : selectHistoryPageFromCursor({
                           items: historyItems,
                           cursor,
+                          exclusiveEndIndex: end === -1 ? historyItems.length : end,
                           snapshotSequence,
                           rowEncodedBytes: () => 0,
                           policy,
@@ -8005,6 +8020,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     };
 
     const selectShellThreadRows = Effect.fn("ProjectionStore.selectShellThreadRows")(function* (
+      countReportQuestions: boolean,
       threadId?: ThreadId,
       {
         location,
@@ -8015,13 +8031,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         worktreePath,
         threadIds,
         listedOnly = false,
-        includeReportQuestions = true,
       }: ShellSnapshotOptions & {
         readonly listedOnly?: boolean;
-        readonly includeReportQuestions?: boolean;
       } = {},
     ) {
-      const countReportQuestions = includeReportQuestions && (yield* reportsEnabled);
       return yield* sql<ShellThreadRow>`
             SELECT
               t.thread_id,
@@ -8458,11 +8471,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       return { providerThreadsByThreadId, pendingTurnItemsByThreadId };
     });
 
-    const getSettlementCandidates: ProjectionStoreV2Shape["getSettlementCandidates"] = (threadId) =>
-      sql
-        .withTransaction(
+    const getSettlementCandidates: ProjectionStoreV2Shape["getSettlementCandidates"] = Effect.fn(
+      "ProjectionStore.getSettlementCandidates",
+    )(
+      function* (threadId) {
+        const includeReportQuestions = yield* reportsEnabled;
+        return yield* sql.withTransaction(
           Effect.gen(function* () {
-            const includeReportQuestions = yield* reportsEnabled;
             const rows = yield* sql<SettlementThreadRow>`
             SELECT t.thread_id, t.payload_json,
               r.run_id AS latest_run_id,
@@ -8603,8 +8618,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               }),
             );
           }),
-        )
-        .pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+        );
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
 
     const getOpenRemoteDelegatedTasks: ProjectionStoreV2Shape["getOpenRemoteDelegatedTasks"] = sql<{
       readonly thread_id: string;
@@ -9063,9 +9080,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       new ProjectionStoreReadError({ threadId: ThreadId.make("thread:shell"), cause });
 
     const readShellSnapshotRows = Effect.fn("ProjectionStore.readShellSnapshotRows")(function* (
+      countReportQuestions: boolean,
       options: ShellSnapshotOptions | undefined,
     ) {
-      const targetThreadRows = yield* selectShellThreadRows(undefined, options);
+      const targetThreadRows = yield* selectShellThreadRows(
+        countReportQuestions,
+        undefined,
+        options,
+      );
       const targetThreadIds = new Set(targetThreadRows.map((row) => ThreadId.make(row.thread_id)));
       const rowsByThreadId = new Map(
         targetThreadRows.map((row) => [ThreadId.make(row.thread_id), row] as const),
@@ -9078,7 +9100,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       while (pendingSourceIds.length > 0) {
         const sourceId = pendingSourceIds.pop();
         if (sourceId === undefined || rowsByThreadId.has(sourceId)) continue;
-        const source = (yield* selectShellThreadRows(sourceId))[0];
+        const source = (yield* selectShellThreadRows(countReportQuestions, sourceId))[0];
         if (source === undefined) continue;
         rowsByThreadId.set(sourceId, source);
         if (source.forked_from_run_source_thread_id !== null) {
@@ -9182,10 +9204,17 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       };
     }, Effect.mapError(shellSnapshotReadError));
 
-    const readShellSnapshot: ProjectionStoreV2Shape["readShellSnapshot"] = (options) =>
-      readShellSnapshotRows(options).pipe(
+    const prepareShellSnapshot: ProjectionStoreV2Shape["prepareShellSnapshot"] =
+      reportsEnabled.pipe(
+        Effect.map(
+          (countReportQuestions) => (options?: ShellSnapshotOptions) =>
+            readShellSnapshotRows(countReportQuestions, options).pipe(
+              NodeSqliteClient.readOnly,
+              Effect.mapError(shellSnapshotReadError),
+              Effect.map(decodeShellSnapshot),
+            ),
+        ),
         Effect.mapError(shellSnapshotReadError),
-        Effect.map(decodeShellSnapshot),
       );
 
     const getPullRequestSnapshot: ProjectionStoreV2Shape["getPullRequestSnapshot"] = Effect.fn(
@@ -9228,12 +9257,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const { threadRows, providerThreadRows, pendingTurnItemRows, sequenceRows } =
           yield* sql.withTransaction(
             Effect.gen(function* () {
-              const threadRows = yield* selectShellThreadRows(threadId, {
-                ...(threadId === undefined
-                  ? { location: "active" as const, listedOnly: true }
-                  : {}),
-                includeReportQuestions: false,
-              });
+              const threadRows = yield* selectShellThreadRows(
+                false,
+                threadId,
+                threadId === undefined ? { location: "active", listedOnly: true } : {},
+              );
               const ids = threadRows.map((row) => ThreadId.make(row.thread_id));
               const providerThreadRows =
                 ids.length === 0 ? [] : yield* selectShellProviderThreadRows(ids);
@@ -9301,9 +9329,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     );
 
     const getShellSnapshot: ProjectionStoreV2Shape["getShellSnapshot"] = (options) =>
-      sql
-        .withTransaction(readShellSnapshotRows(options))
-        .pipe(Effect.mapError(shellSnapshotReadError), Effect.flatMap(decodeShellSnapshot));
+      reportsEnabled.pipe(
+        Effect.flatMap((countReportQuestions) =>
+          sql.withTransaction(readShellSnapshotRows(countReportQuestions, options)),
+        ),
+        Effect.mapError(shellSnapshotReadError),
+        Effect.flatMap(decodeShellSnapshot),
+      );
 
     const listActiveSubagentThreadIds = Effect.fn("ProjectionStore.listActiveSubagentThreadIds")(
       function* () {
@@ -9517,9 +9549,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       };
     }, Effect.mapError(shellSnapshotReadError));
 
-    const getThreadShell: ProjectionStoreV2Shape["getThreadShell"] = (threadId) =>
-      sql
-        .withTransaction(
+    const getThreadShell: ProjectionStoreV2Shape["getThreadShell"] = Effect.fn(
+      "ProjectionStore.getThreadShell",
+    )(
+      function* (threadId) {
+        const countReportQuestions = yield* reportsEnabled;
+        return yield* sql.withTransaction(
           Effect.gen(function* () {
             const rowsByThreadId = new Map<ThreadId, ShellThreadRow>();
             const pending: Array<ThreadId> = [threadId];
@@ -9528,7 +9563,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               if (nextId === undefined || rowsByThreadId.has(nextId)) {
                 continue;
               }
-              const rows = yield* selectShellThreadRows(nextId);
+              const rows = yield* selectShellThreadRows(countReportQuestions, nextId);
               const row = rows[0];
               if (row === undefined) {
                 continue;
@@ -9596,8 +9631,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               visibleItemCount: visibleItemCountForShell({ threadId, statesByThreadId }),
             });
           }),
-        )
-        .pipe(Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause })));
+        );
+      },
+      (effect, threadId) =>
+        effect.pipe(Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause }))),
+    );
 
     const readOnReader =
       <Args extends ReadonlyArray<unknown>, A, E, R>(
@@ -9614,7 +9652,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       listActiveSubagentThreadIds: readOnReader(listActiveSubagentThreadIds),
       countThreads: readOnReader(countThreads),
       listActiveShellIndex: readOnReader(listActiveShellIndex),
-      readShellSnapshot: readOnReader(readShellSnapshot),
+      prepareShellSnapshot,
       listOlderSettledThreads: readOnReader(listOlderSettledThreads),
       getThreadShell: readOnReader(getThreadShell),
       findGuestShareThreadId: readOnReader(findGuestShareThreadId),

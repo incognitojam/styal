@@ -1108,8 +1108,9 @@ it.layer(layerTest)("ThreadSearch.searchThreadsWithOlderSettledRows", (it) => {
           search: search.search,
           searchOlderSettled: search.searchOlderSettled,
           sql,
-          readThreads: (threadIds) =>
-            projections.readShellSnapshot({ location: "active", threadIds }),
+          readThreads: projections.prepareShellSnapshot.pipe(
+            Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+          ),
           latestSequence: Effect.succeed(7),
         });
       const withMessages = yield* run({});
@@ -1135,8 +1136,9 @@ it.layer(layerTest)("ThreadSearch.searchThreadsWithOlderSettledRows", (it) => {
           search: search.search,
           searchOlderSettled: search.searchOlderSettled,
           sql,
-          readThreads: (threadIds) =>
-            projections.readShellSnapshot({ location: "active", threadIds }),
+          readThreads: projections.prepareShellSnapshot.pipe(
+            Effect.map((read) => (threadIds) => read({ location: "active", threadIds })),
+          ),
           latestSequence: Effect.succeed(7),
         })).threads,
       );

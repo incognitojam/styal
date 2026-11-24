@@ -67,6 +67,28 @@ export function coordinatedProjectKey(
 }
 
 /**
+ * The project page a coordinator's address opens instead of the thread view, except a link quoting
+ * a response the thread view reveals, a thread held from outside the shell (the page cannot show
+ * it, even once its family loads), and a view under Settings or Usage. `thread`: null until listed.
+ */
+export function threadRouteProjectKey(
+  route: {
+    /** The address quotes one of the thread's responses (`assistantCitationFromLocation`). */
+    readonly quotesResponse: boolean;
+    readonly heldOffShell: boolean;
+    readonly background: boolean;
+  },
+  thread: Parameters<typeof coordinatedProjectKey>[0] | null,
+  settingsFor: Parameters<typeof coordinatedProjectKey>[1],
+  groupOf: Parameters<typeof coordinatedProjectKey>[2],
+): string | null {
+  if (thread === null || route.heldOffShell || route.background || route.quotesResponse) {
+    return null;
+  }
+  return coordinatedProjectKey(thread, settingsFor, groupOf);
+}
+
+/**
  * Whether a project chat still hears from the threads it started, as the server decides for a
  * launcher: not archived, deleted, or settled by the user.
  */

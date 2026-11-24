@@ -28,11 +28,13 @@ export interface EnvironmentCatalogState {
   readonly entries: ReadonlyMap<EnvironmentIdType, ConnectionCatalogEntry>;
 }
 
+// An incompatible environment stays listed from its cache, like an unreachable one; its
+// connection stays blocked in the registry.
 export function* enabledEnvironmentIds(
   catalog: EnvironmentCatalogState,
 ): Generator<EnvironmentIdType> {
   for (const [environmentId, entry] of catalog.entries) {
-    if (entry.enabled && entry.unsupportedReason === undefined) {
+    if (entry.enabled) {
       yield environmentId;
     }
   }

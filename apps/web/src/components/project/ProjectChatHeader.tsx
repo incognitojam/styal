@@ -1,10 +1,5 @@
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import {
-  CalendarClockIcon,
-  MessageSquareTextIcon,
-  SettingsIcon,
-  SquarePenIcon,
-} from "lucide-react";
+import { CalendarClockIcon, SettingsIcon, SquarePenIcon } from "lucide-react";
 
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { cn } from "~/lib/utils";
@@ -24,8 +19,6 @@ export interface ProjectChatHeaderProps {
   readonly machine: { readonly label: string; readonly kind: EnvironmentMachineKind } | null;
   readonly onNewThread: () => void;
   readonly onOpenSettings: () => void;
-  /** Once the chat exists: its thread view, for the thread's title, menu and details panel. */
-  readonly onOpenThread?: (() => void) | null;
   /** Scheduled tasks whose threads the page keeps off the sidebar, listed in a menu. */
   readonly jobs: ReadonlyArray<ProjectPageJob>;
   readonly onOpenJobThread: (thread: ProjectPageJob["thread"]) => void;
@@ -38,8 +31,8 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
       data-testid="project-chat-header"
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        // Two panel toggles sit over the right edge: the project page has no details toggle.
-        props.rightPanelOpen ? "pr-10" : "pr-16",
+        // The three panel toggles over the right edge are 32px wide below sm, 28px above.
+        props.rightPanelOpen ? "pr-10" : "pr-28 sm:pr-24",
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -101,23 +94,6 @@ export function ProjectChatHeader(props: ProjectChatHeaderProps & { rightPanelOp
             ))}
           </MenuPopup>
         </Menu>
-      ) : null}
-      {props.onOpenThread ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost-muted"
-                size="icon-sm"
-                aria-label="Open as thread"
-                onClick={props.onOpenThread}
-              />
-            }
-          >
-            <MessageSquareTextIcon aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup side="bottom">Open as thread</TooltipPopup>
-        </Tooltip>
       ) : null}
       <Tooltip>
         <TooltipTrigger
