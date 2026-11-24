@@ -63,22 +63,29 @@ it("isolates concurrent provider environments in actual shell children and prese
     `
     const {spawnSync}=require('node:child_process');
     let cancelled=false;
+    let useHttp1ForAgent;
+    exports.Cursor={configure:({local})=>{useHttp1ForAgent=local.useHttp1ForAgent;}};
     const shell=()=>JSON.parse(spawnSync(process.execPath,['-e','process.stdout.write(JSON.stringify({port:process.env.PORT,device:process.env.STYAL_DEVICE,profile:process.env.CURSOR_PROFILE}))'],{encoding:'utf8'}).stdout);
     const agent=(id)=>({agentId:id,close(){},async send(message,options){
       await options.onDelta({update:{type:'synthetic',environment:shell()}});
       globalThis[Symbol.for('@cursor/sdk.shellStreamOutput')]?.({conversationId:id,toolCallId:'shell-1',event:{case:'stdout',value:{data:'building'}}});
-      return {id:'run',agentId:id,wait:async()=>message==='hang'?new Promise(()=>{}):({environment:shell(),cancelled}),steer:async()=> 'complete_delivered',cancel:async()=>{cancelled=true;}};
+      return {id:'run',agentId:id,wait:async()=>message==='hang'?new Promise(()=>{}):({environment:shell(),cancelled,useHttp1ForAgent}),steer:async()=> 'complete_delivered',cancel:async()=>{cancelled=true;}};
     }});
     exports.Agent={create:async()=>agent('created'),resume:async(id)=>agent(id),listRuns:async()=>({items:[]}),cancelRun:async()=>{cancelled=true;},messages:{list:async()=>[{environment:shell()}]}};
   `,
   );
   const originalPort = process.env.PORT;
-  const first = makeCursorSdkWorkerApi(modulePath, {
-    ...process.env,
-    PORT: "41001",
-    STYAL_DEVICE: "synthetic-ios",
-    CURSOR_PROFILE: "one",
-  });
+  const first = makeCursorSdkWorkerApi(
+    modulePath,
+    {
+      ...process.env,
+      PORT: "41001",
+      STYAL_DEVICE: "synthetic-ios",
+      CURSOR_PROFILE: "one",
+    },
+    undefined,
+    true,
+  );
   const second = makeCursorSdkWorkerApi(modulePath, {
     ...process.env,
     PORT: "41002",
@@ -101,10 +108,15 @@ it("isolates concurrent provider environments in actual shell children and prese
     await runs[0]!.cancel();
     const results = await Promise.all(runs.map((run) => run.wait()));
     assert.deepEqual<unknown>(results, [
-      { environment: { port: "41001", device: "synthetic-ios", profile: "one" }, cancelled: true },
+      {
+        environment: { port: "41001", device: "synthetic-ios", profile: "one" },
+        cancelled: true,
+        useHttp1ForAgent: true,
+      },
       {
         environment: { port: "41002", device: "synthetic-android", profile: "two" },
         cancelled: false,
+        useHttp1ForAgent: undefined,
       },
     ]);
     assert.equal(deltas.length, 4);

@@ -1113,10 +1113,10 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   );
 }
 
-// Returning to the window should land the caret in the composer, so the reader can type right
-// away. The exceptions are places where focus is deliberate: another text field, a terminal in
-// the drawer or the right panel, an open dialog, menu, or popup, or a region or sidebar row
-// reached from the keyboard. A plain focused button or a clicked row yields to the composer.
+// Window return puts the caret in the composer unless focus is deliberate: another text field,
+// a terminal, an open dialog, menu, or popup, a region or sidebar row reached from the keyboard,
+// or a region with its own keys (aria-keyshortcuts). A plain focused button or a clicked row
+// yields to the composer.
 export function shouldRefocusComposerOnWindowFocus(
   activeElement:
     | (Pick<Element, "tagName" | "closest" | "getAttribute"> & { isContentEditable?: boolean })
@@ -1136,7 +1136,7 @@ export function shouldRefocusComposerOnWindowFocus(
   }
   return (
     activeElement.closest(
-      '[data-workspace-keyboard-focus], [data-sidebar-row]:focus-visible, [role="dialog"], [role="alertdialog"], [role="application"], [role="menu"], [role="listbox"], [data-slot$="-popup"], [data-terminal-owner]',
+      '[data-workspace-keyboard-focus], [data-sidebar-row]:focus-visible, [role="dialog"], [role="alertdialog"], [role="application"], [role="menu"], [role="listbox"], [data-slot$="-popup"], [data-terminal-owner], [aria-keyshortcuts]',
     ) === null
   );
 }
@@ -1355,11 +1355,18 @@ export function planComposerTurn(input: {
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
   readonly freshContext: boolean;
+  /** The project page's chat draft starts in the project's folder, whatever it holds. */
+  readonly projectChatDraft: boolean;
 }) {
+  const threadBranch = input.projectChatDraft ? null : input.activeThreadBranch;
+  const threadWorktreePath = input.projectChatDraft ? null : input.worktreePath;
   const isFirstMessage =
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
   const shouldCreateWorktree =
-    isFirstMessage && input.sendEnvMode === "worktree" && !input.worktreePath;
+    isFirstMessage &&
+    !input.projectChatDraft &&
+    input.sendEnvMode === "worktree" &&
+    !threadWorktreePath;
   // A stale Claude session compacts before this message so the turn does not re-read the
   // old history. The message queues behind the /compact run, since steering into it is
   // rejected.
@@ -1375,8 +1382,11 @@ export function planComposerTurn(input: {
   return {
     // In worktree mode, require an explicit base branch so we don't silently
     // fall back to local execution when branch selection is missing.
-    missingWorktreeBaseBranch: shouldCreateWorktree && !input.activeThreadBranch,
-    baseBranchForWorktree: shouldCreateWorktree ? input.activeThreadBranch : null,
+    missingWorktreeBaseBranch: shouldCreateWorktree && !threadBranch,
+    baseBranchForWorktree: shouldCreateWorktree ? threadBranch : null,
+    /** The branch and worktree a new thread is created with. */
+    threadBranch,
+    threadWorktreePath,
     compactBeforeSend,
     turnDispatchMode:
       compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")

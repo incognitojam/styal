@@ -171,6 +171,7 @@ describe("CursorAgentSdkRunner", () => {
       );
       const runner = yield* CursorAgentSdk.makeCursorAgentSdkRunner(() => undefined).pipe(
         Effect.provideService(CursorSdk.CursorSdk, {
+          useHttp1ForAgent: false,
           load: loaders.loadCursorSdk,
           loadSqlite: loaders.loadCursorSqlite,
         }),
@@ -197,6 +198,7 @@ describe("CursorAgentSdkRunner", () => {
       });
       const runner = yield* CursorAgentSdk.makeCursorAgentSdkRunner(() => undefined).pipe(
         Effect.provideService(CursorSdk.CursorSdk, {
+          useHttp1ForAgent: true,
           load,
           loadSqlite: () => {
             throw new Error("unused SQLite");
@@ -230,6 +232,8 @@ describe("CursorAgentSdkRunner", () => {
       assert.deepStrictEqual(makeCursorSdkWorkerApi.mock.lastCall, [
         "/cursor-sdk/index.js",
         environment,
+        undefined,
+        true,
       ]);
       assert.strictEqual(load.mock.calls.length, 0);
 

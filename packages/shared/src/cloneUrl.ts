@@ -56,9 +56,16 @@ export function cloneUrlForProtocol(url: string, protocol: CloneProtocol): strin
     const azure = /^([^/?#]+)\/([^/?#]+)\/_git\/([^/?#]+)$/.exec(parsed.path);
     return azure ? `git@ssh.dev.azure.com:v3/${azure[1]}/${azure[2]}/${azure[3]}` : null;
   }
-  return protocol === "ssh"
-    ? `git@${parsed.host}:${parsed.path}`
-    : `https://${parsed.host}/${parsed.path}`;
+  // SCP paths are literal; URI paths use percent escapes.
+  try {
+    if (protocol === "ssh") return `git@${parsed.host}:${decodeURIComponent(parsed.path)}`;
+    const path = parsed.scp
+      ? parsed.path.split("/").map(encodeURIComponent).join("/")
+      : parsed.path;
+    return `https://${parsed.host}/${path}`;
+  } catch {
+    return null;
+  }
 }
 
 const UNSAFE_SEGMENT = /^\.{1,2}$|[\\:*?"<>|\p{Cc}]|[ .]$/u;

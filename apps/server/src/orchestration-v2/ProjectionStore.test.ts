@@ -42,11 +42,13 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
@@ -57,11 +59,13 @@ import {
   encodeThreadHistoryCursor,
   selectHistoryPageFromCursor,
   THREAD_HISTORY_PAGE_POLICY,
+  THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
   THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT,
 } from "./threadHistoryPaging.ts";
 import { buildBoundedThreadStreamSnapshot } from "./ThreadStream.ts";
 import { COMMAND_OUTPUT_WIRE_PREFIX_LENGTH } from "./WireProjection.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import { loadShellSnapshotParts } from "./ShellStream.ts";
 
 import { layerReaderDatabase, traceSqlRouting } from "../persistence/testkit/SqliteRouting.ts";
 
@@ -427,6 +431,77 @@ it.effect("routes full projection reads to readers and retains uncommitted write
       }),
     );
   }).pipe(Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(layerReaderDatabase)))),
+);
+
+it.effect.each(["snapshot", "single", "settlement", "combined"] as const)(
+  "keeps the reader available during a settings reload for %s shells",
+  (entryPoint) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const reload = yield* Deferred.make<void>();
+      const settingsRequested = yield* Queue.unbounded<boolean>();
+      const store = yield* Effect.service(ProjectionStore.ProjectionStoreV2).pipe(
+        Effect.provide(ProjectionStore.layer),
+        Effect.provideService(ServerSettings.ServerSettingsService, {
+          ...settings,
+          getSettings: Effect.gen(function* () {
+            const transaction = yield* Effect.serviceOption(sql.transactionService);
+            yield* Queue.offer(settingsRequested, Option.isSome(transaction));
+            yield* Deferred.await(reload);
+            return yield* settings.getSettings;
+          }),
+        }),
+      );
+      const read =
+        entryPoint === "snapshot"
+          ? store.getShellSnapshot()
+          : entryPoint === "single"
+            ? store.getThreadShell(ThreadId.make("thread:reload"))
+            : entryPoint === "settlement"
+              ? store.getSettlementCandidates()
+              : loadShellSnapshotParts({
+                  sql,
+                  readThreads: store.prepareShellSnapshot.pipe(Effect.map((read) => read())),
+                  listProjects: Effect.succeed([]),
+                  latestSequence: Effect.succeed(0),
+                }).pipe(Effect.map((parts) => parts.threads));
+      const snapshot = yield* Effect.all([read, read, read, read], {
+        concurrency: "unbounded",
+      }).pipe(Effect.forkChild);
+      // Fail before joining a deadlocked fiber, so the regression needs no timeout.
+      const heldTransactions = yield* Effect.forEach([0, 1, 2, 3], () =>
+        Queue.take(settingsRequested),
+      );
+      assert.deepEqual(heldTransactions, [false, false, false, false]);
+      const { queries, trace } = traceSqlRouting();
+      yield* sql`SELECT DISTINCT provider_name FROM provider_session_runtime`.pipe(
+        NodeSqliteClient.readOnly,
+        trace,
+      );
+      assert.deepEqual(
+        queries.map((query) => query.connection),
+        ["reader"],
+      );
+      yield* Deferred.succeed(reload, undefined);
+      const results = yield* Fiber.join(snapshot);
+      for (const result of results)
+        assert.deepEqual(
+          result,
+          entryPoint === "single"
+            ? null
+            : entryPoint === "settlement"
+              ? []
+              : { schemaVersion: 2, snapshotSequence: 0, threads: [], archivedThreads: [] },
+        );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerReaderDatabase,
+          ServerSettings.layerTest({ coordinatorReportsEnabled: true }),
+        ),
+      ),
+    ),
 );
 
 it.effect("record reads restrict provider histories to delivery identities", () =>
@@ -6082,6 +6157,79 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         )
       `;
       assert.strictEqual((yield* forkPage()).totalItems, forkTotal + 2);
+
+      // An agent started this thread, so the snapshot folds no work. Its cursor then names a
+      // command that an older page folds into the run's one work group.
+      yield* sql`
+        UPDATE orchestration_v2_projection_turn_items
+        SET type = CASE WHEN ordinal = 0 THEN type ELSE 'assistant_message' END,
+          payload_json = CASE
+            WHEN ordinal = 0 THEN json_set(payload_json, '$.createdBy', 'agent')
+            ELSE json_set(payload_json, '$.type', 'assistant_message',
+              '$.messageId', turn_item_id, '$.streaming', json('false'))
+          END
+        WHERE thread_id = ${threadId} AND type = 'user_message'
+      `;
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type,
+          occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+        ) VALUES (
+          'event:paged-scrollback:agent-started', 'thread', ${threadId}, 2,
+          'turn-item.updated', ${nowIso}, 'user', '{}', '{}', 2
+        )
+      `;
+      const window = yield* projectionStore.getThreadSnapshotWindow(threadId, {
+        rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
+        userTurnLimit: THREAD_HISTORY_PAGE_POLICY.maxUserTurns,
+        deferWork: true,
+      });
+      const bounded = buildBoundedThreadProjection({
+        projection: window.projection,
+        snapshotSequence: window.snapshotSequence,
+      });
+      const loaded = [bounded.projection.visibleTurnItems];
+      let earlier = bounded.hasMoreHistory ? bounded.historyCursor : null;
+      while (earlier !== null) {
+        assert.isBelow(loaded.length, 20);
+        const page: OrchestrationV2ThreadHistoryPage = yield* projectionStore.getThreadHistoryPage(
+          threadId,
+          earlier,
+          undefined,
+          false,
+          "deferred",
+        );
+        loaded.unshift(page.items);
+        earlier = page.hasMoreHistory ? page.nextCursor : null;
+      }
+      const held = loaded.flat();
+      const heldOrdinals = held.map((row) => row.item.ordinal);
+      assert.deepEqual(
+        heldOrdinals,
+        [...new Set(heldOrdinals)].toSorted((left, right) => left - right),
+      );
+      const folded = held.find((row) => row.item.deferredWork !== undefined)?.item;
+      assert.isAbove(folded?.deferredWork?.itemCount ?? 0, 150);
+      const everyRow = yield* projectionStore.getTimelinePage(threadId, {
+        view: "activity",
+        limit: itemCount + 2,
+      });
+      // Every row is on the client, or is work that the folded row stands for.
+      assert.deepEqual(
+        everyRow.items
+          .filter(
+            ({ item }) =>
+              !heldOrdinals.includes(item.ordinal) &&
+              !(
+                item.type === "command_execution" &&
+                folded?.deferredWork !== undefined &&
+                item.ordinal > folded.ordinal &&
+                item.ordinal <= folded.deferredWork.lastOrdinal
+              ),
+          )
+          .map(({ item }) => item.ordinal),
+        [],
+      );
     }),
   );
 
@@ -6795,7 +6943,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       );
       yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at = NULL WHERE thread_id = ${readThreadId}`;
       yield* settledPayload(null, null);
-      const decode = yield* sql.withTransaction(projectionStore.readShellSnapshot());
+      const readShellSnapshot = yield* projectionStore.prepareShellSnapshot;
+      const decode = yield* sql.withTransaction(readShellSnapshot());
       yield* createThread(laterThreadId);
 
       assert.deepEqual(shellIds(yield* decode), [readThreadId]);
@@ -6813,7 +6962,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           WHERE thread_id = ${laterThreadId}`;
       yield* setPayload("{}");
       const failure = yield* sql
-        .withTransaction(projectionStore.readShellSnapshot())
+        .withTransaction(readShellSnapshot())
         .pipe(
           Effect.flatMap(Effect.flip),
           Effect.ensuring(Effect.orDie(setPayload(stored!.payload_json))),
