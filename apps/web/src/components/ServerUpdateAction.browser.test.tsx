@@ -1,6 +1,7 @@
 import { RegistryContext } from "@effect/atom-react";
 import {
   AuthSessionState,
+  EnvironmentAuthorizationError,
   ThreadId,
   summarizeDesktopUpdateActivity,
   type EnvironmentId,
@@ -667,4 +668,34 @@ describe("OutdatedServerUpdateAction", () => {
       } else expect(testState.updateServer).not.toHaveBeenCalled();
     },
   );
+
+  it("says a pairing without maintenance permission can't update the server", async () => {
+    using _state = setup();
+    subscribeConfirmDialogHost(() => {});
+    testState.updateServer.mockResolvedValue(
+      AsyncResult.failure(
+        Cause.fail(
+          new EnvironmentAuthorizationError({
+            message: "The authenticated token is missing required scope: environment:maintain.",
+            requiredScope: "environment:maintain",
+          }),
+        ),
+      ),
+    );
+    await using screen = await renderUpdate(
+      <OutdatedServerUpdateAction
+        environmentId={"outdated" as EnvironmentId}
+        serverLabel="Lab server"
+        fromVersion="0.0.30"
+        targetVersion="0.0.31"
+      />,
+    );
+    await click(screen, "Update");
+    await act(async () => respondToConfirmDialog(true));
+    expect(testState.toast).toHaveBeenCalledWith({
+      type: "error",
+      title: "Lab server update failed",
+      description: "This pairing can't update the Lab server.",
+    });
+  });
 });

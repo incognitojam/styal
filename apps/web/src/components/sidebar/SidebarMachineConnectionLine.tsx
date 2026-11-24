@@ -11,6 +11,7 @@ import { environmentUpdateStatesAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
 
 function useMachineConnections() {
@@ -23,6 +24,8 @@ function useMachineConnections() {
   const relaySession = useAtomValue(managedRelaySessionAtom);
   return environments.map((environment, index) => ({
     ...environment,
+    outdated: environment.entry.outdated ?? null,
+    enabled: environment.entry.enabled,
     updating: updateStates[index]?.status === "running",
     awaitingSignIn:
       relaySession === null &&
@@ -55,10 +58,17 @@ export function SidebarMachineConnectionLine() {
       ) : (
         <EnvironmentMachineIcon kind={line.machineKind} className="size-3.5 shrink-0" />
       )}
-      <span role="status" className="min-w-0 flex-1 truncate">
-        {line.text}
-      </span>
-      {failed ? (
+      <Tooltip>
+        <TooltipTrigger render={<span role="status" className="min-w-0 flex-1 truncate" />}>
+          {line.text}
+        </TooltipTrigger>
+        {line.tooltip === null ? null : (
+          <TooltipPopup side="top" className="max-w-72 whitespace-pre-line">
+            {line.tooltip}
+          </TooltipPopup>
+        )}
+      </Tooltip>
+      {line.retryEnvironmentIds.length > 0 ? (
         <button
           type="button"
           className="shrink-0 cursor-pointer underline decoration-current/50 underline-offset-3 hover:decoration-current"

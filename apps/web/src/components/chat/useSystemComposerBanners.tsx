@@ -24,7 +24,12 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
-import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
+import {
+  OutdatedServerUpdateAction,
+  ServerUpdateAction,
+  serverUpdateStageLabel,
+} from "../ServerUpdateAction";
+import { APP_VERSION } from "~/branding";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
 import {
@@ -46,6 +51,12 @@ export type EnvironmentUnavailableState = {
   readonly label: string;
   readonly machineKind: EnvironmentMachineKind;
   readonly connection: EnvironmentConnectionPresentation;
+  /** Which side's version is too old, when the versions are why it cannot connect. */
+  readonly outdated: "client" | "server" | null;
+  /** The machine is older and can update itself from here. */
+  readonly serverUpdateRequired: boolean;
+  /** The version it last ran, from the cached config. */
+  readonly serverVersion: string | undefined;
   /** Why a styal Link environment has no cloud session to connect with, if it has none. */
   readonly missingCloudSession: "loading" | "failed" | "signed-out" | null;
 };
@@ -237,6 +248,11 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       } else {
         const connectionFailed = unavailableConnection.phase === "error";
         const label = activeEnvironmentUnavailableState.label;
+        // Reconnecting cannot help until one side is updated, so offer that update when there is one.
+        const outdated =
+          unavailableConnection.phase === "unsupported"
+            ? activeEnvironmentUnavailableState.outdated
+            : null;
         items.push({
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
           variant: connectionFailed ? "error" : "warning",
@@ -273,7 +289,19 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             ) : undefined,
           actions: (
             <>
-              {unavailableConnection.phase !== "connecting" ? (
+              {outdated !== null ? (
+                outdated === "server" &&
+                activeEnvironmentUnavailableState.serverUpdateRequired &&
+                !updateRunning ? (
+                  <OutdatedServerUpdateAction
+                    environmentId={activeEnvironmentUnavailableState.environmentId}
+                    serverLabel={`${label} server`}
+                    fromVersion={activeEnvironmentUnavailableState.serverVersion}
+                    targetVersion={APP_VERSION}
+                    label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+                  />
+                ) : null
+              ) : unavailableConnection.phase !== "connecting" ? (
                 <Button
                   size="xs"
                   variant="ghost"

@@ -1325,6 +1325,9 @@ export default function ChatView(props: ChatViewProps) {
       label: activeEnvironmentUnavailableLabel,
       machineKind: resolveEnvironmentMachineKind(activeEnvironment.serverConfig),
       connection: activeEnvironment.connection,
+      outdated: activeEnvironment.entry.outdated ?? null,
+      serverUpdateRequired: activeEnvironment.entry.serverUpdateRequired === true,
+      serverVersion: activeEnvironment.serverConfig?.environment.serverVersion,
       missingCloudSession:
         !requiresCloudSession || managedRelaySession !== null
           ? null
