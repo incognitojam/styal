@@ -103,3 +103,11 @@ export const projectCoordinatorInstructions = (reports: boolean) =>
     "",
     "The `orchestration` guide has more.",
   ].join("\n");
+
+export const putAwayRefusal = (
+  settings: Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">,
+  thread: { readonly id: ThreadId; readonly projectId: ProjectId },
+): string | null =>
+  projectCoordinatorThreadId(settings, thread.projectId) === thread.id
+    ? "A project's chat cannot be put away. Leave it active, or stop being coordinator first."
+    : null;

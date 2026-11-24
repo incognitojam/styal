@@ -211,6 +211,7 @@ import {
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ProjectCoordinator from "./ProjectCoordinator.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 const isMessageQuestionAnswer = Schema.is(
@@ -4460,6 +4461,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandType: command.type,
         cause: `Thread ${command.threadId} is deleted.`,
       });
+    }
+    if (
+      command.type === "thread.settle" ||
+      command.type === "thread.snooze" ||
+      command.type === "thread.archive" ||
+      (command.type === "thread.metadata.update" && command.limitRecovery?.snooze === true)
+    ) {
+      const refusal = ProjectCoordinator.putAwayRefusal(
+        yield* serverSettings.getSettings.pipe(Effect.orDie),
+        thread,
+      );
+      if (refusal !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: refusal,
+        });
+      }
     }
     if (
       command.type === "thread.answer-notes.update" &&

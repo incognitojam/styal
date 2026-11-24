@@ -1683,3 +1683,90 @@ it.effect(
       }).pipe(Effect.provide(layerTest));
     }),
 );
+
+it.effect.each([true, false])(
+  "project chat refuses self/other agent put-away (self: %s)",
+  (byOwnAgent) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:put-away");
+      const threadId = ThreadId.make("thread:put-away");
+      const dispatched: string[] = [];
+      let activeRunId: RunId | null = RunId.make("run:put-away");
+      const settingsLayer = ServerSettings.layerTest({
+        projectCoordinatorsEnabled: true,
+        projectCoordinators: { [projectId]: { threadId } },
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadManagementService.ThreadManagementService;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        let ordinal = 0;
+        const common = () => ({ threadId, commandId: CommandId.make(`put-away:${ordinal++}`) });
+        const organize = (action: "settle" | "snooze" | "archive") =>
+          action === "settle"
+            ? service.settleThread({ ...common(), byOwnAgent })
+            : service.dispatch({
+                ...common(),
+                type: `thread.${action}`,
+                snoozedUntil: "2030-01-01T00:00:00.000Z",
+              });
+        const error = yield* organize("settle").pipe(Effect.flip);
+        assert.equal(error._tag, "OrchestratorDispatchError");
+        assert.include("cause" in error ? String(error.cause) : "", "project's chat");
+        assert.deepEqual(dispatched, []);
+        for (const action of [
+          "unsettle",
+          "unsnooze",
+          "unarchive",
+          "pin",
+          "unpin",
+          "mark-unread",
+        ] as const) {
+          yield* service.dispatch(
+            action === "unsettle" || action === "unsnooze"
+              ? { ...common(), type: `thread.${action}`, reason: "user" }
+              : { ...common(), type: `thread.${action}` },
+          );
+        }
+        activeRunId = null;
+        yield* settings.updateSettings({ projectCoordinators: { [projectId]: null } });
+        for (const action of ["settle", "snooze", "archive"] as const) yield* organize(action);
+        yield* settings.updateSettings({
+          projectCoordinators: { [projectId]: { threadId } },
+          projectCoordinatorsEnabled: false,
+        });
+        for (const action of ["settle", "snooze", "archive"] as const) yield* organize(action);
+        assert.deepEqual(dispatched.slice(-6), [
+          "thread.settle",
+          "thread.snooze",
+          "thread.archive",
+          "thread.settle",
+          "thread.snooze",
+          "thread.archive",
+        ]);
+      }).pipe(
+        Effect.provide(
+          ThreadManagementService.layer.pipe(
+            Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+            Layer.provide(
+              Layer.mock(Orchestrator.OrchestratorV2)({
+                getThreadShell: () =>
+                  Effect.succeed({
+                    id: threadId,
+                    projectId,
+                    deletedAt: null,
+                    activeRunId,
+                  } as never),
+                dispatch: (command) =>
+                  Effect.sync(() => {
+                    dispatched.push(command.type);
+                    return { sequence: 1, storedEvents: [] } as never;
+                  }),
+              }),
+            ),
+            Layer.provideMerge(settingsLayer),
+            Layer.provide(layerReceiptsTest),
+          ),
+        ),
+      );
+    }),
+);

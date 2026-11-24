@@ -978,7 +978,12 @@ describe("ThreadSettlementServiceV2 worker", () => {
         );
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot(threads),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 3 },
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: 3,
+            projectCoordinatorsEnabled: true,
+            projectCoordinators: { [PROJECT_ID]: { threadId: threads[0]!.id } },
+          },
         });
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
@@ -991,7 +996,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* service.drain;
           assert.deepEqual(
             new Set((yield* Ref.get(fixture.commands)).map((command) => command.threadId)),
-            new Set(threads.map((thread) => thread.id)),
+            new Set(threads.slice(1).map((thread) => thread.id)),
           );
         }).pipe(Effect.provide(fixture.layer));
       }),

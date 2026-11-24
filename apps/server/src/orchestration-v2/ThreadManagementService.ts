@@ -1425,8 +1425,21 @@ const make = Effect.gen(function* () {
   const settleThread: ThreadManagementServiceShape["settleThread"] = Effect.fn(
     "orchestrationV2.threadManagement.settleThread",
   )(function* (input) {
-    const shell = input.byOwnAgent ? yield* orchestrator.getThreadShell(input.threadId) : null;
-    if (shell != null && shell.activeRunId !== null) {
+    const shell = yield* orchestrator.getThreadShell(input.threadId);
+    if (shell !== null) {
+      const refusal = ProjectCoordinator.putAwayRefusal(
+        yield* serverSettings.getSettings.pipe(Effect.orDie),
+        shell,
+      );
+      if (refusal !== null) {
+        return yield* new Orchestrator.OrchestratorDispatchError({
+          commandId: input.commandId,
+          commandType: "thread.settle",
+          cause: refusal,
+        });
+      }
+    }
+    if (input.byOwnAgent && shell != null && shell.activeRunId !== null) {
       yield* settleAfterRun({
         projectId: shell.projectId,
         threadId: shell.id,
