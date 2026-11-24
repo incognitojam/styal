@@ -19,6 +19,8 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+import { isLatestFailureSeen, resolveThreadLastVisitedAt } from "../Sidebar.logic";
+
 export interface OpenReport {
   readonly messageId: MessageId;
   readonly report: CoordinatorReport;
@@ -46,6 +48,8 @@ export type ProjectNeed = NeedBase &
     | { readonly kind: "report"; readonly report: OpenReport }
     /** Waits on something only its own page answers, such as a subagent's request or a secret. */
     | { readonly kind: "thread" }
+    | { readonly kind: "failed"; readonly error: string | null }
+    | { readonly kind: "limited"; readonly resetAt: string | null }
   );
 
 /** Report questions still waiting, counting responses this client has sent as given. */
@@ -117,6 +121,44 @@ export function listProjectNeeds(
               createdAt: thread.pendingUserInputAt ?? thread.updatedAt,
             },
           ]),
+    );
+  }
+  return needs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));
+}
+
+/**
+ * The failed and usage-limited threads the user hasn't dealt with. One leaves once it is settled
+ * or opened after it stopped, when its sidebar row recedes too.
+ */
+export function stoppedThreadsNeedingYou(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  localVisitedAt: (thread: EnvironmentThreadShell) => string | undefined,
+): ReadonlyArray<EnvironmentThreadShell> {
+  return threads.filter((thread) => {
+    const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localVisitedAt(thread));
+    return thread.settledAt == null && !isLatestFailureSeen({ ...thread, lastVisitedAt });
+  });
+}
+
+/** Rows for {@link stoppedThreadsNeedingYou}, oldest first. */
+export function listStoppedThreadNeeds(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+): ReadonlyArray<ProjectNeed> {
+  const needs: ProjectNeed[] = [];
+  for (const thread of threads) {
+    const base = {
+      key: `${thread.environmentId}:${thread.id}`,
+      thread,
+      createdAt: thread.latestRun?.completedAt ?? thread.runtime?.updatedAt ?? thread.updatedAt,
+    };
+    needs.push(
+      thread.runtime?.lastErrorClass === "usage_limit"
+        ? { ...base, kind: "limited", resetAt: thread.runtime.usageLimitResetAt ?? null }
+        : {
+            ...base,
+            kind: "failed",
+            error: thread.runtime?.lastError?.trim().split("\n")[0]?.trim() || null,
+          },
     );
   }
   return needs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));

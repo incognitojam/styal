@@ -274,6 +274,7 @@ export function NeedsYou({
   scroll,
   runs,
   project = NO_PROJECT_THREADS,
+  stopped = NO_PROJECT_THREADS,
   ...reviewProps
 }: {
   reports: readonly ReportState[];
@@ -281,6 +282,8 @@ export function NeedsYou({
   runs: ReadonlyArray<ThreadWorkflowRunWatch>;
   /** On a project page: the project's threads that need you, answered here. */
   project?: ReadonlyArray<EnvironmentThreadShell>;
+  /** On a project page: the project's threads a failure or a usage limit stopped. */
+  stopped?: ReadonlyArray<EnvironmentThreadShell>;
 } & Omit<ComponentProps<typeof WorkflowRunReviewRow>, "run">) {
   const [expanded, setExpanded] = useState(false);
   const [openNeed, setOpenNeed] = useState<string | null>(null);
@@ -310,7 +313,7 @@ export function NeedsYou({
       ))
       ? answered
       : null;
-  const needs = useProjectNeeds(project);
+  const needs = useProjectNeeds(project, stopped);
   const rows = [
     ...runs.filter((run) => run.review !== undefined).map((run) => ({ kind: "run" as const, run })),
     ...waitingCoordinatorReports(reports).map((report) => ({ kind: "report" as const, report })),
