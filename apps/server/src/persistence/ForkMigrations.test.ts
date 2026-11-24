@@ -14,7 +14,6 @@ import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import dropWorktreeSetupState from "./ForkMigrations/014_DropWorktreeSetupState.ts";
-import { createMessageSearchTriggers } from "../orchestration-v2/messageSearchIndex.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -81,16 +80,11 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const pinnedAt = "2026-10-01T00:00:00.000Z";
       // An earlier build's history: fork migration 11 ran, upstream stops at 75.
-      yield* runAllMigrations();
-      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 76`;
-      yield* sql`DROP INDEX orchestration_v2_projection_threads_subagent_result_idx`;
-      yield* sql`DROP INDEX orchestration_v2_projection_runs_delegated_delivery_idx`;
-      yield* sql`ALTER TABLE scheduled_tasks DROP COLUMN thread_mode`;
-      yield* sql`DROP TRIGGER orchestration_v2_message_search_insert`;
-      yield* sql`DROP TRIGGER orchestration_v2_message_search_update`;
-      yield* sql`DROP TRIGGER orchestration_v2_message_search_delete`;
-      yield* sql`ALTER TABLE orchestration_v2_projection_messages DROP COLUMN search_text`;
-      yield* createMessageSearchTriggers(sql);
+      yield* runMigrations({ toMigrationInclusive: 62 });
+      yield* sql`ALTER TABLE projection_thread_activities RENAME TO styal_legacy_v1_thread_activities`;
+      yield* sql`ALTER TABLE projection_turns RENAME TO styal_legacy_v1_turns`;
+      yield* runMigrations({ toMigrationInclusive: 75 });
+      yield* runForkMigrations({ toMigrationInclusive: 11 });
       yield* sql`
         INSERT INTO projection_projects (
           project_id, title, workspace_root, scripts_json, created_at, updated_at,
@@ -111,6 +105,8 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
         [81, "ProjectionMessageSearchText"],
         [82, "TurnItemConversationIndex"],
         [83, "CommandReadIndexes"],
+        [84, "LastExecutedRunIndex"],
+        [85, "TurnItemCounts"],
       ]);
       assert.deepStrictEqual(
         yield* sql`

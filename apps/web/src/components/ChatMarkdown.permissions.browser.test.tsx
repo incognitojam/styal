@@ -86,7 +86,9 @@ vi.mock(import("../state/server"), async (original) => {
 vi.mock(import("../state/entities"), async (original) => ({
   ...(await original()),
   readThreadShell: (() => ({ pullRequests: state.pullRequests })) as never,
-  useProjects: (() => [{ id: projectId, environmentId: threadRef.environmentId }]) as never,
+  useProjects: (() => [
+    { id: projectId, environmentId: threadRef.environmentId, workspaceRoot: "/work" },
+  ]) as never,
 }));
 vi.mock(import("../remoteOpen"), async (original) => ({
   ...(await original()),

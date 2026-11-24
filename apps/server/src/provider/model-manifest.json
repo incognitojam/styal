@@ -1,17 +1,12 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-20T22:57:05.838Z",
+  "updatedAt": "2026-11-24T00:40:26.796Z",
   "compatibility": [
     {
       "driver": "codex",
       "t3CodeRange": ">=0.0.44",
       "recommendedRange": ">=0.159.0",
       "autoUpdates": [
-        {
-          "version": "0.169.0",
-          "package": "@openai/codex",
-          "styal": "0.1.1-nightly.20261106.1262"
-        },
         {
           "version": "0.170.0",
           "package": "@openai/codex",
@@ -21,6 +16,11 @@
           "version": "0.171.0",
           "package": "@openai/codex",
           "styal": "0.1.1-nightly.20261114.1403"
+        },
+        {
+          "version": "0.172.0",
+          "package": "@openai/codex",
+          "styal": "0.1.1-nightly.20261117.1454"
         }
       ],
       "ranges": [
@@ -45,11 +45,6 @@
       "recommendedRange": ">=2.1.301",
       "autoUpdates": [
         {
-          "version": "2.1.328",
-          "package": "@anthropic-ai/claude-code",
-          "styal": "0.1.1-nightly.20261112.1360"
-        },
-        {
           "version": "2.1.329",
           "package": "@anthropic-ai/claude-code",
           "styal": "0.1.1-nightly.20261113.1386"
@@ -58,6 +53,11 @@
           "version": "2.1.330",
           "package": "@anthropic-ai/claude-code",
           "styal": "0.1.1-nightly.20261114.1403"
+        },
+        {
+          "version": "2.1.331",
+          "package": "@anthropic-ai/claude-code",
+          "styal": "0.1.1-nightly.20261117.1452"
         }
       ],
       "ranges": [
@@ -101,19 +101,19 @@
       "recommendedRange": ">=2.0.18",
       "autoUpdates": [
         {
-          "version": "2.2.7",
-          "package": "@opencode/cli",
-          "styal": "0.1.1-nightly.20261103.1158"
-        },
-        {
-          "version": "2.3.0",
-          "package": "@opencode/cli",
-          "styal": "0.1.1-nightly.20261106.1262"
-        },
-        {
           "version": "2.3.2",
           "package": "@opencode/cli",
           "styal": "0.1.1-nightly.20261111.1350"
+        },
+        {
+          "version": "2.4.0",
+          "package": "@opencode/cli",
+          "styal": "0.1.1-nightly.20261116.1434"
+        },
+        {
+          "version": "2.4.1",
+          "package": "@opencode/cli",
+          "styal": "0.1.1-nightly.20261116.1437"
         }
       ],
       "ranges": [
@@ -126,8 +126,9 @@
     {
       "driver": "antigravity",
       "t3CodeRange": ">=0.0.42",
-      "recommendedRange": "=1.4.5 || =1.4.1",
+      "recommendedRange": ">=1.5.1 <2",
       "ranges": [
+        { "range": ">=1.5.1 <2", "status": "supported" },
         { "range": "=1.4.5", "status": "supported" },
         { "range": "=1.4.1", "status": "supported" },
         { "range": "=1.3.0", "status": "supported" },

@@ -477,6 +477,32 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("checks shortly after startup and then every hour", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        yield* TestClock.adjust("14 seconds");
+        assert.equal(harness.checkCount(), 0);
+
+        yield* TestClock.adjust("1 second");
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust(Duration.seconds(59 * 60 + 44));
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust("1 second");
+        assert.equal(harness.checkCount(), 2);
+
+        yield* TestClock.adjust("1 hour");
+        assert.equal(harness.checkCount(), 3);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect(
     "rejects install while a refresh check is in progress and releases the reservation",
     () =>
@@ -1333,7 +1359,11 @@ describe("DesktopUpdates", () => {
         const result = yield* updates.install;
         assert.isTrue(result.accepted);
         assert.isFalse(yield* Ref.get(desktopState.quitting));
-        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+        assert.deepEqual(harness.installSteps, [
+          "closeSshTunnels",
+          "quitAndInstall",
+          "startBackend",
+        ]);
         // The restarted old backend must release its tunnel on a later quit.
         assert.equal(harness.updateRestartMarkers.size, 0);
       }),
@@ -1363,7 +1393,7 @@ describe("DesktopUpdates", () => {
 
         const result = yield* updates.install;
         assert.equal(result.state.errorContext, "install");
-        assert.deepEqual(harness.installSteps, ["quitAndInstall"]);
+        assert.deepEqual(harness.installSteps, ["closeSshTunnels", "quitAndInstall"]);
         assert.isFalse((yield* (yield* pool.primary).snapshot).desiredRunning);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1458,7 +1488,11 @@ describe("DesktopUpdates", () => {
         assert.equal(harness.quitAndInstalls(), 1);
         harness.emit("error", new Error("duplicate native installer error"));
         yield* flushCallbacks;
-        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+        assert.deepEqual(harness.installSteps, [
+          "closeSshTunnels",
+          "quitAndInstall",
+          "startBackend",
+        ]);
 
         yield* Deferred.succeed(releaseRecovery, undefined);
         const failedResult = yield* Fiber.join(failedInstall);

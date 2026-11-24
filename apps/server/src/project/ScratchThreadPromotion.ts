@@ -88,9 +88,10 @@ const make = Effect.gen(function* () {
       });
     }
 
-    const snapshot = yield* Effect.flatten(
-      threads.readShellSnapshot({ worktreePath: folder }),
-    ).pipe(Effect.mapError(fail("Could not read the threads in this folder.")));
+    const snapshot = yield* threads.prepareShellSnapshot.pipe(
+      Effect.flatMap((read) => Effect.flatten(read({ worktreePath: folder }))),
+      Effect.mapError(fail("Could not read the threads in this folder.")),
+    );
     const moveSet = new Map<ThreadId, OrchestrationV2ThreadShell>();
     if (isScratch) moveSet.set(thread.id, thread);
     for (const candidate of [...snapshot.threads, ...snapshot.archivedThreads]) {

@@ -275,9 +275,7 @@ export function QueuedRunsControl({
           const previewText = isAttachmentOnlyBootstrapPrompt(text)
             ? ""
             : assistantCitationsToPlainText(
-                replaceComposerContextReferences(text, (reference) =>
-                  reference.kind === "image" && item.thumbnails.length > 0 ? "" : reference.label,
-                ),
+                replaceComposerContextReferences(text, (reference) => reference.label),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
           return (

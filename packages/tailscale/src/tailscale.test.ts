@@ -17,6 +17,7 @@ import {
   ensureTailscaleServe,
   hasExactTailscaleServe,
   parseTailscaleExitNode,
+  parseTailscaleServeRootHolders,
   parseTailscaleServeRoutesTo,
   parseTailscaleSshEnabled,
   parseTailscaleStatus,
@@ -121,6 +122,7 @@ describe("tailscale", () => {
       ] as const) {
         const reachable = yield* probeTailscaleHttpsEndpoint({
           baseUrl: "https://desktop.example.ts.net",
+          environmentId: "this-environment",
         }).pipe(
           Effect.provideService(
             HttpClient.HttpClient,
@@ -131,6 +133,34 @@ describe("tailscale", () => {
         );
         assert.isFalse(reachable, `HTTP ${status} without a T3 descriptor`);
       }
+    }),
+  );
+
+  it.effect("does not treat another T3 server behind the Serve URL as this server", () =>
+    Effect.gen(function* () {
+      const answer = (environmentId: string) =>
+        HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json({
+                environmentId,
+                label: "T3 server",
+                platform: { os: "linux", arch: "x64" },
+                serverVersion: "0.1.9",
+                capabilities: { repositoryIdentity: true },
+              }),
+            ),
+          ),
+        );
+      const probe = (served: string) =>
+        probeTailscaleHttpsEndpoint({
+          baseUrl: "https://desktop.example.ts.net",
+          environmentId: "this-environment",
+        }).pipe(Effect.provideService(HttpClient.HttpClient, answer(served)));
+
+      assert.isTrue(yield* probe("this-environment"));
+      assert.isFalse(yield* probe("another-environment"));
     }),
   );
 
@@ -229,10 +259,44 @@ describe("tailscale", () => {
     assert.isUndefined(parseTailscaleServeRoutesTo("not json", { host: "127.0.0.1", port: 3773 }));
   });
 
+  it("finds what holds a Serve port's root", () => {
+    const target = { host: "127.0.0.1", port: 3773 };
+    const status = JSON.stringify({
+      TCP: { "8443": { TCPForward: "127.0.0.1:22" } },
+      Web: {
+        "box.tailnet.ts.net:443": {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3773" }, "/x": { Proxy: "9000" } },
+        },
+        "old.tailnet.ts.net:443": { Handlers: { "/": { Proxy: "http://[::1]:4000" } } },
+        "box.tailnet.ts.net:10000": { Handlers: { "/": { Proxy: "http://127.0.0.1:4001" } } },
+        "box.tailnet.ts.net:10001": { Handlers: { "/": { Proxy: "http://10.0.0.5:4002" } } },
+        "box.tailnet.ts.net:10002": { Handlers: { "/": { Text: "hi" } } },
+      },
+      Services: {
+        "svc:t3": {
+          Web: { "t3.tailnet.ts.net:10000": { Handlers: { "/": { Proxy: "4003" } } } },
+        },
+      },
+    });
+    assert.deepEqual(parseTailscaleServeRootHolders(status, 443, target), [
+      { ours: true },
+      { ours: false, loopback: { host: "::1", port: 4000 } },
+    ]);
+    assert.deepEqual(parseTailscaleServeRootHolders(status, 10000, target), [
+      { ours: false, loopback: { host: "127.0.0.1", port: 4001 } },
+    ]);
+    assert.deepEqual(parseTailscaleServeRootHolders(status, 10001, target), [{ ours: false }]);
+    assert.deepEqual(parseTailscaleServeRootHolders(status, 10002, target), [{ ours: false }]);
+    assert.deepEqual(parseTailscaleServeRootHolders(status, 8443, target), [{ ours: false }]);
+    assert.deepEqual(parseTailscaleServeRootHolders("null", 443, target), []);
+    assert.isUndefined(parseTailscaleServeRootHolders("not json", 443, target));
+  });
+
   it.effect("parses status facts", () =>
     Effect.gen(function* () {
       const status = yield* parseTailscaleStatus(tailscaleStatusJson);
       assert.deepEqual(status, {
+        running: null,
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.100.100.100"],
         httpsServeEnabled: null,
@@ -373,6 +437,7 @@ describe("tailscale", () => {
       );
       assert.deepEqual(commands, [
         ["serve", "status", "--json"],
+        ["status", "--json"],
         ["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"],
       ]);
     });
@@ -391,6 +456,7 @@ describe("tailscale", () => {
       );
       assert.deepEqual(commands, [
         ["serve", "status", "--json"],
+        ["status", "--json"],
         ["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"],
       ]);
     });
@@ -495,6 +561,7 @@ describe("tailscale", () => {
       );
       assert.deepEqual(commands, [
         ["serve", "status", "--json"],
+        ["status", "--json"],
         ["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"],
       ]);
     });
@@ -556,6 +623,7 @@ describe("tailscale", () => {
       }).pipe(Effect.provide(layer));
       assert.deepEqual(commands, [
         ["serve", "status", "--json"],
+        ["status", "--json"],
         ["serve", "--bg", "--https=8443", "http://127.0.0.1:5733"],
       ]);
     });
@@ -720,6 +788,29 @@ describe("tailscale", () => {
     }),
   );
 
+  // regression: #35510 - without the https capability `tailscale serve` prints an
+  // enablement notice, writes no Serve config, and still exits 0.
+  it.effect("fails serve when the tailnet has not enabled HTTPS", () => {
+    const layer = layerMockSpawner((_command, args) => {
+      if (args[0] === "status") {
+        return {
+          stdout:
+            '{"BackendState":"Running","Self":{"DNSName":"desktop.tail.ts.net.","CapMap":{}}}',
+        };
+      }
+      if (args[1] === "status") return { stdout: "{}\n" };
+      return { stdout: "\nYou don't have permission to enable this feature.\n" };
+    });
+
+    return Effect.gen(function* () {
+      const exit = yield* ensureTailscaleServe({ localPort: 3773 }).pipe(
+        Effect.provide(layer),
+        Effect.exit,
+      );
+      assert.isTrue(Exit.isFailure(exit), "no Serve route was configured");
+    });
+  });
+
   // regression: #21609 - without forceKillAfter a timed-out probe only gets
   // SIGTERM, so a group member that ignores it outlives the call.
   it.effect("escalates timed-out probes to SIGKILL", () => {
@@ -742,7 +833,7 @@ describe("tailscale", () => {
       yield* readTailscaleStatus.pipe(Effect.provide(layer));
       yield* readTailscaleSshEnabled.pipe(Effect.provide(layer));
       yield* ensureTailscaleServe({ localPort: 45_678 }).pipe(Effect.provide(layer));
-      assert.deepEqual(killGraces, [500, 500, 500, 500]);
+      assert.deepEqual(killGraces, [500, 500, 500, 500, 500]);
     });
   });
 });

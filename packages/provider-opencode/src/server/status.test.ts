@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
 import * as Tracer from "effect/Tracer";
+import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { beforeEach } from "vite-plus/test";
@@ -24,6 +25,7 @@ import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
+  makeOpenCode2ModelLoader,
   type OpenCode2Model,
   type OpenCode2Workspace,
   openCode2SkillsToServerProviderSkills,
@@ -849,6 +851,12 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
             name: "Space Bunny Free",
             variants: [{ id: "low" }, { id: "medium" }, { id: "high" }],
           },
+          {
+            providerID: "opencode-go",
+            id: "deepseek-v4.1-flash",
+            name: "DeepSeek V4.1 Flash",
+            variants: [{ id: "low" }, { id: "high" }, { id: "max" }],
+          },
         ]),
       );
 
@@ -868,13 +876,25 @@ it.layer(layerTest)("checkOpenCodeProviderStatus", (it) => {
       );
       NodeAssert.deepEqual(
         snapshot.models.map((model) => model.slug),
-        ["opencode/big-pickle", "opencode/space-bunny-free"],
+        ["opencode/big-pickle", "opencode-go/deepseek-v4.1-flash", "opencode/space-bunny-free"],
       );
       const variant = snapshot.models.find((model) => model.slug === "opencode/space-bunny-free")
         ?.capabilities?.optionDescriptors?.[0];
       NodeAssert.deepEqual(
         variant?.type === "select" ? variant.options.map((option) => option.id) : [],
         ["low", "medium", "high"],
+      );
+      const goVariant = snapshot.models.find(
+        (model) => model.slug === "opencode-go/deepseek-v4.1-flash",
+      )?.capabilities?.optionDescriptors?.[0];
+      const goVariantIds =
+        goVariant?.type === "select" ? goVariant.options.map((option) => option.id) : [];
+      NodeAssert.deepEqual(goVariantIds, ["low", "high", "max"]);
+      NodeAssert.ok(
+        goVariant?.type === "select" &&
+          goVariant.currentValue !== undefined &&
+          goVariantIds.includes(goVariant.currentValue),
+        "an OpenCode Go model gets a default reasoning variant it lists",
       );
       NodeAssert.equal(runtimeMock.state.sdkClientInputs.length, 0);
     }),
@@ -1172,3 +1192,20 @@ it("keeps the session's styal skill out of the composer picker", () => {
     ["deploy"],
   );
 });
+
+it.effect("lists a catalog whose cold server start outlasts the settle budget", () =>
+  Effect.gen(function* () {
+    const catalog: ReadonlyArray<OpenCode2Model> = [
+      { providerID: "opencode", id: "big-pickle", name: "Big Pickle", variants: [] },
+    ];
+    let reads = 0;
+    // The loader's read includes spawning the server; a loaded host can take 6s to start it.
+    const read = Effect.suspend(() =>
+      reads++ === 0 ? Effect.sleep("6 seconds").pipe(Effect.as(catalog)) : Effect.succeed(catalog),
+    );
+    const load = yield* makeOpenCode2ModelLoader(read);
+    const fiber = yield* Effect.forkChild(load);
+    yield* TestClock.adjust("10 seconds");
+    NodeAssert.deepEqual(yield* Fiber.join(fiber), catalog);
+  }),
+);

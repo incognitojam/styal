@@ -1,6 +1,9 @@
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
-import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
+import {
+  composerFileAttachmentMimeType,
+  composerImageDedupKey,
+} from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ResponseContextRecord,
@@ -57,6 +60,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
+import { isProjectChatDraftId } from "./components/project/projectPage.logic";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
 import {
@@ -132,16 +136,106 @@ type ComposerPersistState =
   | { capturedState: ComposerDraftStoreState }
   | PersistedComposerDraftStoreState;
 
+const composerDraftBaseStorage =
+  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage();
+
+interface ComposerDraftWrite {
+  readonly text: string;
+  /** This tab's own state as of the write; entries it still matches were not edited here. */
+  readonly local: PersistedComposerDraftStoreState;
+  readonly merged: PersistedComposerDraftStoreState;
+}
+let composerDraftLoadedState: PersistedComposerDraftStoreState | null = null;
+let composerDraftLastWrite: ComposerDraftWrite | null = null;
+let composerDraftPendingWrite: ComposerDraftWrite | null = null;
+
+function readStoredComposerDraftState(): PersistedComposerDraftStoreState | null {
+  const text = composerDraftBaseStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+  if (typeof text !== "string") return null;
+  if (text === composerDraftLastWrite?.text) return composerDraftLastWrite.merged;
+  try {
+    const parsed = JSON.parse(text) as StorageValue<PersistedComposerDraftStoreState>;
+    return parsed.version === COMPOSER_DRAFT_STORAGE_VERSION ? parsed.state : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeDraftRecord<V>(
+  stored: Readonly<Record<string, V>> | undefined,
+  local: Readonly<Record<string, V>>,
+  baseline: Readonly<Record<string, V>>,
+): Record<string, V> {
+  const merged = { ...stored };
+  for (const key of new Set([...Object.keys(local), ...Object.keys(baseline)])) {
+    if (Equal.equals(local[key], baseline[key])) continue;
+    const value = local[key];
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return merged;
+}
+
+/** Writes only what this tab changed since its last write over what other tabs saved since. */
+function mergeComposerDraftStates(
+  stored: PersistedComposerDraftStoreState,
+  local: PersistedComposerDraftStoreState,
+  baseline: PersistedComposerDraftStoreState,
+): PersistedComposerDraftStoreState {
+  const pick = <K extends keyof PersistedComposerDraftStoreState>(key: K) => {
+    const value = Equal.equals(local[key], baseline[key]) ? stored[key] : local[key];
+    return value === undefined ? {} : { [key]: value };
+  };
+  return {
+    draftsByThreadKey: mergeDraftRecord(
+      stored.draftsByThreadKey,
+      local.draftsByThreadKey,
+      baseline.draftsByThreadKey,
+    ),
+    draftThreadsByThreadKey: mergeDraftRecord(
+      stored.draftThreadsByThreadKey,
+      local.draftThreadsByThreadKey,
+      baseline.draftThreadsByThreadKey,
+    ),
+    logicalProjectDraftThreadKeyByLogicalProjectKey: mergeDraftRecord(
+      stored.logicalProjectDraftThreadKeyByLogicalProjectKey,
+      local.logicalProjectDraftThreadKeyByLogicalProjectKey,
+      baseline.logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ),
+    ...pick("stickyModelSelectionByProvider"),
+    ...pick("stickyOptionsByModelByProvider"),
+    ...pick("stickyActiveProvider"),
+  };
+}
+
+function serializeComposerDraftState(value: StorageValue<ComposerPersistState>): string {
+  if (!("capturedState" in value.state)) {
+    return JSON.stringify({ state: value.state, version: value.version });
+  }
+  const local = partializeComposerDraftStoreState(value.state.capturedState);
+  const baseline = composerDraftLastWrite?.local ?? composerDraftLoadedState;
+  const stored = baseline ? readStoredComposerDraftState() : null;
+  const merged = stored && baseline ? mergeComposerDraftStates(stored, local, baseline) : local;
+  const text = JSON.stringify({ state: merged, version: value.version });
+  composerDraftPendingWrite = { text, local, merged };
+  return text;
+}
+
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
-  (value) =>
-    JSON.stringify({
-      state:
-        "capturedState" in value.state
-          ? partializeComposerDraftStoreState(value.state.capturedState)
-          : value.state,
-      version: value.version,
-    }),
+  {
+    getItem: (name) => composerDraftBaseStorage.getItem(name),
+    setItem: (name, text) => {
+      composerDraftBaseStorage.setItem(name, text);
+      if (composerDraftPendingWrite?.text === text)
+        composerDraftLastWrite = composerDraftPendingWrite;
+    },
+    removeItem: (name) => {
+      composerDraftBaseStorage.removeItem(name);
+      composerDraftLoadedState = null;
+      composerDraftLastWrite = null;
+    },
+  },
+  serializeComposerDraftState,
   COMPOSER_PERSIST_DEBOUNCE_MS,
 );
 
@@ -876,11 +970,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
   };
 }
 
-function composerAttachmentDedupKey(image: ComposerAttachment): string {
-  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
-  return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
-}
-
 export function composerFileDedupKey(
   file: Pick<ComposerFileAttachment, "mimeType" | "sizeBytes" | "name">,
 ): string {
@@ -1577,6 +1666,31 @@ function toProjectDraftSession(
     draftId,
     ...draftSession,
   };
+}
+
+/**
+ * A project page's chat draft starts in the project's folder as it is, so no branch, worktree,
+ * mode or pull request reaches it, whichever control asked.
+ */
+function withoutProjectChatCheckout<
+  Options extends {
+    readonly branch?: string | null;
+    readonly worktreePath?: string | null;
+    readonly envMode?: DraftThreadEnvMode;
+    readonly startFromOrigin?: boolean;
+    readonly checkoutPullRequest?: DraftCheckoutPullRequest | null;
+  },
+>(draftKey: string, options: Options): Options {
+  if (!isProjectChatDraftId(draftKey)) return options;
+  const {
+    branch: _branch,
+    worktreePath: _worktreePath,
+    envMode: _envMode,
+    startFromOrigin: _startFromOrigin,
+    checkoutPullRequest: _checkoutPullRequest,
+    ...rest
+  } = options;
+  return rest as Options;
 }
 
 function createDraftThreadState(
@@ -2825,11 +2939,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           Object.values(get().draftThreadsByThreadKey).some(
             (draftThread) => draftThread.environmentId === environmentId,
           ),
-        setLogicalProjectDraftThreadId: (logicalProjectKey, projectRef, draftId, options) => {
+        setLogicalProjectDraftThreadId: (logicalProjectKey, projectRef, draftId, requested) => {
           const normalizedLogicalProjectKey = logicalProjectDraftKey(logicalProjectKey);
           if (normalizedLogicalProjectKey.length === 0 || draftId.length === 0) {
             return;
           }
+          const options =
+            requested === undefined ? undefined : withoutProjectChatCheckout(draftId, requested);
           set((state) => {
             const existingThread = state.draftThreadsByThreadKey[draftId];
             const previousThreadKeyForLogicalProject =
@@ -2926,11 +3042,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             options,
           );
         },
-        setDraftThreadContext: (threadRef, options) => {
+        setDraftThreadContext: (threadRef, requestedOptions) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
             return;
           }
+          const options = withoutProjectChatCheckout(threadKey, requestedOptions);
           set((state) => {
             const existing = state.draftThreadsByThreadKey[threadKey];
             if (!existing) {
@@ -3538,9 +3655,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               [...existing.images, ...existing.files].map((image) => image.id),
             );
             const existingDedupKeys = new Set(
-              [...existing.images, ...existing.files].map((image) =>
-                composerAttachmentDedupKey(image),
-              ),
+              [...existing.images, ...existing.files].map((image) => composerImageDedupKey(image)),
             );
             const acceptedPreviewUrls = new Set(
               existing.images.flatMap((image) =>
@@ -3555,7 +3670,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               0,
             );
             for (const image of images) {
-              const dedupKey = composerAttachmentDedupKey(image);
+              const dedupKey = composerImageDedupKey(image);
               if (
                 existingIds.has(image.id) ||
                 (!options?.allowDuplicates && existingDedupKeys.has(dedupKey))
@@ -4693,6 +4808,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
   ),
 );
 
+composerDraftLoadedState = partializeComposerDraftStoreState(composerDraftStore.getState());
+
 export const useComposerDraftStore = composerDraftStore;
 
 export function subscribeComposerDraftModelReconciliation(input: {
@@ -5016,7 +5133,24 @@ export function ensureProjectChatDraft(input: {
   readonly logicalProjectKey: string;
 }): void {
   useComposerDraftStore.setState((state) => {
-    if (state.draftThreadsByThreadKey[input.draftId] !== undefined) return state;
+    const existing = state.draftThreadsByThreadKey[input.draftId];
+    if (existing !== undefined) {
+      // A draft saved before the page kept its checkout fields out still starts in the folder.
+      if (
+        existing.branch === null &&
+        existing.worktreePath === null &&
+        existing.envMode === "local" &&
+        !existing.checkoutPullRequest
+      )
+        return state;
+      const { checkoutPullRequest: _checkoutPullRequest, ...draft } = existing;
+      return {
+        draftThreadsByThreadKey: {
+          ...state.draftThreadsByThreadKey,
+          [input.draftId]: { ...draft, branch: null, worktreePath: null, envMode: "local" },
+        },
+      };
+    }
     const { [input.draftId]: _sent, ...promotedDraftRedirects } = state.promotedDraftRedirects;
     return {
       draftThreadsByThreadKey: {

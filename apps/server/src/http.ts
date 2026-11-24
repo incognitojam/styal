@@ -361,7 +361,9 @@ export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
       "descriptor",
       Effect.fn("environment.metadata.descriptor")(function* (args) {
         yield* annotateEnvironmentRequest(args.endpoint.name);
-        return yield* serverEnvironment.getDescriptor;
+        return ServerEnvironment.publicEnvironmentDescriptor(
+          yield* serverEnvironment.getDescriptor,
+        );
       }, traceRelayRequest),
     );
   }),

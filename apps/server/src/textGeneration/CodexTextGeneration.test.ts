@@ -604,6 +604,11 @@ it.effect.each([
       model: "chat-model",
       options: [{ id: "effort", value: "high" }],
     };
+    const threadDefault = {
+      instanceId: fallback,
+      model: "z-ai/glm-5.3-flash",
+      options: [{ id: "thinking", value: false }],
+    };
     const calls: ModelSelection[] = [];
     const instances: ProviderInstance[] = [
       primary,
@@ -678,9 +683,13 @@ it.effect.each([
           }),
           ServerSettings.layerTest({
             providerInstances: {
-              [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
+              [fallback]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                config: { customModels: [threadDefault.model] },
+              },
               [preferred]: { driver: ProviderDriverKind.make("codex"), config: {} },
             },
+            defaultModelSelection: threadDefault,
             ...(primaryState === "not installed, fallback disabled for project"
               ? {
                   projectSettingsOverrides: {
@@ -713,14 +722,15 @@ it.effect.each([
       primaryState === "signed out, fallback failed"
     ) {
       expect(calls).toEqual([selection]);
-    } else {
-      const driver = secondCodex ? "codex" : "claudeAgent";
+    } else if (secondCodex) {
       expect(calls).toMatchObject([
         {
-          instanceId: secondCodex ? preferred : fallback,
-          model: DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make(driver)],
+          instanceId: preferred,
+          model: DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("codex")],
         },
       ]);
+    } else {
+      expect(calls).toEqual([threadDefault]);
     }
   }),
 );

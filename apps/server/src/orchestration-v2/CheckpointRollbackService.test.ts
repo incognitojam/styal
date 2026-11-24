@@ -23,6 +23,8 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Deferred from "effect/Deferred";
@@ -185,6 +187,9 @@ it.effect.each([
   { order: "rollback-first", restoreFiles: true, sparse: true },
   { order: "rollback-first", restoreFiles: false, sparse: true, projectRoot: true },
   { order: "cleanup-first", restoreFiles: false, unmanaged: true },
+  { order: "cleanup-first", restoreFiles: true, leavesFolder: true },
+  { order: "cleanup-first", restoreFiles: false, leavesFolder: true },
+  { order: "cleanup-first", restoreFiles: true, leavesFolder: true, shared: true },
 ])("locks rollback with %s", (scenario) =>
   Effect.gen(function* () {
     const {
@@ -193,6 +198,8 @@ it.effect.each([
       unmanaged = false,
       sparse = false,
       projectRoot = false,
+      leavesFolder = false,
+      shared = false,
     } = scenario;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -208,7 +215,9 @@ it.effect.each([
       (unmanaged
         ? path.join(workspaceRoot, "elsewhere", "feature")
         : path.join(worktreesDir, "repo", "feature"));
-    yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+    yield* fileSystem.makeDirectory(real ? worktreePath : path.join(worktreePath, ".git"), {
+      recursive: true,
+    });
     if (real) {
       yield* real.write("src/main.txt", "tracked source");
       yield* real.command(worktreePath, ["add", "src/main.txt"]);
@@ -287,15 +296,22 @@ it.effect.each([
                   path: worktreePath,
                 });
                 calls.push("create");
-                yield* fileSystem.makeDirectory(worktreePath).pipe(Effect.orDie);
+                yield* fileSystem
+                  .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
+                  .pipe(Effect.orDie);
                 return {} as never;
               }),
           }),
           Layer.mock(CheckpointService.CheckpointServiceV2)({
             restore: () =>
               Effect.gen(function* () {
-                assert.isTrue(yield* fileSystem.exists(worktreePath).pipe(Effect.orDie));
                 calls.push("files");
+                // The fixture folder sits outside any checkout, so Git finds nothing to restore.
+                if (
+                  !(yield* fileSystem.exists(path.join(worktreePath, ".git")).pipe(Effect.orDie))
+                ) {
+                  return yield* Effect.die("not a Git checkout");
+                }
               }),
           }),
           Layer.mock(EventSink.EventSinkV2)({
@@ -313,9 +329,21 @@ it.effect.each([
               Effect.succeed({
                 schemaVersion: 1,
                 snapshotSequence: 0,
-                threads: [],
+                threads: shared
+                  ? [
+                      {
+                        id: ThreadId.make("rollback-worktree-sharer"),
+                        projectId,
+                        worktreePath,
+                        deletedAt: null,
+                        lineage: {},
+                      },
+                    ]
+                  : [],
                 archivedThreads: [],
-              }),
+              } as never),
+            getCheckpointContext: () => Effect.succeed({ checkpointScopes: [] } as never),
+            getThreadProviderContext: () => Effect.succeed({ providerSessions: [] } as never),
           }),
           Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
             holdSession: () =>
@@ -363,6 +391,11 @@ it.effect.each([
           yield* Deferred.succeed(cleanupStarted, undefined);
           if (order === "cleanup-first") yield* Deferred.await(release);
           yield* fileSystem.remove(worktreePath, { recursive: true, force: true });
+          // A failed `git worktree remove` can leave the folder without its checkout.
+          if (leavesFolder) {
+            yield* fileSystem.makeDirectory(worktreePath);
+            yield* fileSystem.writeFileString(path.join(worktreePath, "unsaved.txt"), "keep");
+          }
           calls.push("cleanup");
         }),
       );
@@ -383,10 +416,28 @@ it.effect.each([
       if (order === "rollback-first") assert.isFalse(cleanupEntered);
       yield* Deferred.succeed(release, undefined);
       if (cleanup !== undefined) yield* Fiber.join(cleanup);
-      if (unmanaged) {
+      if (unmanaged || shared) {
         const error = yield* Fiber.join(rollback).pipe(Effect.flip);
         assert.equal(error._tag, "CheckpointRollbackExecutionError");
-        assert.deepEqual(calls, ["cleanup", "hold", "release"]);
+        assert.deepEqual(calls, shared ? ["cleanup"] : ["cleanup", "hold", "release"]);
+        if (shared) {
+          assert.equal(error.reason, "shared-workspace");
+          assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
+        }
+        return;
+      }
+      if (leavesFolder && restoreFiles) {
+        // The folder is not replaced; outside any checkout, restoring files into it fails.
+        const exit = yield* Fiber.join(rollback).pipe(Effect.exit);
+        assert.isTrue(
+          Exit.isFailure(exit) && Cause.pretty(exit.cause).includes("not a Git checkout"),
+        );
+        assert.deepEqual(calls, ["cleanup", "hold", "session", "files", "release"]);
+        assert.deepEqual(yield* fileSystem.readDirectory(worktreePath), ["unsaved.txt"]);
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
+          "keep",
+        );
         return;
       }
       yield* Fiber.join(rollback);
@@ -398,9 +449,12 @@ it.effect.each([
       assert.deepEqual(
         calls,
         order === "cleanup-first"
-          ? ["cleanup", "prune", "create", ...rollbackCalls]
+          ? ["cleanup", ...(leavesFolder ? [] : ["prune", "create"]), ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
+      if (leavesFolder) {
+        assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
+      }
     }).pipe(Effect.provide(testLayer));
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
