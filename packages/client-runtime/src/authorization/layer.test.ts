@@ -63,14 +63,16 @@ const STALLED = "stalled";
 function recordedFetch(
   responses: ReadonlyArray<RecordedResponse | typeof STALLED>,
   onStall: () => void,
-  descriptor?: object,
+  descriptor?: object | (() => Response),
 ) {
   const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
   let responseIndex = 0;
   const fetchFn = ((input, init) => {
     calls.push([input, init ?? {}]);
     if (descriptor !== undefined && String(input).endsWith("/.well-known/t3/environment")) {
-      return Promise.resolve(Response.json(descriptor));
+      return Promise.resolve(
+        typeof descriptor === "function" ? descriptor() : Response.json(descriptor),
+      );
     }
     const response = responses[responseIndex++];
     if (response === STALLED) {
@@ -132,7 +134,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly initialToken?: TokenStore.RemoteDpopAccessToken;
   readonly responses: ReadonlyArray<RecordedResponse | typeof STALLED>;
   /** Answers every descriptor read, so one that runs beside a ticket does not shift `responses`. */
-  readonly descriptor?: object;
+  readonly descriptor?: object | (() => Response);
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
@@ -879,55 +881,65 @@ describe("RemoteEnvironmentAuthorization", () => {
   );
 
   // connection/supervisor.test.ts covers the limit: the third timeout in a row asks the relay.
-  it.effect("resets the cached ticket timeout count when a retry succeeds", () =>
-    Effect.gen(function* () {
-      // An attempt sends the cached ticket request and, after it times out, one retry.
-      const timedOutAttempt = [STALLED, STALLED] as const;
-      const recoveredAttempt = [STALLED, websocketTicket("cached-ticket")] as const;
-      const harness = yield* makeHarness({
-        initialToken: persistedToken(),
-        descriptor: DESCRIPTOR,
-        responses: [
-          ...timedOutAttempt,
-          ...timedOutAttempt,
-          ...recoveredAttempt,
-          ...timedOutAttempt,
-        ],
-      });
-
-      const [timeouts, recovered] = yield* Effect.gen(function* () {
-        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
-        const timeOut = Effect.gen(function* () {
-          const pending = yield* remote
-            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
-            .pipe(Effect.flip, Effect.forkChild);
-          yield* Queue.take(harness.stalls);
-          yield* TestClock.adjust("3 seconds");
-          yield* Queue.take(harness.stalls);
-          yield* TestClock.adjust("7 seconds");
-          return yield* Fiber.join(pending);
+  it.effect.each([false, true])(
+    "resets cached ticket timeouts after recovery (descriptor failed: %s)",
+    (descriptorFailed) =>
+      Effect.gen(function* () {
+        // An attempt sends the cached ticket request and, after it times out, one retry.
+        const timedOutAttempt = [STALLED, STALLED] as const;
+        const recoveredAttempt = [STALLED, websocketTicket("cached-ticket")] as const;
+        let descriptorReads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: () => {
+            descriptorReads++;
+            return descriptorFailed && descriptorReads === 3
+              ? Response.json({}, { status: 503 })
+              : Response.json(DESCRIPTOR);
+          },
+          responses: [
+            ...timedOutAttempt,
+            ...timedOutAttempt,
+            ...recoveredAttempt,
+            ...timedOutAttempt,
+          ],
         });
-        const recover = Effect.gen(function* () {
-          const pending = yield* remote
-            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
-            .pipe(Effect.forkChild);
-          yield* Queue.take(harness.stalls);
-          yield* TestClock.adjust("3 seconds");
-          return yield* Fiber.join(pending);
-        });
-        const timeouts = [yield* timeOut, yield* timeOut];
-        const recovered = yield* recover;
-        // Without the reset, this would be the third timeout in a row and ask the relay.
-        timeouts.push(yield* timeOut);
-        return [timeouts, recovered] as const;
-      }).pipe(Effect.provide(harness.layer));
 
-      for (const failure of timeouts) {
-        expect(failure).toMatchObject({ _tag: "ConnectionTransientError", reason: "timeout" });
-      }
-      expect(recovered.socketUrl).toContain("wsTicket=cached-ticket");
-      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
-    }),
+        const [timeouts, recovered] = yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const timeOut = Effect.gen(function* () {
+            const pending = yield* remote
+              .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+              .pipe(Effect.flip, Effect.forkChild);
+            yield* Queue.take(harness.stalls);
+            yield* TestClock.adjust("3 seconds");
+            yield* Queue.take(harness.stalls);
+            yield* TestClock.adjust("7 seconds");
+            return yield* Fiber.join(pending);
+          });
+          const recover = Effect.gen(function* () {
+            const pending = yield* remote
+              .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+              .pipe(Effect.forkChild);
+            yield* Queue.take(harness.stalls);
+            yield* TestClock.adjust("3 seconds");
+            return yield* Fiber.join(pending);
+          });
+          const timeouts = [yield* timeOut, yield* timeOut];
+          const recovered = yield* recover;
+          // Without the reset, this would be the third timeout in a row and ask the relay.
+          timeouts.push(yield* timeOut);
+          return [timeouts, recovered] as const;
+        }).pipe(Effect.provide(harness.layer));
+
+        for (const failure of timeouts) {
+          expect(failure).toMatchObject({ _tag: "ConnectionTransientError", reason: "timeout" });
+        }
+        expect(recovered.socketUrl).toContain("wsTicket=cached-ticket");
+        expect(recovered.descriptor).toMatchObject({ environmentId: ENVIRONMENT_ID });
+        expect(descriptorReads).toBe(descriptorFailed ? 5 : 4);
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+      }),
   );
 
   it.effect("keeps a newly refreshed token when its websocket ticket request times out", () =>

@@ -3,6 +3,12 @@ import { resolveCacheLossBaseline } from "./chat/compaction.logic";
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
 import {
+  ReportPile,
+  ReportStack,
+  type ReportStackActions,
+  useReportStack,
+} from "./chat/ReportStack";
+import {
   coordinatorReports,
   pendingReportAnswers,
   pendingReportDismissals,
@@ -13,7 +19,7 @@ import {
   respondToReport,
   threadReportResponsesAtom,
 } from "../state/coordinatorReports";
-import { CommandId } from "@t3tools/contracts";
+import { CommandId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { projectFileActions } from "~/state/projectFileActions";
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
@@ -344,9 +350,7 @@ import {
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
 import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
-import type { FileActionReviewRequest, MessagesTimelineRow } from "./chat/MessagesTimeline.logic";
-import type { CapturedSinceLastVisit } from "@t3tools/client-runtime/project-since-last-visit";
-import { ProjectSinceLastVisit } from "./project/ProjectSinceLastVisit";
+import type { FileActionReviewRequest } from "./chat/MessagesTimeline.logic";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   resolveEffectiveEnvMode,
@@ -449,6 +453,8 @@ const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 type ProjectChat = ProjectChatHeaderProps & {
   /** The project's threads that need you, listed above the composer. */
   readonly needYou: ReadonlyArray<EnvironmentThreadShell>;
+  /** The project's threads a failure or a usage limit stopped. */
+  readonly stopped: ReadonlyArray<EnvironmentThreadShell>;
   /** Before the chat exists: the machines it can start on, and those with the switch off. */
   readonly newChatMachines: {
     readonly environmentIds: ReadonlyArray<EnvironmentId>;
@@ -466,10 +472,6 @@ type ChatViewProps =
       /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
       embedded?: SideChatParentPanel;
       projectChat?: ProjectChat;
-      /** What happened since the user last looked, taken when the project page opened. */
-      sinceLastVisit?: CapturedSinceLastVisit | null;
-      /** Leave the visit unrecorded until the project page has read the last one. */
-      holdVisit?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -504,8 +506,6 @@ export default function ChatView(props: ChatViewProps) {
     embedded: parentPanel,
     projectChat,
   } = props;
-  const sinceLastVisit = routeKind === "server" ? (props.sinceLastVisit ?? null) : null;
-  const holdVisit = routeKind === "server" && props.holdVisit === true;
   const embedded = parentPanel !== undefined;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1147,32 +1147,6 @@ export default function ChatView(props: ChatViewProps) {
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
   const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
   const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
-  // Built once per capture, so the timeline row keeps its identity while the chat streams.
-  const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
-    readonly source: CapturedSinceLastVisit | null;
-    readonly row: Extract<MessagesTimelineRow, { kind: "inserted" }> | undefined;
-  }>({ source: null, row: undefined });
-  if (sinceLastVisitRow.source !== sinceLastVisit) {
-    setSinceLastVisitRow({
-      source: sinceLastVisit,
-      row:
-        sinceLastVisit === null
-          ? undefined
-          : {
-              kind: "inserted",
-              id: "project-since-last-visit",
-              // The chat's last change before the page opened, on the clock its rows carry.
-              createdAt: new Date(sinceLastVisit.window.reportsUntil).toISOString(),
-              content: (
-                <ProjectSinceLastVisit
-                  chatRef={routeThreadRef}
-                  captured={sinceLastVisit}
-                  onOpenReport={scrollToReport}
-                />
-              ),
-            },
-    });
-  }
 
   // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
   const anchorRunSettled = (() => {
@@ -1347,6 +1321,7 @@ export default function ChatView(props: ChatViewProps) {
     return {
       environmentId: activeEnvironment.environmentId,
       label: activeEnvironmentUnavailableLabel,
+      machineKind: resolveEnvironmentMachineKind(activeEnvironment.serverConfig),
       connection: activeEnvironment.connection,
       missingCloudSession:
         !requiresCloudSession || managedRelaySession !== null
@@ -3551,6 +3526,48 @@ export default function ChatView(props: ChatViewProps) {
     runShellCommand: runSideChatShellCommandStable,
   };
 
+  const reportActions: ReportStackActions = {
+    answer: (text, ref) => {
+      if (activeThreadRef === null || activeThreadId === null) return;
+      const messageId = newMessageId();
+      void respondToReport(
+        activeThreadRef,
+        { ref, kind: "answer", messageId, text, createdAt: new Date().toISOString() },
+        () =>
+          startThreadTurn({
+            environmentId,
+            input: {
+              threadId: activeThreadId,
+              message: { messageId, role: "user", text, attachments: [], reportAnswer: ref },
+              runtimeMode,
+              interactionMode: DEFAULT_INTERACTION_MODE,
+              dispatchMode: "queue",
+            },
+          }),
+      );
+    },
+    reply: (ref, title) => {
+      setReportReply({ threadKey: activeThreadKey, ref, title });
+      scheduleComposerFocus();
+    },
+    dismiss: (ref) => {
+      if (activeThreadRef === null || activeThreadId === null) return;
+      void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
+        dismissReport({
+          environmentId,
+          input: { commandId: CommandId.make(randomUUID()), threadId: activeThreadId, ...ref },
+        }),
+      );
+    },
+    scroll: scrollToReport,
+  };
+  const reportStack = useReportStack(
+    activeThreadKey,
+    reportStates,
+    settings.coordinatorReportsEnabled ? reportActions : null,
+    scheduleComposerFocus,
+  );
+
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
   }
@@ -3745,6 +3762,23 @@ export default function ChatView(props: ChatViewProps) {
             onDrop={workspaceFileDropHandlers.onDrop}
           >
             <ThreadFind onClose={focusComposerStable} />
+            <ReportStack
+              stack={reportStack}
+              canOperate={canOperateReport}
+              inChat={(messageId) =>
+                serverVisibleTurnItems.some(
+                  (row) =>
+                    row.item.type === "assistant_message" && row.item.messageId === messageId,
+                )
+              }
+              markdown={{
+                cwd: gitCwd ?? undefined,
+                threadRef: activeThreadRef,
+                environmentId,
+                skills: timelineSkills,
+                onImageExpand: onExpandTimelineImageStable,
+              }}
+            />
             {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
@@ -3766,6 +3800,7 @@ export default function ChatView(props: ChatViewProps) {
             />
             <div
               {...conversationArea}
+              inert={reportStack.view.open}
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
@@ -3775,55 +3810,7 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           answers: reportAnswerMessages,
-                          answer: (text, ref) => {
-                            if (activeThreadRef === null || activeThreadId === null) return;
-                            const messageId = newMessageId();
-                            void respondToReport(
-                              activeThreadRef,
-                              {
-                                ref,
-                                kind: "answer",
-                                messageId,
-                                text,
-                                createdAt: new Date().toISOString(),
-                              },
-                              () =>
-                                startThreadTurn({
-                                  environmentId,
-                                  input: {
-                                    threadId: activeThreadId,
-                                    message: {
-                                      messageId,
-                                      role: "user",
-                                      text,
-                                      attachments: [],
-                                      reportAnswer: ref,
-                                    },
-                                    runtimeMode,
-                                    interactionMode: DEFAULT_INTERACTION_MODE,
-                                    dispatchMode: "queue",
-                                  },
-                                }),
-                            );
-                          },
-                          reply: (ref, title) => {
-                            setReportReply({ threadKey: activeThreadKey, ref, title });
-                            scheduleComposerFocus();
-                          },
-                          dismiss: (ref) => {
-                            if (activeThreadRef === null || activeThreadId === null) return;
-                            void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
-                              dismissReport({
-                                environmentId,
-                                input: {
-                                  commandId: CommandId.make(randomUUID()),
-                                  threadId: activeThreadId,
-                                  ...ref,
-                                },
-                              }),
-                            );
-                          },
-                          scroll: scrollToReport,
+                          ...reportActions,
                           canOperate: canOperateReport,
                           target: reportTarget,
                           clear: () => setReportTarget(null),
@@ -3935,7 +3922,6 @@ export default function ChatView(props: ChatViewProps) {
                   {...(threadHistoryControls === undefined
                     ? {}
                     : { historyControls: threadHistoryControls })}
-                  insertedRow={sinceLastVisitRow.row}
                 />
               </WorkspaceMutationIdContext>
 
@@ -3968,7 +3954,7 @@ export default function ChatView(props: ChatViewProps) {
                 setComposerOverlayElement(overlay);
                 attachFollowComposerOverlay(overlay);
               }}
-              inert={isRevertingCheckpoint}
+              inert={isRevertingCheckpoint || reportStack.view.open}
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState
@@ -4009,15 +3995,16 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    <ReportPile stack={reportStack} />
                     {activeThreadId ? (
                       <NeedsYou
                         key={activeThreadId}
-                        reports={settings.coordinatorReportsEnabled ? reportStates : []}
-                        scroll={scrollToReport}
                         environmentId={environmentId}
                         threadId={activeThreadId}
                         runs={activeThreadShell?.workflowRuns ?? []}
-                        {...(projectChat ? { project: projectChat.needYou } : {})}
+                        {...(projectChat
+                          ? { project: projectChat.needYou, stopped: projectChat.stopped }
+                          : {})}
                         watchActions={
                           workflowRunReviewIncludesBackgroundWork ? workNow?.actions : undefined
                         }
@@ -4560,7 +4547,7 @@ export default function ChatView(props: ChatViewProps) {
         onConfirm={onConfirmRevertStable}
       />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      {holdVisit ? null : <ThreadVisitWatermark threadRef={routeThreadRef} />}
+      <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

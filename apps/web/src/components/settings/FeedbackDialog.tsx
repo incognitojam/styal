@@ -112,6 +112,7 @@ function FeedbackDialog(props: {
               />
               <Textarea
                 aria-label="Description"
+                tall
                 placeholder="What happened, and what did you expect?"
                 rows={6}
                 maxLength={60_000}

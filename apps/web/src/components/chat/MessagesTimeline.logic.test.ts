@@ -25,7 +25,6 @@ import { MessageId, RunId } from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
-  insertTimelineRow,
   deriveContinuedRunRoots,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
@@ -2412,7 +2411,11 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
-  it("leaves server restart downtime out of a steer segment's time", () => {
+  it.each([
+    [10, "30s"],
+    [30, "20s"],
+    [620, "20s"],
+  ])("leaves restart downtime out of a segment steered at %ss", (steerAt, duration) => {
     const firstRun = RunId.make("steered-run");
     const continuedRun = RunId.make("continued-run");
     const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
@@ -2447,19 +2450,22 @@ describe("deriveMessagesTimelineRows", () => {
       timelineEntries: [
         message("prompt", 0, "user", firstRun, "turn_start"),
         work("work-before-steer", 4, firstRun),
-        message("steer", 10, "user", firstRun, "steer"),
+        message("steer", steerAt, "user", firstRun, "steer"),
         work("work-after-steer", 20, firstRun),
         work("work-after-restart", 620, continuedRun),
         message("final", 640, "assistant", continuedRun),
-      ],
+      ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       runs: [{ id: firstRun }, { id: continuedRun, restartContinuationOfRunId: firstRun }],
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaries: [],
       supportsConversationRollback: false,
     });
+    expect(rows.find((row) => row.id === `turn-fold:${firstRun}`)).toMatchObject({
+      label: "Worked for 40s",
+    });
     const segment = rows.find((row) => row.id === `turn-fold:${firstRun}:steer:steer`);
-    expect(segment).toMatchObject({ label: "Continued for 30s" });
+    expect(segment).toMatchObject({ label: `Continued for ${duration}` });
   });
 
   it("stacks back-to-back steers as one burst with a single steer label", () => {
@@ -3792,54 +3798,6 @@ describe("deriveMessagesTimelineRows", () => {
       }
     },
   );
-});
-
-describe("insertTimelineRow", () => {
-  const row = (kind: string, id: string, createdAt: string | null) =>
-    ({ kind, id, createdAt }) as MessagesTimelineRow;
-  const inserted = {
-    kind: "inserted",
-    id: "since-last-visit",
-    createdAt: "2026-11-18T18:00:00.000Z",
-    content: null,
-  } as const;
-  const ids = (rows: ReadonlyArray<MessagesTimelineRow>) => rows.map((entry) => entry.id);
-
-  it("stays where the timeline ended when the page opened, before rows that came later", () => {
-    const before = [
-      row("worktree-setup", "setup", null),
-      row("message", "report", "2026-11-18T17:31:00.000Z"),
-    ];
-    expect(ids(insertTimelineRow(before, inserted))).toEqual([
-      "setup",
-      "report",
-      "since-last-visit",
-    ]);
-    expect(
-      ids(
-        insertTimelineRow(
-          [...before, row("message", "reply", "2026-11-18T18:05:00.000Z")],
-          inserted,
-        ),
-      ),
-    ).toEqual(["setup", "report", "since-last-visit", "reply"]);
-  });
-
-  it("sits above a turn still working, and waits for rows before it is placed", () => {
-    expect(
-      ids(
-        insertTimelineRow(
-          [
-            row("message", "ask", "2026-11-18T17:50:00.000Z"),
-            row("work-live", "tool", "2026-11-18T17:55:00.000Z"),
-            row("working", "working", "2026-11-18T17:50:00.000Z"),
-          ],
-          inserted,
-        ),
-      ),
-    ).toEqual(["ask", "since-last-visit", "tool", "working"]);
-    expect(insertTimelineRow([], inserted)).toEqual([]);
-  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {

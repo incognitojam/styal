@@ -45,6 +45,7 @@ import {
   keptSidebarFolderKeys,
   orderSidebarFolderGroups,
   shouldCreateNewThreadInCurrentProject,
+  projectPageOpenedByScopePick,
   resolveSidebarFolderDot,
   sidebarFolderExpansionKeys,
 } from "./Sidebar.logic";
@@ -90,6 +91,28 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
         hasProjectScope: row.hasProjectScope,
       }),
     ).toBe(row.direct);
+  });
+});
+
+describe("projectPageOpenedByScopePick", () => {
+  it.each([
+    { case: "one project with a page", previous: [], next: ["a"], opens: "a" },
+    { case: "switching to another project", previous: ["b"], next: ["a"], opens: "a" },
+    { case: "narrowing several to one", previous: ["a", "b"], next: ["a"], opens: "a" },
+    { case: "clearing the filter", previous: ["a"], next: [], opens: null },
+    { case: "several projects", previous: [], next: ["a", "b"], opens: null },
+    { case: "the project already chosen", previous: ["a"], next: ["a"], opens: null },
+    { case: "a project without a page", previous: [], next: ["c"], opens: null },
+    { case: "the page already showing", previous: [], next: ["b"], opens: null },
+  ])("$case opens $opens", (row) => {
+    expect(
+      projectPageOpenedByScopePick({
+        previousKeys: row.previous,
+        nextKeys: row.next,
+        hasPage: (key) => key !== "c",
+        isShowing: (key) => key === "b",
+      }),
+    ).toBe(row.opens);
   });
 });
 

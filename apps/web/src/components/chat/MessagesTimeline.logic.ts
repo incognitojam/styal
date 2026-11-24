@@ -1,5 +1,8 @@
+import {
+  restartOutages,
+  restartDowntimeMs,
+} from "@t3tools/client-runtime/work-log/restart-downtime";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
-import type { ReactNode } from "react";
 import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
 import * as DateTime from "effect/DateTime";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
@@ -723,40 +726,7 @@ type MessagesTimelineRowContent =
       itemId: TurnItemId;
       revision: string;
       mcpApp: McpAppReference;
-    }
-  | {
-      /** A row from outside the thread, such as the project page's summary; see insertTimelineRow. */
-      kind: "inserted";
-      id: string;
-      createdAt: string;
-      content: ReactNode;
     };
-
-const LIVE_ROW_KINDS: ReadonlySet<MessagesTimelineRow["kind"]> = new Set([
-  "working",
-  "thinking",
-  "work-live",
-]);
-
-/**
- * Places `row` where the timeline ended at its `createdAt`: before the first row that came later,
- * otherwise above a turn still working. With no rows yet it waits, so it never shows alone.
- */
-export function insertTimelineRow(
-  rows: MessagesTimelineRow[],
-  row: Extract<MessagesTimelineRow, { kind: "inserted" }>,
-): MessagesTimelineRow[] {
-  if (rows.length === 0) return rows;
-  const at = Date.parse(row.createdAt);
-  let index = rows.findIndex(
-    (entry) => entry.createdAt !== null && Date.parse(entry.createdAt) > at,
-  );
-  if (index === -1) {
-    index = rows.length;
-    while (index > 0 && LIVE_ROW_KINDS.has(rows[index - 1]!.kind)) index -= 1;
-  }
-  return [...rows.slice(0, index), row, ...rows.slice(index)];
-}
 
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
@@ -1497,14 +1467,14 @@ function deriveTurnFolds(input: {
       latestRun.completedAt
         ? computeElapsedMs(latestRun.startedAt, latestRun.completedAt)
         : computeElapsedMs(group.startBoundary ?? firstEntry.createdAt, responseEndedAt);
-    const describeRestartEntry = (entry: TimelineEntry) => ({
-      turnId: timelineEntryRunId(entry) ?? runId,
+    const outages = restartOutages(group.entries, (entry) => ({
+      runId: timelineEntryRunId(entry) ?? runId,
       startedAt: entry.createdAt,
       endedAt: timelineEntryEndedAt(entry),
-    });
+    }));
     const workedMs =
       elapsedMs !== null && group.turnIds.size > 1
-        ? Math.max(0, elapsedMs - restartDowntimeMs(group.entries, describeRestartEntry))
+        ? Math.max(0, elapsedMs - restartDowntimeMs(outages))
         : elapsedMs;
     const duration = workedMs !== null ? formatDuration(workedMs) : null;
     const label = isLatestInterruptedTurn
@@ -1536,14 +1506,17 @@ function deriveTurnFolds(input: {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
       const anchorEntry = entries[0];
       if (anchorEntry === undefined || !hidesNonCompactionWork(entries)) continue;
-      const segmentElapsedMs = computeElapsedMs(
-        steer.createdAt,
+      const segmentEndedAt =
         entries.map(timelineEntryEndedAt).reduce<string | null>(maxIsoTimestamp, null) ??
-          steer.createdAt,
-      );
+        steer.createdAt;
+      const segmentElapsedMs = computeElapsedMs(steer.createdAt, segmentEndedAt);
       const segmentMs =
         segmentElapsedMs !== null && group.turnIds.size > 1
-          ? Math.max(0, segmentElapsedMs - restartDowntimeMs(entries, describeRestartEntry))
+          ? Math.max(
+              0,
+              segmentElapsedMs -
+                restartDowntimeMs(outages, Date.parse(steer.createdAt), Date.parse(segmentEndedAt)),
+            )
           : segmentElapsedMs;
       foldsByAnchorEntryId.set(anchorEntry.id, {
         runId: RunId.make(`${runId}:steer:${steer.id}`),
@@ -3224,9 +3197,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.createdAt === bh.createdAt && htmlRenderReferencesEqual(a.htmlRender, bh.htmlRender);
     }
 
-    case "inserted":
-      return a === b;
-
     case "mcp-app": {
       const bm = b as typeof a;
       return (
@@ -3355,30 +3325,6 @@ export function deriveContinuedRunRoots(
     roots.set(run.id, root);
   }
   return roots;
-}
-
-function restartDowntimeMs<Entry>(
-  entries: Iterable<Entry>,
-  describe: (entry: Entry) => { turnId: RunId; startedAt: string; endedAt: string },
-): number {
-  let downtime = 0;
-  let previousRun: RunId | null = null;
-  let previousEnd: number | null = null;
-  for (const entry of entries) {
-    const current = describe(entry);
-    const start = Date.parse(current.startedAt);
-    if (
-      previousRun !== null &&
-      previousRun !== current.turnId &&
-      previousEnd !== null &&
-      Number.isFinite(start)
-    )
-      downtime += Math.max(0, start - previousEnd);
-    previousRun = current.turnId;
-    const end = Date.parse(current.endedAt);
-    if (Number.isFinite(end)) previousEnd = previousEnd === null ? end : Math.max(previousEnd, end);
-  }
-  return downtime;
 }
 
 /**

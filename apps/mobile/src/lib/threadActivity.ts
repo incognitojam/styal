@@ -1,3 +1,7 @@
+import {
+  restartOutages,
+  restartDowntimeMs,
+} from "@t3tools/client-runtime/work-log/restart-downtime";
 import { ProjectScriptIcon } from "@t3tools/contracts";
 import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 import { answerBeforeSaveNoteEntryId } from "@t3tools/client-runtime/work-log/answer-before-save-note";
@@ -1173,7 +1177,7 @@ export function failedFeedRunIds(
 }
 
 /**
- * The key a run fold uses for the message `entryId`: its run, or for an
+ * The key a run fold uses for the message `entryId`: its continued-run root, or for an
  * imported message with no run, the runless key of the user message before
  * it, or the segment after its run's last steer when `presented` shows that
  * fold. Null for user messages, which never fold.
@@ -1182,6 +1186,7 @@ export function messageFoldRunId(
   feed: ReadonlyArray<ThreadFeedEntry>,
   entryId: string,
   presented: ReadonlyArray<{ readonly type: string; readonly runId?: RunId | null }>,
+  continuedRunRoots?: ReadonlyMap<RunId, RunId>,
 ): RunId | null {
   let runlessKey: RunId | null = null;
   const lastSteerIdByRunId = new Map<RunId, string>();
@@ -1190,11 +1195,16 @@ export function messageFoldRunId(
     if (entry.message.role === "user") {
       if (entry.id === entryId) return null;
       if (isSteerMessage(entry.message) && entry.message.runId != null) {
-        lastSteerIdByRunId.set(entry.message.runId, entry.id);
+        lastSteerIdByRunId.set(
+          continuedRunRoots?.get(entry.message.runId) ?? entry.message.runId,
+          entry.id,
+        );
       }
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
     } else if (entry.id === entryId) {
-      const runId = entry.message.runId ?? runlessKey;
+      const messageRunId = entry.message.runId ?? runlessKey;
+      const runId =
+        messageRunId === null ? null : (continuedRunRoots?.get(messageRunId) ?? messageRunId);
       const steerId = runId === null ? undefined : lastSteerIdByRunId.get(runId);
       if (runId === null || steerId === undefined) return runId;
       // Tool visibility can drop all output before the steer, leaving no split.
@@ -1406,7 +1416,11 @@ function deriveThreadFeedRunFolds(
     );
     // Outages come from the whole response, so a segment after a steer still
     // sees the run boundary before it.
-    const outages = feedRestartOutages(group.entries);
+    const outages = restartOutages(group.entries, (entry) => ({
+      runId: entry.type === "message" ? entry.message.runId : "runId" in entry ? entry.runId : null,
+      startedAt: entry.createdAt,
+      endedAt: threadFeedEntryEndedAt(entry),
+    }));
     const elapsedMs =
       latestRunMatches &&
       latestRun.status !== "cancelled" &&
@@ -1418,7 +1432,7 @@ function deriveThreadFeedRunFolds(
     const duration =
       elapsedMs === null
         ? null
-        : formatDuration(Math.max(0, elapsedMs - feedRestartDowntime(outages)));
+        : formatDuration(Math.max(0, elapsedMs - restartDowntimeMs(outages)));
     const interrupted =
       latestRunMatches && (latestRun.status === "interrupted" || latestRun.status === "cancelled");
     const label = interrupted
@@ -1442,7 +1456,7 @@ function deriveThreadFeedRunFolds(
           entries.map(threadFeedEntryEndedAt).reduce<string | null>(maxIsoTimestamp, null) ??
           steer.createdAt;
         const segmentMs = computeElapsedMs(steer.createdAt, segmentEndedAt);
-        const segmentDowntime = feedRestartDowntime(
+        const segmentDowntime = restartDowntimeMs(
           outages,
           Date.parse(steer.createdAt),
           Date.parse(segmentEndedAt),
@@ -2915,40 +2929,4 @@ export function deriveFeedContinuedRunRoots(
     if (root !== run.id) roots.set(run.id, root);
   }
   return roots;
-}
-
-function feedRestartOutages(
-  entries: ReadonlyArray<ThreadFeedEntry>,
-): ReadonlyArray<readonly [number, number]> {
-  let previousRun: RunId | null = null;
-  let previousEnd: number | null = null;
-  const outages: Array<readonly [number, number]> = [];
-  for (const entry of entries) {
-    const runId =
-      entry.type === "message" ? entry.message.runId : "runId" in entry ? entry.runId : null;
-    const start = Date.parse(entry.createdAt);
-    if (
-      previousRun !== null &&
-      runId !== previousRun &&
-      previousEnd !== null &&
-      Number.isFinite(start) &&
-      start > previousEnd
-    )
-      outages.push([previousEnd, start]);
-    previousRun = runId;
-    const end = Date.parse(threadFeedEntryEndedAt(entry));
-    if (Number.isFinite(end)) previousEnd = previousEnd === null ? end : Math.max(previousEnd, end);
-  }
-  return outages;
-}
-
-function feedRestartDowntime(
-  outages: ReadonlyArray<readonly [number, number]>,
-  from = Number.NEGATIVE_INFINITY,
-  to = Number.POSITIVE_INFINITY,
-): number {
-  return outages.reduce(
-    (total, [start, end]) => total + Math.max(0, Math.min(end, to) - Math.max(start, from)),
-    0,
-  );
 }

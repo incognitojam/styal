@@ -828,7 +828,7 @@ function ProjectDetail({
               ) : null
             }
             control={
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <ProjectFavicon project={group} className="size-6" />
                 <Button
                   size="sm"

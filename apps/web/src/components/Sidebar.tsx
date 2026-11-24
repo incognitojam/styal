@@ -229,6 +229,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
+  projectPageOpenedByScopePick,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
@@ -1581,6 +1582,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         [...orderFolders(scopeGroups), ...projectGroups.filter((project) => project.archived)]
       : orderFolders(scopedProjectGroups)
     : null;
+  // In folders the project's folder already names it, so the filter stays a compact button.
+  const namedProjectScope = singleProjectScope && folderGroups === null;
   const keepEmptyFolder = (group: SidebarProjectSnapshot) =>
     scopedProjectGroups.length > 0 || (group.pinned && !group.archived);
   const {
@@ -2809,8 +2812,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           serverConfigs.has(thread.environmentId) &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
-      const titleRegenerationThreads = selectedThreads.filter((thread) =>
-        serverConfigs.has(thread.environmentId),
+      const titleRegenerationThreads = selectedThreads.filter(
+        (thread) =>
+          serverConfigs.has(thread.environmentId) &&
+          !readProjectCoordinatorState({ environmentId: thread.environmentId, threadId: thread.id })
+            ?.isCoordinator,
       );
       const regeneratableTitleThreads = titleRegenerationThreads.filter(
         (thread) => thread.titleRegeneration == null,
@@ -3574,7 +3580,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           <SidebarGroup className="z-[1]">
             <SidebarThreadHeader
               hasProjects={projectGroups.length > 0}
-              singleProjectScope={singleProjectScope}
+              singleProjectScope={namedProjectScope}
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -3608,13 +3614,23 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       eventDetails.cancel();
                       toggleProjectScopeKey(item.value);
                     } else {
+                      const pageKey = projectPageOpenedByScopePick({
+                        previousKeys: projectScopeKeys,
+                        nextKeys: [item.value],
+                        hasPage: (projectKey) => projectPages.has(projectKey),
+                        isShowing: (projectKey) =>
+                          routeProjectKey === projectKey ||
+                          (routeThreadKey !== null &&
+                            projectPages.get(projectKey)?.chatThreadKey === routeThreadKey),
+                      });
                       setProjectScopeKeys([item.value]);
+                      if (pageKey !== null) void openProjectPage(pageKey);
                     }
                   }}
                 >
                   <ComboboxTrigger
                     render={
-                      singleProjectScope ? (
+                      namedProjectScope ? (
                         <button
                           type="button"
                           aria-label={`Filter threads by project: ${scopedProjectGroups[0]!.displayName}`}
@@ -3673,7 +3689,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     ) : (
                       <ListFilterIcon className="size-4" />
                     )}
-                    {singleProjectScope ? (
+                    {namedProjectScope ? (
                       <>
                         <span className="min-w-0 flex-1 truncate text-left">
                           {scopedProjectGroups[0]!.displayName}

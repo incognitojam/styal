@@ -1,5 +1,5 @@
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { type EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, type EnvironmentMachineKind } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { useAtomValue } from "@effect/atom-react";
 import { lazy, Suspense, useState } from "react";
@@ -11,6 +11,7 @@ import {
 import { LogInIcon, WifiOffIcon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { environmentCatalog } from "../../connection/catalog";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ConnectionDiagnosisHeadline } from "../settings/ConnectionDiagnosisDetails";
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import {
@@ -43,6 +44,7 @@ const T3ConnectSignInButton = lazy(() =>
 export type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  readonly machineKind: EnvironmentMachineKind;
   readonly connection: EnvironmentConnectionPresentation;
   /** Why a styal Link environment has no cloud session to connect with, if it has none. */
   readonly missingCloudSession: "loading" | "failed" | "signed-out" | null;
@@ -199,7 +201,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
           variant: "warning",
           group: "environment",
-          icon: <WifiOffIcon />,
+          icon: <LogInIcon />,
           title: "Couldn't read your styal Link sign-in",
           description: `Reload to try again and reach ${activeEnvironmentUnavailableState.label}.`,
           actions: (
@@ -239,7 +241,12 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
           variant: connectionFailed ? "error" : "warning",
           group: "environment",
-          icon: <WifiOffIcon />,
+          icon:
+            unavailableConnection.phase === "offline" ? (
+              <WifiOffIcon />
+            ) : (
+              <EnvironmentMachineIcon kind={activeEnvironmentUnavailableState.machineKind} />
+            ),
           title:
             unavailableConnection.phase === "offline"
               ? "This device is offline"

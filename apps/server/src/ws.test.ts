@@ -961,6 +961,9 @@ it.effect.each([
       const directStarted = yield* Deferred.make<void>();
       const finishDirect = yield* Deferred.make<void>();
       const directStopped = yield* Deferred.make<void>();
+      const installation = direct
+        ? { kind: "npm-global" as const, prefix: "/opt/node" }
+        : configTestLauncher;
       const responses = yield* Queue.unbounded<ServerConfigStreamEvent>();
       const configRpcServices = Layer.mergeAll(
         layerUnusedConfigRpcServices,
@@ -1015,9 +1018,9 @@ it.effect.each([
           getDescriptor: Effect.succeed({
             environmentId: EnvironmentId.make("config-test"),
             label: "Config test",
-            platform: { os: "linux", arch: "x64" },
+            platform: { os: "linux", arch: "x64", machine: "laptop", timeZone: "Pacific/Auckland" },
             serverVersion: "0.0.0",
-            capabilities: { repositoryIdentity: false, serverInstallation: configTestLauncher },
+            capabilities: { repositoryIdentity: false, serverInstallation: installation },
           }),
         }),
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({
@@ -1096,11 +1099,14 @@ it.effect.each([
       );
       assert.isFalse(snapshot.config.settings.defaultAutoPull);
       assert.deepEqual(snapshot.config.keybindings, initialKeybindings);
-      // Authenticated clients get the launcher the unauthenticated descriptor leaves out.
-      assert.deepEqual(
-        snapshot.config.environment.capabilities.serverInstallation,
-        configTestLauncher,
-      );
+      // Authenticated config retains the installation for manual update commands.
+      assert.deepEqual(snapshot.config.environment.capabilities.serverInstallation, installation);
+      assert.deepEqual(snapshot.config.environment.platform, {
+        os: "linux",
+        arch: "x64",
+        machine: "laptop",
+        timeZone: "Pacific/Auckland",
+      });
       const duringAck = yield* keybindings.upsertKeybindingRule({
         key: "mod+alt+y",
         command: "terminal.toggle",
