@@ -86,7 +86,7 @@ import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection
 import { type AssistantCitationRequest } from "./AssistantCitationSource";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
-import { resolveCitationPhase, type CitedHistory } from "./citationProcedure";
+import { useMessageHistory, resolveCitationPhase, type CitedHistory } from "./citationProcedure";
 import {
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -1356,30 +1356,47 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const reports = use(CoordinatorReportsContext);
   const reportTarget = reports?.target;
   const reportReady = findListReady && !restoringThreadPosition;
-  const requestedReport = useRef<typeof reportTarget>(undefined);
+  const reportHistory = useMessageHistory(
+    reportTarget && citationThreadRef
+      ? {
+          ...citationThreadRef,
+          key: reportTarget.key,
+          messageId: reportTarget.messageId,
+          kind: "report",
+        }
+      : null,
+  );
+  const [positionedReport, setPositionedReport] = useState<typeof reportTarget>(null);
   const clearReport = useEffectEvent(() => reports?.clear());
   const releaseReportFollow = useEffectEvent(navigateTimeline);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- retargets virtual-list navigation when report rows move or history arrives
   useEffect(() => {
-    if (!reportTarget || !reportReady) return;
+    if (
+      !reportTarget ||
+      !reportReady ||
+      reportHistory._tag === "failed" ||
+      historyControls?.loading
+    )
+      return;
     const index = rows.findIndex(
       (row) => row.kind === "message" && row.message.id === reportTarget.messageId,
     );
     releaseReportFollow();
-    if (index >= 0) void listRef.current?.scrollToIndex({ index, animated: false, viewOffset: 48 });
-    else if (
-      historyControls?.hasMoreHistory &&
-      !historyControls.loading &&
-      !historyControls.error &&
-      requestedReport.current !== reportTarget
-    ) {
-      requestedReport.current = reportTarget;
-      historyControls.onLoadEarlier(reportTarget.messageId);
+    let cancelled = false;
+    if (index >= 0) {
+      void listRef.current?.scrollToIndex({ index, animated: false, viewOffset: 48 }).then(() => {
+        if (!cancelled) setPositionedReport(reportTarget);
+      });
     }
-  }, [reportTarget, reportReady, rows, historyControls, listRef]);
-  const reportVisible =
-    reportReady &&
-    rows.some((row) => row.kind === "message" && row.message.id === reportTarget?.messageId);
+    return () => {
+      cancelled = true;
+    };
+  }, [reportTarget, reportReady, reportHistory, historyControls?.loading, rows, listRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears a report jump after its history loader reports the failure toast
+  useEffect(() => {
+    if (reportTarget && reportHistory._tag === "failed") clearReport();
+  }, [reportTarget, reportHistory]);
+  const reportVisible = reportReady && positionedReport === reportTarget;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- expires the report navigation highlight without repainting animation
   useEffect(() => {
     if (!reportTarget || !reportVisible) return;
@@ -1543,6 +1560,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               }
               maintainVisibleContentPosition={
                 findActive ||
+                (reportTarget != null && reportHistory._tag === "found") ||
                 citationPositioning ||
                 (restoringThreadPosition && rememberedPosition?.atEnd === false)
                   ? false

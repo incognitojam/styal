@@ -611,7 +611,7 @@ describe("MessagesTimeline messages", () => {
       false,
     );
     function Test({ items }: { items: readonly Entry[] }) {
-      const [target, setTarget] = useState<{ messageId: MessageId } | null>(null);
+      const [target, setTarget] = useState<{ messageId: MessageId; key: string } | null>(null);
       return (
         <CoordinatorReportsContext
           value={{
@@ -619,7 +619,7 @@ describe("MessagesTimeline messages", () => {
             answers: new Map(),
             target,
             clear: () => setTarget(null),
-            scroll: (messageId) => setTarget({ messageId }),
+            scroll: (messageId) => setTarget({ messageId, key: "report-navigation" }),
             answer: () => {},
             reply: () => {},
             dismiss: () => {},
@@ -632,7 +632,7 @@ describe("MessagesTimeline messages", () => {
             threadId={ThreadId.make("thread-1")}
             runs={[]}
             reports={reports}
-            scroll={(messageId) => setTarget({ messageId })}
+            scroll={(messageId) => setTarget({ messageId, key: "report-navigation" })}
           />
         </CoordinatorReportsContext>
       );

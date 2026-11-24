@@ -1144,8 +1144,14 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const dismissReport = useAtomCommand(dismissCoordinatorReport, { reportFailure: false });
   const canOperateReport = useAtomValue(dismissCoordinatorReport.permissionAtom(environmentId));
-  const [reportTarget, setReportTarget] = useState<{ messageId: MessageId } | null>(null);
-  const scrollToReport = (messageId: MessageId) => setReportTarget({ messageId });
+  const [reportTarget, setReportTarget] = useState<{
+    threadKey: string | null;
+    messageId: MessageId;
+    key: string;
+  } | null>(null);
+  if (reportTarget !== null && reportTarget.threadKey !== activeThreadKey) setReportTarget(null);
+  const scrollToReport = (messageId: MessageId) =>
+    setReportTarget({ threadKey: activeThreadKey, messageId, key: randomUUID() });
   // Built once per capture, so the timeline row keeps its identity while the chat streams.
   const [sinceLastVisitRow, setSinceLastVisitRow] = useState<{
     readonly source: CapturedSinceLastVisit | null;

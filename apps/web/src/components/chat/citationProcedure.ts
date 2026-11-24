@@ -23,6 +23,7 @@ export interface CitedThreadSnapshot {
   readonly message: "assistant" | "other" | null;
   readonly hasMoreHistory: boolean;
   readonly loadFailed?: true;
+  readonly historyCursor?: string | null;
 }
 
 export type CitedHistoryOutcome =
@@ -59,7 +60,9 @@ export async function loadCitedHistory(input: {
   readonly signal: AbortSignal;
   readonly readThread: () => Promise<CitedThreadSnapshot | null>;
   readonly loadThrough: () => Promise<HistoryPageResult>;
+  readonly maxPages?: number;
 }): Promise<CitedHistoryOutcome> {
+  let previousCursor: string | null | undefined;
   for (let attempts = 0; ; attempts += 1) {
     const thread = await input.readThread();
     if (thread === null || input.signal.aborted) return { _tag: "aborted" };
@@ -73,7 +76,14 @@ export async function loadCitedHistory(input: {
       };
     }
     if (!thread.hasMoreHistory) return UNAVAILABLE;
-    if (attempts >= MAX_CITATION_PAGES) return COULD_NOT_LOAD;
+    if (attempts >= (input.maxPages ?? MAX_CITATION_PAGES)) return COULD_NOT_LOAD;
+    if (
+      attempts > 0 &&
+      thread.historyCursor !== undefined &&
+      thread.historyCursor === previousCursor
+    )
+      return COULD_NOT_LOAD;
+    previousCursor = thread.historyCursor;
     const result = await input.loadThrough();
     if (input.signal.aborted) return { _tag: "aborted" };
     if (result._tag === "error") return COULD_NOT_LOAD;
@@ -81,6 +91,22 @@ export async function loadCitedHistory(input: {
     // thread is gone), so re-reading would only spin on the same snapshot.
     if (result._tag === "noop") return UNAVAILABLE;
   }
+}
+
+export async function loadReportHistory(
+  input: Parameters<typeof loadCitedHistory>[0],
+): Promise<CitedHistoryOutcome> {
+  const outcome = await loadCitedHistory({ ...input, maxPages: Number.POSITIVE_INFINITY });
+  return outcome._tag === "failed"
+    ? {
+        _tag: "failed",
+        title: "Could not open report",
+        description:
+          outcome === UNAVAILABLE
+            ? "This report is no longer available."
+            : "History could not be loaded. Click the report to try again.",
+      }
+    : outcome;
 }
 
 /** Where the citation stands for the rows the timeline currently shows. */
@@ -134,10 +160,12 @@ export function citedThreadSnapshot(input: {
   return {
     message: item === undefined ? null : item.type === "assistant_message" ? "assistant" : "other",
     hasMoreHistory: input.history.hasMoreHistory,
+    historyCursor: input.history.historyCursor,
   };
 }
 
-interface CitedHistoryKey {
+interface MessageHistoryRequest {
+  readonly kind?: "citation" | "report";
   readonly key: string;
   readonly environmentId: AssistantCitationRequest["citation"]["environmentId"];
   readonly threadId: AssistantCitationRequest["citation"]["threadId"];
@@ -175,8 +203,8 @@ function waitForSettledThread(
  * starts paging; leaving the location unmounts it and the finalizer stops it.
  * Plain-object keys compare structurally, so one activation is one procedure.
  */
-const citedHistoryAtom = Atom.family(
-  ({ key, environmentId, threadId, messageId }: CitedHistoryKey) => {
+const messageHistoryAtom = Atom.family(
+  ({ key, environmentId, threadId, messageId, kind }: MessageHistoryRequest) => {
     const ref = { environmentId, threadId };
     const threadAtom = environmentThreadDetails.quietThreadAtom(ref);
     const historyAtom = environmentThreadDetails.historyAtom(ref);
@@ -193,8 +221,16 @@ const citedHistoryAtom = Atom.family(
     );
     return Atom.make((get): CitedHistory => {
       const controller = new AbortController();
-      get.addFinalizer(() => controller.abort());
-      void loadCitedHistory({
+      const loadingToast =
+        kind === "report" && get.registry.get(settledThreadAtom)?.message !== "assistant"
+          ? toastManager.add({ type: "info", title: "Opening report…", timeout: 0 })
+          : undefined;
+      get.addFinalizer(() => {
+        controller.abort();
+        if (loadingToast) toastManager.close(loadingToast);
+      });
+      const load = kind === "report" ? loadReportHistory : loadCitedHistory;
+      void load({
         signal: controller.signal,
         readThread: () => waitForSettledThread(get.registry, settledThreadAtom, controller.signal),
         loadThrough: async () => {
@@ -209,6 +245,7 @@ const citedHistoryAtom = Atom.family(
             : { _tag: "error", message: "Could not load history." };
         },
       }).then((outcome) => {
+        if (loadingToast) toastManager.close(loadingToast);
         if (outcome._tag === "aborted") return;
         if (outcome._tag === "failed") {
           toastManager.add({
@@ -220,21 +257,25 @@ const citedHistoryAtom = Atom.family(
         get.setSelf({ _tag: outcome._tag });
       });
       return { _tag: "loading" };
-    }).pipe(Atom.withLabel(`assistant-citation:history:${key}`));
+    }).pipe(Atom.withLabel(`message-navigation:history:${key}`));
   },
 );
 
 const NO_CITED_HISTORY_ATOM = Atom.make<CitedHistory>({ _tag: "loading" });
 
+export function useMessageHistory(request: MessageHistoryRequest | null): CitedHistory {
+  return useAtomValue(request === null ? NO_CITED_HISTORY_ATOM : messageHistoryAtom(request));
+}
+
 export function useCitedHistory(request: AssistantCitationRequest | null): CitedHistory {
-  return useAtomValue(
+  return useMessageHistory(
     request === null
-      ? NO_CITED_HISTORY_ATOM
-      : citedHistoryAtom({
+      ? null
+      : {
           key: request.key,
           environmentId: request.citation.environmentId,
           threadId: request.citation.threadId,
           messageId: request.citation.messageId,
-        }),
+        },
   );
 }

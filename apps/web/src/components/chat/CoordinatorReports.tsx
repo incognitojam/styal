@@ -60,7 +60,7 @@ export const CoordinatorReportsContext = createContext<{
   dismiss: (ref: ReportReference) => void;
   scroll: (id: MessageId) => void;
   canOperate: boolean;
-  target: { messageId: MessageId } | null;
+  target: { messageId: MessageId; key: string } | null;
   clear: () => void;
 } | null>(null);
 export function ReportAnswerBar({

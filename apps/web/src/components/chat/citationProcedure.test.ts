@@ -5,6 +5,7 @@ import {
   type CitedThreadSnapshot,
   citedThreadSnapshot,
   loadCitedHistory,
+  loadReportHistory,
   resolveCitationPhase,
 } from "./citationProcedure";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
@@ -18,8 +19,8 @@ function scriptedHistory(snapshots: ReadonlyArray<CitedThreadSnapshot | null>) {
     get loads() {
       return loads;
     },
-    run: (results: ReadonlyArray<"loaded" | "noop" | "error"> = []) =>
-      loadCitedHistory({
+    run: (results: ReadonlyArray<"loaded" | "noop" | "error"> = [], load = loadCitedHistory) =>
+      load({
         signal: controller.signal,
         readThread: async () => snapshots[Math.min(reads++, snapshots.length - 1)] ?? null,
         loadThrough: async () => {
@@ -39,15 +40,18 @@ describe("loadCitedHistory", () => {
     expect(history.loads).toBe(0);
   });
 
-  it("pages history toward a response outside the loaded window", async () => {
-    const history = scriptedHistory([
-      notLoaded,
-      notLoaded,
-      { message: "assistant", hasMoreHistory: true },
-    ]);
-    await expect(history.run()).resolves.toEqual({ _tag: "found" });
-    expect(history.loads).toBe(2);
-  });
+  it.each([loadCitedHistory, loadReportHistory])(
+    "pages history toward a response outside the loaded window (%s)",
+    async (load) => {
+      const history = scriptedHistory([
+        notLoaded,
+        notLoaded,
+        { message: "assistant", hasMoreHistory: true },
+      ]);
+      await expect(history.run([], load)).resolves.toEqual({ _tag: "found" });
+      expect(history.loads).toBe(2);
+    },
+  );
 
   it("reports an unavailable response once the thread has no more history", async () => {
     const history = scriptedHistory([notLoaded, { message: null, hasMoreHistory: false }]);
@@ -95,6 +99,36 @@ describe("loadCitedHistory", () => {
   it("ends quietly when the citation is left mid-load", async () => {
     const history = scriptedHistory([notLoaded]);
     const outcome = history.run();
+    history.controller.abort();
+    await expect(outcome).resolves.toEqual({ _tag: "aborted" });
+  });
+});
+
+describe("loadReportHistory", () => {
+  it("reaches a report beyond the citation page limit while the history cursor advances", async () => {
+    const history = scriptedHistory([
+      ...Array.from({ length: 32 }, (_, page) => ({ ...notLoaded, historyCursor: `page-${page}` })),
+      { message: "assistant", hasMoreHistory: false, historyCursor: null },
+    ]);
+    await expect(history.run([], loadReportHistory)).resolves.toEqual({ _tag: "found" });
+    expect(history.loads).toBe(32);
+  });
+
+  it.each(["loaded", "error", "noop"] as const)(
+    "reports a failed or non-advancing page (%s)",
+    async (result) => {
+      const history = scriptedHistory([{ ...notLoaded, historyCursor: "unchanged" }]);
+      await expect(history.run([result], loadReportHistory)).resolves.toMatchObject({
+        _tag: "failed",
+        title: "Could not open report",
+      });
+      expect(history.loads).toBe(1);
+    },
+  );
+
+  it("abandons a report when navigation changes during loading", async () => {
+    const history = scriptedHistory([notLoaded]);
+    const outcome = history.run([], loadReportHistory);
     history.controller.abort();
     await expect(outcome).resolves.toEqual({ _tag: "aborted" });
   });
