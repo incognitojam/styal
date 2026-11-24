@@ -2412,7 +2412,11 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
-  it("leaves server restart downtime out of a steer segment's time", () => {
+  it.each([
+    [10, "30s"],
+    [30, "20s"],
+    [620, "20s"],
+  ])("leaves restart downtime out of a segment steered at %ss", (steerAt, duration) => {
     const firstRun = RunId.make("steered-run");
     const continuedRun = RunId.make("continued-run");
     const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
@@ -2447,19 +2451,22 @@ describe("deriveMessagesTimelineRows", () => {
       timelineEntries: [
         message("prompt", 0, "user", firstRun, "turn_start"),
         work("work-before-steer", 4, firstRun),
-        message("steer", 10, "user", firstRun, "steer"),
+        message("steer", steerAt, "user", firstRun, "steer"),
         work("work-after-steer", 20, firstRun),
         work("work-after-restart", 620, continuedRun),
         message("final", 640, "assistant", continuedRun),
-      ],
+      ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       runs: [{ id: firstRun }, { id: continuedRun, restartContinuationOfRunId: firstRun }],
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaries: [],
       supportsConversationRollback: false,
     });
+    expect(rows.find((row) => row.id === `turn-fold:${firstRun}`)).toMatchObject({
+      label: "Worked for 40s",
+    });
     const segment = rows.find((row) => row.id === `turn-fold:${firstRun}:steer:steer`);
-    expect(segment).toMatchObject({ label: "Continued for 30s" });
+    expect(segment).toMatchObject({ label: `Continued for ${duration}` });
   });
 
   it("stacks back-to-back steers as one burst with a single steer label", () => {
