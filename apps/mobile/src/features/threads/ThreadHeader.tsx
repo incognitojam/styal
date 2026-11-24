@@ -1,4 +1,6 @@
 import { AppBar } from "../../components/ui/AppBar";
+import { SourceCheckoutNotice } from "../../components/SourceCheckoutNotice";
+import { EnvironmentId } from "@t3tools/contracts";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
 import {
   useAdaptiveWorkspaceLayout,
@@ -19,6 +21,7 @@ export function ThreadHeader(props: {
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
   readonly hasThreadCwd: boolean;
+  readonly cwd: string | null;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
   /** Set when this thread is its project's chat: the header then belongs to the project. */
@@ -50,35 +53,43 @@ export function ThreadHeader(props: {
     : [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (
-    <AppBar
-      title={props.title}
-      subtitle={props.subtitle}
-      onBackToList={goBack}
-      // The project's own New thread action replaces split view's generic one.
-      onCompose={props.draft || props.project ? undefined : startNewTask}
-      backInSplitView={
-        props.onReturnToThread
-          ? {
-              accessibilityLabel: "Return to chat",
-              icon: "chevron.left",
-              onPress: props.onReturnToThread,
-            }
-          : undefined
-      }
-      actions={
-        props.project
-          ? [
-              {
-                accessibilityLabel: "New thread",
-                icon: "square.and.pencil",
-                onPress: props.project.onNewThread,
-              },
-            ]
-          : actions
-      }
-      menus={menus}
-      hideBottomBorder
-    />
+    <>
+      <AppBar
+        title={props.title}
+        subtitle={props.subtitle}
+        onBackToList={goBack}
+        // The project's own New thread action replaces split view's generic one.
+        onCompose={props.draft || props.project ? undefined : startNewTask}
+        backInSplitView={
+          props.onReturnToThread
+            ? {
+                accessibilityLabel: "Return to chat",
+                icon: "chevron.left",
+                onPress: props.onReturnToThread,
+              }
+            : undefined
+        }
+        actions={
+          props.project
+            ? [
+                {
+                  accessibilityLabel: "New thread",
+                  icon: "square.and.pencil",
+                  onPress: props.project.onNewThread,
+                },
+              ]
+            : actions
+        }
+        menus={menus}
+        hideBottomBorder
+      />
+      {props.cwd ? (
+        <SourceCheckoutNotice
+          environmentId={EnvironmentId.make(props.gitControls.environmentId)}
+          cwd={props.cwd}
+        />
+      ) : null}
+    </>
   );
 }
 

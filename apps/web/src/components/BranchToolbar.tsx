@@ -1,3 +1,4 @@
+import { SourceCheckoutNotice } from "./SourceCheckoutNotice";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
@@ -746,6 +747,13 @@ export const BranchToolbar = memo(function BranchToolbar({
             onAddToMachine={onAddToMachine}
           />
         ) : null}
+        {panelSection !== "branch" ? (
+          <SourceCheckoutNotice
+            layout="panel"
+            environmentId={environmentId}
+            cwd={activeWorktreePath ?? activeProject.workspaceRoot}
+          />
+        ) : null}
         {panelSection !== "workspace" ? (
           <BranchToolbarBranchSelector
             displayMode="panel"
@@ -767,7 +775,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     );
   }
 
-  return (
+  const contextStrip = (
     <ComposerSurface.ContextStrip
       ref={attachStrip}
       data-compact={labelsOverflow ? "" : undefined}
@@ -888,5 +896,15 @@ export const BranchToolbar = memo(function BranchToolbar({
       ) : null}
       {trailing}
     </ComposerSurface.ContextStrip>
+  );
+  return (
+    <>
+      {contextStrip}
+      <SourceCheckoutNotice
+        className="px-3.5 pt-1"
+        environmentId={environmentId}
+        cwd={activeWorktreePath ?? activeProject.workspaceRoot}
+      />
+    </>
   );
 });

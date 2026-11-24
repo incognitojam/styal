@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => {
     }[],
     responseTimestamp: 0,
     reconnect: () => {},
+    checkedOut: () => {},
     rootQuery: null as unknown as QueryState,
     searchQuery: null as unknown as QueryState,
     results: new WeakMap<
@@ -59,7 +60,7 @@ const mocks = vi.hoisted(() => {
       }
     >(),
   });
-  return { createState, state: createState() };
+  return { createState, state: createState(), checkoutSignal: {} };
 });
 
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
@@ -74,6 +75,9 @@ vi.mock("../../state/projects", () => ({
     listEntries: (query: Query) => query,
     searchEntries: (query: Query) => query,
   },
+}));
+vi.mock("@t3tools/client-runtime/state/git", () => ({
+  sourceCheckoutRevision: () => mocks.checkoutSignal,
 }));
 vi.mock("../../connection/catalog", () => ({
   environmentCatalog: { sessionGenerationAtom: () => ({}) },
@@ -111,8 +115,9 @@ vi.mock("@effect/atom-react", () => ({
   },
   useAtomRefresh: () => mocks.state.rootQuery.refresh,
   useAtomMount: () => {},
-  useAtomSubscribe: (_atom: unknown, callback: () => void) => {
-    mocks.state.reconnect = callback;
+  useAtomSubscribe: (atom: unknown, callback: () => void) => {
+    if (atom === mocks.checkoutSignal) mocks.state.checkedOut = callback;
+    else mocks.state.reconnect = callback;
   },
 }));
 
@@ -314,6 +319,18 @@ describe("file tree workspace state", () => {
     await screen.succeed(1);
     act(() => mocks.state.reconnect());
     expect(screen.requests).toHaveLength(2);
+  });
+
+  it("lists loaded folders again after sources are checked out", async () => {
+    using screen = setup();
+    screen.render();
+    screen.load();
+    await screen.succeed(0, [{ kind: "file", path: "src/untracked.txt" }]);
+    act(() => mocks.state.checkedOut());
+    expect(screen.requests.slice(1).map((request) => request.query.input)).toContainEqual({
+      cwd: "/first",
+      directoryPath: "src",
+    });
   });
 
   it("publishes immutable loading and loaded snapshots", async () => {

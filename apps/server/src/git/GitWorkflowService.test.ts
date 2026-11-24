@@ -55,6 +55,78 @@ const realGitLayer = (prefix: string) =>
   );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowService", (it) => {
+  it.effect.each([
+    "released",
+    "recovery-required",
+    "user-sparse",
+    "obstructed",
+    "missing-nested",
+  ] as const)("reports source checkout state and checks out again: %s", (state) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.command(f.worktree, ["switch", "-c", "fixture-state"]);
+      yield* f.write("src/source", "source");
+      yield* f.command(f.worktree, ["add", "."]);
+      yield* f.command(f.worktree, ["commit", "-m", "fixture: source"]);
+      yield* f.write(".scratch/note", "keep");
+      const checkout = yield* makeCheckout.pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, f.git),
+      );
+      if (state === "user-sparse")
+        yield* f.command(f.worktree, ["sparse-checkout", "set", "--no-cone", "/*", "!/*/"]);
+      else yield* checkout.release(f.worktree, f.root);
+      if (state === "recovery-required") {
+        const admin = (yield* f.command(f.worktree, [
+          "rev-parse",
+          "--absolute-git-dir",
+        ])).stdout.trim();
+        const journal = `${admin}/styal-checkout.json`;
+        yield* f.fs.writeFileString(
+          journal,
+          (yield* f.fs.readFileString(journal)).replace('"released"', '"releasing"'),
+        );
+      }
+      const workflow = yield* GitWorkflowService.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(GitVcsDriver.GitVcsDriver, f.git),
+            Layer.mock(WorkspacePortAllocator.WorkspacePortAllocator)({}),
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+              detect: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
+            }),
+            Layer.mock(GitManager.GitManager)({
+              localStatus: (input) => f.git.status(input),
+              invalidateStatus: () => Effect.void,
+            }),
+          ),
+        ),
+      );
+      const cwd = state === "missing-nested" ? `${f.worktree}/src` : f.worktree;
+      assert.equal(yield* workflow.currentBranch(cwd), "fixture-state");
+      assert.equal(yield* workflow.headPath(cwd), yield* workflow.headPath(f.worktree));
+      assert.isTrue((yield* workflow.localStatus({ cwd })).isRepo);
+      assert.equal(
+        (yield* workflow.localStatus({ cwd })).sourceCheckout,
+        state === "user-sparse"
+          ? undefined
+          : state === "obstructed" || state === "missing-nested"
+            ? "released"
+            : state,
+      );
+      if (state === "obstructed") {
+        yield* f.write("src", "keep obstruction");
+        const failure = yield* workflow.checkOutSources({ cwd: f.worktree }).pipe(Effect.flip);
+        assert.equal(failure._tag, "WorktreeCleanupError");
+        assert.include(failure.message, '"src"');
+        assert.equal(yield* f.fs.readFileString(`${f.worktree}/src`), "keep obstruction");
+        yield* f.fs.remove(`${f.worktree}/src`);
+      }
+      yield* workflow.checkOutSources({ cwd: `${f.worktree}/src` });
+      assert.equal(yield* f.fs.exists(`${f.worktree}/src/source`), state !== "user-sparse");
+      assert.equal(yield* f.fs.readFileString(`${f.worktree}/.scratch/note`), "keep");
+      assert.isUndefined((yield* workflow.localStatus({ cwd: f.worktree })).sourceCheckout);
+    }).pipe(Effect.scoped),
+  );
   it.effect.each([{ location: "root" }, { location: "nested" }, { location: "missing-nested" }])(
     "restores source before committing from $location",
     ({ location }) =>

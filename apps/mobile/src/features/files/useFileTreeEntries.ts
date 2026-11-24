@@ -1,4 +1,5 @@
 import { useAtomMount, useAtomSubscribe } from "@effect/atom-react";
+import { sourceCheckoutRevision } from "@t3tools/client-runtime/state/git";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import { ProjectListEntriesError, type EnvironmentId, type ProjectEntry } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -100,12 +101,14 @@ function getRequests(
   }
   return requests;
 }
-const noSessionGeneration = Atom.make(0);
+const noEnvironmentSignal = Atom.make(0);
 
 export function useFileTreeEntries(input: {
   readonly cwd: string | null;
   readonly environmentId: EnvironmentId | null;
   readonly searchQuery: string;
+  // The workspace whose source checkout status is watched, when the listing is one of its folders.
+  readonly workspaceCwd?: string | null;
 }) {
   const { cwd, environmentId } = input;
   const searching = input.searchQuery.trim().length > 0;
@@ -295,7 +298,7 @@ export function useFileTreeEntries(input: {
   // session is up rather than leaving the error until someone refreshes.
   const sessionGeneration =
     environmentId === null
-      ? noSessionGeneration
+      ? noEnvironmentSignal
       : environmentCatalog.sessionGenerationAtom(environmentId);
   // A listener alone does not compute the atom, so nothing would follow the connection.
   useAtomMount(sessionGeneration);
@@ -500,6 +503,14 @@ export function useFileTreeEntries(input: {
       }
     });
   };
+
+  // A source checkout restores folders without file events.
+  useAtomSubscribe(
+    environmentId === null || cwd === null
+      ? noEnvironmentSignal
+      : sourceCheckoutRevision(environmentId, input.workspaceCwd ?? cwd),
+    () => void refresh(),
+  );
 
   const revealSelection = (path: string | null) => {
     if (missingRoot) return;

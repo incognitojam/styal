@@ -53,6 +53,7 @@ export function useFeatureExplainer(explainer: FeatureExplainer, scope?: ReactNo
         See how it works
       </Button>
     ),
+    show: () => request("link"),
     onEnabled: () => request("enabled"),
   };
 }

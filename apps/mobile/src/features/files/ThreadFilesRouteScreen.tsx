@@ -1,5 +1,6 @@
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isHostPath } from "@t3tools/shared/path";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
 import {
@@ -17,6 +18,7 @@ import { mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { SourceCheckoutNotice } from "../../components/SourceCheckoutNotice";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { DelimitedFilePreview } from "./DelimitedFilePreview";
 import { AudioFilePreview } from "./AudioFilePreview";
@@ -33,6 +35,7 @@ import { type MediaActionsSource } from "../../lib/mediaActionsSource";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { projectEnvironment } from "../../state/projects";
 import type { AssetUrlFailureReason } from "../../state/asset-url-state";
@@ -250,6 +253,9 @@ function FileContent(props: {
   readonly truncated: boolean;
   readonly onRefresh?: () => Promise<void> | void;
 }) {
+  const sourceStatus = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId: props.environmentId, input: { cwd: props.cwd } }),
+  );
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
   const thumbnailInstanceId = useId();
   const barOverlap = useContentTopInset();
@@ -264,6 +270,15 @@ function FileContent(props: {
     isVideoFile ||
     isAudioFile ||
     (props.activeMode === "preview" && (isImageFile || isBrowserFile));
+
+  if (
+    !isHostPath(props.relativePath) &&
+    sourceStatus.data?.sourceCheckout &&
+    ((props.fileError && props.fileContents === null) ||
+      (needsAssetUrl && props.previewFailure === "failed"))
+  ) {
+    return <View className="flex-1" />;
+  }
 
   if (needsAssetUrl && props.previewFailure !== null) {
     return (
@@ -582,6 +597,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         onBack={handleReturnToThread}
       />
       <ScreenContent>
+        <SourceCheckoutNotice environmentId={environmentId} cwd={cwd} context="files" />
         <FileTreeBrowser
           key={JSON.stringify([environmentId, cwd])}
           revealSelection={entriesQuery.revealSelection}
@@ -643,6 +659,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     environmentId,
     cwd: canReadFiles ? directoryPath : null,
     searchQuery,
+    workspaceCwd: cwd,
   });
   const [modeOverride, setModeOverride] = useState<{
     readonly path: string;
@@ -984,6 +1001,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           onBack={handleBack}
         />
         <ScreenContent>
+          <SourceCheckoutNotice environmentId={environmentId} cwd={cwd} context="files" />
           <FileTreeBrowser
             key={JSON.stringify([environmentId, directoryPath])}
             revealSelection={entriesQuery.revealSelection}
@@ -1025,6 +1043,12 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         actions={fileMenuActions}
       />
       <ScreenContent>
+        <SourceCheckoutNotice
+          environmentId={environmentId}
+          cwd={cwd}
+          context="files"
+          onCheckedOut={handleRetryPreview}
+        />
         <FileContent
           key={previewKey}
           activeMode={resolvedActiveMode}

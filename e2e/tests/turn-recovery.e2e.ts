@@ -37,6 +37,7 @@ describe("recover a turn", () => {
 
   it("stops a running turn and accepts another message in the same thread", async () => {
     const { page, composer } = app;
+    await page.clock.install();
     await composer.click();
     await page.keyboard.type("Keep working");
     await composer.filter({ hasText: "Keep working" }).waitFor();
@@ -45,6 +46,8 @@ describe("recover a turn", () => {
     await page.getByRole("button", { name: "Stop generation" }).click();
     await page.getByText("Stopped by user").first().waitFor();
     await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden" });
+    // Stop's replacement briefly ignores repeated clicks at the same position.
+    await page.clock.fastForward(1_000);
     await sendMessage(app, "Continue with a shorter task");
     const turns = environment.codexTurns();
     expect(turns).toHaveLength(2);

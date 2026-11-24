@@ -1,3 +1,6 @@
+import { SourceCheckoutNotice } from "../SourceCheckoutNotice";
+import { useEnvironmentQuery } from "~/state/query";
+import { vcsEnvironment } from "~/state/vcs";
 import { DownloadIcon, CopyIcon, CheckIcon, Code2Icon, EyeIcon, Table2Icon } from "lucide-react";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { Spinner } from "~/components/ui/spinner";
@@ -1053,6 +1056,9 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
+  const sourceStatus = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId, input: { cwd } }),
+  );
   const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const defaultWordWrap = useClientSettings((settings) => settings.wordWrap);
@@ -1116,6 +1122,17 @@ export default function FilePreviewPanel({
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
+  // Matches the body branch that renders the empty state, so the explorer line hides only then.
+  const showsFreedSource =
+    !isFolder &&
+    relativePath !== null &&
+    file.error !== null &&
+    file.data === null &&
+    !file.isFile &&
+    !file.isNotFile &&
+    !attachment &&
+    !isHostFile &&
+    sourceStatus.data?.sourceCheckout !== undefined;
   const showExplorer = shouldShowFileExplorer({
     relativePath: previewPath,
     explorerOpen,
@@ -1471,6 +1488,13 @@ export default function FilePreviewPanel({
               htmlRender={attachment.htmlRender === true}
               threadRef={threadRef}
             />
+          ) : showsFreedSource ? (
+            <SourceCheckoutNotice
+              layout="empty"
+              environmentId={environmentId}
+              cwd={cwd}
+              projectId={projectId}
+            />
           ) : relativePath && isVideo && absolutePath ? (
             <WorkspaceVideoPreview
               key={`${environmentId}:${threadRef.threadId}:${absolutePath}`}
@@ -1665,6 +1689,15 @@ export default function FilePreviewPanel({
                 selectedPathRevealId={revealRequestId}
                 onOpenFile={onOpenFile}
                 answersPanelFind={!previewPath}
+                notice={
+                  hostFolderPath === null && !showsFreedSource ? (
+                    <SourceCheckoutNotice
+                      environmentId={environmentId}
+                      cwd={cwd}
+                      projectId={projectId}
+                    />
+                  ) : null
+                }
                 workspaceMutationId={workspaceMutationId}
                 {...(previewPath && !isMedia && !isPdf
                   ? {
