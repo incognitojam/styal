@@ -295,15 +295,6 @@ function ProjectChat({ page, background }: { page: ProjectPageState; background:
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
       }),
-    onOpenThread:
-      chat === null
-        ? null
-        : () =>
-            void navigate({
-              to: "/$environmentId/$threadId",
-              params: buildThreadRouteParams(chat),
-              search: { view: "thread" },
-            }),
   } as const;
 
   const view =

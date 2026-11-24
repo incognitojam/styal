@@ -2248,12 +2248,9 @@ export default function ChatView(props: ChatViewProps) {
       ? activePreviewMiniPlayer
       : null;
   const canvasPreview = useThreadPreviewCanvasSource(activeThreadRef, shownPreviewMiniPlayer);
-  // The project chat has no branch or worktree of its own; the page header carries its machine.
-  const showsThreadPanel = projectChat === undefined;
-  const threadPanelInlineOpen =
-    useRightPanelStore((state) =>
-      selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
-    ) && showsThreadPanel;
+  const threadPanelInlineOpen = useRightPanelStore((state) =>
+    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
+  );
   // Selects only the mode, so canvas resizes rerender the chat view only when the
   // card switches presentation.
   const threadPanelPresentation = useStore(
@@ -2267,14 +2264,13 @@ export default function ChatView(props: ChatViewProps) {
         detailsCardInlineOpen: threadPanelInlineOpen,
       }).detailsCardMode,
   );
-  const threadPanelOpen =
-    useRightPanelStore((state) =>
-      selectThreadPanelOpen(
-        state.threadPanelVisibilityByThreadKey,
-        activeThreadRef,
-        threadPanelPresentation,
-      ),
-    ) && showsThreadPanel;
+  const threadPanelOpen = useRightPanelStore((state) =>
+    selectThreadPanelOpen(
+      state.threadPanelVisibilityByThreadKey,
+      activeThreadRef,
+      threadPanelPresentation,
+    ),
+  );
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
@@ -3627,7 +3623,7 @@ export default function ChatView(props: ChatViewProps) {
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && showsThreadPanel}
+      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
@@ -3694,7 +3690,7 @@ export default function ChatView(props: ChatViewProps) {
               />
             ) : null}
             {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-            {inlineRightPanelOwnsTitleBar && showsThreadPanel ? threadPanelHeaderControl : null}
+            {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             {projectChat ? (
               <ProjectChatHeader {...projectChat} rightPanelOpen={inlineRightPanelOwnsTitleBar} />
             ) : (
@@ -4365,81 +4361,78 @@ export default function ChatView(props: ChatViewProps) {
                   onConfirm={handleSwitchCheckoutToThreadStable}
                 />
 
-                {showsThreadPanel ? (
-                  <ThreadDetailsPanel
-                    anchor={threadPanelPopoverAnchorRef}
-                    handle={threadPanelPopoverHandle}
-                    forceNewWorktree={multipleModelSelections !== null}
-                    environmentId={activeThread.environmentId}
-                    threadId={activeThread.id}
-                    projectId={activeThread.projectId}
-                    worktreePath={activeThread.worktreePath}
-                    isServerThread={isServerThread}
-                    {...(draftId ? { draftId } : {})}
-                    composerDraftTarget={composerDraftTarget}
-                    activeProjectName={activeProject?.title}
-                    activeProjectScripts={activeProject ? activeProjectActions : undefined}
-                    preferredScriptId={
-                      activeProject
-                        ? (lastInvokedScriptByProjectId[activeProject.id] ?? null)
-                        : null
-                    }
-                    keybindings={keybindings}
-                    availableEditors={availableEditors}
-                    showOpenInPicker={showOpenInPicker}
-                    openInShortcutEnabled={
-                      !(
-                        rightPanelOpen &&
-                        renderedRightPanelSurface?.kind === "file" &&
-                        renderedRightPanelSurface.attachment === undefined
-                      )
-                    }
-                    gitCwd={gitCwd}
-                    workspaceMutationId={workspaceMutationId}
-                    isGitRepo={isGitRepo}
-                    envLocked={envLocked}
-                    availableEnvironments={logicalProjectEnvironments}
-                    autoEnvironmentLabel={autoEnvironmentLabel}
-                    onAutoEnvironment={
-                      draftId &&
-                      !envLocked &&
-                      canAutoBalanceEnvironments &&
-                      loadBalancingSettings.loadBalancingEnabled
-                        ? onAutoEnvironmentStable
-                        : undefined
-                    }
-                    {...(canChangeEnvironment
-                      ? { onEnvironmentChange: onEnvironmentChangeStable }
-                      : {})}
-                    onEnvModeChange={onEnvModeChangeStable}
-                    envMode={envMode}
-                    {...(canOverrideServerThreadEnvMode
-                      ? {
-                          activeThreadBranchOverride: activeThreadBranch,
-                          onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
-                        }
-                      : {})}
-                    startFromOrigin={startFromOrigin}
-                    onStartFromOriginChange={onStartFromOriginChange}
-                    {...(canCheckoutPullRequestIntoThread
-                      ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
-                      : {})}
-                    onComposerFocusRequest={scheduleComposerFocusStable}
-                    {...(isServerThread && isGitRepo
-                      ? { onOpenChanges: openChangesFromThreadPanelStable }
-                      : {})}
-                    onRunProjectScript={runProjectScriptStable}
-                    onAddProjectScript={saveProjectScriptStable}
-                    onUpdateProjectScript={updateProjectScriptStable}
-                    onDeleteProjectScript={deleteProjectScriptStable}
-                    usage={{
-                      providerInstanceId: activeProviderInstanceId,
-                      providers: providerStatuses,
-                      sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
-                      contextWindow: activeContextWindow,
-                    }}
-                  />
-                ) : null}
+                <ThreadDetailsPanel
+                  anchor={threadPanelPopoverAnchorRef}
+                  handle={threadPanelPopoverHandle}
+                  forceNewWorktree={multipleModelSelections !== null}
+                  environmentId={activeThread.environmentId}
+                  threadId={activeThread.id}
+                  projectId={activeThread.projectId}
+                  worktreePath={activeThread.worktreePath}
+                  isServerThread={isServerThread}
+                  {...(draftId ? { draftId } : {})}
+                  composerDraftTarget={composerDraftTarget}
+                  activeProjectName={activeProject?.title}
+                  activeProjectScripts={activeProject ? activeProjectActions : undefined}
+                  preferredScriptId={
+                    activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
+                  }
+                  keybindings={keybindings}
+                  availableEditors={availableEditors}
+                  showOpenInPicker={showOpenInPicker}
+                  openInShortcutEnabled={
+                    !(
+                      rightPanelOpen &&
+                      renderedRightPanelSurface?.kind === "file" &&
+                      renderedRightPanelSurface.attachment === undefined
+                    )
+                  }
+                  gitCwd={gitCwd}
+                  workspaceMutationId={workspaceMutationId}
+                  isGitRepo={isGitRepo}
+                  // The project chat runs in the project's folder: its machine is chosen under the composer.
+                  envLocked={envLocked || projectChat !== undefined}
+                  availableEnvironments={logicalProjectEnvironments}
+                  autoEnvironmentLabel={autoEnvironmentLabel}
+                  onAutoEnvironment={
+                    draftId &&
+                    !envLocked &&
+                    canAutoBalanceEnvironments &&
+                    loadBalancingSettings.loadBalancingEnabled
+                      ? onAutoEnvironmentStable
+                      : undefined
+                  }
+                  {...(canChangeEnvironment
+                    ? { onEnvironmentChange: onEnvironmentChangeStable }
+                    : {})}
+                  onEnvModeChange={onEnvModeChangeStable}
+                  envMode={envMode}
+                  {...(canOverrideServerThreadEnvMode
+                    ? {
+                        activeThreadBranchOverride: activeThreadBranch,
+                        onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
+                      }
+                    : {})}
+                  startFromOrigin={startFromOrigin}
+                  onStartFromOriginChange={onStartFromOriginChange}
+                  {...(canCheckoutPullRequestIntoThread
+                    ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
+                    : {})}
+                  onComposerFocusRequest={scheduleComposerFocusStable}
+                  {...(isServerThread && isGitRepo
+                    ? { onOpenChanges: openChangesFromThreadPanelStable }
+                    : {})}
+                  onRunProjectScript={runProjectScriptStable}
+                  onAddProjectScript={saveProjectScriptStable}
+                  onUpdateProjectScript={updateProjectScriptStable}
+                  onDeleteProjectScript={deleteProjectScriptStable}
+                  usage={{
+                    providerInstanceId: activeProviderInstanceId,
+                    providers: providerStatuses,
+                    sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
+                    contextWindow: activeContextWindow,
+                  }}
+                />
 
                 <FileActionApprovalDialog
                   target={

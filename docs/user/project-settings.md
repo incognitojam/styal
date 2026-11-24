@@ -326,8 +326,8 @@ project's folder, or, in the flat list, the chat's own row. Each shows how many 
 threads are working or need you; in folders the chat has no row of its own, and the folder's
 chevron still opens and closes it. **Project settings** links open the page, and its gear
 button opens the settings. The coordinator's own links (from search, the palette, another thread,
-or **Make project coordinator** on the thread you have open) open the page too; **Open as thread**
-in the page's header shows it as a thread, with its title, thread menu and details panel. A
+or **Make project coordinator** on the thread you have open) open the page too. The page has the
+thread view's details card, terminal and right panel, with the same toggles and shortcuts. A
 project without a coordinator shows an empty chat: the first message starts a thread in the
 project's folder, without a worktree, and makes it the coordinator. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine

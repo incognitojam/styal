@@ -4,7 +4,7 @@ import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entitie
 import { visibilityParentKey } from "@t3tools/client-runtime/state/threads";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { Navigate, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
@@ -147,13 +147,9 @@ export function ThreadRouteView({
     draftThreadExists: draftThread !== null,
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
-  // A project's coordinator lives on its project page. The thread view stays for `?view=thread`
-  // (the page's Open as thread), a quoted response it must reveal, a thread the shell leaves out
-  // (the page cannot show it), and under Settings or Usage.
-  const threadViewRequested = useSearch({
-    strict: false,
-    select: (search) => search.view === "thread",
-  });
+  // A project's coordinator lives on its project page. The thread view stays for a quoted response
+  // it must reveal, a thread the shell leaves out (the page cannot show it), and under Settings or
+  // Usage.
   const citationLink = useLocation({
     select: (location) => assistantCitationFromLocation(location.href) !== null,
   });
@@ -162,7 +158,6 @@ export function ThreadRouteView({
   const coordinatedProject =
     serverThreadRef === null ||
     serverThreadShell === null ||
-    threadViewRequested ||
     citationLink ||
     heldOffShell ||
     background
