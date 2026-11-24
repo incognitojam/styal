@@ -96,8 +96,9 @@ interface FakeProviderScenario {
   /** Check out the pull request head from its pull ref: fast-forward only unless forced. */
   syncCheckoutWithPullHead?: boolean;
   /**
-   * The host's `headBranchProbe`. By default the fake probes only bare branch names, a hundred
-   * at a time, so tests see GitManager defer to the hook; null leaves the probe to GitManager.
+   * The host's `headBranchProbe`. By default the fake probes bare branch names, a hundred at a
+   * time, or only the owner-qualified default branch, as GitHub does, so tests see GitManager
+   * defer to the hook; null leaves the probe to GitManager.
    */
   headBranchProbe?: SourceControlProvider["Service"]["headBranchProbe"] | null;
 }
@@ -442,8 +443,10 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
       : {
           headBranchProbe:
             scenario.headBranchProbe ??
-            (({ headSelectors }: { readonly headSelectors: ReadonlyArray<string> }) => ({
-              headSelectors: headSelectors.filter((selector) => !selector.includes(":")),
+            (({ headSelectors, defaultBranchHeadSelector }) => ({
+              headSelectors: defaultBranchHeadSelector
+                ? [defaultBranchHeadSelector]
+                : headSelectors.filter((selector) => !selector.includes(":")),
               limit: 100,
             })),
         };
@@ -2596,7 +2599,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, providerCalls } = yield* makeManager({
         providerScenario: {
           prListByHeadSelector: {
-            main: [
+            "contributor:main": [
               {
                 number: 777,
                 title: "Fork PR from main",
@@ -2627,7 +2630,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
       expect(providerCalls).toContainEqual({
         operation: "listChangeRequests",
-        headSelector: "main",
+        headSelector: "contributor:main",
         state: "all",
         limit: 100,
       });
@@ -4766,6 +4769,48 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             call.baseRefName === "statemachine" && call.headSelector === "octocat:statemachine",
         ),
       ).toBe(false);
+    }),
+  );
+
+  it.effect("creates a fork PR from origin into the upstream remote the provider targets", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", forkDir]);
+      yield* runGit(repoDir, [
+        "remote",
+        "add",
+        "upstream",
+        "git@github.com:pingdotgg/codething-mvp.git",
+      ]);
+      yield* runGit(repoDir, ["config", "remote.upstream.gh-resolved", "base"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/fork-only"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "fork-only.txt"), "fork only\n");
+      yield* runGit(repoDir, ["add", "fork-only.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Fork-only commit"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/fork-only"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
+
+      const { service, calls } = createFakeSourceControlProvider({ prListSequence: [[], []] });
+      const { manager } = yield* makeManager({
+        sourceControlProvider: {
+          ...service,
+          createsChangeRequestsIn: ({ repository }) =>
+            Effect.succeed(repository === "pingdotgg/codething-mvp"),
+        },
+      });
+      const result = yield* runStackedAction(manager, { cwd: repoDir, action: "create_pr" });
+
+      expect(result.pr.status).toBe("created");
+      expect(created(calls)).toEqual([
+        { baseRefName: "main", headSelector: "octocat:feature/fork-only" },
+      ]);
     }),
   );
 

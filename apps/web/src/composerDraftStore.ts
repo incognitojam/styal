@@ -1,6 +1,9 @@
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
-import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
+import {
+  composerFileAttachmentMimeType,
+  composerImageDedupKey,
+} from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ResponseContextRecord,
@@ -132,16 +135,106 @@ type ComposerPersistState =
   | { capturedState: ComposerDraftStoreState }
   | PersistedComposerDraftStoreState;
 
+const composerDraftBaseStorage =
+  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage();
+
+interface ComposerDraftWrite {
+  readonly text: string;
+  /** This tab's own state as of the write; entries it still matches were not edited here. */
+  readonly local: PersistedComposerDraftStoreState;
+  readonly merged: PersistedComposerDraftStoreState;
+}
+let composerDraftLoadedState: PersistedComposerDraftStoreState | null = null;
+let composerDraftLastWrite: ComposerDraftWrite | null = null;
+let composerDraftPendingWrite: ComposerDraftWrite | null = null;
+
+function readStoredComposerDraftState(): PersistedComposerDraftStoreState | null {
+  const text = composerDraftBaseStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+  if (typeof text !== "string") return null;
+  if (text === composerDraftLastWrite?.text) return composerDraftLastWrite.merged;
+  try {
+    const parsed = JSON.parse(text) as StorageValue<PersistedComposerDraftStoreState>;
+    return parsed.version === COMPOSER_DRAFT_STORAGE_VERSION ? parsed.state : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeDraftRecord<V>(
+  stored: Readonly<Record<string, V>> | undefined,
+  local: Readonly<Record<string, V>>,
+  baseline: Readonly<Record<string, V>>,
+): Record<string, V> {
+  const merged = { ...stored };
+  for (const key of new Set([...Object.keys(local), ...Object.keys(baseline)])) {
+    if (Equal.equals(local[key], baseline[key])) continue;
+    const value = local[key];
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return merged;
+}
+
+/** Writes only what this tab changed since its last write over what other tabs saved since. */
+function mergeComposerDraftStates(
+  stored: PersistedComposerDraftStoreState,
+  local: PersistedComposerDraftStoreState,
+  baseline: PersistedComposerDraftStoreState,
+): PersistedComposerDraftStoreState {
+  const pick = <K extends keyof PersistedComposerDraftStoreState>(key: K) => {
+    const value = Equal.equals(local[key], baseline[key]) ? stored[key] : local[key];
+    return value === undefined ? {} : { [key]: value };
+  };
+  return {
+    draftsByThreadKey: mergeDraftRecord(
+      stored.draftsByThreadKey,
+      local.draftsByThreadKey,
+      baseline.draftsByThreadKey,
+    ),
+    draftThreadsByThreadKey: mergeDraftRecord(
+      stored.draftThreadsByThreadKey,
+      local.draftThreadsByThreadKey,
+      baseline.draftThreadsByThreadKey,
+    ),
+    logicalProjectDraftThreadKeyByLogicalProjectKey: mergeDraftRecord(
+      stored.logicalProjectDraftThreadKeyByLogicalProjectKey,
+      local.logicalProjectDraftThreadKeyByLogicalProjectKey,
+      baseline.logicalProjectDraftThreadKeyByLogicalProjectKey,
+    ),
+    ...pick("stickyModelSelectionByProvider"),
+    ...pick("stickyOptionsByModelByProvider"),
+    ...pick("stickyActiveProvider"),
+  };
+}
+
+function serializeComposerDraftState(value: StorageValue<ComposerPersistState>): string {
+  if (!("capturedState" in value.state)) {
+    return JSON.stringify({ state: value.state, version: value.version });
+  }
+  const local = partializeComposerDraftStoreState(value.state.capturedState);
+  const baseline = composerDraftLastWrite?.local ?? composerDraftLoadedState;
+  const stored = baseline ? readStoredComposerDraftState() : null;
+  const merged = stored && baseline ? mergeComposerDraftStates(stored, local, baseline) : local;
+  const text = JSON.stringify({ state: merged, version: value.version });
+  composerDraftPendingWrite = { text, local, merged };
+  return text;
+}
+
 const composerDebouncedStorage = createDeferredStorage<StorageValue<ComposerPersistState>>(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
-  (value) =>
-    JSON.stringify({
-      state:
-        "capturedState" in value.state
-          ? partializeComposerDraftStoreState(value.state.capturedState)
-          : value.state,
-      version: value.version,
-    }),
+  {
+    getItem: (name) => composerDraftBaseStorage.getItem(name),
+    setItem: (name, text) => {
+      composerDraftBaseStorage.setItem(name, text);
+      if (composerDraftPendingWrite?.text === text)
+        composerDraftLastWrite = composerDraftPendingWrite;
+    },
+    removeItem: (name) => {
+      composerDraftBaseStorage.removeItem(name);
+      composerDraftLoadedState = null;
+      composerDraftLastWrite = null;
+    },
+  },
+  serializeComposerDraftState,
   COMPOSER_PERSIST_DEBOUNCE_MS,
 );
 
@@ -874,11 +967,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     runtimeMode: null,
     interactionMode: null,
   };
-}
-
-function composerAttachmentDedupKey(image: ComposerAttachment): string {
-  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
-  return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
 }
 
 export function composerFileDedupKey(
@@ -3538,9 +3626,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               [...existing.images, ...existing.files].map((image) => image.id),
             );
             const existingDedupKeys = new Set(
-              [...existing.images, ...existing.files].map((image) =>
-                composerAttachmentDedupKey(image),
-              ),
+              [...existing.images, ...existing.files].map((image) => composerImageDedupKey(image)),
             );
             const acceptedPreviewUrls = new Set(
               existing.images.flatMap((image) =>
@@ -3555,7 +3641,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               0,
             );
             for (const image of images) {
-              const dedupKey = composerAttachmentDedupKey(image);
+              const dedupKey = composerImageDedupKey(image);
               if (
                 existingIds.has(image.id) ||
                 (!options?.allowDuplicates && existingDedupKeys.has(dedupKey))
@@ -4692,6 +4778,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
     },
   ),
 );
+
+composerDraftLoadedState = partializeComposerDraftStoreState(composerDraftStore.getState());
 
 export const useComposerDraftStore = composerDraftStore;
 

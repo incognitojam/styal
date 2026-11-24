@@ -138,8 +138,10 @@ function KeybindingsSearchInput({
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           event.preventDefault();
-          if (query.length > 0) onChange("");
-          else event.currentTarget.blur();
+          if (query.length > 0) {
+            event.stopPropagation();
+            onChange("");
+          } else event.currentTarget.blur();
         }}
         placeholder="Search keybindings"
         aria-label="Search keybindings"
@@ -1479,24 +1481,16 @@ export function KeybindingsSettingsPanel() {
             Add keybinding
           </Button>
           {primaryEnvironment ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span>
-                    <OpenInPicker
-                      environmentId={primaryEnvironment.environmentId}
-                      keybindings={primaryEnvironment.serverConfig?.keybindings ?? []}
-                      availableEditors={availableEditors}
-                      openInCwd={keybindingsConfigPath}
-                      openInCwdIsFile
-                      compact
-                      enableShortcut={false}
-                    />
-                  </span>
-                }
-              />
-              <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-            </Tooltip>
+            <OpenInPicker
+              environmentId={primaryEnvironment.environmentId}
+              keybindings={primaryEnvironment.serverConfig?.keybindings ?? []}
+              availableEditors={availableEditors}
+              openInCwd={keybindingsConfigPath}
+              openInCwdIsFile
+              primaryActionLabel="Open keybindings.json"
+              compact
+              enableShortcut={false}
+            />
           ) : null}
         </div>
         <KeybindingsConfigIssues issues={configIssues} />

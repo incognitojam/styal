@@ -333,6 +333,14 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
       ranges: [{ start: 0, end: 7 }],
     });
     expect(scoreThreadSearch("trim", subject, NOW)?.explain?.()).toBeUndefined();
+    // Nor is it in the flat styal-<hex> form used when a `styal` branch blocks nested refs.
+    const flat = thread("Add search", { branch: "styal-abcd1234" });
+    expect(scoreThreadSearch("styal", flat, NOW)).toBeNull();
+    expect(scoreThreadSearch("styal connect", flat, NOW)).toBeNull();
+    expect(scoreThreadSearch("abcd1234", flat, NOW)).not.toBeNull();
+    for (const query of ["styal-abcd", "styal-abcd1234 connect", "connect styal-abcd1234"]) {
+      expect(scoreThreadSearch(query, { ...flat, projectTitle: "connect" }, NOW)).not.toBeNull();
+    }
   });
 
   it("reads letters and numbers typed together, without forgiving typos in numbers", () => {

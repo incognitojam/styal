@@ -158,6 +158,10 @@ function RootRouteBranch() {
   const hostedPromptLinkLanding = useHostedPromptLinkLanding(
     authGateState.status === "hosted-static",
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a page load that shows any route but Home has resolved its launch, so a later Home visit never waits for the welcome
+  useEffect(() => {
+    if (pathname !== "/") useLaunchNavigationStore.getState().settleLaunch();
+  }, [pathname]);
 
   if (pathname === GUEST_PAGE_PATH) return <Outlet />;
   if (pathname === "/approve-agent")
@@ -226,16 +230,19 @@ function RootRouteBranch() {
           {appShell}
         </>
       ) : (
-        <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated}
-          hostedStatic={authGateState.status === "hosted-static"}
-        >
-          {appHosts}
-          {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
-          ) : null}
-          {appShell}
-        </FirstRunGate>
+        <>
+          {primaryEnvironmentAuthenticated ? <LaunchWelcomeSettler /> : null}
+          <FirstRunGate
+            enabled={primaryEnvironmentAuthenticated}
+            hostedStatic={authGateState.status === "hosted-static"}
+          >
+            {appHosts}
+            {primaryEnvironmentAuthenticated ? (
+              <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
+            ) : null}
+            {appShell}
+          </FirstRunGate>
+        </>
       )}
       {/* Above both shells and the router, so drafts survive navigation, including to /welcome. */}
       <ThemeEditorHost />
@@ -330,6 +337,17 @@ function errorReport(error: unknown, pathname: string): string {
     cause = cause instanceof Error ? cause.cause : undefined;
   }
   return lines.join("\n");
+}
+
+// Beside the first-run gate, which keeps EventRouter unmounted while settings load: a welcome
+// seen then and lost to a disconnect must still end the launch.
+function LaunchWelcomeSettler() {
+  const welcome = useAtomValue(primaryServerWelcomeAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the first primary welcome of this page load resolves its launch
+  useEffect(() => {
+    if (welcome !== null) useLaunchNavigationStore.getState().settleLaunch();
+  }, [welcome]);
+  return null;
 }
 
 function EventRouter({

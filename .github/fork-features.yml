@@ -3402,7 +3402,7 @@ features:
     invariants:
       - "`reportBack` on `t3_thread_launch` and `create_threads` records the caller as the launched thread's report target; a client's `thread.create` cannot set one, forks do not inherit it, and a delegated child or a launch with `environmentId` is refused."
       - A failed run always reports. A blocking approval or question reports after two minutes and is withdrawn while still queued if it is answered. A stopped run reports after 30 seconds unless a newer run took over.
-      - A completed run reports only when a person did not start it, the thread has no later run, open delegated task, background work or active watch, and that run did not already send a report.
+      - A completed run reports when the thread has no later runnable turn, open delegated task or awaited background work, and that run did not already send a report. Watches do not hold reports. A person-started result in a launched thread waits without waking the launcher; only its latest summary reaches the launcher's next turn, once, unless an ordinary report supersedes it.
       - The check is an outbox row committed with the run end or request, so a restart cannot lose it, and a fixed command id delivers each report once.
       - "The launched thread's `t3_thread_send` to its launcher in `auto` or `queue` mode is delivered as a report, past the mode limit a normal send has. `steer` and `restart` stay under that limit."
       - A launcher that is archived, deleted or settled on purpose takes no reports. A launcher settled automatically gets the report and is unsettled.
@@ -5231,7 +5231,7 @@ features:
       - Pull request association does not match a same-named branch from another fork.
       - Pull request association survives hosted branch pruning by recovering the head branch from the branch's remote and merge configuration.
       - A cached repository identity resolves without running git.
-    rationale: Upstream's repository identity follows `upstream`, then `origin`, and ignores `gh repo set-default`, while `gh` and upstream's own GitHub API calls honour it. The fork prefers that default first, so the app and agents running `gh` in the checkout pick the same repository. Identity no longer follows the branch's tracking remote, which disagreed with `gh` and ran git on every lookup. Unlike `gh`, a remote named `github` is not ranked before `origin`.
+    rationale: Upstream's repository identity honours `gh repo set-default` only when it marks a remote's own repository (`base`), and ignores the `owner/repo` value a single-remote fork gets when its parent is chosen, while `gh` and upstream's own GitHub API calls honour both. The fork follows either value, so the app and agents running `gh` in the checkout pick the same repository, and reads remote URLs and the default in one git call. Identity never follows the branch's tracking remote, which disagreed with `gh` and ran git on every lookup. Unlike `gh`, a remote named `github` is not ranked before `origin`.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
@@ -5251,7 +5251,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16322
         - https://github.com/pingdotgg/t3code/pull/16353
         - https://github.com/pingdotgg/t3code/pull/9125
-      retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
+      retire_when: Upstream's repository identity honours an `owner/repo` `gh repo set-default` value as well as `base`, and upstream keeps pull request association correct across forks and branch pruning.
 
   - id: pull-request-base-move-freshness
     title: Show sibling pull requests out of date as soon as a merge moves their base
@@ -5650,6 +5650,33 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/15800
       retire_when: Upstream exposes automatic merge intent in thread badges without replacing the pull request's state or requiring an active agent monitor.
+
+  - id: pull-request-merge-wake
+    title: Wake the watching thread once when its pull request merges
+    status: review-needed
+    tier: keep
+    prs: []
+    invariants:
+      - When a host read or the stored snapshot finds a watched pull request merged and its thread has not settled, the thread gets one wake saying the pull request merged and styal stopped watching it, and the watch ends; a settled thread's watch ends without a wake, and a refused wake still ends the watch.
+      - A merged or closed detail read ends the watch even when the activity read fails.
+      - The merge wake supersedes that pull request's updates queued before it. Queued-wake revalidation cancels them, or drops their section from a wake that covers several pull requests, even when the host read finds the merge before the stored snapshot does, and the merge wake itself is delivered. Other final notices keep the wakes queued before them.
+    rationale: A merge used to end the watch silently, so an agent kept reporting that it was watching CI after the user merged (fork issue 1483). The fix was imported as a snapshot of an upstream proposal that closed unmerged. Upstream later woke on merge in its own way, with richer wording, merge wakes batched with the pass's other news and no wake after the agent's own CLI merge, but it cancels updates queued before the merge only once the stored snapshot says merged.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/PullRequestWatchReactor.ts
+      - packages/contracts/src/orchestrationV2.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/PullRequestWatchReactor.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/26271
+        - https://github.com/pingdotgg/t3code/pull/32582
+      retire_when: Upstream wakes the watching thread once on merge and cancels that pull request's updates queued before the merge, including when the host read finds the merge before the stored snapshot does.
 
   - id: pull-request-number-search-url
     title: Search pull requests by number from the URL
@@ -6820,7 +6847,7 @@ features:
     invariants:
       - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
       - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
-      - Once an attempted route fails transiently, routes that did not answer their reachability check are not given full attempts; the supervisor backs off and checks every route again. They are still tried when every attempted route was blocked or none was attempted.
+      - A route whose reachability check has not answered by its turn, once the shared head start has passed, is tried after the others. The client then waits for those checks to finish. Routes that answered late are tried; routes that never answered are tried only if no route tried before them failed transiently, and otherwise the supervisor backs off and checks every route again. This is decided once, before the late routes are tried, so a late-answering route that fails transiently does not stop the unanswered routes from being tried.
       - A relay WebSocket that opened and later closed or stopped responding does not carry the DNS or firewall hint; a socket that never opened still does.
       - Better-route checks of a route that keeps not answering back off (upstream's dead-route backoff), but every newly established session starts that backoff over, and reconnect attempts check every route regardless of it.
     rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered.
@@ -7103,6 +7130,40 @@ features:
         - https://github.com/pingdotgg/t3code/blob/30654b3e91a51937d1dba18fc83af19d8003f5ca/packages/client-runtime/src/state/threadTagFilter.ts
       retire_when: Upstream has these surfaces and hides tagged threads on them.
 
+  - id: tailscale-serve-ownership
+    title: Leave Tailscale Serve handlers this server does not own unchanged
+    status: maintained
+    tier: keep
+    prs: []
+    invariants:
+      - Server startup configures Tailscale Serve only when the port holds nothing or already holds this server's exact private mapping; another handler, an extra mount, Funnel, a TCP forward, or a foreground `tailscale serve` session on the port is left unchanged, including a root handler whose loopback backend is not listening.
+      - Server shutdown and `dev --share` cleanup remove a mapping only while the port holds a single private root handler that targets their own local port.
+      - "`styal pair --tailscale` reuses an exact mapping; a dev server also repoints a simple private root handler once its HTTPS probe shows the same environment; any other handler fails pairing without changing it."
+      - "`dev --share` configures its port without clearing an existing mapping first."
+    rationale: Tailscale Serve holds one mapping per HTTPS port for the whole machine, so a second server or a dev share that replaced or removed a mapping it did not own cut the first server off the tailnet without warning (fork issue 366). The guard was imported as a snapshot of an upstream proposal that closed unmerged; upstream later left a live server's route alone in the server, pairing and dev share, but still replaces a root handler on a dead loopback port and any handler beside the root.
+    implementation_paths:
+      - apps/server/src/cli/pair.ts
+      - apps/server/src/server.ts
+      - packages/tailscale/src/tailscale.ts
+      - scripts/lib/dev-share.ts
+    upstream_paths:
+      - apps/server/src/cli/pair.ts
+      - apps/server/src/server.ts
+      - packages/tailscale/src/tailscale.ts
+      - scripts/lib/dev-share.ts
+    tests:
+      - apps/server/src/cli/pair.test.ts
+      - packages/tailscale/src/tailscale.test.ts
+      - scripts/lib/dev-share.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/35042
+        - https://github.com/pingdotgg/t3code/pull/35547
+        - https://github.com/pingdotgg/t3code/pull/37888
+        - https://github.com/pingdotgg/t3code/pull/8338
+      retire_when: Upstream's server, pairing and dev share leave every Serve handler they do not own unchanged, including a root handler on a dead loopback port, Funnel, extra mounts and foreground sessions, and remove only their own mapping.
+
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
     status: maintained
@@ -7215,6 +7276,31 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/blob/e3b35d1b2440b104f0bc2e357377c348121234dd/packages/client-runtime/src/state/threadCommands.ts
       retire_when: Upstream presents pending sends as working before handoff dispatch finishes, with rejection rollback and shell reconciliation on every client.
+
+  - id: thread-search-linked-history
+    title: Search thread history across linked machines
+    status: maintained
+    tier: yield
+    prs: [1368]
+    rationale: Agents need to find prior work without knowing which linked machine owns it.
+    invariants:
+      - Search includes settled history across linked machines, labels results by machine, and retains readable results when a peer is offline or refuses access.
+      - Explicit machine or project searches remain scoped, and forwarded searches cannot fan out again.
+    implementation_paths:
+      - apps/server/src/mcp/ThreadSearchMcpService.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/tools.ts
+    tests:
+      - apps/server/src/mcp/ThreadSearchMcpService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/35377
+      retire_when: Upstream search aggregates linked history with machine labels, scoped targets, and partial failure handling.
 
   - id: thread-settle-reasons
     title: Show why a thread settled

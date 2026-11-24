@@ -32,7 +32,7 @@ function Textarea({
         render={(defaultProps) => (
           <textarea
             className={cn(
-              "field-sizing-content max-h-64 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere",
+              "field-sizing-content max-h-64 w-full rounded-[inherit] supports-[field-sizing:content]:resize-none px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere",
               rows === undefined && "min-h-17.5 max-sm:min-h-20.5",
               size === "sm" && "px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)]",
               size === "sm" && rows === undefined && "min-h-16.5 max-sm:min-h-19.5",
