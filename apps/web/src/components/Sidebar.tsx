@@ -229,6 +229,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
+  projectPageOpenedByScopePick,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
@@ -2809,8 +2810,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           serverConfigs.has(thread.environmentId) &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
-      const titleRegenerationThreads = selectedThreads.filter((thread) =>
-        serverConfigs.has(thread.environmentId),
+      const titleRegenerationThreads = selectedThreads.filter(
+        (thread) =>
+          serverConfigs.has(thread.environmentId) &&
+          !readProjectCoordinatorState({ environmentId: thread.environmentId, threadId: thread.id })
+            ?.isCoordinator,
       );
       const regeneratableTitleThreads = titleRegenerationThreads.filter(
         (thread) => thread.titleRegeneration == null,
@@ -3608,7 +3612,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       eventDetails.cancel();
                       toggleProjectScopeKey(item.value);
                     } else {
+                      const pageKey = projectPageOpenedByScopePick({
+                        previousKeys: projectScopeKeys,
+                        nextKeys: [item.value],
+                        hasPage: (projectKey) => projectPages.has(projectKey),
+                        isShowing: (projectKey) =>
+                          routeProjectKey === projectKey ||
+                          (routeThreadKey !== null &&
+                            projectPages.get(projectKey)?.chatThreadKey === routeThreadKey),
+                      });
                       setProjectScopeKeys([item.value]);
+                      if (pageKey !== null) void openProjectPage(pageKey);
                     }
                   }}
                 >

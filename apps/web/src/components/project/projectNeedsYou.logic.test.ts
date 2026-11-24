@@ -13,7 +13,13 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listProjectNeeds, openReports, type ThreadNeeds } from "./projectNeedsYou.logic";
+import {
+  listProjectNeeds,
+  listStoppedThreadNeeds,
+  stoppedThreadsNeedingYou,
+  openReports,
+  type ThreadNeeds,
+} from "./projectNeedsYou.logic";
 
 const local = EnvironmentId.make("env-local");
 
@@ -88,6 +94,74 @@ describe("listProjectNeeds", () => {
     ]);
     // Its only question was just answered here; the server still counts it until the answer lands.
     expect(listProjectNeeds([secret], () => ({ ...empty, responding: true }))).toEqual([]);
+  });
+});
+
+describe("listStoppedThreadNeeds", () => {
+  const stopped = (
+    id: string,
+    failedAt: string,
+    overrides: Partial<EnvironmentThreadShell> = {},
+    runtime: Partial<NonNullable<EnvironmentThreadShell["runtime"]>> = {},
+  ) =>
+    shell(id, {
+      settledAt: null,
+      latestRun: { status: "failed", completedAt: failedAt } as EnvironmentThreadShell["latestRun"],
+      runtime: {
+        status: "failed",
+        lastError: null,
+        updatedAt: failedAt,
+        ...runtime,
+      } as EnvironmentThreadShell["runtime"],
+      ...overrides,
+    });
+
+  it("lists failures and usage limits oldest first, with the error's first line or the reset", () => {
+    expect(
+      listStoppedThreadNeeds([
+        stopped("crash", "2026-11-18T10:05:00.000Z", {}, { lastError: "  Exit 1\nstack trace" }),
+        stopped(
+          "limit",
+          "2026-11-18T10:01:00.000Z",
+          {},
+          { lastErrorClass: "usage_limit", usageLimitResetAt: "2026-11-18T15:00:00.000Z" },
+        ),
+        stopped("silent", "2026-11-18T10:03:00.000Z"),
+      ]).map((need) => [
+        need.thread.id,
+        need.kind,
+        need.kind === "failed" ? need.error : need.kind === "limited" ? need.resetAt : null,
+      ]),
+    ).toEqual([
+      ["limit", "limited", "2026-11-18T15:00:00.000Z"],
+      ["silent", "failed", null],
+      ["crash", "failed", "Exit 1"],
+    ]);
+  });
+
+  it("keeps a stopped thread, in the list and the status line, until it is opened or settled", () => {
+    const failedAt = "2026-11-18T10:05:00.000Z";
+    const noLocalVisit = () => undefined;
+    expect(
+      stoppedThreadsNeedingYou(
+        [
+          stopped("opened-after", failedAt, { lastVisitedAt: "2026-11-18T10:06:00.000Z" }),
+          stopped("settled", failedAt, { settledAt: "2026-11-18T10:07:00.000Z" }),
+          stopped("opened-before", failedAt, { lastVisitedAt: "2026-11-18T10:04:00.000Z" }),
+          stopped("never-opened", failedAt, { lastVisitedAt: null }),
+          stopped(
+            "limit-opened-after",
+            failedAt,
+            { lastVisitedAt: "2026-11-18T10:06:00.000Z" },
+            { lastErrorClass: "usage_limit" },
+          ),
+        ],
+        noLocalVisit,
+      ).map((thread) => thread.id),
+    ).toEqual(["opened-before", "never-opened"]);
+    // A server that predates visit marks leaves the field out; this client's own visit counts.
+    const older = stopped("older-server", failedAt);
+    expect(stoppedThreadsNeedingYou([older], () => "2026-11-18T10:06:00.000Z")).toEqual([]);
   });
 });
 

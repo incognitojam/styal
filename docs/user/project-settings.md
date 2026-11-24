@@ -324,12 +324,16 @@ With the switch on, each project has a page with its coordinator as the project'
 **Open project** in the command palette, the project's name in a thread's header, the name on a
 project's folder, or, in the flat list, the chat's own row. Each shows how many of the project's
 threads are working or need you; in folders the chat has no row of its own, and the folder's
-chevron still opens and closes it. **Project settings** links open the page, and its gear
+chevron still opens and closes it. Changing the sidebar's project filter to just that project opens
+the page too. **Project settings** links open the page, and its gear
 button opens the settings. The coordinator's own links (from search, the palette, another thread,
-or **Make project coordinator** on the thread you have open) open the page too; **Open as thread**
-in the page's header shows it as a thread, with its title, thread menu and details panel. A
+or **Make project coordinator** on the thread you have open) open the page too. The page has the
+thread view's details card, terminal and right panel, with the same toggles and shortcuts. Before
+the chat's first message the card shows its machine and branch without changing them; once it has
+started, the card has the same branch and git controls as any thread. A
 project without a coordinator shows an empty chat: the first message starts a thread in the
-project's folder, without a worktree, and makes it the coordinator. When the project is on more
+project's folder, without a worktree, and makes it the coordinator. The new thread is named after
+the project followed by "chat"; coordinators do not generate titles. When the project is on more
 than one machine, choose the machine under the composer before sending; it starts on the machine
 where the project was last active. The chat stays on that machine, and only threads on it report
 to the chat. A machine with project coordinators off is named there instead of offered. **Add to
@@ -348,7 +352,10 @@ Starting a project's first chat still happens on web or desktop.
 **Needs you** above the page's composer lists what the project's threads are waiting on: approvals,
 questions and report questions, oldest first, each with its thread's name. Click one to answer it
 there; the answer goes to the thread that asked, not to the chat. A thread waiting on something the
-page can't answer, such as a subagent's request, offers **Open thread**.
+page can't answer, such as a subagent's request, offers **Open thread**. After those come threads
+that failed or hit a usage limit, with the error or when the limit resets; click one to open the
+thread and retry there. It leaves the list once the thread runs again, or when you open, settle or
+archive it.
 
 Threads the chat launches to report back to it stay off the sidebar while they work or after
 they finish; the chat lists the ones still working or waiting on you right after the reply that
@@ -360,15 +367,6 @@ notification. It comes back the same way, except that only a message you sent af
 latest run started counts, and it leaves again at the next run. A paused task, or a one-time task
 that has run, leaves its thread in the sidebar. **Scheduled** in the page's header lists each task
 with its schedule and how its latest run went.
-
-When you open the page after at least half an hour away, the end of the chat lists what happened
-since you last looked at it on any of your devices: threads that failed or hit a usage limit, the
-chat's reports, threads that finished and you haven't opened, and pull requests that merged. "Last
-looked" is when you last opened the page, or the chat's last change while you had it open. Open
-questions stay in **Needs you**. Long lists fold into groups with **Show all**. If the chat's earlier
-history isn't loaded, **Load earlier** fetches it so older reports can be listed, and the list says
-when threads that settled long ago weren't checked. Each thread counts only its latest turn. The list
-is not saved: it stays until you leave the page, and next time shows only what came after.
 
 The project's settings name the coordinator under **Coordinator**, its menu offers **Stop being
 coordinator**, and the details of a thread that reports to it show **Reports to** with its title.

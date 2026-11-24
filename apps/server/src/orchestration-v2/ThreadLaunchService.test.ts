@@ -853,6 +853,35 @@ it.effect("arms durable title generation after accepting the first message", () 
   }),
 );
 
+it.effect("creates project chats with a fixed title without arming generation", () => {
+  const threadId = ThreadId.make("thread:project-chat");
+  const harness = makeHarness({
+    serverSettings: {
+      projectCoordinatorsEnabled: true,
+      projectCoordinators: { [projectId]: { threadId } },
+    },
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const outbox = yield* EffectOutbox.EffectOutboxV2;
+    yield* launches.launch({
+      ...launchInput({ command: "chat:create", thread: threadId, message: "Plan the project" }),
+      title: "Plan the project",
+      generateTitle: true,
+    });
+    const created = yield* threads.getThreadProjection(threadId);
+    assert.equal(created.thread.title, "Project chat");
+    assert.isUndefined(created.thread.titleRegeneration);
+    assert.deepEqual(
+      yield* outbox.listByCommandId(CommandId.make("chat:create:initial-message")),
+      [],
+    );
+
+    assert.equal(harness.generateThreadTitle.mock.calls.length, 0);
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect("does not update a reused thread title when the initial message is rejected", () =>
   Effect.gen(function* () {
     const harness = makeHarness();

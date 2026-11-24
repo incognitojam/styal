@@ -103,6 +103,8 @@ export function withCreationProvenance(
     case "thread.merge_back":
     case "delegated_task.request":
       return { ...command, ...provenance };
+    case "queued-run.cancel":
+      return { ...command, cancelledByThreadId: null };
     case "runtime-request.respond": {
       const { senderThreadId: _senderThreadId, ...rest } = command;
       return { ...rest, createdBy: provenance.createdBy };
@@ -449,12 +451,7 @@ export interface ThreadManagementServiceShape {
   readonly countThreads: Orchestrator.OrchestratorV2["Service"]["countThreads"];
   readonly listActiveShellIndex: Orchestrator.OrchestratorV2["Service"]["listActiveShellIndex"];
   readonly listOlderSettledThreads: Orchestrator.OrchestratorV2["Service"]["listOlderSettledThreads"];
-  readonly readShellSnapshot: (
-    options?: Pick<ShellSnapshotOptions, "location" | "familyOf" | "worktreePath" | "threadIds">,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, Orchestrator.OrchestratorV2Error>,
-    Orchestrator.OrchestratorV2Error
-  >;
+  readonly prepareShellSnapshot: Orchestrator.OrchestratorV2["Service"]["prepareShellSnapshot"];
   readonly getThreadShell: Orchestrator.OrchestratorV2["Service"]["getThreadShell"];
   /** Who the thread's reports go to now: its launcher or its project's current coordinator. */
   readonly reportRecipient: (
@@ -533,6 +530,7 @@ export interface ThreadManagementServiceShape {
   readonly getThreadEventSequence: Orchestrator.OrchestratorV2["Service"]["getThreadEventSequence"];
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly cancelDelegatedTask: Orchestrator.OrchestratorV2["Service"]["cancelDelegatedTask"];
+  readonly restartContinuationPending: Orchestrator.OrchestratorV2["Service"]["restartContinuationPending"];
   readonly delegatedTaskResultPending: Orchestrator.OrchestratorV2["Service"]["delegatedTaskResultPending"];
   readonly streamStoredEvents: Orchestrator.OrchestratorV2["Service"]["streamStoredEvents"];
   readonly streamStoredEventsFrom: Orchestrator.OrchestratorV2["Service"]["streamStoredEventsFrom"];
@@ -1911,7 +1909,7 @@ const make = Effect.gen(function* () {
     countThreads: orchestrator.countThreads,
     listActiveShellIndex: orchestrator.listActiveShellIndex,
     listOlderSettledThreads: orchestrator.listOlderSettledThreads,
-    readShellSnapshot: orchestrator.readShellSnapshot,
+    prepareShellSnapshot: orchestrator.prepareShellSnapshot,
     getThreadShell: orchestrator.getThreadShell,
     reportRecipient: Effect.fn("ThreadManagementService.reportRecipient")(function* (thread) {
       return yield* ProjectCoordinator.reportRecipient(
@@ -1944,6 +1942,7 @@ const make = Effect.gen(function* () {
     getThreadEventSequence: orchestrator.getThreadEventSequence,
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     cancelDelegatedTask: orchestrator.cancelDelegatedTask,
+    restartContinuationPending: orchestrator.restartContinuationPending,
     delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
     streamStoredEvents: orchestrator.streamStoredEvents,
     streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,

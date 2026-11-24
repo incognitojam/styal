@@ -1013,6 +1013,8 @@ features:
       - An open report question shows Input and blocks auto-settle, can be snoozed, and a newer question wakes it early; with coordinator reports disabled, open questions are ignored.
       - Reports are experimental and disabled by default; disabled sessions do not list the report tool.
       - Dismissals do not wake agents and reach their next prompted turn exactly once.
+      - Open questions are read and answered one report at a time from a pile above the composer, using each report's full message, so a report outside the loaded chat history is still answerable.
+      - Reports the agent marks blocking come first; each version sets or clears the flag.
     rationale: Coordinators need durable full reports and explicit decisions without repeating waiting messages.
     implementation_paths:
       - apps/server/src/mcp/toolkits/thread/tools.ts
@@ -1021,12 +1023,14 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/persistence/ForkMigrations/016_ReportQuestionIndexes.ts
       - apps/web/src/components/chat/CoordinatorReports.tsx
+      - apps/web/src/components/chat/ReportStack.tsx
       - packages/client-runtime/src/coordinatorReports.ts
       - packages/contracts/src/orchestrationV2.ts
     tests:
       - apps/server/src/orchestration-v2/ProjectionSettlement.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
+      - apps/web/src/components/chat/reportStack.logic.test.ts
       - packages/client-runtime/src/coordinatorReports.test.ts
     upstream_paths:
       - apps/server/src/mcp/McpHttpServer.ts
@@ -4013,6 +4017,32 @@ features:
       tracking: []
       retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
 
+  - id: no-copy-prompt-link
+    title: Do not offer Copy prompt link
+    status: maintained
+    tier: keep
+    prs: [1746]
+    invariants:
+      - Command palettes and message actions on web, desktop, and mobile do not offer to copy prompt links.
+      - Ordinary message copying, thread sharing, and opening externally authored prompt links remain available.
+    rationale: Copying a prompt as an app-opening URL is an unwanted action in styal.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    tests:
+      - packages/client-runtime/src/promptLinks.test.ts
+      - packages/shared/src/promptLinks.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18454
+      retire_when: Upstream stops offering Copy prompt link on all clients.
+
   - id: notice-details-when-clipped
     title: Composer notice details appear only for clipped text
     status: maintained
@@ -4555,11 +4585,10 @@ features:
       - Only the coordinator's thread gets the coordinator instructions, with every session, after the project's Additional instructions and by the same route (Claude, Codex, Cursor, Grok, OpenCode); when they change, Claude reopens its query, Grok relaunches and Cursor sends them again, so a thread that becomes or stops being coordinator mid-session is told. The long form is the orchestration guide.
       - With the switch on, /projects/<key> is the project page on web and desktop, a one-line header (name, status line of working and need-you threads, machine, New thread, settings) over the coordinator's chat; a project without one gets a draft whose first message creates the thread on the machine chosen under the composer (by default where the project was last active; machines with the switch off are named, not offered), stores it as that machine's coordinator and clears any coordinator the project's other machines store. With the switch off the route opens the project's settings, as before.
       - The palette's Open project, a thread header's project name, Project settings links, a folder's name (carrying the chat's status dot and the status line, the chat having no row there; the folder chevron still toggles) and the chat's own row open the page; in the flat sidebar that row shows the project's name over the status line and stays in the list while it works, instead of folding into the Working section. The project's settings name the coordinator, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
-      - A coordinator's thread address opens its project page (so does making the open thread the coordinator); `?view=thread` and the page's Open as thread show it as a thread, with its title, menu and details panel.
-      - The project page's Needs you lists the approvals, questions and report questions of the threads its status line counts as needing you, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads.
+      - A coordinator's thread address opens its project page (so does making the open thread the coordinator); the page has the thread view's details card, terminal and right panel, with their toggles and shortcuts, but not the thread's title or menu. Until its first message the page's chat draft keeps no branch, worktree or pull request of its own and starts in the project's folder, and the card shows its machine and branch read-only; a started chat's card has the same controls as any thread.
+      - The project page's Needs you lists the approvals, questions and report questions of the project's threads, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads. After them it lists the project's failed and usage-limited threads, with the error's first line or the limit's known reset time, from their shells; a row opens its thread and leaves once the thread runs again, is settled or archived, or is opened after it stopped (when its sidebar row recedes); the status line's need-you count includes them.
       - A thread the project's chat launched to report back (not one that only reports to it because it was created in the project) stays off the sidebar (folders and the flat list) while the chat takes reports, until it needs an approval, an answer or a guest request, fails or hits a limit, is pinned, is the open thread, or the user writes to it; search and the palette keep it, the status line counts it, and it finishes without a Done notification. The chat lists, after the reply that started them, the threads, delegated tasks and launched threads that turn started (on any machine) that still work or wait on the user, from their shells, whatever the tool-call visibility and across a restart continuation.
       - A thread a scheduled task that runs again is bound to (not paused, blocked by policy, or a one-time task that has run), on a machine with project coordinators on that serves `scheduledTasks.subscribeThreads`, in a project with a page and not the chat itself, leaves the sidebar and comes back the same way, except that only the user's messages after the task's latest run began (or after it was made, before its first run) count, and finishes without a Done notification; the page header's Scheduled menu lists each task with its schedule and latest result. A scheduled run's message does not count as the user writing to the thread on any machine, even when the user made the task.
-      - Opening the page after at least 30 minutes away shows "Since your last visit" at the end of the chat as it stood, listing failed and usage-limited threads, the chat's reports (latest version per topic, open questions left to Needs you, dismissed ones left out), finished threads not opened since, and merged pull requests, folded into groups past six lines; or one "Nothing new" line. "Away" is the later of the chat's server read mark and its last open, read once from the chat's live shell before the page records the visit, so every client of the server shares it and nothing is stored; each machine's threads are read once its snapshot is live, and the card says when the client left out settled threads of the project, whose changes it cannot list. It is derived on the client from shells and loaded chat history, with no model call and no new wire data.
     rationale: Upstream's Home (one fleet-wide full-access thread) is open and stale; this scopes the same idea, a setting that holds a thread id, to one project so Home can replace it later.
     implementation_paths:
       - apps/mobile/src/features/threads/projectCoordinator.ts
@@ -4569,11 +4598,9 @@ features:
       - apps/web/src/components/project/ProjectChatHeader.tsx
       - apps/web/src/components/project/ProjectNeedsYou.tsx
       - apps/web/src/components/project/ProjectPage.tsx
-      - apps/web/src/components/project/ProjectSinceLastVisit.tsx
       - apps/web/src/components/project/projectPage.logic.ts
       - apps/web/src/components/settings/ProjectCoordinatorSetting.tsx
       - apps/web/src/routes/_chat.projects.$projectKey.tsx
-      - packages/client-runtime/src/projectSinceLastVisit.ts
       - packages/client-runtime/src/state/projectCoordinators.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Orchestrator.ts
@@ -4582,7 +4609,6 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/ChatHeader.tsx
-      - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/settings/LabsSettingsPanel.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/hooks/useThreadActionMenu.ts
@@ -4592,9 +4618,8 @@ features:
       - apps/server/src/orchestration-v2/ProjectCoordinator.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.integration.test.ts
       - apps/server/src/orchestration-v2/ThreadReports.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+      - apps/web/src/components/project/projectNeedsYou.logic.test.ts
       - apps/web/src/components/project/projectPage.logic.test.ts
-      - packages/client-runtime/src/projectSinceLastVisit.test.ts
       - packages/client-runtime/src/state/projectCoordinators.test.ts
       - packages/shared/src/serverSettings.test.ts
     upstream:
@@ -6248,6 +6273,34 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
+  - id: server-public-descriptor-privacy
+    title: Keep installation paths and host details behind sign-in
+    status: maintained
+    tier: keep
+    prs: [1742]
+    invariants:
+      - The unauthenticated environment descriptor never includes installation metadata, including runner kind, npm prefix, launcher path, or base directory, on direct or managed tunnel ingress.
+      - Hardware category and host time zone stay in authenticated server config, outside the public descriptor; the label remains public for pairing recognition.
+      - Authenticated server config preserves installation metadata so manual update instructions target the running install, including its npm prefix or launcher home.
+      - Public descriptors remain readable by older clients, and clients accept older servers that still advertise installation metadata.
+    rationale: Batch 104 kept launcher paths private; npm prefixes identify the same home directories and users. Upstream returns the full descriptor without an authentication boundary.
+    implementation_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/http.ts
+    upstream_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/http.ts
+      - packages/contracts/src/environment.ts
+    tests:
+      - apps/server/src/http.test.ts
+      - apps/server/src/ws.test.ts
+      - packages/contracts/src/environment.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/364ca478682e25c6373c041dc5774d6b726b2c08
+      retire_when: Upstream's unauthenticated descriptor omits all installation metadata and host details while authenticated update instructions retain their installation target.
+
   - id: server-restart-continuation-note
     title: Response continuity and timing
     status: review-needed
@@ -6872,29 +6925,38 @@ features:
     title: Keep slow networks from bouncing a connection between routes
     status: maintained
     tier: yield
-    prs: []
+    prs: [1729]
     invariants:
       - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
       - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
       - A route whose reachability check has not answered by its turn, once the shared head start has passed, is tried after the others. The client then waits for those checks to finish. Routes that answered late are tried; routes that never answered are tried only if no route tried before them failed transiently, and otherwise the supervisor backs off and checks every route again. This is decided once, before the late routes are tried, so a late-answering route that fails transiently does not stop the unanswered routes from being tried.
       - A relay WebSocket that opened and later closed or stopped responding does not carry the DNS or firewall hint; a socket that never opened still does.
       - Better-route checks of a route that keeps not answering back off (upstream's dead-route backoff), but every newly established session starts that backoff over, and reconnect attempts check every route regardless of it.
-    rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered.
+      - Direct routes, including loopback forwards, keep a 10-second descriptor deadline during authorization so a slow but healthy host can connect.
+      - Only HTTPS descriptors are remembered between a route check and authorization. Plain-HTTP LAN and loopback routes read the descriptor again before sending credentials and reject a different environment.
+    rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered. A 3-second descriptor deadline strands slow LAN machines and forwarded ports. A plain-HTTP LAN address or loopback forward can point to another machine between the check and authorization, so a cached descriptor must not authorize credentials for its replacement. Deciding whether to skip silent routes during the fallback loop can starve a working fallback on every retry.
     implementation_paths:
+      - packages/client-runtime/src/authorization/service.ts
       - packages/client-runtime/src/connection/driver.ts
       - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/environment/descriptor.ts
       - packages/client-runtime/src/rpc/session.ts
     upstream_paths:
+      - packages/client-runtime/src/authorization/service.ts
       - packages/client-runtime/src/connection/driver.ts
       - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/environment/descriptor.ts
       - packages/client-runtime/src/rpc/session.ts
     tests:
+      - packages/client-runtime/src/authorization/layer.test.ts
       - packages/client-runtime/src/connection/supervisor.test.ts
       - packages/client-runtime/src/rpc/session.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream stops switching to a route that recently dropped after a switch, and stops giving full attempts to unanswered routes after a transient failure.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/34623
+        - https://github.com/pingdotgg/t3code/pull/35071
+      retire_when: Upstream stops switching to a route that recently dropped after a switch, avoids starving fallback routes while limiting attempts to unanswered routes after an early transient failure, allows slow direct descriptors to answer, and rechecks plain-HTTP endpoint identity before authorization.
 
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories

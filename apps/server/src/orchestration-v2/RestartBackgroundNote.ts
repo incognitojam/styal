@@ -1,5 +1,6 @@
 import type {
   NodeId,
+  RunId,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderTurn,
   OrchestrationV2RestartCancelledBackgroundWork,
@@ -11,6 +12,31 @@ import { latestProviderTurnForAttempt } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
 import { latestRootProviderFailure, runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+
+/** A cut run has no separate result while its restart continuation is pending, live, or finished. */
+export function restartSupersededRunIds(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  awaitingContinuationRun?: OrchestrationV2Run,
+): ReadonlySet<RunId> {
+  const runsById = new Map(runs.map((run) => [run.id, run]));
+  const supersededRunIds = new Set<RunId>();
+  const supersede = (runId: RunId | undefined) => {
+    let id = runId;
+    while (id !== undefined && !supersededRunIds.has(id)) {
+      supersededRunIds.add(id);
+      id = runsById.get(id)?.restartContinuationOfRunId;
+    }
+  };
+  supersede(awaitingContinuationRun?.id);
+  for (const run of runs) {
+    if (
+      ["queued", "preparing", "starting", "running", "waiting"].includes(run.status) ||
+      (run.status !== "rolled_back" && run.startedAt !== null)
+    )
+      supersede(run.restartContinuationOfRunId);
+  }
+  return supersededRunIds;
+}
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
 type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;

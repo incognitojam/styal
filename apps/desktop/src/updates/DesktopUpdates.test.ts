@@ -477,6 +477,32 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("checks shortly after startup and then every hour", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        yield* TestClock.adjust("14 seconds");
+        assert.equal(harness.checkCount(), 0);
+
+        yield* TestClock.adjust("1 second");
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust(Duration.seconds(59 * 60 + 44));
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust("1 second");
+        assert.equal(harness.checkCount(), 2);
+
+        yield* TestClock.adjust("1 hour");
+        assert.equal(harness.checkCount(), 3);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect(
     "rejects install while a refresh check is in progress and releases the reservation",
     () =>

@@ -884,6 +884,7 @@ describe("orchestrator MCP toolkit", () => {
                 { key: "pr:1", outcome: "Merged", question: "Q?", answers: ["A"] },
                 "drop `question`, `answers`",
               ],
+              [{ key: "pr:1", outcome: "Merged", blocking: true }, "drop `blocking`"],
               [{ key: "pr:1", title: "T", body: "B", outcome: "Merged" }, "not with a new version"],
               [{ key: "pr:1", body: "B" }, "missing `title`"],
               [{ key: "pr:1" }, "send only `key` and a one-line `outcome`"],
@@ -905,8 +906,20 @@ describe("orchestrator MCP toolkit", () => {
               title: "Release",
               body: "Ready.",
               question: "Merge?",
+              blocking: true,
             });
             expect(posted.structuredContent).toMatchObject({ version: 2 });
+            const reportVersion = (version: number) =>
+              orchestrator
+                .getThreadProjection(parentThreadId)
+                .pipe(
+                  Effect.map(
+                    (projection) =>
+                      projection.messages.find((message) => message.report?.version === version)
+                        ?.report,
+                  ),
+                );
+            expect((yield* reportVersion(2))?.blocking).toBe(true);
             // A session that still sends the old `resolved` is told the arguments that exist.
             expect(
               String(
@@ -915,11 +928,10 @@ describe("orchestrator MCP toolkit", () => {
             ).toContain('Unknown argument "resolved". Accepted arguments: key, title, body');
             const resolved = yield* report({ key: "pr:1", outcome: "Merged\n  as abc123" });
             expect(resolved.structuredContent).toEqual(posted.structuredContent);
-            expect(
-              (yield* orchestrator.getThreadProjection(parentThreadId)).messages.find(
-                (message) => message.report?.version === 2,
-              )?.report?.resolved?.outcome,
-            ).toBe("Merged as abc123");
+            expect((yield* reportVersion(2))?.resolved?.outcome).toBe("Merged as abc123");
+            // A later version without the flag is no longer blocking.
+            yield* report({ key: "pr:1", title: "Release", body: "Merged." });
+            expect((yield* reportVersion(3))?.blocking).toBeUndefined();
 
             const deferredSettle = yield* invoke("t3_thread_organize", { action: "settle" });
             expect(deferredSettle.isError).toBe(false);

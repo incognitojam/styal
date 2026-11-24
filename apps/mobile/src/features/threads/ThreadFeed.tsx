@@ -76,7 +76,6 @@ import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { hostedThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
-import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import {
   parseComposerContextHref,
   replaceComposerContextReferences,
@@ -195,10 +194,8 @@ import { attachmentVideoPreviewSource } from "../../lib/videoPreviewSource";
 import { CopyTextButton } from "./CopyTextButton";
 import { getReviewSectionIdForCheckpoint } from "../review/reviewModel";
 import { setReviewSelectedSectionId } from "../review/reviewState";
-import { Menu } from "../../components/ui/Menu";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useBarInset, useContentTopInset } from "../../components/ui/useBarInset";
-import { copyPromptLink } from "../prompt-links/prompt-link-actions";
 import { parseReviewCommentMessageSegments } from "../review/reviewCommentSelection";
 import {
   ReviewCommentCard,
@@ -407,40 +404,6 @@ function resolveReplyActionSize(androidButtonSize: number, androidIconSize: numb
     copyHitSlop: { [start]: Math.max(0, androidButtonSize - width - halfGap), [end]: halfGap },
     forkHitSlop: { [start]: halfGap, [end]: REPLY_ROW_GAP },
   };
-}
-
-const USER_MESSAGE_COPY_MENU_ACTIONS = [
-  { id: "copy-prompt-link", title: "Copy prompt link", image: "link" },
-];
-
-function UserMessageCopyButton(props: {
-  readonly text: string;
-  readonly onCopy: (() => Promise<void>) | undefined;
-  readonly tintColor: ColorValue;
-}) {
-  const button = (
-    <CopyTextButton
-      accessibilityLabel="Copy message"
-      text={props.text}
-      onCopy={props.onCopy}
-      tintColor={props.tintColor}
-      buttonSize={28}
-      iconSize={13}
-    />
-  );
-  const linkText = replaceComposerContextReferences(props.text, (reference) => reference.label);
-  if (linkText.length > PROMPT_LINK_MAX_PROMPT_LENGTH) return button;
-  return (
-    <Menu
-      actions={USER_MESSAGE_COPY_MENU_ACTIONS}
-      onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "copy-prompt-link") void copyPromptLink(linkText);
-      }}
-      shouldOpenOnLongPress
-    >
-      {button}
-    </Menu>
-  );
 }
 
 function AssistantForkButton(props: {
@@ -1710,9 +1673,11 @@ function ThreadAutomationMessageRow(props: {
           <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
             {props.timestampLabel}
           </Text>
-          <UserMessageCopyButton
+          <CopyTextButton
+            accessibilityLabel="Copy message"
             text={props.text}
-            onCopy={undefined}
+            buttonSize={28}
+            iconSize={13}
             tintColor={props.iconSubtleColor}
           />
         </View>
@@ -2502,7 +2467,10 @@ function renderFeedEntry(
                 </Pressable>
               ) : null}
               {presentation.text.trim().length > 0 ? (
-                <UserMessageCopyButton
+                <CopyTextButton
+                  accessibilityLabel="Copy message"
+                  buttonSize={28}
+                  iconSize={13}
                   text={presentation.text}
                   onCopy={
                     message.context && presentation.attribution !== "guest"
@@ -3790,7 +3758,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const jumpRunId =
     jumpReady &&
     !presentedFeed.some((entry) => entry.type === "message" && entry.id === jumpToMessageId)
-      ? messageFoldRunId(props.feed, jumpToMessageId, presentedFeed)
+      ? messageFoldRunId(props.feed, jumpToMessageId, presentedFeed, continuedRunRoots)
       : null;
   if (jumpRunId && !expandedTurnIds.has(jumpRunId)) {
     setInteractionState((current) => ({
