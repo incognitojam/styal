@@ -29,11 +29,12 @@ export interface ProjectChatHeaderProps {
   readonly onOpenJobThread: (thread: ProjectPageJob["thread"]) => void;
 }
 
-// The page shows no title to change, and it has no unread mark to show.
-const PROJECT_CHAT_MENU_OMIT: ReadonlySet<ThreadActionMenuId> = new Set([
-  "rename",
-  "regenerate-title",
-  "mark-unread",
+// A project's chat is not put away like a sidebar thread, and the page shows no title to change.
+const PROJECT_CHAT_MENU: ReadonlySet<ThreadActionMenuId> = new Set([
+  "find",
+  "share-guest",
+  "stop-coordinator",
+  "copy",
 ]);
 
 /** The chat the page shows. Once it has started, its name and the header open its thread menu. */
@@ -56,7 +57,7 @@ export function ProjectChatHeader(
     projectCwd: chat.projectCwd,
     onFind: chat.onFindInThread,
     canShareWithGuest,
-    omit: PROJECT_CHAT_MENU_OMIT,
+    only: PROJECT_CHAT_MENU,
   });
   const openMenuFromName = (event: ReactMouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

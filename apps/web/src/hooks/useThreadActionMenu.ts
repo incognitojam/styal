@@ -78,9 +78,9 @@ export function useThreadActionMenu(input: {
   readonly onStartRename?: (() => void) | undefined;
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
   readonly canShareWithGuest: boolean;
-  readonly omit?: ReadonlySet<ThreadActionMenuId>;
+  readonly only?: ReadonlySet<ThreadActionMenuId>;
 }) {
-  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest, omit } = input;
+  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest, only } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -170,7 +170,7 @@ export function useThreadActionMenu(input: {
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
         projectCoordinator: readProjectCoordinatorState(threadRef),
-        ...(omit ? { omit } : {}),
+        ...(only ? { only } : {}),
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
