@@ -187,9 +187,11 @@ function isResentAfterRestart(message: OrchestrationV2ConversationMessage | unde
   return (
     message !== undefined &&
     !isHeldAfterRestart(message) &&
-    message.notification === undefined &&
     message.delegatedCompletion === undefined &&
-    (message.scheduledTaskId !== undefined || message.creationSource === "mcp")
+    (message.notification === undefined
+      ? message.scheduledTaskId !== undefined || message.creationSource === "mcp"
+      : message.notification.source.kind === "launched_thread" ||
+        message.notification.source.kind === "delegated_task")
   );
 }
 

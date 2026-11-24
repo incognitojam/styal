@@ -547,6 +547,12 @@ it.effect.each([
   "starting",
   "starting-other-request",
   "starting-own-request",
+  "starting-report",
+  "starting-report-capped",
+  "starting-report-disabled",
+  "starting-task-wake",
+  "starting-notification",
+  "starting-delivery",
   "starting-scheduled",
   "starting-steered",
   "running",
@@ -561,9 +567,20 @@ it.effect.each([
     : scenario.startsWith("running")
       ? "running"
       : scenario;
-  const resent = scenario === "starting-scheduled" || scenario === "running-delegated";
+  const resent = [
+    "starting-report",
+    "starting-task-wake",
+    "starting-scheduled",
+    "running-delegated",
+  ].includes(scenario);
   const terminalized =
     status === "preparing" ||
+    [
+      "starting-report-capped",
+      "starting-report-disabled",
+      "starting-notification",
+      "starting-delivery",
+    ].includes(scenario) ||
     scenario === "starting-own-request" ||
     scenario === "starting-steered" ||
     scenario === "running-delegated-capped" ||
@@ -691,7 +708,39 @@ it.effect.each([
                 ? { createdBy: "agent", creationSource: "mcp" }
                 : scenario === "running-resume"
                   ? { createdBy: "agent", creationSource: "server" }
-                  : { createdBy: "user" }),
+                  : scenario.startsWith("starting-report") ||
+                      scenario === "starting-task-wake" ||
+                      scenario === "starting-notification"
+                    ? {
+                        createdBy: "agent",
+                        creationSource: "server",
+                        notification: {
+                          source: {
+                            kind:
+                              scenario === "starting-task-wake"
+                                ? "delegated_task"
+                                : scenario === "starting-notification"
+                                  ? "system"
+                                  : "launched_thread",
+                            childThreadId: ThreadId.make("thread:report-child"),
+                            ...(scenario === "starting-task-wake"
+                              ? { taskIds: [NodeId.make("task:report-child")] }
+                              : {}),
+                          },
+                          outcome: "completed",
+                        },
+                      }
+                    : scenario === "starting-delivery"
+                      ? {
+                          createdBy: "agent",
+                          creationSource: "mcp",
+                          delegatedCompletion: {
+                            parentRunId: runId,
+                            generation: 1,
+                            taskIds: [NodeId.make("task:delivery")],
+                          },
+                        }
+                      : { createdBy: "user" }),
               ...(scenario === "starting-scheduled" ? { scheduledTaskId: "scheduled-task" } : {}),
             },
           ]
@@ -710,7 +759,11 @@ it.effect.each([
         : [],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
-    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      ServerSettings.layerTest({
+        continueThreadsAfterServerUpdate: scenario !== "starting-report-disabled",
+      }),
+    ),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
@@ -751,7 +804,7 @@ it.effect.each([
           // Three earlier restarts each cut a resend the worker had claimed.
           listByCommandId: () =>
             Effect.succeed(
-              scenario === "running-delegated-capped"
+              scenario === "running-delegated-capped" || scenario === "starting-report-capped"
                 ? ([1, 1, 1].map((attemptCount) => ({ attemptCount })) as never)
                 : [],
             ),
