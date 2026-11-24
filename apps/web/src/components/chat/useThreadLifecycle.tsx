@@ -33,7 +33,11 @@ import {
   type BackgroundWorkStopRequest,
   isBackgroundWorkStopPending,
 } from "@t3tools/client-runtime/state/thread-execution";
-import { useAcknowledgeThreadWoke, useThreadActions } from "../../hooks/useThreadActions";
+import {
+  readProjectCoordinatorState,
+  useAcknowledgeThreadWoke,
+  useThreadActions,
+} from "../../hooks/useThreadActions";
 import { settleAndAdvance } from "../../settleAndAdvance";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
@@ -667,6 +671,8 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         void handleUnsettleActiveThread();
         return;
       }
+      // A project's chat is not put away: settled, it stops hearing from the threads it started.
+      if (readProjectCoordinatorState(activeThreadRef)?.isCoordinator) return;
       if (settleAndAdvance(activeThreadRef)) return;
       void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to settle thread"));
     },
