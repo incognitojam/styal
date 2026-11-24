@@ -290,19 +290,22 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Node
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
-
-      - name: Enable corepack
-        run: |
-          npm install --global corepack@latest
-          corepack enable
-          pnpm --version
+          cache: false
+          run-install: false
 
       - name: Install mobile dependencies
-        run: pnpm install --frozen-lockfile --filter=@t3tools/mobile...
+        run: vp install --frozen-lockfile --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
 
       - name: Setup Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
