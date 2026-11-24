@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import { formatReportAnswer } from "@t3tools/client-runtime/coordinator-reports";
 import { CheckIcon, EllipsisIcon, ListEndIcon, XIcon } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 
 import { cn } from "~/lib/utils";
@@ -72,9 +72,16 @@ export function useReportStack(
     if (next !== null) setView({ ...next, threadKey: view.threadKey });
     return next !== null;
   };
-  const landed = (report: ReportState) =>
-    setView((previous) => ({ ...previous, leaving: landReportStack(previous, report).leaving }));
+  // The lift's fallback, in case its animation never reports its end.
+  const liftTimer = useRef<number | undefined>(undefined);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the lift's fallback timer when the stack unmounts
+  useEffect(() => () => window.clearTimeout(liftTimer.current), []);
+  const landed = (lift: number) => {
+    window.clearTimeout(liftTimer.current);
+    setView((previous) => ({ ...previous, leaving: landReportStack(previous, lift).leaving }));
+  };
   const close = () => {
+    window.clearTimeout(liftTimer.current);
     flushSync(() => apply(closeReportStack(view)));
     if (pile) pile.focus();
     else focusComposer();
@@ -92,9 +99,12 @@ export function useReportStack(
     later: (report: ReportState) => apply(deferReportStack(view, order, report)),
     answer: (report: ReportState, answer: string) => {
       const motion = !prefersReducedMotion();
-      if (!apply(answerReportStack(view, order, report, answer, motion))) return;
-      // Clears the lift even if its animation never reports its end.
-      if (motion) window.setTimeout(() => landed(report), 500);
+      const next = answerReportStack(view, order, report, answer, motion);
+      if (!apply(next)) return;
+      if (motion && next) {
+        window.clearTimeout(liftTimer.current);
+        liftTimer.current = window.setTimeout(() => landed(next.lift), 500);
+      }
       const tag = report.message.report!;
       actions?.answer(formatReportAnswer(tag, answer), reference(report));
     },
@@ -310,7 +320,7 @@ function Sheet({
           : "relative transition-[opacity,translate] duration-200 ease-out starting:translate-y-1.5 starting:opacity-0 motion-reduce:transition-none",
       )}
       onAnimationEnd={(event) => {
-        if (leaving && event.target === event.currentTarget) stack.landed(report);
+        if (leaving && event.target === event.currentTarget) stack.landed(stack.view.lift);
       }}
     >
       <PileEdges count={reportStackEdges(remaining)} onShowAll={() => stack.showAll(true)} />

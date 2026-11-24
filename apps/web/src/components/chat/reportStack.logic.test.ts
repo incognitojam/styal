@@ -103,9 +103,7 @@ describe("report stack order", () => {
       kind: "close",
     });
 
-    // An earlier answer's landing does not clear a later one's.
-    expect(landReportStack(lifting, order[1]!)).toBe(lifting);
-    const landed = landReportStack(lifting, order[0]!);
+    const landed = landReportStack(lifting, lifting.lift);
     expect(answerReportStack(landed, order.slice(1), order[1]!, "Yes", true)?.current).toBe(
       "crash",
     );
@@ -146,5 +144,27 @@ describe("report stack order", () => {
     expect(reportStackTop(order, closed)?.message.report?.key).toBe("deploy");
     // Reopening starts from what the pile showed.
     expect(openReportStack(closed, order).current).toBe("deploy");
+  });
+
+  it("does not let a stale landing clear a newer lift on the same report", () => {
+    const order = reportStackOrder(coordinatorReports(messages, []), []);
+    const first = answerReportStack(
+      openReportStack(closedReportStack, order),
+      order,
+      order[0]!,
+      "Yes",
+      true,
+    )!;
+    // The send failed, the stack was closed and reopened, and the same report answered again.
+    const retried = answerReportStack(
+      openReportStack(closeReportStack(first), order),
+      order,
+      order[0]!,
+      "Yes",
+      true,
+    )!;
+    expect(retried.lift).toBe(first.lift + 1);
+    expect(landReportStack(retried, first.lift)).toBe(retried);
+    expect(landReportStack(retried, retried.lift).leaving).toBeNull();
   });
 });

@@ -42,6 +42,8 @@ export type ReportStackView<R> = {
   readonly later: readonly string[];
   /** The report just answered, lifting off the top; the next one takes no input until it lands. */
   readonly leaving: R | null;
+  /** Numbers each lift-off, so a stale landing cannot end a newer one, even of the same report. */
+  readonly lift: number;
   readonly answered: string | null;
 };
 
@@ -51,6 +53,7 @@ export const closedReportStack: ReportStackView<never> = {
   current: null,
   later: [],
   leaving: null,
+  lift: 0,
   answered: null,
 };
 
@@ -94,6 +97,7 @@ export function answerReportStack<R extends StackReport>(
     ...view,
     current: reportAfter(order, topic(report)),
     leaving: motion ? report : null,
+    lift: motion ? view.lift + 1 : view.lift,
     answered: answer,
   };
 }
@@ -114,12 +118,9 @@ export function deferReportStack<R extends StackReport>(
   };
 }
 
-/** The answered report has lifted off; a later answer's sheet is not cleared by an earlier one. */
-export function landReportStack<R extends StackReport>(
-  view: ReportStackView<R>,
-  report: R,
-): ReportStackView<R> {
-  return view.leaving?.message.id === report.message.id ? { ...view, leaving: null } : view;
+/** Lift-off `lift` has landed; a stale landing leaves a newer lift in place. */
+export function landReportStack<R>(view: ReportStackView<R>, lift: number): ReportStackView<R> {
+  return view.leaving !== null && view.lift === lift ? { ...view, leaving: null } : view;
 }
 
 /** What a key does on the open stack: one press per report, nothing while a sheet lifts off. */
