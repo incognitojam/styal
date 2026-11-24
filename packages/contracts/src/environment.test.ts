@@ -21,7 +21,8 @@ describe("ExecutionEnvironmentDescriptor", () => {
     ).toBe("@styal/cli");
   });
 
-  it("decodes old, recognized and future manual installation descriptors", () => {
+  it("accepts public descriptors without installation or host details and legacy installation metadata", () => {
+    expect(decodeDescriptor(descriptor).platform).toEqual({ os: "darwin", arch: "arm64" });
     expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
     for (const installation of [
       { kind: "npx" },

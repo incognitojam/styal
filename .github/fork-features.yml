@@ -6248,6 +6248,34 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
+  - id: server-public-descriptor-privacy
+    title: Keep installation paths and host details behind sign-in
+    status: maintained
+    tier: keep
+    prs: [1742]
+    invariants:
+      - The unauthenticated environment descriptor never includes installation metadata, including runner kind, npm prefix, launcher path, or base directory, on direct or managed tunnel ingress.
+      - Hardware category and host time zone stay in authenticated server config, outside the public descriptor; the label remains public for pairing recognition.
+      - Authenticated server config preserves installation metadata so manual update instructions target the running install, including its npm prefix or launcher home.
+      - Public descriptors remain readable by older clients, and clients accept older servers that still advertise installation metadata.
+    rationale: Batch 104 kept launcher paths private; npm prefixes identify the same home directories and users. Upstream returns the full descriptor without an authentication boundary.
+    implementation_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/http.ts
+    upstream_paths:
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/http.ts
+      - packages/contracts/src/environment.ts
+    tests:
+      - apps/server/src/http.test.ts
+      - apps/server/src/ws.test.ts
+      - packages/contracts/src/environment.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/364ca478682e25c6373c041dc5774d6b726b2c08
+      retire_when: Upstream's unauthenticated descriptor omits all installation metadata and host details while authenticated update instructions retain their installation target.
+
   - id: server-restart-continuation-note
     title: Response continuity and timing
     status: review-needed

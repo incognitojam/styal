@@ -21,6 +21,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   converted asks you to sign in by email; use the same address to see your machines again.
   [styal Link](./remote-access.md#styal-link).
 
+- **Install locations stay behind pairing.** Someone who reaches your server's address can see
+  its pairing name and connection compatibility information, but must sign in to read its
+  installation details, hardware category, or time zone. This also applies through styal Link.
+  T3 Code publishes installation metadata and detected hardware category before pairing as of
+  [revision 364ca47](https://github.com/pingdotgg/t3code/tree/364ca478682e25c6373c041dc5774d6b726b2c08),
+  checked November 24, 2026.
+
 ## Agent permissions
 
 - **Agents find previous work across machines.** A thread search covers this machine and its linked machines by default, labels results by machine, and reports offline or refused machines. A machine or project can still be searched on its own. Upstream searches one selected machine as of [revision e455200](https://github.com/pingdotgg/t3code/tree/e455200077ce60806a01c8f28435b58860dcfc74), checked November 7, 2026. [Your machines](./remote-access.md#your-machines).
