@@ -60,6 +60,7 @@ import {
   reportAnswerNote,
   reportReplyNote,
   sentReport,
+  reportMessage,
   threadReportNote,
 } from "../../apps/server/src/orchestration-v2/ThreadReports.ts";
 import { projectCoordinatorInstructions } from "../../apps/server/src/orchestration-v2/ProjectCoordinator.ts";
@@ -234,6 +235,8 @@ const McpToolUseExpect = Schema.Struct({
   ),
   /** First calls of these tools happen in this order. */
   order: Schema.optional(Schema.Array(Schema.String)),
+  /** If the second tool is used, the first must have succeeded before it. */
+  before: Schema.optional(Schema.Tuple([Schema.String, Schema.String])),
   minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   maxCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   /**
@@ -370,6 +373,9 @@ export const McpToolUseCase = Schema.Struct({
     /** This launcher asked to hear back: its note goes on the thread's first user turn, as in T3. */
     reportTo: Schema.optional(Schema.String),
     launchedReport: Schema.optional(Schema.Struct({ question: Schema.Boolean })),
+    cancelledReport: Schema.optional(
+      Schema.Struct({ started: Schema.Boolean, reason: Schema.optional(Schema.String) }),
+    ),
     /** This thread is its project's coordinator: T3 sends its instructions with the session. */
     projectCoordinator: Schema.optional(Schema.Boolean),
     /** Answer note lines T3 puts on the prompt, for answers given in threads reporting here. */
@@ -1210,6 +1216,20 @@ export const buildMessages = (sample: Sample) => {
   const userText = withInlineContext(
     [
       branchNote(testCase),
+      testCase.setup.cancelledReport === undefined
+        ? ""
+        : reportMessage({
+            environmentId: undefined,
+            thread: {
+              id: ThreadId.make("55555555-5555-4555-8555-555555555555"),
+              title: "Fix login",
+            },
+            source: undefined,
+            situation: "had requested work stopped before finishing.",
+            body: undefined,
+            next: "Read more with t3_thread_read.",
+            cancellation: testCase.setup.cancelledReport,
+          }),
       testCase.setup.answerNotes === undefined ? "" : answerNotesText(testCase.setup.answerNotes),
       testCase.setup.reportAnswer === undefined
         ? ""
@@ -2131,6 +2151,12 @@ export const gradeSample = (
         (answered === -1 || at < answered),
     );
     add(`answerBeforeWait ${requestId}`, answered !== -1 && !waitedFirst);
+  }
+  if (expect.before !== undefined) {
+    const [first, second] = expect.before;
+    const before = attempted.findIndex((call) => call.tool === first && call.failed !== true);
+    const after = attempted.findIndex((call) => call.tool === second);
+    add(`before ${first} > ${second}`, after === -1 || (before !== -1 && before < after));
   }
   if (expect.order !== undefined) {
     const firsts = expect.order.map((tool) => calls.findIndex((call) => call.tool === tool));

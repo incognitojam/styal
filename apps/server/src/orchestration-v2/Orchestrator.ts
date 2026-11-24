@@ -150,7 +150,7 @@ import {
 } from "./NotificationMailbox.ts";
 import { isStaleQuestionWake as staleQuestionWake } from "./NotificationWake.ts";
 import { EventSinkV2 } from "./EventSink.ts";
-import { answerNoteEffect } from "./ThreadReports.ts";
+import { answerNoteEffect, skipsThreadReport } from "./ThreadReports.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -4466,22 +4466,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.summaryRunId !== undefined
     ) {
       const source = yield* projectionStore
-        .getThreadRecords(command.summaryFor, ["runs"])
+        .getThreadRecords(command.summaryFor, ["runs", "subagents"])
         .pipe(mapDispatchError(command));
       let runs = source.runs;
       let latest = latestExecutedRun(runs);
-      while (latest?.status === "completed" && latest.id !== command.summaryRunId) {
+      while (
+        latest != null &&
+        ["completed", "cancelled"].includes(latest.status) &&
+        latest.id !== command.summaryRunId
+      ) {
         const prompts = yield* projectionStore
           .getThreadRecords(command.summaryFor, ["messages"], {
             messageIds: [latest.userMessageId],
           })
           .pipe(mapDispatchError(command));
         const prompt = prompts.messages.find((message) => message.id === latest?.userMessageId);
-        if (
-          prompt === undefined ||
-          (prompt.idleCompaction === undefined && !isCompactionCommandMessage(prompt))
-        )
-          break;
+        if (!skipsThreadReport(latest, prompt, source)) break;
         const compactedRunId = latest.id;
         runs = runs.filter((run) => run.id !== compactedRunId);
         latest = latestExecutedRun(runs);
@@ -12626,7 +12626,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : {}),
       });
     }
-    yield* emitQueuedRunCancellation({ command, events, projection, run: queuedRun, now });
+    yield* emitQueuedRunCancellation({
+      command,
+      events,
+      projection,
+      run: { ...queuedRun, cancelledByThreadId: command.cancelledByThreadId },
+      now,
+    });
     const emitEvent = emit(events, command);
     if (queuedMessage?.reportAnswer !== undefined) {
       const { reportAnswer: _reportAnswer, ...message } = queuedMessage;

@@ -1,3 +1,4 @@
+import { restartSupersededRunIds } from "../orchestration-v2/RestartBackgroundNote.ts";
 import {
   describePendingRequests,
   pendingRequestNeedsAttention,
@@ -684,25 +685,7 @@ function latestTerminalResultRun(
       .filter((message) => message.notification?.source.kind === "monitor")
       .map((message) => message.runId),
   );
-  // A restart-cut run, and each cut run before it in the chain, has no outcome while a
-  // continuation is pending, live, or ran to a result.
-  const runsById = new Map(projection.runs.map((run) => [run.id, run]));
-  const supersededRunIds = new Set<RunId>();
-  const supersede = (runId: RunId | undefined) => {
-    let id = runId;
-    while (id !== undefined && !supersededRunIds.has(id)) {
-      supersededRunIds.add(id);
-      id = runsById.get(id)?.restartContinuationOfRunId;
-    }
-  };
-  supersede(awaitingContinuationRun?.id);
-  for (const run of projection.runs) {
-    if (
-      !ThreadManagementService.isTerminalRunStatus(run.status) ||
-      (run.status !== "rolled_back" && run.startedAt !== null)
-    )
-      supersede(run.restartContinuationOfRunId);
-  }
+  const supersededRunIds = restartSupersededRunIds(projection.runs, awaitingContinuationRun);
   return projection.runs
     .filter(
       (run) =>
@@ -2802,6 +2785,7 @@ const make = Effect.gen(function* () {
           yield* threadManagement
             .dispatch({
               type: "queued-run.cancel",
+              cancelledByThreadId: scope.thread.threadId,
               commandId: stableCommandId({
                 scope,
                 requestKey: key,

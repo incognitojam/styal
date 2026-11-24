@@ -62,7 +62,10 @@ it.effect("expires orphaned runtime requests before command readiness", () => {
           getRecoveryThreadIds: () => Effect.succeed([threadId]),
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
-        Layer.mock(EventSink.EventSinkV2)({ commitCommand: committed }),
+        Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
+          commitCommand: committed,
+        }),
         IdAllocator.layer,
         Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
           runRecoveryOnce: Effect.succeed(false),
@@ -114,7 +117,10 @@ it.effect("preserves async questions across startup and shutdown", () => {
           getRecoveryThreadIds: () => Effect.succeed([threadId]),
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
-        Layer.mock(EventSink.EventSinkV2)({ commitCommand }),
+        Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
+          commitCommand,
+        }),
         IdAllocator.layer,
         Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
           runRecoveryOnce: Effect.succeed(false),
@@ -191,6 +197,7 @@ it.effect(
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({
@@ -357,6 +364,7 @@ it.effect(
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -423,6 +431,7 @@ it.effect("cancels a stale waiting run when no checkpoint capture can finish it"
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -508,6 +517,7 @@ it.effect("recovery closes a secret card's form but leaves a link card open", ()
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -833,6 +843,7 @@ it.effect.each([
           getThreadRecords: (id) => Effect.succeed(id === childId ? child : projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1042,6 +1053,7 @@ it.effect(
             getThreadRecords: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 2 } as never);
@@ -1221,6 +1233,7 @@ it.effect("cancels workflow members and child roots without run ids after restar
             Effect.succeed(threadId === parentThreadId ? parentProjection : childProjection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committed.push(input);
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1386,6 +1399,7 @@ it.effect(
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1543,6 +1557,7 @@ it.effect(
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1673,6 +1688,7 @@ it.effect(
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            recheckRestartContinuations: () => Effect.void,
             commitCommand: (input) => {
               committedInput = input;
               return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
@@ -1833,6 +1849,7 @@ it.effect("leaves delegated tasks to their own child threads after process loss"
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
         Layer.mock(EventSink.EventSinkV2)({
+          recheckRestartContinuations: () => Effect.void,
           commitCommand: (input) => {
             committedInput = input;
             return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);

@@ -1327,6 +1327,14 @@ export const make = Effect.gen(function* () {
         (cause) => new ProviderRuntimeRecoveryError({ operation: "drain-outbox", cause }),
       ),
     );
+    if (trigger === "startup")
+      yield* eventSink
+        .recheckRestartContinuations()
+        .pipe(
+          Effect.mapError(
+            (cause) => new ProviderRuntimeRecoveryError({ operation: "reconcile", cause }),
+          ),
+        );
     // After the drain, which cancels every unsettled provider start. A crash before this write
     // leaves the run unstarted, so the next recovery sends it again.
     if (resends.length > 0) {

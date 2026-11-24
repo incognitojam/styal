@@ -571,6 +571,7 @@ export function layerWithRegistry<Error>(
         getThreadProjection: orchestrator.getThreadProjection,
         recoverDelegatedTask: orchestrator.recoverDelegatedTask,
         cancelDelegatedTask: orchestrator.cancelDelegatedTask,
+        restartContinuationPending: orchestrator.restartContinuationPending,
         delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
         streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
       });
