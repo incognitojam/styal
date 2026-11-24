@@ -3,6 +3,12 @@ import { resolveCacheLossBaseline } from "./chat/compaction.logic";
 import { randomUUID } from "../lib/utils";
 import { ReportReplyStrip, NeedsYou, type ReportReference } from "./chat/CoordinatorReports";
 import {
+  ReportPile,
+  ReportStack,
+  type ReportStackActions,
+  useReportStack,
+} from "./chat/ReportStack";
+import {
   coordinatorReports,
   pendingReportAnswers,
   pendingReportDismissals,
@@ -3520,6 +3526,48 @@ export default function ChatView(props: ChatViewProps) {
     runShellCommand: runSideChatShellCommandStable,
   };
 
+  const reportActions: ReportStackActions = {
+    answer: (text, ref) => {
+      if (activeThreadRef === null || activeThreadId === null) return;
+      const messageId = newMessageId();
+      void respondToReport(
+        activeThreadRef,
+        { ref, kind: "answer", messageId, text, createdAt: new Date().toISOString() },
+        () =>
+          startThreadTurn({
+            environmentId,
+            input: {
+              threadId: activeThreadId,
+              message: { messageId, role: "user", text, attachments: [], reportAnswer: ref },
+              runtimeMode,
+              interactionMode: DEFAULT_INTERACTION_MODE,
+              dispatchMode: "queue",
+            },
+          }),
+      );
+    },
+    reply: (ref, title) => {
+      setReportReply({ threadKey: activeThreadKey, ref, title });
+      scheduleComposerFocus();
+    },
+    dismiss: (ref) => {
+      if (activeThreadRef === null || activeThreadId === null) return;
+      void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
+        dismissReport({
+          environmentId,
+          input: { commandId: CommandId.make(randomUUID()), threadId: activeThreadId, ...ref },
+        }),
+      );
+    },
+    scroll: scrollToReport,
+  };
+  const reportStack = useReportStack(
+    activeThreadKey,
+    reportStates,
+    settings.coordinatorReportsEnabled ? reportActions : null,
+    scheduleComposerFocus,
+  );
+
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
   }
@@ -3705,6 +3753,23 @@ export default function ChatView(props: ChatViewProps) {
             onDrop={workspaceFileDropHandlers.onDrop}
           >
             <ThreadFind onClose={focusComposerStable} />
+            <ReportStack
+              stack={reportStack}
+              canOperate={canOperateReport}
+              inChat={(messageId) =>
+                serverVisibleTurnItems.some(
+                  (row) =>
+                    row.item.type === "assistant_message" && row.item.messageId === messageId,
+                )
+              }
+              markdown={{
+                cwd: gitCwd ?? undefined,
+                threadRef: activeThreadRef,
+                environmentId,
+                skills: timelineSkills,
+                onImageExpand: onExpandTimelineImageStable,
+              }}
+            />
             {isWorkspaceFileDragActive ? <WorkspaceFileDropOverlay /> : null}
             <ChatBannerLane
               environmentId={activeThread.environmentId}
@@ -3726,6 +3791,7 @@ export default function ChatView(props: ChatViewProps) {
             />
             <div
               {...conversationArea}
+              inert={reportStack.view.open}
               className="relative flex min-h-0 flex-1 flex-col bg-background"
             >
               <WorkspaceMutationIdContext value={workspaceMutationId}>
@@ -3735,55 +3801,7 @@ export default function ChatView(props: ChatViewProps) {
                       ? {
                           reports: reportStates,
                           answers: reportAnswerMessages,
-                          answer: (text, ref) => {
-                            if (activeThreadRef === null || activeThreadId === null) return;
-                            const messageId = newMessageId();
-                            void respondToReport(
-                              activeThreadRef,
-                              {
-                                ref,
-                                kind: "answer",
-                                messageId,
-                                text,
-                                createdAt: new Date().toISOString(),
-                              },
-                              () =>
-                                startThreadTurn({
-                                  environmentId,
-                                  input: {
-                                    threadId: activeThreadId,
-                                    message: {
-                                      messageId,
-                                      role: "user",
-                                      text,
-                                      attachments: [],
-                                      reportAnswer: ref,
-                                    },
-                                    runtimeMode,
-                                    interactionMode: DEFAULT_INTERACTION_MODE,
-                                    dispatchMode: "queue",
-                                  },
-                                }),
-                            );
-                          },
-                          reply: (ref, title) => {
-                            setReportReply({ threadKey: activeThreadKey, ref, title });
-                            scheduleComposerFocus();
-                          },
-                          dismiss: (ref) => {
-                            if (activeThreadRef === null || activeThreadId === null) return;
-                            void respondToReport(activeThreadRef, { ref, kind: "dismiss" }, () =>
-                              dismissReport({
-                                environmentId,
-                                input: {
-                                  commandId: CommandId.make(randomUUID()),
-                                  threadId: activeThreadId,
-                                  ...ref,
-                                },
-                              }),
-                            );
-                          },
-                          scroll: scrollToReport,
+                          ...reportActions,
                           canOperate: canOperateReport,
                           target: reportTarget,
                           clear: () => setReportTarget(null),
@@ -3927,7 +3945,7 @@ export default function ChatView(props: ChatViewProps) {
                 setComposerOverlayElement(overlay);
                 attachFollowComposerOverlay(overlay);
               }}
-              inert={isRevertingCheckpoint}
+              inert={isRevertingCheckpoint || reportStack.view.open}
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState
@@ -3968,11 +3986,10 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    <ReportPile stack={reportStack} />
                     {activeThreadId ? (
                       <NeedsYou
                         key={activeThreadId}
-                        reports={settings.coordinatorReportsEnabled ? reportStates : []}
-                        scroll={scrollToReport}
                         environmentId={environmentId}
                         threadId={activeThreadId}
                         runs={activeThreadShell?.workflowRuns ?? []}

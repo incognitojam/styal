@@ -1,9 +1,4 @@
-import {
-  CoordinatorReportsContext,
-  NeedsYou,
-  ReportAnswerBar,
-  type ReportState,
-} from "./CoordinatorReports";
+import { CoordinatorReportsContext, ReportAnswerBar, type ReportState } from "./CoordinatorReports";
 import {
   coordinatorReports,
   formatReportAnswer,
@@ -590,7 +585,7 @@ describe("MessagesTimeline messages", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("reveals an offscreen report when its waiting line is clicked", async () => {
+  it("reveals an offscreen report when it is shown in the chat", async () => {
     setup();
     const props = baseProps();
     const report = { key: "pr:214", title: "Release decision", version: 1, question: "Merge?" };
@@ -627,20 +622,16 @@ describe("MessagesTimeline messages", () => {
           }}
         >
           <MessagesTimeline {...props} timelineEntries={items} liveFollowEnabled={false} />
-          <NeedsYou
-            environmentId={ENVIRONMENT_ID}
-            threadId={ThreadId.make("thread-1")}
-            runs={[]}
-            reports={reports}
-            scroll={(messageId) => setTarget({ messageId })}
-          />
+          <button type="button" onClick={() => setTarget({ messageId: MessageId.make("r-2") })}>
+            Show in chat
+          </button>
         </CoordinatorReportsContext>
       );
     }
     await using screen = await renderElement(<Test items={entries} />);
     const viewport = props.listRef.current!.getScrollableNode()!;
     await vi.waitFor(() => expect(viewport.scrollTop).toBeGreaterThan(1000));
-    await userEvent.click(screen.getByRole("button", { name: /Merge.*Release decision/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Show in chat" }));
     const reportIsVisible = () => {
       const row = screen.container.querySelector('[data-timeline-row-id="entry-r-2"]');
       expect(row).not.toBeNull();
