@@ -846,6 +846,8 @@ export const OrchestrationV2Run = Schema.Struct({
   rootNodeId: Schema.NullOr(NodeId),
   activeAttemptId: Schema.NullOr(RunAttemptId),
   status: OrchestrationV2RunStatus,
+  // null is a person; absent is an automatic cancellation or legacy history.
+  cancelledByThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   queuePosition: Schema.optional(Schema.NullOr(PositiveInt)),
   queueHeld: Schema.optional(Schema.Boolean),
   steerWhenReadyRunId: Schema.optional(RunId),
@@ -3786,6 +3788,7 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("queued-run.cancel"),
+    cancelledByThreadId: Schema.optional(Schema.NullOr(ThreadId)),
     commandId: CommandId,
     threadId: ThreadId,
     runId: RunId,

@@ -894,6 +894,31 @@ export function draftAdaptationNote(
   return { note: sentences.length === 0 ? null : sentences.join(" "), features: [...features] };
 }
 
+function splitCommitTrailers(message: string) {
+  const trimmed = message.trimEnd();
+  const separator = [...trimmed.matchAll(/\n[\t ]*\n/gu)].at(-1);
+  const paragraph = separator ? trimmed.slice(separator.index + separator[0].length) : "";
+  const isTrailerBlock =
+    separator !== undefined &&
+    /^[A-Za-z0-9-]+[\t ]*:|^\(cherry picked from commit /u.test(paragraph) &&
+    paragraph
+      .split("\n")
+      .every((line) =>
+        /^[A-Za-z0-9-]+[\t ]*:|^[\t ]|^\(cherry picked from commit [0-9a-f]{40}\)$/u.test(line),
+      );
+  return isTrailerBlock
+    ? { body: trimmed.slice(0, separator.index), trailers: paragraph }
+    : { body: trimmed, trailers: "" };
+}
+
+export function withForkAdaptationNote(message: string, note: string): string {
+  const { body, trailers } = splitCommitTrailers(message);
+  const updated = /^Fork adaptation: /mu.test(body)
+    ? body.replace(/^(Fork adaptation: .*?)(\n\n|\n?$)/msu, `$1 ${note}$2`)
+    : `${body}\n\nFork adaptation: ${note}`;
+  return `${updated}${trailers ? `\n\n${trailers}` : ""}\n`;
+}
+
 export function intakeCommitMessage(input: {
   readonly upstreamMessage: string;
   readonly upstreamSha: string;
@@ -901,18 +926,15 @@ export function intakeCommitMessage(input: {
   readonly note: string | null;
   readonly features: ReadonlyArray<string>;
 }): string {
-  const body = input.upstreamMessage.replace(/\s+$/u, "");
-  const trailers = [
+  const { body, trailers } = splitCommitTrailers(input.upstreamMessage);
+  const finalTrailers = [
+    ...(trailers ? [trailers] : []),
     `(cherry picked from commit ${input.upstreamSha})`,
     input.pr === null ? `Upstream-Commit: ${input.upstreamSha}` : `Upstream-PR: ${input.pr}`,
     ...(input.features.length > 0 ? [`Fork-Feature: ${input.features.join(", ")}`] : []),
   ].join("\n");
-  if (input.note) return `${body}\n\nFork adaptation: ${input.note}\n\n${trailers}\n`;
-  // Like `cherry-pick -x`, provenance joins a trailer block that ends upstream's message.
-  const lastParagraph = body.split(/\n\n/u).at(-1) ?? "";
-  const endsWithTrailers =
-    body.includes("\n\n") && lastParagraph.split("\n").every((line) => /^[\w-]+: /u.test(line));
-  return `${body}${endsWithTrailers ? "\n" : "\n\n"}${trailers}\n`;
+  const message = `${body}\n\n${finalTrailers}\n`;
+  return input.note ? withForkAdaptationNote(message, input.note) : message;
 }
 
 function commitPick(
@@ -1561,6 +1583,57 @@ export function ledgerFeaturesByPath(ledger: string): ReadonlyMap<string, Readon
   return byPath;
 }
 
+export function fetchPRDescriptions(
+  numbers: ReadonlyArray<number>,
+  repository: string,
+  execute: (command: string, args: ReadonlyArray<string>) => Run,
+): ReadonlyMap<number, { readonly title: string; readonly body: string } | null> {
+  const [owner, name] = repository.split("/");
+  const pullRequests = new Map<number, { readonly title: string; readonly body: string } | null>();
+  const unique = [...new Set(numbers)];
+  for (let start = 0; start < unique.length; start += 100) {
+    const chunk = unique.slice(start, start + 100);
+    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${chunk.map((number) => `p${number}: pullRequest(number:${number}) { title body }`).join("\n")} } }`;
+    const result = execute("gh", ["api", "graphql", "-f", `query=${query}`]);
+    const failure = new Error(
+      `Could not read upstream PR descriptions: ${result.stderr.trim() || result.stdout.trim()}`,
+    );
+    let response: {
+      data?: { repository?: Record<string, { title: string; body: string } | null> };
+      errors?: Array<{ type?: string; path?: ReadonlyArray<string> }>;
+    };
+    try {
+      response = JSON.parse(result.stdout);
+    } catch {
+      throw failure;
+    }
+    const data = response?.data?.repository;
+    if (!data || (response.errors !== undefined && !Array.isArray(response.errors))) throw failure;
+    const missing = new Set<string>();
+    for (const error of response.errors ?? []) {
+      const alias = error?.path?.[1];
+      if (
+        typeof alias !== "string" ||
+        error?.type !== "NOT_FOUND" ||
+        error.path?.length !== 2 ||
+        error.path[0] !== "repository" ||
+        !chunk.some((number) => `p${number}` === alias) ||
+        data[alias] !== null
+      )
+        throw failure;
+      missing.add(alias);
+    }
+    if (result.status !== 0 && missing.size === 0) throw failure;
+    for (const number of chunk) {
+      const alias = `p${number}`;
+      const pullRequest = data[alias];
+      if (pullRequest === undefined || (pullRequest === null && !missing.has(alias))) throw failure;
+      pullRequests.set(number, pullRequest);
+    }
+  }
+  return pullRequests;
+}
+
 /** First-parent upstream commits after `after`, each with its PR description. */
 function laterUpstreamCommits(
   cwd: string,
@@ -1582,28 +1655,16 @@ function laterUpstreamCommits(
       const pr = /\(#(\d+)\)$|^Merge pull request #(\d+) /u.exec(subject);
       return { sha, pr: pr ? Number(pr[1] ?? pr[2]) : null, subject, message };
     });
-  const [owner, name] = repository.split("/");
   const numbers = commits.flatMap((commit) => (commit.pr === null ? [] : [commit.pr]));
-  const pullRequests = new Map<number, { readonly title: string; readonly body: string }>();
-  for (let start = 0; start < numbers.length; start += 100) {
-    const chunk = numbers.slice(start, start + 100);
-    const query = `query { repository(owner:${JSON.stringify(owner)}, name:${JSON.stringify(name)}) { ${chunk.map((number) => `p${number}: pullRequest(number:${number}) { title body }`).join("\n")} } }`;
-    const result = run(cwd, "gh", ["api", "graphql", "-f", `query=${query}`]);
-    if (result.status !== 0)
-      throw new Error(`Could not read upstream PR descriptions: ${result.stderr.trim()}`);
-    const data = (
-      JSON.parse(result.stdout) as {
-        data?: { repository?: Record<string, { title: string; body: string } | null> };
-      }
-    ).data?.repository;
-    if (!data) throw new Error("Could not read upstream PR descriptions.");
-    for (const number of chunk) {
-      const pullRequest = data[`p${number}`];
-      if (pullRequest) pullRequests.set(number, pullRequest);
-    }
-  }
+  const pullRequests = fetchPRDescriptions(numbers, repository, (command, args) =>
+    run(cwd, command, args),
+  );
   return commits.map((commit) => {
     const pullRequest = commit.pr === null ? undefined : pullRequests.get(commit.pr);
+    if (pullRequest === null)
+      process.stderr.write(
+        `${commit.sha.slice(0, 10)} ${commit.subject}: #${commit.pr} does not resolve to an upstream pull request; using the commit message.\n`,
+      );
     return {
       sha: commit.sha,
       pr: commit.pr,
@@ -2866,12 +2927,7 @@ function noteReferenceFixes(
         .toSorted()
         .map((file) => `\`${file}\``)
         .join(", ")}.`;
-      const updated = /^Fork adaptation: /mu.test(message)
-        ? message.replace(/^(Fork adaptation: .*?)(\n\n|\n?$)/msu, `$1 ${sentence}$2`)
-        : message.replace(
-            /\n\n(\(cherry picked from commit )/u,
-            `\n\nFork adaptation: ${sentence}\n\n$1`,
-          );
+      const updated = withForkAdaptationNote(message, sentence);
       git(cwd, ["commit", "-q", "--amend", "--no-verify", "-F", "-"], updated);
     }
   } catch (error) {

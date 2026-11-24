@@ -1,7 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - Checks commit metadata with Git's trailer parser.
+import * as NodeChildProcess from "node:child_process";
+
 import { assert, describe, it } from "@effect/vitest";
 
 import {
   addedLineNumbers,
+  fetchPRDescriptions,
   applyOverridePins,
   autoStopReasons,
   batchLength,
@@ -25,6 +29,7 @@ import {
   summarizeSurvey,
   touchesNativeFingerprint,
   verificationEnvironment,
+  withForkAdaptationNote,
 } from "./intake-run.ts";
 
 describe("lockfilePackages", () => {
@@ -90,16 +95,34 @@ describe("draftAdaptationNote", () => {
 });
 
 describe("intakeCommitMessage", () => {
-  it("keeps upstream's message and adds provenance after any fork note", () => {
+  it("keeps co-authors and provenance in the final trailer block after a fork note", () => {
+    const upstreamTrailers = [
+      "Co-authored-by: A <a@example.com>",
+      "Co-authored-by: B <b@example.com>",
+      "Signed-off-by: C <c@example.com>",
+      "Early-Import: Fixes an imported regression.",
+      "Reviewed-by: D <d@example.com>",
+      "Custom-Trailer: first line",
+      " second line",
+    ];
+    const message = intakeCommitMessage({
+      upstreamMessage: `fix(server): a fix (#123)\n\nUpstream body.\n\n${upstreamTrailers.join("\n")}\n`,
+      upstreamSha: "a".repeat(40),
+      pr: 123,
+      note: "Keeps the fork's name.",
+      features: ["fork-distribution-identity"],
+    });
     assert.strictEqual(
-      intakeCommitMessage({
-        upstreamMessage: "fix(server): a fix (#123)\n\nCo-authored-by: A <a@example.com>\n",
-        upstreamSha: "a".repeat(40),
-        pr: 123,
-        note: "Keeps the fork's name.",
-        features: ["fork-distribution-identity"],
-      }),
-      `fix(server): a fix (#123)\n\nCo-authored-by: A <a@example.com>\n\nFork adaptation: Keeps the fork's name.\n\n(cherry picked from commit ${"a".repeat(40)})\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
+      message,
+      `fix(server): a fix (#123)\n\nUpstream body.\n\nFork adaptation: Keeps the fork's name.\n\n${upstreamTrailers.join("\n")}\n(cherry picked from commit ${"a".repeat(40)})\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
+    );
+    const parsed = NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+      input: message,
+      encoding: "utf8",
+    });
+    assert.strictEqual(
+      parsed,
+      `${upstreamTrailers.join("\n").replace("\n second line", " second line")}\nUpstream-PR: 123\nFork-Feature: fork-distribution-identity\n`,
     );
   });
 
@@ -116,16 +139,43 @@ describe("intakeCommitMessage", () => {
     );
   });
 
+  it("adds and extends reference-fix notes above existing trailers", () => {
+    for (const separator of ["\n\n", "\n \n"]) {
+      const trailers = `Co-authored-by:A <a@example.com>\nEmpty:\nCustom-Key : value\n(cherry picked from commit ${"d".repeat(40)})\nUpstream-PR: 1\nEarly-Import: Needed by this batch.\n`;
+      const message = `fix: x${separator}${trailers}`;
+      const noted = withForkAdaptationNote(message, "Updates fork references.");
+      assert.strictEqual(
+        noted,
+        `fix: x\n\nFork adaptation: Updates fork references.\n\n${trailers}`,
+      );
+      assert.strictEqual(
+        withForkAdaptationNote(noted, "Keeps the fork's name."),
+        `fix: x\n\nFork adaptation: Updates fork references. Keeps the fork's name.\n\n${trailers}`,
+      );
+      assert.strictEqual(
+        NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+          input: noted,
+          encoding: "utf8",
+        }),
+        "Co-authored-by: A <a@example.com>\nEmpty: \nCustom-Key: value\nUpstream-PR: 1\nEarly-Import: Needed by this batch.\n",
+      );
+    }
+  });
+
   it("cites a direct upstream commit by SHA", () => {
-    assert.include(
-      intakeCommitMessage({
-        upstreamMessage: "fix: direct\n",
-        upstreamSha: "b".repeat(40),
-        pr: null,
-        note: null,
-        features: [],
+    const message = intakeCommitMessage({
+      upstreamMessage: "fix: direct\n",
+      upstreamSha: "b".repeat(40),
+      pr: null,
+      note: "Keeps the fork's behavior.",
+      features: [],
+    });
+    assert.strictEqual(
+      NodeChildProcess.execFileSync("git", ["interpret-trailers", "--parse"], {
+        input: message,
+        encoding: "utf8",
       }),
-      `Upstream-Commit: ${"b".repeat(40)}`,
+      `Upstream-Commit: ${"b".repeat(40)}\n`,
     );
   });
 });
@@ -807,5 +857,93 @@ describe("summarizeSurvey lint changes", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+describe("fetchPRDescriptions", () => {
+  const response = {
+    data: {
+      repository: {
+        p12: {
+          title: "Add native context menu to delete threads",
+          body: '## Summary\n- Right-click on threads in the sidebar to delete them with a native context menu\n- Automatically stops any active provider session before removing the thread\n- Uses Electron\'s native Menu API for platform-consistent UI\n\n## Test plan\n- Right-click a thread in the sidebar\n- Verify native context menu appears with "Delete" option\n- Click Delete and confirm the thread is removed\n- Test with active sessions to verify they\'re stopped before deletion\n\n🤖 Generated with Claude Code\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href="https://app.devin.ai/review/pingdotgg/codething-mvp/pull/12" target="_blank">\n  <picture>\n    <source media="(prefers-color-scheme: dark)" srcset="https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1">\n    <img src="https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1" alt="Open with Devin">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **New Features**\n  * Right-click context menus added on desktop and web (with a DOM fallback for non-desktop environments).\n  * Users can delete threads from the context menu.\n  * Active sessions are stopped (if present) before a thread is removed.\n  * After deletion, active thread selection is reassigned automatically or cleared.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->',
+        },
+        p40744: null,
+      },
+    },
+    errors: [
+      {
+        type: "NOT_FOUND",
+        path: ["repository", "p40744"],
+        locations: [
+          {
+            line: 1,
+            column: 99,
+          },
+        ],
+        message: "Could not resolve to a PullRequest with the number of 40744.",
+      },
+    ],
+  };
+  it("keeps returned descriptions when gh exits nonzero for an unresolved PR", () => {
+    const result = fetchPRDescriptions([12, 40744], "example/upstream", () => ({
+      status: 1,
+      stdout: JSON.stringify(response),
+      stderr: "gh: Could not resolve to a PullRequest with the number of 40744.",
+    }));
+    assert.deepStrictEqual(
+      [...result],
+      [
+        [12, response.data.repository.p12],
+        [40744, null],
+      ],
+    );
+  });
+  it("rejects failures other than an explicit missing requested PR", () => {
+    const failures = [
+      { status: 1, stdout: "", stderr: "authentication required" },
+      { status: 1, stdout: "Bad Gateway", stderr: "HTTP 502" },
+      { status: 1, stdout: JSON.stringify({ errors: response.errors }), stderr: "no data" },
+      {
+        status: 1,
+        stdout: JSON.stringify({
+          ...response,
+          errors: [{ type: "RATE_LIMITED", path: ["repository", "p40744"] }],
+        }),
+        stderr: "API rate limit already exceeded",
+      },
+      {
+        status: 1,
+        stdout: JSON.stringify({
+          ...response,
+          errors: [...response.errors, { type: "FORBIDDEN" }],
+        }),
+        stderr: "forbidden",
+      },
+      {
+        status: 1,
+        stdout: JSON.stringify({
+          ...response,
+          errors: [{ type: "NOT_FOUND", path: ["repository"] }],
+        }),
+        stderr: "repository missing",
+      },
+      {
+        status: 1,
+        stdout: JSON.stringify({
+          ...response,
+          errors: [{ ...response.errors[0], path: ["repository", "p99"] }],
+        }),
+        stderr: "unexpected alias",
+      },
+      { status: 0, stdout: JSON.stringify({ data: response.data }), stderr: "" },
+      {
+        status: 1,
+        stdout: JSON.stringify({ data: { repository: { p12: response.data.repository.p12 } } }),
+        stderr: "failed",
+      },
+    ];
+    for (const failure of failures)
+      assert.throws(() => fetchPRDescriptions([12, 40744], "example/upstream", () => failure));
   });
 });

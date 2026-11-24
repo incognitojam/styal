@@ -35,6 +35,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
   /** Whether a thread with a report target owes its launcher a report for this run or request. */
   Schema.Struct({
     type: Schema.Literal("thread-report.check"),
+    afterEffectId: Schema.optional(Schema.String),
     trigger: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("run"), runId: RunId }),
       Schema.Struct({ kind: Schema.Literal("idle") }),
@@ -381,6 +382,11 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             : sql`candidate.available_at <= ${availableBefore}`
         }
         AND candidate.status = 'pending'
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_effect_outbox AS dependency
+          WHERE dependency.effect_id = json_extract(candidate.payload_json, '$.afterEffectId')
+            AND dependency.status IN ('pending', 'running')
+        )
         AND (
           -- These wait on their own availableAt, often for minutes, and read current state,
           -- so they neither wait behind the thread's other effects nor hold them up.

@@ -483,6 +483,10 @@
       "types": "./src/work-log/itemDetail.ts",
       "default": "./src/work-log/itemDetail.ts"
     },
+    "./work-log/restart-downtime": {
+      "types": "./src/work-log/restartDowntime.ts",
+      "default": "./src/work-log/restartDowntime.ts"
+    },
     "./work-log/answer-before-save-note": {
       "types": "./src/work-log/answerBeforeSaveNote.ts",
       "default": "./src/work-log/answerBeforeSaveNote.ts"

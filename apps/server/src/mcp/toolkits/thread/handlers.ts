@@ -409,12 +409,15 @@ export const declarations = {
               targetRunId,
             }));
           }
-          default:
+          default: {
+            const caller = (yield* McpInvocationContext.McpInvocationContext).thread;
             return yield* dispatch(input.threadId, (common) => ({
               ...common,
               type: "queued-run.cancel",
               runId,
+              cancelledByThreadId: caller?.threadId ?? null,
             }));
+          }
         }
       }),
     ),
