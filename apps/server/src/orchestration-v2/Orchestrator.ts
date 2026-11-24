@@ -516,10 +516,13 @@ export interface OrchestratorV2Shape {
   readonly listOlderSettledThreads: (
     query: OlderSettledThreadsQuery,
   ) => Effect.Effect<OlderSettledThreadsListing, OrchestratorV2Error>;
-  readonly readShellSnapshot: (
-    options?: ShellSnapshotOptions,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+  readonly prepareShellSnapshot: Effect.Effect<
+    (
+      options?: ShellSnapshotOptions,
+    ) => Effect.Effect<
+      Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+      OrchestratorV2Error
+    >,
     OrchestratorV2Error
   >;
   readonly getThreadShell: (
@@ -3314,6 +3317,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const delayMs = continuationStartRetryDelayMs(run, projection);
     if (delayMs === undefined) return;
     const commandId = CommandId.make(`command:restart-continuation-retry:${run.id}`);
+    // A start retry is not a crash: carry the crash budget forward unchanged.
+    const previous =
+      run.restartContinuationOfRunId === undefined
+        ? undefined
+        : Option.getOrUndefined(
+            yield* effectOutbox.get(
+              `effect:restart-continuation:${run.restartContinuationOfRunId}`,
+            ),
+          )?.request;
+    const processLossCount =
+      previous?.type === "provider-runtime.continue" ? previous.processLossCount : undefined;
     yield* writeSystemEvents(
       [],
       [
@@ -3321,7 +3335,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           id: `effect:restart-continuation:${run.id}`,
           commandId,
           threadId,
-          request: { type: "provider-runtime.continue", sourceRunId: run.id },
+          request: {
+            type: "provider-runtime.continue",
+            sourceRunId: run.id,
+            ...(processLossCount === undefined ? {} : { processLossCount }),
+          },
           availableAt: DateTime.add(yield* DateTime.now, { milliseconds: delayMs }),
         },
       ],
@@ -17362,14 +17380,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         .listOlderSettledThreads(query)
         .pipe(Effect.mapError(shellProjectionError));
     }),
-    readShellSnapshot: Effect.fn("OrchestratorV2.readShellSnapshot")(function (options) {
-      return projectionStore
-        .readShellSnapshot(options)
-        .pipe(
-          Effect.mapError(shellProjectionError),
-          Effect.map(Effect.mapError(shellProjectionError)),
-        );
-    }),
+    prepareShellSnapshot: projectionStore.prepareShellSnapshot.pipe(
+      Effect.mapError(shellProjectionError),
+      Effect.map(
+        (read) => (options) =>
+          read(options).pipe(
+            Effect.mapError(shellProjectionError),
+            Effect.map(Effect.mapError(shellProjectionError)),
+            Effect.withSpan("OrchestratorV2.readShellSnapshot"),
+          ),
+      ),
+    ),
     getThreadShell: Effect.fn("OrchestratorV2.getThreadShell")(function (threadId) {
       return projectionStore
         .getThreadShell(threadId)

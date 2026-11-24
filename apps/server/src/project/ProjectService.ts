@@ -347,7 +347,7 @@ export const make = Effect.gen(function* () {
       if (yield* fileSystem.exists(cwd).pipe(Effect.orElseSucceed(() => true))) return cwd;
       if (!(yield* isManagedWorktreePath(cwd))) return cwd;
       const snapshot = yield* Effect.flatten(
-        threadProjections.readShellSnapshot({ worktreePath: cwd }),
+        (yield* threadProjections.prepareShellSnapshot)({ worktreePath: cwd }),
       );
       const thread = [...snapshot.threads, ...snapshot.archivedThreads].find(
         (candidate) => candidate.branch !== null,

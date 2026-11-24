@@ -173,7 +173,7 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
-    ...(state.supports.titleRegeneration
+    ...(state.supports.titleRegeneration && !state.projectCoordinator?.isCoordinator
       ? [
           {
             id: "regenerate-title" as const,

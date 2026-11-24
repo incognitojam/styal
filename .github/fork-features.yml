@@ -1250,7 +1250,7 @@ features:
       - Hourly metadata-only update polling pauses while a finished download waits and continues after an unexpected check failure; a check alone never starts a download.
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry. Signing in for an activity check never revokes the desktop window's session.
-      - In-app shutdown dialogs appear only for active or unknown work and list affected thread titles under their project icons/names and host labels with each environment's chosen machine icon, with threads that continue after the restart in their own section. Which threads continue comes from the server's activity report, which applies each project's setting and excludes runs the user asked to stop, sign-out commands, and threads at the limit of automatic continuations in a row, as delivery after the restart does; desktop quits say they continue when styal next starts, and desktop relaunches that turn off or replace a backend report every thread as interrupted. Each thread has a badge per turn, input, approval, or background-work reason from the same snapshot as the counts; older servers retain counts and explicitly report unavailable details, and a reason the client does not recognize is dropped rather than failing the check. Pull request and workflow run watches and app-owned subagent tasks with their own child thread are not counted or listed because they outlive the restart. Terminal activity is counted and inspection warnings appear only for activity that could not be checked.
+      - In-app shutdown dialogs appear only for active or unknown work and list affected thread titles under their project icons/names and host labels with each environment's chosen machine icon, with threads that continue after the restart in their own section. Which threads continue comes from the server's activity report, which applies each project's setting and the same admission rules as delivery after a planned restart. It excludes runs the user or a delegating parent asked to stop and sign-out commands, and counts unattended prompts the provider never accepted that the restart sends again; desktop quits say they continue when styal next starts, and desktop relaunches that turn off or replace a backend report every thread as interrupted. Each thread has a badge per turn, input, approval, or background-work reason from the same snapshot as the counts; older servers retain counts and explicitly report unavailable details, and a reason the client does not recognize is dropped rather than failing the check. Pull request and workflow run watches and app-owned subagent tasks with their own child thread are not counted or listed because they outlive the restart. Terminal activity is counted and inspection warnings appear only for activity that could not be checked.
       - Local desktop restarts skip confirmation only when every owned backend check succeeds and no work would be interrupted; resumable turns are allowed, while running or unknown terminal activity, waiting requests, non-continuable turns, provider installs and shared devices require confirmation. Quit still confirms active or resumable work because continuation waits until the next launch. Cancellation preserves windows and downloaded updates.
       - Shutdown confirmation has one renderer-wide host, including on recovery screens; cancelling an update restart dismisses the request without reopening it. Failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Desktop downloads require an explicit action and refresh the release before downloading. Finished downloads stay installable through metadata checks. Install uses the already-downloaded release without another update check, download, or newer-release prompt.
@@ -4013,6 +4013,32 @@ features:
       tracking: []
       retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
 
+  - id: no-copy-prompt-link
+    title: Do not offer Copy prompt link
+    status: maintained
+    tier: keep
+    prs: [1746]
+    invariants:
+      - Command palettes and message actions on web, desktop, and mobile do not offer to copy prompt links.
+      - Ordinary message copying, thread sharing, and opening externally authored prompt links remain available.
+    rationale: Copying a prompt as an app-opening URL is an unwanted action in styal.
+    implementation_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+    tests:
+      - packages/client-runtime/src/promptLinks.test.ts
+      - packages/shared/src/promptLinks.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18454
+      retire_when: Upstream stops offering Copy prompt link on all clients.
+
   - id: notice-details-when-clipped
     title: Composer notice details appear only for clipped text
     status: maintained
@@ -4555,7 +4581,7 @@ features:
       - Only the coordinator's thread gets the coordinator instructions, with every session, after the project's Additional instructions and by the same route (Claude, Codex, Cursor, Grok, OpenCode); when they change, Claude reopens its query, Grok relaunches and Cursor sends them again, so a thread that becomes or stops being coordinator mid-session is told. The long form is the orchestration guide.
       - With the switch on, /projects/<key> is the project page on web and desktop, a one-line header (name, status line of working and need-you threads, machine, New thread, settings) over the coordinator's chat; a project without one gets a draft whose first message creates the thread on the machine chosen under the composer (by default where the project was last active; machines with the switch off are named, not offered), stores it as that machine's coordinator and clears any coordinator the project's other machines store. With the switch off the route opens the project's settings, as before.
       - The palette's Open project, a thread header's project name, Project settings links, a folder's name (carrying the chat's status dot and the status line, the chat having no row there; the folder chevron still toggles) and the chat's own row open the page; in the flat sidebar that row shows the project's name over the status line and stays in the list while it works, instead of folding into the Working section. The project's settings name the coordinator, its menu offers Stop being coordinator, and threads reporting to it show Reports to.
-      - A coordinator's thread address opens its project page (so does making the open thread the coordinator); `?view=thread` and the page's Open as thread show it as a thread, with its title, menu and details panel.
+      - A coordinator's thread address opens its project page (so does making the open thread the coordinator); the page has the thread view's details card, terminal and right panel, with their toggles and shortcuts, but not the thread's title or menu. Until its first message the page's chat draft keeps no branch, worktree or pull request of its own and starts in the project's folder, and the card shows its machine and branch read-only; a started chat's card has the same controls as any thread.
       - The project page's Needs you lists the approvals, questions and report questions of the threads its status line counts as needing you, oldest first and labelled with their thread, and answers each in place to the thread that asked; it loads detail only for those threads.
       - A thread the project's chat launched to report back (not one that only reports to it because it was created in the project) stays off the sidebar (folders and the flat list) while the chat takes reports, until it needs an approval, an answer or a guest request, fails or hits a limit, is pinned, is the open thread, or the user writes to it; search and the palette keep it, the status line counts it, and it finishes without a Done notification. The chat lists, after the reply that started them, the threads, delegated tasks and launched threads that turn started (on any machine) that still work or wait on the user, from their shells, whatever the tool-call visibility and across a restart continuation.
       - A thread a scheduled task that runs again is bound to (not paused, blocked by policy, or a one-time task that has run), on a machine with project coordinators on that serves `scheduledTasks.subscribeThreads`, in a project with a page and not the chat itself, leaves the sidebar and comes back the same way, except that only the user's messages after the task's latest run began (or after it was made, before its first run) count, and finishes without a Done notification; the page header's Scheduled menu lists each task with its schedule and latest result. A scheduled run's message does not count as the user writing to the thread on any machine, even when the user made the task.

@@ -99,8 +99,10 @@ A thread whose turn continues shows **Continued after server restart** where
 the agent picked up again, and a thread asked to restart background work shows
 **Asked to restart background work after server restart**.
 A thread is not resumed while it waits for your approval, answer, or secret, or
-while it is archived, snoozed, or settled. After three automatic resumes in a row,
-the thread waits for your next message.
+while it is archived, snoozed, or settled. After three consecutive crash recoveries
+of an unfinished turn, the thread waits for your next message, even when crashes
+are more than five minutes apart. A completed turn or a planned shutdown resets
+that limit.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)

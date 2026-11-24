@@ -2809,8 +2809,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           serverConfigs.has(thread.environmentId) &&
           canSnooze(thread, { now: selectionNow.toISOString() }),
       );
-      const titleRegenerationThreads = selectedThreads.filter((thread) =>
-        serverConfigs.has(thread.environmentId),
+      const titleRegenerationThreads = selectedThreads.filter(
+        (thread) =>
+          serverConfigs.has(thread.environmentId) &&
+          !readProjectCoordinatorState({ environmentId: thread.environmentId, threadId: thread.id })
+            ?.isCoordinator,
       );
       const regeneratableTitleThreads = titleRegenerationThreads.filter(
         (thread) => thread.titleRegeneration == null,
