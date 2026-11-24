@@ -1,10 +1,12 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -15,20 +17,60 @@ import * as TestClock from "effect/testing/TestClock";
 import * as BootService from "../cloud/bootService.ts";
 import { runDoctor } from "./doctor.ts";
 import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import { acquireServerOwnership } from "../serverOwnership.ts";
+import { makePersistedServerRuntimeState } from "../serverRuntimeState.ts";
+
+// An empty home, so no boot service unit installed on this machine is read.
+const layerHost = Layer.mergeAll(
+  ProcessRunner.layer,
+  Layer.effect(
+    HostProcess.HomeDirectory,
+    Effect.gen(function* () {
+      return yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped();
+    }),
+  ),
+  Layer.succeed(HostProcess.Environment, {}),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+
+// The doctor reads service.env from the home above userdata, so each test gets an empty home.
+const makeHomePaths = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const home = yield* fs.makeTempDirectoryScoped({ prefix: "styal-doctor-" });
+  const stateDir = path.join(home, "userdata");
+  yield* fs.makeDirectory(stateDir, { recursive: true });
+  return {
+    dbPath: path.join(stateDir, "statev2.sqlite"),
+    serverRuntimeStatePath: path.join(stateDir, "server-runtime.json"),
+  };
+});
 
 it.effect(
-  "--fix reclaims space with the service paused and never offers or deletes the V1 database, and --dry-run changes nothing",
+  "--fix locks the home while the service is paused, names a server that holds it, never offers or deletes the V1 database, and --dry-run changes nothing",
   () =>
     Effect.gen(function* () {
+      const paths = yield* makeHomePaths;
+      const { serverRuntimeStatePath } = paths;
       const calls: string[] = [];
       const printed: string[] = [];
+      const services =
+        yield* Effect.context<Effect.Services<ReturnType<typeof acquireServerOwnership>>>();
+      // Stands in for a server launched for the same home, for example over SSH.
+      const startServer = Effect.scoped(acquireServerOwnership(serverRuntimeStatePath)).pipe(
+        Effect.result,
+        Effect.map((result) =>
+          calls.push(result._tag === "Success" ? "server started" : result.failure._tag),
+        ),
+        Effect.provide(services),
+      );
       const doctor = (options: {
         fix: boolean;
         dryRun: boolean;
         interactive: boolean;
         reclaimableBytes: number;
       }) =>
-        runDoctor("/test/statev2.sqlite", options).pipe(
+        runDoctor(paths, options).pipe(
           Effect.provideService(Console.Console, {
             ...globalThis.console,
             log: (...args: ReadonlyArray<unknown>) => {
@@ -37,8 +79,6 @@ it.effect(
           }),
           Effect.provide(
             Layer.mergeAll(
-              NodeServices.layer,
-              FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
               Layer.mock(BootService.BootService)({
                 withStopped: (operation) =>
                   Effect.sync(() => calls.push("pause")).pipe(
@@ -55,15 +95,17 @@ it.effect(
                     legacyDatabaseBytes: 4000,
                   }),
                 compact: () =>
-                  Effect.sync(() => {
-                    calls.push("compact");
-                    return {
-                      beforeBytes: 2000,
-                      afterBytes: 1000,
-                      deletedEventCount: 1,
-                      deletedReceiptCount: 0,
-                    };
-                  }),
+                  startServer.pipe(
+                    Effect.map(() => {
+                      calls.push("compact");
+                      return {
+                        beforeBytes: 2000,
+                        afterBytes: 1000,
+                        deletedEventCount: 1,
+                        deletedReceiptCount: 0,
+                      };
+                    }),
+                  ),
                 removeLegacyDatabase: () => Effect.sync(() => calls.push("remove legacy")),
               }),
             ),
@@ -74,13 +116,39 @@ it.effect(
       assert.include(printed.join("\n"), "Database from 0.1.0 or earlier: 4 KiB");
       assert.notInclude(printed.join("\n"), "Delete the database");
       yield* doctor({ fix: true, dryRun: false, interactive: false, reclaimableBytes: 1000 });
-      assert.deepEqual(calls, ["pause", "compact", "resume"]);
+      yield* startServer;
+      assert.deepEqual(calls, [
+        "pause",
+        "ServerAlreadyRunningError",
+        "compact",
+        "resume",
+        "server started",
+      ]);
       // With only the V1 database present, the interactive prompt has nothing to offer.
+      calls.length = 0;
       printed.length = 0;
       yield* doctor({ fix: false, dryRun: false, interactive: true, reclaimableBytes: 0 });
-      assert.deepEqual(calls, ["pause", "compact", "resume"]);
+      assert.deepEqual(calls, []);
       assert.include(printed, "Nothing to repair.");
-    }),
+
+      const state = yield* makePersistedServerRuntimeState({
+        config: { host: undefined, devUrl: undefined },
+        port: 3773,
+      });
+      const refused = yield* Effect.scoped(
+        acquireServerOwnership(serverRuntimeStatePath).pipe(
+          Effect.tap((owner) => owner.publish(state)),
+          Effect.andThen(
+            doctor({ fix: true, dryRun: false, interactive: false, reclaimableBytes: 1000 }),
+          ),
+        ),
+      ).pipe(Effect.flip);
+      assert.equal(
+        refused.message,
+        `Stop styal server process ${state.pid}, which the background service did not start, before repairing the database.`,
+      );
+      assert.deepEqual(calls, ["pause", "resume"]);
+    }).pipe(Effect.provide(layerHost)),
 );
 
 it.effect("warns how long reclaiming can take and reports each step with its elapsed time", () =>
@@ -91,17 +159,16 @@ it.effect("warns how long reclaiming can take and reports each step with its ela
       ["rebuild-search", "1 second"],
       ["checkpoint", "1 second"],
     ] as const;
+    const paths = yield* makeHomePaths;
     const reclaim = (env: Record<string, string>) => {
       const output: string[] = [];
-      return runDoctor("/test/statev2.sqlite", {
+      return runDoctor(paths, {
         fix: true,
         dryRun: false,
         interactive: false,
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            NodeServices.layer,
-            FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
             Layer.mock(BootService.BootService)({
               withStopped: (operation) =>
                 Effect.sync(() => output.push("<pause>")).pipe(
@@ -168,7 +235,7 @@ it.effect("warns how long reclaiming can take and reports each step with its ela
     assert.notInclude(withoutPruning, "Removing superseded events");
     assert.notInclude(withoutPruning, "superseded events removed");
     assert.include(withoutPruning, "[1:05] Rewriting the database file");
-  }),
+  }).pipe(Effect.provide(layerHost)),
 );
 
 it.effect("repair honors the service pruning opt-out after an earlier prune", () =>
@@ -202,7 +269,13 @@ it.effect("repair honors the service pruning opt-out after an earlier prune", ()
     const recoveryManifest = yield* fs.readFileString(path.join(backup, "manifest.json"));
     const output: string[] = [];
     let pauses = 0;
-    yield* runDoctor(database, { fix: true, dryRun: false, interactive: false }).pipe(
+    yield* runDoctor(
+      {
+        dbPath: database,
+        serverRuntimeStatePath: path.join(home, "userdata", "server-runtime.json"),
+      },
+      { fix: true, dryRun: false, interactive: false },
+    ).pipe(
       Effect.provide(
         Layer.mergeAll(
           DatabaseMaintenance.layer,

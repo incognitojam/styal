@@ -157,6 +157,8 @@ export const allReachableShellsLiveAtom = Atom.make((get) => {
   for (const environmentId of enabledEnvironmentIds(catalog)) {
     const shell = get(environmentShell.stateValueAtom(environmentId));
     if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;
+    // An incompatible machine will not connect, so its cached projects are all there is.
+    if (catalog.entries.get(environmentId)?.unsupportedReason !== undefined) continue;
     const state = AsyncResult.value(get(environmentCatalog.stateAtom(environmentId)));
     if (Option.isNone(state)) return false;
     const connection = state.value;

@@ -1042,7 +1042,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? []
         : [{ id: "stop-reports", title: "Stop reporting back", image: "bell.slash" }]),
       ...buildThreadTitleRegenerationMenuItems({
-        supported: props.titleRegenerationSupported,
+        supported: props.titleRegenerationSupported && props.isProjectCoordinator !== true,
         isRegenerating: isRegeneratingTitle,
       }),
       ...projectCoordinatorMenuItems({

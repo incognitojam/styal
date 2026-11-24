@@ -17,6 +17,7 @@ import {
   type ProviderDriverKind,
   type ProviderInteractionMode,
   ProjectId,
+  projectCoordinatorThreadId,
   type RunId,
   type RuntimeMode,
   type ScheduledTaskId,
@@ -1053,6 +1054,14 @@ const make = Effect.gen(function* () {
             .thread({ projectId: input.projectId })
             .pipe(Effect.mapError(mapError(input, "create-thread"))));
 
+        const isCoordinator =
+          projectCoordinatorThreadId(
+            yield* serverSettings.getSettings.pipe(
+              Effect.mapError(mapError(input, "create-thread")),
+            ),
+            input.projectId,
+          ) === candidateThreadId;
+
         if (reusableLaunchReceipt !== undefined) {
           const shell = yield* threads
             .getThreadShell(candidateThreadId)
@@ -1105,7 +1114,7 @@ const make = Effect.gen(function* () {
                 commandId: input.commandId,
                 threadId: candidateThreadId,
                 projectId: input.projectId,
-                title: input.title,
+                title: isCoordinator ? `${project.title} chat` : input.title,
                 modelSelection: input.modelSelection,
                 runtimeMode: input.runtimeMode,
                 interactionMode: input.interactionMode,
@@ -1164,7 +1173,7 @@ const make = Effect.gen(function* () {
                 : { senderThreadId: input.initialMessage.senderThreadId }),
               attachments: input.initialMessage.attachments,
               ...(input.initialMessage.context ? { context: input.initialMessage.context } : {}),
-              ...(input.generateTitle === true ? { titleSeed: input.title } : {}),
+              ...(input.generateTitle === true && !isCoordinator ? { titleSeed: input.title } : {}),
               modelSelection: input.modelSelection,
               dispatchMode: { type: "defer_start", workspaceStrategy },
               createdBy: input.createdBy,

@@ -59,6 +59,13 @@ export function isProxiableBindHost(host: string): boolean {
   );
 }
 
+function sharedBackendTargetHost(host: string | undefined): string {
+  const normalized = host?.trim() ?? "";
+  if (normalized === "::1" || normalized === "[::1]") return "[::1]";
+  if (normalized === "localhost") return "localhost";
+  return "127.0.0.1";
+}
+
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".styal"),
 );
@@ -836,13 +843,11 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
       );
     } else {
       // The mapping outlives this process, so acquireRelease registers cleanup atomically with
-      // creating it; an interrupt in between would leave a mapping to a dead port.
-      // The server binds loopback unless --host overrides it; ::1 needs IPv6.
+      // creating it; an interrupt in between would leave a mapping to a dead port. The backend binds
+      // 127.0.0.1 unless --host changes it; `::1` binds only the IPv6 loopback, and `localhost`
+      // whichever loopback Node resolves first.
       const localTarget = input.built
-        ? {
-            port: Number(env.T3CODE_PORT),
-            host: ["::1", "[::1]"].includes(input.host?.trim() ?? "") ? "[::1]" : "127.0.0.1",
-          }
+        ? { port: Number(env.T3CODE_PORT), host: sharedBackendTargetHost(input.host) }
         : undefined;
       const shared = yield* Effect.acquireRelease(
         shareDevServer({ webPort: sharedWebPort, ...(localTarget ? { localTarget } : {}) }),
@@ -1042,6 +1047,9 @@ const cliRuntimeLayer = Layer.mergeAll(
 );
 
 if (import.meta.main) {
+  // runMain interrupts (running finalizers such as the --share unmapping) only
+  // on SIGINT/SIGTERM; a closed terminal or dropped SSH session sends SIGHUP.
+  process.on("SIGHUP", () => process.kill(process.pid, "SIGTERM"));
   Command.run(devRunnerCli, { version: "0.0.0" }).pipe(
     Effect.scoped,
     Effect.provide(cliRuntimeLayer),
