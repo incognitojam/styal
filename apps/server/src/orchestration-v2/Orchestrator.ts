@@ -517,10 +517,13 @@ export interface OrchestratorV2Shape {
   readonly listOlderSettledThreads: (
     query: OlderSettledThreadsQuery,
   ) => Effect.Effect<OlderSettledThreadsListing, OrchestratorV2Error>;
-  readonly readShellSnapshot: (
-    options?: ShellSnapshotOptions,
-  ) => Effect.Effect<
-    Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+  readonly prepareShellSnapshot: Effect.Effect<
+    (
+      options?: ShellSnapshotOptions,
+    ) => Effect.Effect<
+      Effect.Effect<OrchestrationV2ThreadShellSnapshot, OrchestratorV2Error>,
+      OrchestratorV2Error
+    >,
     OrchestratorV2Error
   >;
   readonly getThreadShell: (
@@ -17352,14 +17355,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         .listOlderSettledThreads(query)
         .pipe(Effect.mapError(shellProjectionError));
     }),
-    readShellSnapshot: Effect.fn("OrchestratorV2.readShellSnapshot")(function (options) {
-      return projectionStore
-        .readShellSnapshot(options)
-        .pipe(
-          Effect.mapError(shellProjectionError),
-          Effect.map(Effect.mapError(shellProjectionError)),
-        );
-    }),
+    prepareShellSnapshot: projectionStore.prepareShellSnapshot.pipe(
+      Effect.mapError(shellProjectionError),
+      Effect.map(
+        (read) => (options) =>
+          read(options).pipe(
+            Effect.mapError(shellProjectionError),
+            Effect.map(Effect.mapError(shellProjectionError)),
+            Effect.withSpan("OrchestratorV2.readShellSnapshot"),
+          ),
+      ),
+    ),
     getThreadShell: Effect.fn("OrchestratorV2.getThreadShell")(function (threadId) {
       return projectionStore
         .getThreadShell(threadId)

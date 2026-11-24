@@ -71,6 +71,8 @@ interface ThreadDetailsPanelProps extends Pick<
   workspaceMutationId: string | null;
   isGitRepo: boolean;
   envLocked: boolean;
+  /** The branch and its pull requests are shown, with no picker and no pull request checkout. */
+  branchReadOnly?: boolean;
   availableEnvironments: readonly EnvironmentOption[];
   autoEnvironmentLabel?: string | undefined;
   onAutoEnvironment?: (() => void) | undefined;
@@ -130,6 +132,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       ? { onActiveThreadBranchOverrideChange: props.onActiveThreadBranchOverrideChange }
       : {}),
     envLocked: props.envLocked,
+    branchReadOnly: props.branchReadOnly ?? false,
     forceNewWorktree: props.forceNewWorktree ?? false,
     onComposerFocusRequest: props.onComposerFocusRequest,
     ...(props.onCheckoutPullRequestRequest

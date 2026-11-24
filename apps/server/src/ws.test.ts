@@ -745,17 +745,19 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
                 hasRemoteTasks: thread.id.startsWith("remote-"),
               })),
             ),
-          readShellSnapshot: (options?: { readonly threadIds?: ReadonlyArray<string> }) =>
-            Effect.succeed(
-              Effect.succeed({
-                schemaVersion: 1,
-                snapshotSequence: 0,
-                threads: threads.filter(
-                  (thread) => options?.threadIds?.includes(thread.id) ?? true,
-                ),
-                archivedThreads: [],
-              }),
-            ),
+          prepareShellSnapshot: Effect.succeed(
+            (options?: { readonly threadIds?: ReadonlyArray<string> }) =>
+              Effect.succeed(
+                Effect.succeed({
+                  schemaVersion: 1,
+                  snapshotSequence: 0,
+                  threads: threads.filter(
+                    (thread) => options?.threadIds?.includes(thread.id) ?? true,
+                  ),
+                  archivedThreads: [],
+                }),
+              ),
+          ),
         } as unknown as ThreadManagement.ThreadManagementService["Service"]),
         Effect.provideService(ProjectStore.ProjectStoreV2, {
           listShells: () => Effect.succeed([]),
@@ -1772,7 +1774,7 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
-              readShellSnapshot: (options) =>
+              prepareShellSnapshot: Effect.succeed((options) =>
                 Effect.succeed(
                   Effect.succeed({
                     schemaVersion: 1,
@@ -1785,6 +1787,7 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
                     archivedThreads: [],
                   } as never),
                 ),
+              ),
             }),
             Layer.mock(ProjectStore.ProjectStoreV2)({
               get: () => Effect.succeedSome(project as never),
@@ -2080,7 +2083,7 @@ it.effect.each([
           ensureLegacyTranscript: () => Effect.void,
           getThreadSnapshot: () => Effect.die("snapshot"),
           listActiveShellIndex: () => Effect.die("snapshot"),
-          readShellSnapshot: () => Effect.die("snapshot"),
+          prepareShellSnapshot: Effect.die("snapshot"),
           listActiveSubagentThreadIds: () => Effect.die("replay"),
         } as unknown as ThreadManagement.ThreadManagementService["Service"]),
         Effect.provideService(ProjectStore.ProjectStoreV2, {
@@ -2151,7 +2154,7 @@ it.effect.each(["thread", "shell"] as const)(
           ensureLegacyTranscript: () => Effect.void,
           getThreadSnapshot: () => Effect.die("snapshot"),
           listActiveShellIndex: () => Effect.die("snapshot"),
-          readShellSnapshot: () => Effect.die("snapshot"),
+          prepareShellSnapshot: Effect.die("snapshot"),
           listActiveSubagentThreadIds: () => Effect.succeed([]),
         } as unknown as ThreadManagement.ThreadManagementService["Service"]),
         Effect.provideService(ProjectStore.ProjectStoreV2, {
@@ -2271,7 +2274,7 @@ it.effect.each([
           ensureLegacyTranscript: () => Effect.void,
           getThreadSnapshot: () => Effect.die("snapshot"),
           listActiveShellIndex: () => Effect.die("snapshot"),
-          readShellSnapshot: () => Effect.die("snapshot"),
+          prepareShellSnapshot: Effect.die("snapshot"),
           listActiveSubagentThreadIds: () => Effect.succeed([]),
           streamStoredEventsFrom: () => Stream.empty,
         } as unknown as ThreadManagement.ThreadManagementService["Service"]),
