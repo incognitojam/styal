@@ -6926,29 +6926,38 @@ features:
     title: Keep slow networks from bouncing a connection between routes
     status: maintained
     tier: yield
-    prs: []
+    prs: [1729]
     invariants:
       - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
       - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
       - A route whose reachability check has not answered by its turn, once the shared head start has passed, is tried after the others. The client then waits for those checks to finish. Routes that answered late are tried; routes that never answered are tried only if no route tried before them failed transiently, and otherwise the supervisor backs off and checks every route again. This is decided once, before the late routes are tried, so a late-answering route that fails transiently does not stop the unanswered routes from being tried.
       - A relay WebSocket that opened and later closed or stopped responding does not carry the DNS or firewall hint; a socket that never opened still does.
       - Better-route checks of a route that keeps not answering back off (upstream's dead-route backoff), but every newly established session starts that backoff over, and reconnect attempts check every route regardless of it.
-    rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered.
+      - Direct routes, including loopback forwards, keep a 10-second descriptor deadline during authorization so a slow but healthy host can connect.
+      - Only HTTPS descriptors are remembered between a route check and authorization. Plain-HTTP LAN and loopback routes read the descriptor again before sending credentials and reject a different environment.
+    rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered. A 3-second descriptor deadline strands slow LAN machines and forwarded ports. A plain-HTTP LAN address or loopback forward can point to another machine between the check and authorization, so a cached descriptor must not authorize credentials for its replacement. Deciding whether to skip silent routes during the fallback loop can starve a working fallback on every retry.
     implementation_paths:
+      - packages/client-runtime/src/authorization/service.ts
       - packages/client-runtime/src/connection/driver.ts
       - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/environment/descriptor.ts
       - packages/client-runtime/src/rpc/session.ts
     upstream_paths:
+      - packages/client-runtime/src/authorization/service.ts
       - packages/client-runtime/src/connection/driver.ts
       - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/environment/descriptor.ts
       - packages/client-runtime/src/rpc/session.ts
     tests:
+      - packages/client-runtime/src/authorization/layer.test.ts
       - packages/client-runtime/src/connection/supervisor.test.ts
       - packages/client-runtime/src/rpc/session.test.ts
     upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream stops switching to a route that recently dropped after a switch, and stops giving full attempts to unanswered routes after a transient failure.
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/34623
+        - https://github.com/pingdotgg/t3code/pull/35071
+      retire_when: Upstream stops switching to a route that recently dropped after a switch, avoids starving fallback routes while limiting attempts to unanswered routes after an early transient failure, allows slow direct descriptors to answer, and rechecks plain-HTTP endpoint identity before authorization.
 
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
