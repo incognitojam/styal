@@ -19,10 +19,12 @@ export function orchestrationProtocolCompatibilityError(
   return serverProtocolVersion > ORCHESTRATION_PROTOCOL_VERSION
     ? new ConnectionBlockedError({
         reason: "unsupported",
+        outdated: "client",
         detail: `This client is not supported by this server. Update your app or use a compatible release to connect to ${descriptor.label}.`,
       })
     : new ConnectionBlockedError({
         reason: "unsupported",
+        outdated: "server",
         detail: `This client requires a newer server. Update styal on ${descriptor.label} to connect.`,
         ...(canSelfUpdate(descriptor) ? { serverUpdateRequired: true } : {}),
       });

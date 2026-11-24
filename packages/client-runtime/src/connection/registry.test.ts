@@ -1058,6 +1058,7 @@ describe("EnvironmentRegistry", () => {
       const error = new ConnectionBlockedError({
         reason: "unsupported",
         detail: "Update the server to use this client.",
+        outdated: "server",
         serverUpdateRequired: true,
       });
       const relay = new RelayConnectionTarget({
@@ -1094,6 +1095,7 @@ describe("EnvironmentRegistry", () => {
           target: relayFirst ? relay : BEARER_TARGET,
           enabled: true,
           unsupportedReason: error.message,
+          outdated: "server",
           serverUpdateRequired: true,
         });
         expect(yield* Ref.get(attempts)).toBe(1);
@@ -1103,6 +1105,7 @@ describe("EnvironmentRegistry", () => {
         const retrying = (yield* SubscriptionRef.get(registry.entries)).get(environmentId);
         expect(retrying?.enabled).toBe(true);
         expect(retrying?.unsupportedReason).toBeUndefined();
+        expect(retrying?.outdated).toBeUndefined();
         expect(retrying?.serverUpdateRequired).toBeUndefined();
         expect((yield* Ref.get(harness.storedDisabled)).has(environmentId)).toBe(false);
 

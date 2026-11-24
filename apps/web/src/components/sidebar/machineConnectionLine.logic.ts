@@ -8,7 +8,14 @@ import {
 interface MachineConnection {
   readonly environmentId: EnvironmentId;
   readonly label: string;
-  readonly connection: { readonly phase: EnvironmentConnectionPhase };
+  readonly connection: {
+    readonly phase: EnvironmentConnectionPhase;
+    readonly error?: string | null;
+  };
+  /** Which side's version is too old, when the versions are why it cannot connect. */
+  readonly outdated: "client" | "server" | null;
+  /** "Show in this app" is on; a hidden machine keeps its version verdict. */
+  readonly enabled: boolean;
   readonly serverConfig: Parameters<typeof resolveEnvironmentMachineKind>[0];
   /** A server update is restarting it, so a dropped connection is expected. */
   readonly updating: boolean;
@@ -19,6 +26,8 @@ interface MachineConnection {
 export interface MachineConnectionLine {
   readonly tone: "connecting" | "failed";
   readonly text: string;
+  /** Each machine's problem on its own line, when a version is one of them. */
+  readonly tooltip: string | null;
   /** The icon while connecting: the one machine's own kind, or a server for several. */
   readonly machineKind: EnvironmentMachineKind | null;
   /** The first machine still waiting, failed or not, which keys the line's grace period. */
@@ -31,8 +40,8 @@ function nameMachines(labels: ReadonlyArray<string>): string {
   return labels.length <= 2 ? labels.join(" and ") : `${labels.length} machines`;
 }
 
-// A machine switched off, an offline device and an incompatible version are not connections in
-// progress. The composer banner covers a missing Link sign-in, which Retry cannot fix.
+// A machine switched off, an offline device and one this client can never use, such as SSH on the
+// web, are left out. The composer banner covers a missing Link sign-in, which Retry cannot fix.
 function waitingMachines(environments: ReadonlyArray<MachineConnection>, everyMachine = false) {
   const shown = everyMachine
     ? environments
@@ -47,25 +56,72 @@ function waitingMachines(environments: ReadonlyArray<MachineConnection>, everyMa
     (environment) =>
       environment.connection.phase === "reconnecting" || environment.connection.phase === "error",
   );
-  return { connecting, failed };
+  const outdated = shown.filter(
+    (environment) =>
+      environment.enabled &&
+      environment.connection.phase === "unsupported" &&
+      environment.outdated !== null,
+  );
+  return { connecting, failed, outdated };
+}
+
+function outdatedText(environment: MachineConnection): string {
+  return environment.outdated === "client"
+    ? `Update this app to use ${environment.label}`
+    : `Update styal on ${environment.label}`;
+}
+
+// More than one machine, or a mix of problems, would not fit beside Retry, so the line counts them.
+function outdatedLineText(
+  failed: ReadonlyArray<MachineConnection>,
+  outdated: ReadonlyArray<MachineConnection>,
+): string {
+  const count = failed.length + outdated.length;
+  if (count === 1 && outdated[0]) return outdatedText(outdated[0]);
+  if (failed.length > 0) return `Can't reach or use ${count} machines`;
+  if (outdated.every((environment) => environment.outdated === "client")) {
+    return `Update this app to use ${count} machines`;
+  }
+  if (outdated.every((environment) => environment.outdated === "server")) {
+    return `Update styal on ${count} machines`;
+  }
+  return `Can't use ${count} machines`;
 }
 
 /** The sidebar footer line for machines the app is still connecting to, failures first. */
 export function machineConnectionLine(
   environments: ReadonlyArray<MachineConnection>,
 ): MachineConnectionLine | null {
-  const { connecting, failed } = waitingMachines(environments);
+  const { connecting, failed, outdated } = waitingMachines(environments);
   const waitingEnvironmentId = environments.find(
-    (environment) => connecting.includes(environment) || failed.includes(environment),
+    (environment) =>
+      connecting.includes(environment) ||
+      failed.includes(environment) ||
+      outdated.includes(environment),
   )?.environmentId;
   if (waitingEnvironmentId === undefined) return null;
+  const retryEnvironmentIds = failed.map((environment) => environment.environmentId);
+  if (outdated.length > 0) {
+    return {
+      tone: "failed",
+      machineKind: null,
+      waitingEnvironmentId,
+      text: outdatedLineText(failed, outdated),
+      tooltip: [
+        ...failed.map((environment) => `Can't reach ${environment.label}`),
+        ...outdated.map((environment) => environment.connection.error ?? outdatedText(environment)),
+      ].join("\n"),
+      retryEnvironmentIds,
+    };
+  }
   if (failed.length > 0) {
     return {
       tone: "failed",
       machineKind: null,
       waitingEnvironmentId,
       text: `Can't reach ${nameMachines(failed.map((environment) => environment.label))}`,
-      retryEnvironmentIds: failed.map((environment) => environment.environmentId),
+      tooltip: null,
+      retryEnvironmentIds,
     };
   }
   return {
@@ -76,6 +132,7 @@ export function machineConnectionLine(
         : "server",
     waitingEnvironmentId,
     text: `Connecting to ${nameMachines(connecting.map((environment) => environment.label))}`,
+    tooltip: null,
     retryEnvironmentIds: [],
   };
 }

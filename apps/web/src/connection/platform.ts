@@ -18,6 +18,7 @@ import {
   PrimaryConnectionRegistration,
   PrimaryConnectionTarget,
   sshTargetKey,
+  Presence,
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
@@ -156,6 +157,28 @@ const layerWakeups = Wakeups.layer({
       networkPathChanges,
     ],
     { concurrency: "unbounded" },
+  ),
+});
+
+const pageVisible = () => document.visibilityState === "visible";
+const layerPresence = Presence.layer({
+  current: Effect.sync(() => (pageVisible() ? "foreground" : "background")),
+  changes: Stream.callback<Presence.ApplicationPresenceState>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        const visibility = () =>
+          Queue.offerUnsafe(queue, pageVisible() ? "foreground" : "background");
+        const focus = () => Queue.offerUnsafe(queue, "foreground");
+        document.addEventListener("visibilitychange", visibility);
+        window.addEventListener("focus", focus);
+        return { visibility, focus };
+      }),
+      ({ visibility, focus }) =>
+        Effect.sync(() => {
+          document.removeEventListener("visibilitychange", visibility);
+          window.removeEventListener("focus", focus);
+        }),
+    ).pipe(Effect.asVoid),
   ),
 });
 
@@ -814,6 +837,7 @@ type ConnectionPlatformLayerSource =
   | typeof ConnectionStorage.layer
   | typeof layerConnectivity
   | typeof layerWakeups
+  | typeof layerPresence
   | typeof layerCapabilities
   | typeof layerPlatformConnectionSource
   | typeof layerEnvironmentOwnedDataCleanup
@@ -827,6 +851,7 @@ export const layer: Layer.Layer<
   ConnectionStorage.layer,
   layerConnectivity,
   layerWakeups,
+  layerPresence,
   layerCapabilities,
   layerPlatformConnectionSource,
   layerEnvironmentOwnedDataCleanup,
