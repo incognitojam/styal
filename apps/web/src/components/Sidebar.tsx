@@ -1293,17 +1293,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectChatKeySignature = [...projectPageByChatKey.keys()].join("\n");
   const projectChatKeys =
     projectChatKeySignature === "" ? EMPTY_KEY_SET : new Set(projectChatKeySignature.split("\n"));
-  // Threads a project chat started, and scheduled tasks' threads, are on the project page until
+  // Threads a project chat started in its own project group, and scheduled tasks' threads, stay there until
   // they need you, or while open.
   const onProjectPageOnly = (thread: EnvironmentThreadShell) =>
-    staysOnProjectPage(thread, reportingChatKeys, jobThreadKeys) &&
+    staysOnProjectPage(thread, reportingChatProjects, jobThreadKeys) &&
     threadShellKey(thread) !== routeRowThreadKey;
-  const reportingChatKeys = new Set(
-    listedThreads.flatMap((thread) =>
-      projectChatKeys.has(threadShellKey(thread)) && projectChatTakesReports(thread)
-        ? [threadShellKey(thread)]
-        : [],
-    ),
+  const reportingChatProjects = new Map(
+    listedThreads.flatMap((thread) => {
+      const page = projectPageByChatKey.get(threadShellKey(thread));
+      return page !== undefined && projectChatTakesReports(thread)
+        ? [[threadShellKey(thread), page.memberProjectKeys] as const]
+        : [];
+    }),
   );
   const jobThreadKeys = new Map([...projectPages.values()].flatMap((page) => [...page.jobThreads]));
   // On the chat's own thread URL, the header that stands for the chat is the active location.

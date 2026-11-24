@@ -66,6 +66,12 @@ export function coordinatedProjectKey(
   return otherChat ? null : group.projectKey;
 }
 
+export function projectPageMemberKeys(
+  members: ReadonlyArray<ProjectCheckout>,
+): ReadonlySet<string> {
+  return new Set(members.map((member) => `${member.environmentId}:${member.id}`));
+}
+
 /**
  * The project page a coordinator's address opens instead of the thread view, except a link quoting
  * a response the thread view reveals, a thread held from outside the shell (the page cannot show
@@ -181,20 +187,22 @@ export function isProjectPageJob(
 const NO_JOB_THREADS: ReadonlyMap<string, JobThreadState> = new Map();
 
 /**
- * A thread the project's chat launched with reportBack, or a scheduled task's thread in
+ * A thread the project's chat launched in the same project group with reportBack, or a scheduled task's thread in
  * `jobThreads` (by thread key), stays on the project page until it needs you, fails, is pinned or
  * you write to it (to a job, after its cutoff). A `project-coordinator` report target
- * only says the thread was created in the project. `chatThreadKeys`: chats taking reports.
+ * only says the thread was created in the project. `chatProjects`: project-group members of chats taking reports.
  */
 export function staysOnProjectPage(
   thread: EnvironmentThreadShell,
-  chatThreadKeys: ReadonlySet<string>,
+  chatProjects: ReadonlyMap<string, ReadonlySet<string>>,
   jobThreads: ReadonlyMap<string, JobThreadState> = NO_JOB_THREADS,
 ): boolean {
   const launched =
     thread.reportTo != null &&
     thread.reportTo.source === undefined &&
-    chatThreadKeys.has(`${thread.environmentId}:${thread.reportTo.threadId}`) &&
+    chatProjects
+      .get(`${thread.environmentId}:${thread.reportTo.threadId}`)
+      ?.has(`${thread.environmentId}:${thread.projectId}`) === true &&
     thread.source.createdBy === "agent";
   const job = jobThreads.get(`${thread.environmentId}:${thread.id}`);
   const jobSince = job?.since;

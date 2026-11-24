@@ -59,6 +59,7 @@ import {
   isProjectPageJob,
   jobThreadStates,
   projectChatTakesReports,
+  projectPageMemberKeys,
   staysOnProjectPage,
 } from "./project/projectPage.logic";
 import { environmentServerConfigsAtom, projectJobListAtom } from "../state/server";
@@ -170,12 +171,14 @@ export function startThreadNotifications(
 
   // The project's sidebar group: its label names the project chat, its representative's icon is
   // the one the sidebar shows.
-  const projectGroup = (environmentId: EnvironmentId, projectId: ProjectId) =>
+  const projectGroups = () =>
     buildProjectGroups({
       projects: registry.get(environmentProjects.projectsAtom),
       settings: selectProjectGroupingSettings(getClientSettings()),
       preferredEnvironmentId: registry.get(primaryEnvironmentIdAtom),
-    }).find((group) =>
+    });
+  const projectGroup = (environmentId: EnvironmentId, projectId: ProjectId) =>
+    projectGroups().find((group) =>
       group.memberProjectRefs.some(
         (ref) => ref.environmentId === environmentId && ref.projectId === projectId,
       ),
@@ -334,22 +337,34 @@ export function startThreadNotifications(
         ? new Map([[`${environmentId}:${thread.id}`, since]])
         : NO_JOBS;
     };
-    let projectChatKeys: ReadonlySet<string> | null = null;
-    const reportingChatKeys = () => {
-      if (projectChatKeys !== null) return projectChatKeys;
+    let projectChatProjects: ReadonlyMap<string, ReadonlySet<string>> | null = null;
+    const reportingChatProjects = () => {
+      if (projectChatProjects !== null) return projectChatProjects;
       const chatIds = new Set(
         settings?.projectCoordinatorsEnabled
           ? Object.values(settings.projectCoordinators ?? {}).map((chat) => chat.threadId)
           : [],
       );
-      projectChatKeys = new Set(
-        threads.flatMap((thread) =>
-          chatIds.has(thread.id) && projectChatTakesReports(thread)
-            ? [`${environmentId}:${thread.id}`]
-            : [],
-        ),
+      if (chatIds.size === 0) {
+        projectChatProjects = new Map();
+        return projectChatProjects;
+      }
+      const membersByProject = new Map(
+        projectGroups().flatMap((group) => {
+          const members = projectPageMemberKeys(group.members.map((member) => member.project));
+          return group.memberProjectRefs.map(
+            (ref) => [`${ref.environmentId}:${ref.projectId}`, members] as const,
+          );
+        }),
       );
-      return projectChatKeys;
+      projectChatProjects = new Map(
+        threads.flatMap((thread) => {
+          if (!chatIds.has(thread.id) || !projectChatTakesReports(thread)) return [];
+          const members = membersByProject.get(`${environmentId}:${thread.projectId}`);
+          return members === undefined ? [] : [[`${environmentId}:${thread.id}`, members] as const];
+        }),
+      );
+      return projectChatProjects;
     };
     const changed: Array<[NotificationState | undefined, NotificationState, boolean]> = [];
     for (const rawThread of threads) {
@@ -398,7 +413,7 @@ export function startThreadNotifications(
         completed &&
         ((rawThread.reportTo != null && rawThread.reportTo.source === undefined) ||
           jobThreads.has(rawThread.id)) &&
-        staysOnProjectPage(thread, reportingChatKeys(), jobThreadKeys(thread));
+        staysOnProjectPage(thread, reportingChatProjects(), jobThreadKeys(thread));
       const settled = completed && !monitorHoldsWakeCompletion(rawThread) && !quietCompletion;
       const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
