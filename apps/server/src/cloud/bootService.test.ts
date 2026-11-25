@@ -476,6 +476,8 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       });
       yield* fs.remove(backup, { recursive: true });
       expect((yield* service.status).recoveryPause).toBeUndefined();
+      yield* fs.makeDirectory(backup, { recursive: true });
+      yield* fs.writeFileString(path.join(backup, ".restore-pending"), "");
       yield* fs.writeFileString(
         statePath,
         JSON.stringify({

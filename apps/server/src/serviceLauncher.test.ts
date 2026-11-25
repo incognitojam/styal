@@ -71,6 +71,10 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, promises, default: { ...actual, promises } };
 });
 
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof NodeFSP>()),
+}));
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeChildProcess>();
   const spawn = (...args: Parameters<typeof actual.spawn>) => {
@@ -1029,6 +1033,7 @@ process.exit(0);
           pendingWhileIdle?: string;
           status?: "failed" | "pending";
           blocked?: boolean;
+          markerFault?: "publish" | "remove";
           waitBeforeTrial?: boolean;
           stopWhileOwned?: boolean;
           expected: string;
@@ -1085,8 +1090,16 @@ process.exit(0);
             status: "failed",
             expected: "before update",
           },
-          ...["missing", "replaced"].map((claim) => ({
-            name: `interrupted restore with ${claim} claim`,
+          ...(
+            [
+              ["missing", undefined],
+              ["replaced", undefined],
+              ["missing", "publish"],
+              ["missing", "remove"],
+            ] as const
+          ).map(([claim, markerFault]) => ({
+            name: `interrupted restore with ${claim} claim${markerFault ? ` and failed marker ${markerFault}` : ""}`,
+            ...(markerFault === undefined ? {} : { markerFault }),
             prepare: (paths: Paths) => {
               writeBackup(paths, "before update");
               NodeFS.writeFileSync(path.join(paths.backup, ".restore-pending"), "");
@@ -1151,6 +1164,7 @@ process.exit(0);
             path.join(root, "runtime", ".service-recovery-paused"),
             "older-update",
           );
+          const pausePath = path.join(root, "runtime", ".service-recovery-paused");
           yield* fs.writeFileString(paths.database, "before update");
           let release = scenario.prepare?.(paths);
           yield* writeFakeRuntime(
@@ -1182,6 +1196,21 @@ process.exit(0);
             Effect.gen(function* () {
               const idle = Promise.withResolvers<void>();
               const active = Promise.withResolvers<void>();
+              if (scenario.markerFault === "publish") {
+                const rename = NodeFSP.rename;
+                yield* Effect.acquireRelease(
+                  Effect.sync(() =>
+                    vi
+                      .spyOn(NodeFSP, "rename")
+                      .mockImplementation((from, to) =>
+                        to === pausePath
+                          ? Promise.reject(Object.assign(new Error("EIO"), { code: "EIO" }))
+                          : rename(from, to),
+                      ),
+                  ),
+                  (spy) => Effect.sync(() => spy.mockRestore()),
+                );
+              }
               yield* Effect.acquireRelease(
                 Effect.sync(() =>
                   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
@@ -1241,7 +1270,11 @@ process.exit(0);
               const pause = yield* Effect.promise(() =>
                 readServiceRecoveryPause(root, idleStateForPause),
               );
-              assert.strictEqual(pause !== undefined, !!scenario.blocked, scenario.name);
+              assert.strictEqual(
+                pause !== undefined,
+                !!scenario.blocked && scenario.markerFault !== "publish",
+                scenario.name,
+              );
               if (pause) {
                 assert.include(
                   pause.reason,
@@ -1268,10 +1301,12 @@ process.exit(0);
             scenario.blocked ? "pending" : (scenario.status ?? "rolled-back"),
             scenario.name,
           );
-          const pausePath = path.join(root, "runtime", ".service-recovery-paused");
           if (scenario.blocked) {
             assert.isTrue(yield* fs.exists(paths.backup));
-            assert.strictEqual(yield* fs.readFileString(pausePath), "update-1");
+            assert.strictEqual(
+              yield* fs.readFileString(pausePath),
+              scenario.markerFault === "publish" ? "older-update" : "update-1",
+            );
             // Operator recovery keeps the original backup outside the automatic backup directory.
             yield* fs.rename(paths.backup, path.join(root, "preserved-backup"));
             yield* Effect.scoped(
@@ -1288,13 +1323,28 @@ process.exit(0);
                       spawnHook.current = undefined;
                     }),
                 );
+                if (scenario.markerFault === "remove") {
+                  const rm = NodeFSP.rm;
+                  yield* Effect.acquireRelease(
+                    Effect.sync(() =>
+                      vi
+                        .spyOn(NodeFSP, "rm")
+                        .mockImplementation((target, options) =>
+                          target === pausePath
+                            ? Promise.reject(Object.assign(new Error("EACCES"), { code: "EACCES" }))
+                            : rm(target, options),
+                        ),
+                    ),
+                    (spy) => Effect.sync(() => spy.mockRestore()),
+                  );
+                }
                 const launcher = new Launcher(root, state);
                 const running = launcher.run();
                 yield* Effect.addFinalizer(() =>
                   Effect.promise(() => launcher.stop("SIGTERM").then(() => running)),
                 );
                 yield* Effect.promise(() => active.promise);
-                assert.isFalse(yield* fs.exists(pausePath));
+                assert.strictEqual(yield* fs.exists(pausePath), scenario.markerFault === "remove");
                 // A resurrected marker cannot override a completed rollback.
                 yield* fs.writeFileString(pausePath, "update-1");
                 const recovered = yield* Effect.promise(() => readServiceState(statePath));
