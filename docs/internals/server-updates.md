@@ -79,8 +79,10 @@ not fit on disk, so a full disk does not cause an outage. After the old child
 exits, the launcher snapshots SQLite's main file, WAL, and shared-memory file. On
 filesystems without cloning, WAL databases can copy the main file while the child
 serves, then copy the WAL after it stops. Only the serving child writes this
-online backup's claim, synchronously after update acceptance while it still owns
-the home; older children or a failed claim write fall back to the offline copy.
+online backup's claim, flushing its temporary file before renaming and flushing
+the parent directory while it still owns the home. Before trusting an existing
+backup, the launcher flushes the matching claim under the ownership lock too;
+older children or unavailable claims fall back to the offline copy.
 The launcher checks ownership, including a visible pre-lock server, under the
 ownership lock before offline backup and restore. This makes trial migrations
 reversible without down migrations. The snapshot is made once per update and
@@ -96,6 +98,9 @@ rollback state are durable.
 
 Known limits: older servers that never clear the backup claim, and writers that
 take no ownership lock, can still leave a backup looking valid after their writes.
+A lock-aware server can open a half-restored database after the launcher crashes;
+if it clears the claim, automatic recovery pauses for verification or repair.
+Recovery pauses currently appear only in the service log, not in service status.
 Attachments and other files outside SQLite are outside this rollback boundary.
 
 ## Client acknowledgement

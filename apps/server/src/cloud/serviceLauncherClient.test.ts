@@ -1,9 +1,12 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Models a crash by retaining only a claim whose file and directory were flushed.
+import * as NodeFS from "node:fs";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Logger from "effect/Logger";
 import * as PlatformError from "effect/PlatformError";
 import { assert, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -16,6 +19,8 @@ import {
   type ServiceLauncherParentMessage,
 } from "./serviceProtocol.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
+
+vi.mock("node:fs", async (importOriginal) => ({ ...(await importOriginal<typeof NodeFS>()) }));
 
 class FakeLauncherProcess {
   readonly connected: boolean;
@@ -116,46 +121,112 @@ it.effect.each([SERVICE_LAUNCHER_PROTOCOL])(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect.each(["writable", "unwritable"] as const)(
-  "returns the accepted update ID with a %s backup claim",
-  (claimState) =>
-    Effect.gen(function* () {
-      const host = new FakeLauncherProcess({
-        protocol: SERVICE_LAUNCHER_PROTOCOL,
-        childVersion: "1.0.0",
-      });
-      const client = yield* makeClient(host, "1.0.0");
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-accepted-claim-" });
-      yield* fs.makeDirectory(path.join(baseDir, "userdata"));
-      const claim = path.join(baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE);
-      if (claimState === "unwritable") yield* fs.makeDirectory(claim);
-      const sent = Promise.withResolvers<void>();
-      const send = host.send;
-      host.send = (message, callback) => {
-        const result = send(message, callback);
-        sent.resolve();
-        return result;
-      };
-      const requested = yield* Effect.forkChild(
-        client.requestUpdate({
-          targetVersion: "1.1.0",
-          dbPath: path.join(baseDir, "database.sqlite"),
-          baseDir,
+it.effect.each([
+  "writable",
+  "unwritable",
+  "crash after trial writes",
+  "crash during restore",
+] as const)("returns the accepted update ID with a %s backup claim", (claimState) =>
+  Effect.gen(function* () {
+    const host = new FakeLauncherProcess({
+      protocol: SERVICE_LAUNCHER_PROTOCOL,
+      childVersion: "1.0.0",
+    });
+    const client = yield* makeClient(host, "1.0.0");
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-accepted-claim-" });
+    yield* fs.makeDirectory(path.join(baseDir, "userdata"));
+    const claim = path.join(baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE);
+    if (claimState === "unwritable") yield* fs.makeDirectory(claim);
+    let flushedContents: string | undefined;
+    let durableClaim = false;
+    const writes = new Map<number, string>();
+    const write = NodeFS.writeFileSync;
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vi.spyOn(NodeFS, "writeFileSync").mockImplementation((file, contents, options) => {
+          write(file, contents, options);
+          if (typeof file === "number") writes.set(file, String(contents));
         }),
-        { startImmediately: true },
+      ),
+      (spy) => Effect.sync(() => spy.mockRestore()),
+    );
+    const fsync = NodeFS.fsyncSync;
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vi.spyOn(NodeFS, "fsyncSync").mockImplementation((fd) => {
+          const info = NodeFS.fstatSync(fd);
+          let directoryFlushError: unknown;
+          try {
+            fsync(fd);
+          } catch (cause) {
+            if (
+              !(
+                info.isDirectory() &&
+                cause instanceof Error &&
+                "code" in cause &&
+                cause.code === "EPERM"
+              )
+            )
+              throw cause;
+            directoryFlushError = cause;
+          }
+          if (info.isFile()) {
+            flushedContents = writes.get(fd);
+          } else if (info.isDirectory() && NodeFS.existsSync(claim)) {
+            durableClaim = NodeFS.readFileSync(claim, "utf8") === flushedContents;
+          }
+          if (directoryFlushError !== undefined) throw directoryFlushError;
+        }),
+      ),
+      (spy) => Effect.sync(() => spy.mockRestore()),
+    );
+    const sent = Promise.withResolvers<void>();
+    const send = host.send;
+    host.send = (message, callback) => {
+      const result = send(message, callback);
+      sent.resolve();
+      return result;
+    };
+    const requested = yield* Effect.forkChild(
+      client.requestUpdate({
+        targetVersion: "1.1.0",
+        dbPath: path.join(baseDir, "database.sqlite"),
+        baseDir,
+      }),
+      { startImmediately: true },
+    );
+    yield* Effect.promise(() => sent.promise);
+    if (claimState !== "unwritable") assert.isFalse(yield* fs.exists(claim));
+    host.emit({
+      type: "update-accepted",
+      updateId: "launcher-id",
+    });
+    expect(yield* Fiber.join(requested)).toBe("launcher-id");
+    if (claimState.startsWith("crash")) {
+      const backup = path.join(baseDir, "runtime", "db-backup", "launcher-id");
+      yield* fs.makeDirectory(backup, { recursive: true });
+      yield* fs.writeFileString(path.join(backup, "database"), "original database");
+      yield* fs.writeFileString(path.join(baseDir, "database.sqlite"), "trial-modified database");
+      if (claimState === "crash during restore") {
+        yield* fs.writeFileString(path.join(backup, ".restore-pending"), "");
+        yield* fs.writeFileString(
+          path.join(baseDir, "database.sqlite"),
+          "partly restored database",
+        );
+      }
+      if (!durableClaim) yield* fs.remove(claim);
+      assert.equal(yield* fs.readFileString(path.join(backup, "database")), "original database");
+    }
+    if (claimState !== "unwritable")
+      assert.equal(
+        yield* fs.readFileString(claim).pipe(Effect.orElseSucceed(() => undefined)),
+        "launcher-id",
+        "the claim must survive a crash after the trial changed the database",
       );
-      yield* Effect.promise(() => sent.promise);
-      if (claimState === "writable") assert.isFalse(yield* fs.exists(claim));
-      host.emit({
-        type: "update-accepted",
-        updateId: "launcher-id",
-      });
-      expect(yield* Fiber.join(requested)).toBe("launcher-id");
-      if (claimState === "writable") assert.equal(yield* fs.readFileString(claim), "launcher-id");
-      else assert.isTrue((yield* fs.stat(claim)).type === "Directory");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    else assert.isTrue((yield* fs.stat(claim)).type === "Directory");
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("preserves a launcher rejection as a distinct error", () =>

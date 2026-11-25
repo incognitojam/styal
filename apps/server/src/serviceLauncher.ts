@@ -424,6 +424,13 @@ async function startOnlineDatabaseBackup(
     return undefined;
   const NodeSqlite = await import("node:sqlite").catch(() => undefined);
   if (NodeSqlite === undefined) return undefined;
+  // Only the serving child can create an online claim, while it still owns the home.
+  if (!(await databaseBackupClaimed(baseDir, pending))) {
+    process.stderr.write(
+      "[service-launcher] The serving child has no online backup claim; backing up offline.\n",
+    );
+    return undefined;
+  }
 
   const stagingDir = `${backupDir}.staging`;
   const discardStaging = () =>
@@ -449,9 +456,6 @@ async function startOnlineDatabaseBackup(
   try {
     await discardStaging();
     await NodeFSP.mkdir(stagingDir, { recursive: true, mode: 0o700 });
-    // Only the serving child can create an online claim, while it still owns the home.
-    if (!(await databaseBackupClaimed(baseDir, pending)))
-      return fallBack("no serving-child backup claim");
     dbPath = await NodeFSP.realpath(pending.dbPath);
     snapshot = new NodeSqlite.DatabaseSync(dbPath, { readOnly: true });
     const mode = String(snapshot.prepare("PRAGMA journal_mode").get()?.journal_mode);
@@ -514,6 +518,10 @@ async function backupOwnedDatabase(baseDir: string, pending: PendingServiceUpdat
   if (!(await databaseBackupClaimed(baseDir, pending))) {
     await discardDatabaseBackup(baseDir, pending.id);
     await claimDatabaseBackup(baseDir, pending);
+  } else {
+    // The child may have published the rename just before it died during its directory flush.
+    await syncFile(backupClaimPath(baseDir));
+    await syncDirectory(NodePath.dirname(backupClaimPath(baseDir)));
   }
   await backupDatabaseOnce(baseDir, pending);
 }
@@ -754,14 +762,13 @@ async function tryAcquireStateDirLock(
     // Wait out a moment's probe, as server startup does.
     const lock = await tryAcquireSqliteLock(NodePath.join(stateDir, "server-owner.sqlite"), 250);
     if (lock === undefined) return undefined;
+    let owned = true;
     try {
-      if (!(await preLockServerOwns(stateDir))) return lock;
-    } catch (cause) {
-      lock.close();
-      throw cause;
+      owned = await preLockServerOwns(stateDir);
+      return owned ? undefined : lock;
+    } finally {
+      if (owned) lock.close();
     }
-    lock.close();
-    return undefined;
   } catch (cause) {
     return cause instanceof Error ? cause : new Error(String(cause));
   }

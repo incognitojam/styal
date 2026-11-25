@@ -1026,9 +1026,10 @@ process.exit(0);
           onTrialSpawn?: (paths: Paths) => (() => void) | undefined;
           // The unrestored live database while the launcher waits with the pending record and backup.
           pendingWhileIdle?: string;
-          status?: "failed";
+          status?: "failed" | "pending";
           blocked?: boolean;
           waitBeforeTrial?: boolean;
+          stopWhileOwned?: boolean;
           expected: string;
         }> = [
           {
@@ -1099,6 +1100,7 @@ process.exit(0);
           {
             name: "pre-lock owner before backup",
             waitBeforeTrial: true,
+            status: "pending",
             prepare: (paths) => {
               const record = path.join(path.dirname(paths.owner), "server-runtime.json");
               NodeFS.writeFileSync(record, JSON.stringify({ pid: process.pid, startedAt: "" }));
@@ -1108,6 +1110,7 @@ process.exit(0);
           },
           {
             name: "pre-lock owner before restore",
+            stopWhileOwned: true,
             onTrialSpawn: (paths) => {
               const record = path.join(path.dirname(paths.owner), "server-runtime.json");
               NodeFS.writeFileSync(record, JSON.stringify({ pid: process.pid, startedAt: "" }));
@@ -1229,6 +1232,7 @@ process.exit(0);
                 );
               }
               if (scenario.waitBeforeTrial) assert.strictEqual(trialSpawns, 0, scenario.name);
+              if (scenario.waitBeforeTrial || scenario.stopWhileOwned) return;
               if (scenario.blocked) {
                 assert.strictEqual(trialSpawns, 0, scenario.name);
                 return;
@@ -1238,6 +1242,7 @@ process.exit(0);
             }),
           );
 
+          if (scenario.waitBeforeTrial || scenario.stopWhileOwned) release?.();
           const state = yield* Effect.promise(() => readServiceState(statePath));
           assert.strictEqual(state.activeVersion, "1.0.0", scenario.name);
           assert.strictEqual(

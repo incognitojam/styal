@@ -37,7 +37,6 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
       "send",
       "disconnect",
       "timeout",
-      "backup-claim",
     ]),
     cause: Schema.optional(Schema.Defect()),
   },
@@ -54,8 +53,6 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
         return "Could not send a request to the service launcher.";
       case "disconnect":
         return "The service launcher disconnected before acknowledging the request.";
-      case "backup-claim":
-        return "Could not claim the online update backup; the launcher will back up offline.";
       case "timeout":
         return "The service launcher did not respond within 30 seconds.";
     }
@@ -323,19 +320,41 @@ export const make = Effect.fn("cloud.service_launcher_client.make")(function* (o
     ).pipe(
       Effect.flatMap((reply) =>
         reply.type === "update-accepted"
-          ? Effect.try({
-              try: () =>
-                NodeFS.writeFileSync(
-                  path.join(input.baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE),
-                  reply.updateId,
-                  { mode: 0o600 },
-                ),
-              catch: (cause) =>
-                new ServiceLauncherClientError({ operation: "backup-claim", cause }),
-            }).pipe(
-              Effect.catch((error) => Effect.logWarning(error.message, { cause: error.cause })),
-              Effect.as(reply.updateId),
-            )
+          ? Effect.suspend(() => {
+              try {
+                const directory = path.join(input.baseDir, "userdata");
+                const claim = path.join(directory, SERVICE_BACKUP_CLAIM_FILE);
+                const temporary = `${claim}.${process.pid}.tmp`;
+                try {
+                  const file = NodeFS.openSync(temporary, "w", 0o600);
+                  try {
+                    NodeFS.writeFileSync(file, reply.updateId);
+                    NodeFS.fsyncSync(file);
+                  } finally {
+                    NodeFS.closeSync(file);
+                  }
+                  NodeFS.renameSync(temporary, claim);
+                  const parent = NodeFS.openSync(directory, "r");
+                  try {
+                    NodeFS.fsyncSync(parent);
+                  } catch (cause) {
+                    // Windows refuses directory flushes; NTFS journals the rename itself.
+                    if (!(cause instanceof Error && "code" in cause && cause.code === "EPERM"))
+                      throw cause;
+                  } finally {
+                    NodeFS.closeSync(parent);
+                  }
+                } finally {
+                  NodeFS.rmSync(temporary, { force: true });
+                }
+              } catch (cause) {
+                return Effect.logWarning(
+                  "Could not durably claim the online update backup; the launcher will verify the claim or back up offline.",
+                  { cause },
+                ).pipe(Effect.as(reply.updateId));
+              }
+              return Effect.succeed(reply.updateId);
+            })
           : reply.type === "update-rejected"
             ? Effect.fail(
                 new ServiceLauncherRejectedError({
