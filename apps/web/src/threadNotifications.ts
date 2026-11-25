@@ -1,9 +1,36 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { ClientSettings } from "@t3tools/contracts/settings";
+import type { ClientSettings, NotificationSound } from "@t3tools/contracts/settings";
 import { msg } from "gt-react";
 
 import completionUrl from "./assets/notification-completion.mp3";
 import inputUrl from "./assets/notification-input.mp3";
+
+import departuresUrl from "./assets/notification-departures.mp3";
+import avantiUrl from "./assets/notification-avanti.mp3";
+
+export const NOTIFICATION_SOUND_LABELS = {
+  "t3-completion": msg("styal completion"),
+  "t3-input": msg("styal attention"),
+  avanti: "Avanti",
+  departures: "Departures",
+  none: msg("None"),
+} satisfies Record<NotificationSound, string>;
+const NOTIFICATION_SOUND_URLS = {
+  "t3-completion": completionUrl,
+  "t3-input": inputUrl,
+  avanti: avantiUrl,
+  departures: departuresUrl,
+} satisfies Record<Exclude<NotificationSound, "none">, string>;
+export function notificationSoundForEvent(
+  settings: Pick<ClientSettings, "completionSound" | "inputSound" | "approvalSound">,
+  event: "completion" | "input" | "approval",
+) {
+  return event === "completion"
+    ? settings.completionSound
+    : event === "approval"
+      ? settings.approvalSound
+      : settings.inputSound;
+}
 
 type NotificationMode = ClientSettings["notificationMode"];
 export const NOTIFICATION_MODE_LABELS = {
@@ -105,31 +132,37 @@ function loadNotificationBuffer(context: AudioContext, url: string): Promise<Aud
 export function unlockNotificationAudio() {
   const firstUnlock = audioContext === undefined;
   audioContext ??= new AudioContext();
-  void audioContext.resume().catch(() => undefined);
-  if (!firstUnlock) return;
+  const resumed = audioContext.resume().catch(() => undefined);
+  if (!firstUnlock) return resumed;
   // Fetch and decode during interaction so the first alert is ready when the thread finishes.
   for (const url of [completionUrl, inputUrl]) {
     void loadNotificationBuffer(audioContext, url).catch(() => undefined);
   }
+  return resumed;
 }
 
 export async function playNotificationSound(
   kind: "completion" | "input",
   shouldPlay: () => boolean,
+  sound: NotificationSound = kind === "completion" ? "t3-completion" : "t3-input",
 ) {
-  if (!audioContext || audioContext.state !== "running") return;
+  if (!audioContext || audioContext.state !== "running" || sound === "none") return;
   const context = audioContext;
-  const url = kind === "completion" ? completionUrl : inputUrl;
+  const url = NOTIFICATION_SOUND_URLS[sound];
   try {
     const decoded = await loadNotificationBuffer(context, url);
     if (!shouldPlay() || context.state !== "running") return;
     // Coalesce same-sound bursts after decode to avoid clipping; input and completion alerts keep separate slots.
-    if (context.currentTime < (playingUntil.get(url) ?? 0)) return;
+    const slot = `${kind}:${url}`;
+    if (context.currentTime < (playingUntil.get(slot) ?? 0)) return;
     const source = context.createBufferSource();
     source.buffer = decoded;
-    source.connect(context.destination);
+    const gain = context.createGain();
+    gain.gain.value = sound === "avanti" ? 0.28 : 1;
+    source.connect(gain);
+    gain.connect(context.destination);
     source.start();
-    playingUntil.set(url, context.currentTime + decoded.duration);
+    playingUntil.set(slot, context.currentTime + decoded.duration);
   } catch {
     // A failed load is retried on the next alert.
   }

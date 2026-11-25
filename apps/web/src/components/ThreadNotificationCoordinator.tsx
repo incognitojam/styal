@@ -29,6 +29,7 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  notificationSoundForEvent,
   setNotificationBadge,
   threadNotificationTag,
   unlockNotificationAudio,
@@ -156,11 +157,24 @@ export function startThreadNotifications(
               : status === "request"
                 ? m(msg("Guest request"))
                 : m(msg("Input needed"));
-    if (hasNotificationSound(mode)) {
-      void playNotificationSound(kind, () =>
-        hasNotificationSound(getClientSettings().notificationMode),
+    const event =
+      kind === "completion" ? "completion" : status === "approval" ? "approval" : "input";
+    const sound = notificationSoundForEvent(getClientSettings(), event);
+    const shouldPlay = () => {
+      const viewed = activeThread();
+      return (
+        hasNotificationSound(getClientSettings().notificationMode) &&
+        notificationSoundForEvent(getClientSettings(), event) === sound &&
+        !(
+          document.visibilityState === "visible" &&
+          document.hasFocus() &&
+          viewed.environmentId === environmentId &&
+          viewed.threadId === thread.id
+        )
       );
-    }
+    };
+    if (hasNotificationSound(mode)) void playNotificationSound(kind, shouldPlay, sound);
+
     if (
       inAppNotificationsEnabled &&
       document.visibilityState === "visible" &&

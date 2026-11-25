@@ -1409,6 +1409,9 @@
   "fb6afead22f143ce": "Temavarianter måste vara ett objekt.",
   "3dee932d6255e088": "Temavarianter får bara heta ”light” eller ”dark”.",
   "ebbb27effe11215e": "Temavarianter får inte upprepa basutseendet ”{appearance}”.",
+  "3f8a80f4f25167c4": "styal slutfört",
+  "86a4d155c6ecd612": "styal uppmärksamhet",
+  "f86d1b3defd75cea": "Ingen",
   "e4ce31d0ba14af56": "Av",
   "e3209ad8642f43fc": "Bara aviseringar",
   "974035f5710af2c2": "Bara ljud",
@@ -5252,7 +5255,6 @@
   "1e3375e17e0b0704": "Krävs",
   "a7f7db481296601d": "Installerade",
   "010a240f0d18e933": "Versionerna har inte kontrollerats.",
-  "f86d1b3defd75cea": "Ingen",
   "a1c433ed68afa03e": "Gråskala",
   "29ae38749c912213": "Röd/grön (protanopi)",
   "ab6d391ce2ab64c1": "Grön/röd (deuteranopi)",
@@ -7694,15 +7696,14 @@
   "e1fcc4b74faaae02": "Ta bort kortkommando…",
   "efa55bbb1d3aa45e": "Granska ändringar",
   "3e02b74615e20d82": "Manuell konfiguration",
-  "ef8e001a6a1fb2dd": [
-    "Stäng av inspelning i styal för att stoppa den. Ta bort kortkommandot från ",
+  "9b4ed81f45ca3e97": [
+    "Turn capture off in styal to stop it. Remove the shortcut from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " ",
-    "för att frigöra tangenterna."
+    " to free up the keys."
   ],
   "4bf700ad94c0c486": "Jag har lagt till kortkommandot",
   "bcdea6ebe1a65e63": "ChatGPT-konto att ansluta",
@@ -8777,6 +8778,10 @@
   "6b0b1dd4d399d3c6": "Aviseringar är inte tillgängliga i den här webbläsaren. Endast ljud är fortfarande tillgängligt.",
   "42983a4d32f489cc": "Tillåt aviseringar i webbläsarens eller systemets inställningar och välj sedan det här alternativet igen. Endast ljud är fortfarande tillgängligt.",
   "5403662e10d321d9": "Trådaviseringar",
+  "ce129aac85a1af9b": "Slutförandeljud",
+  "8d8d0f2a9845fd20": "Inmatningsljud",
+  "5cf4ebd6bc8aafca": "Godkännandeljud",
+  "0b7828f9e335fb3d": "Förhandslyssna",
   "a6b7c9465fe9a7f8": "Begäran om licensmanifestet misslyckades med status {status}.",
   "037d111c1f1ec1f2": "Licensmanifestet kunde inte läsas in.",
   "a317709af3d4e2bb": "Det tog för lång tid att läsa in licensmanifestet.",

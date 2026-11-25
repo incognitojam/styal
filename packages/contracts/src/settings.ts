@@ -277,6 +277,15 @@ export const NotificationMode = Schema.Literals([
 ]);
 export type NotificationMode = typeof NotificationMode.Type;
 
+export const NotificationSound = Schema.Literals([
+  "none",
+  "t3-completion",
+  "t3-input",
+  "avanti",
+  "departures",
+]);
+export type NotificationSound = typeof NotificationSound.Type;
+
 export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
 export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
 const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
@@ -405,6 +414,15 @@ export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
+  ),
+  completionSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-completion" as const)),
+  ),
+  inputSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-input" as const)),
+  ),
+  approvalSound: NotificationSound.pipe(
+    Schema.withDecodingDefault(Effect.succeed("t3-input" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
@@ -2051,6 +2069,9 @@ export function requiredScopesForProjectMutation(
 
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
+  completionSound: Schema.optionalKey(NotificationSound),
+  inputSound: Schema.optionalKey(NotificationSound),
+  approvalSound: Schema.optionalKey(NotificationSound),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),

@@ -1409,6 +1409,9 @@
   "fb6afead22f143ce": "Design-Varianten müssen ein Objekt sein.",
   "3dee932d6255e088": "Design-Varianten dürfen nur „light“ oder „dark“ heißen.",
   "ebbb27effe11215e": "Design-Varianten dürfen die Basisdarstellung „{appearance}“ nicht wiederholen.",
+  "3f8a80f4f25167c4": "styal-Abschluss",
+  "86a4d155c6ecd612": "styal-Aufmerksamkeit",
+  "f86d1b3defd75cea": "Keine",
   "e4ce31d0ba14af56": "Aus",
   "e3209ad8642f43fc": "Nur Benachrichtigungen",
   "974035f5710af2c2": "Nur Ton",
@@ -5252,7 +5255,6 @@
   "1e3375e17e0b0704": "Erforderlich",
   "a7f7db481296601d": "Installiert",
   "010a240f0d18e933": "Die Versionen wurden nicht geprüft.",
-  "f86d1b3defd75cea": "Keine",
   "a1c433ed68afa03e": "Graustufen",
   "29ae38749c912213": "Rot / Grün (Protanopie)",
   "ab6d391ce2ab64c1": "Grün / Rot (Deuteranopie)",
@@ -7689,15 +7691,14 @@
   "e1fcc4b74faaae02": "Tastenkürzel entfernen…",
   "efa55bbb1d3aa45e": "Änderungen prüfen",
   "3e02b74615e20d82": "Manuelle Einrichtung",
-  "ef8e001a6a1fb2dd": [
-    "Deaktiviere die Aufnahme in styal, um sie zu beenden. Entferne das Tastenkürzel aus ",
+  "9b4ed81f45ca3e97": [
+    "Turn capture off in styal to stop it. Remove the shortcut from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    ", ",
-    "um die Tasten freizugeben."
+    " to free up the keys."
   ],
   "4bf700ad94c0c486": "Ich habe das Tastenkürzel hinzugefügt",
   "bcdea6ebe1a65e63": "Zu verbindendes ChatGPT-Konto",
@@ -8771,6 +8772,10 @@
   "6b0b1dd4d399d3c6": "Benachrichtigungen sind in diesem Browser nicht verfügbar. Nur Ton ist weiterhin verfügbar.",
   "42983a4d32f489cc": "Erlaube Benachrichtigungen in deinen Browser- oder Systemeinstellungen und wähle diese Option dann erneut. Nur Ton ist weiterhin verfügbar.",
   "5403662e10d321d9": "Thread-Benachrichtigungen",
+  "ce129aac85a1af9b": "Abschlusston",
+  "8d8d0f2a9845fd20": "Eingabeton",
+  "5cf4ebd6bc8aafca": "Genehmigungston",
+  "0b7828f9e335fb3d": "Ton vorhören",
   "a6b7c9465fe9a7f8": "Die Anfrage für das Lizenzmanifest ist mit Status {status} fehlgeschlagen.",
   "037d111c1f1ec1f2": "Das Lizenzmanifest konnte nicht geladen werden.",
   "a317709af3d4e2bb": "Das Laden des Lizenzmanifests hat zu lange gedauert.",
