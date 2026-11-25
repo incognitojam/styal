@@ -28,6 +28,7 @@ import {
   readServiceEnvironment,
   type BackupSpaceProbe,
   readServiceState,
+  readServiceRecoveryPause,
   resolveLauncherBaseDir,
   registerServiceTask,
   serviceLauncherIsRunning,
@@ -1145,6 +1146,11 @@ process.exit(0);
             backup: path.join(root, "runtime", "db-backup", "update-1"),
           };
           yield* fs.makeDirectory(path.join(root, "userdata"), { recursive: true });
+          yield* fs.makeDirectory(path.join(root, "runtime"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(root, "runtime", ".service-recovery-paused"),
+            "older-update",
+          );
           yield* fs.writeFileString(paths.database, "before update");
           let release = scenario.prepare?.(paths);
           yield* writeFakeRuntime(
@@ -1231,6 +1237,18 @@ process.exit(0);
                   scenario.name,
                 );
               }
+              const idleStateForPause = yield* Effect.promise(() => readServiceState(statePath));
+              const pause = yield* Effect.promise(() =>
+                readServiceRecoveryPause(root, idleStateForPause),
+              );
+              assert.strictEqual(pause !== undefined, !!scenario.blocked, scenario.name);
+              if (pause) {
+                assert.include(
+                  pause.reason,
+                  "backup claim is missing or belongs to another update",
+                );
+                assert.include(pause.recovery, paths.backup);
+              }
               if (scenario.waitBeforeTrial) assert.strictEqual(trialSpawns, 0, scenario.name);
               if (scenario.waitBeforeTrial || scenario.stopWhileOwned) return;
               if (scenario.blocked) {
@@ -1250,7 +1268,47 @@ process.exit(0);
             scenario.blocked ? "pending" : (scenario.status ?? "rolled-back"),
             scenario.name,
           );
-          if (scenario.blocked) assert.isTrue(yield* fs.exists(paths.backup));
+          const pausePath = path.join(root, "runtime", ".service-recovery-paused");
+          if (scenario.blocked) {
+            assert.isTrue(yield* fs.exists(paths.backup));
+            assert.strictEqual(yield* fs.readFileString(pausePath), "update-1");
+            // Operator recovery keeps the original backup outside the automatic backup directory.
+            yield* fs.rename(paths.backup, path.join(root, "preserved-backup"));
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const active = Promise.withResolvers<void>();
+                yield* Effect.acquireRelease(
+                  Effect.sync(() => {
+                    spawnHook.current = (child) => {
+                      child.on("message", (message) => message === "active" && active.resolve());
+                    };
+                  }),
+                  () =>
+                    Effect.sync(() => {
+                      spawnHook.current = undefined;
+                    }),
+                );
+                const launcher = new Launcher(root, state);
+                const running = launcher.run();
+                yield* Effect.addFinalizer(() =>
+                  Effect.promise(() => launcher.stop("SIGTERM").then(() => running)),
+                );
+                yield* Effect.promise(() => active.promise);
+                assert.isFalse(yield* fs.exists(pausePath));
+                // A resurrected marker cannot override a completed rollback.
+                yield* fs.writeFileString(pausePath, "update-1");
+                const recovered = yield* Effect.promise(() => readServiceState(statePath));
+                assert.isUndefined(
+                  yield* Effect.promise(() => readServiceRecoveryPause(root, recovered)),
+                );
+                assert.strictEqual(
+                  yield* fs.readFileString(path.join(root, "preserved-backup", "database")),
+                  "before update",
+                );
+              }),
+            );
+          } else if (!scenario.waitBeforeTrial && !scenario.stopWhileOwned)
+            assert.isFalse(yield* fs.exists(pausePath));
           assert.strictEqual(
             yield* fs.readFileString(paths.database),
             scenario.expected,

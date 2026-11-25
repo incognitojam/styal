@@ -171,6 +171,16 @@ function formatServiceStatus(
   const problems = (status.problems ?? []).map(
     (problem) => `  [${problem}] ${BootService.formatBootServiceProblem(problem)}`,
   );
+  if (status.recoveryPause !== undefined) {
+    return [
+      "styal service",
+      "  Status: paused",
+      `  Reason: ${status.recoveryPause.reason}`,
+      `  Unit: ${status.unitPath}`,
+      `  Logs: ${status.logPath}`,
+      `  Next: ${status.recoveryPause.recovery}`,
+    ].join("\n");
+  }
   if (
     !status.current &&
     status.installedVersion !== undefined &&

@@ -36,6 +36,8 @@ import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
+  SERVICE_RECOVERY_PAUSE_FILE,
+  serviceRecoveryPause,
   SERVICE_RESTART_PENDING_FILE,
   SERVICE_STOP_MARKER_FILE,
   SERVICE_UNIT_ENV,
@@ -647,6 +649,19 @@ async function replaceFileDurably(filePath: string, contents: string): Promise<v
   }
 }
 
+export async function readServiceRecoveryPause(baseDir: string, state: ServiceState | undefined) {
+  const pending = state?.update;
+  if (pending?.status !== "pending") return undefined;
+  const marker = NodePath.join(baseDir, "runtime", SERVICE_RECOVERY_PAUSE_FILE);
+  const updateId = await NodeFSP.readFile(marker, "utf8").catch((cause: unknown) => {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
+    throw cause;
+  });
+  if (updateId !== pending.id || !(await databaseRestorePending(baseDir, pending)))
+    return undefined;
+  return serviceRecoveryPause(databaseBackupDir(baseDir, pending.id));
+}
+
 async function runtimeExists(baseDir: string, version: string): Promise<boolean> {
   const paths = runtimePaths(baseDir, version);
   try {
@@ -969,6 +984,16 @@ export class Launcher {
     this.#timer = undefined;
   }
 
+  async #clearRecoveryPause(): Promise<void> {
+    const marker = NodePath.join(this.#baseDir, "runtime", SERVICE_RECOVERY_PAUSE_FILE);
+    try {
+      await NodeFSP.rm(marker, { force: true });
+      await syncDirectory(NodePath.dirname(marker));
+    } catch (cause) {
+      this.#log(`[service-launcher] Could not clear recovery pause marker: ${String(cause)}\n`);
+    }
+  }
+
   async #selectState(next: ServiceState): Promise<void> {
     const release = await acquireServiceSelectionLock(this.#statePath);
     try {
@@ -984,6 +1009,7 @@ export class Launcher {
       }
       await writeServiceState(this.#statePath, next);
       this.#state = next;
+      if (next.update?.status !== "pending") await this.#clearRecoveryPause();
     } finally {
       release();
     }
@@ -1071,6 +1097,7 @@ export class Launcher {
       throw new Error(`Selected @styal/cli@${version} runtime is missing or incomplete.`);
     }
     if (this.#stopping) return;
+    await this.#clearRecoveryPause();
     const paths = runtimePaths(this.#baseDir, version);
     const context: ServiceLauncherContext = {
       protocol: SERVICE_LAUNCHER_PROTOCOL,
@@ -1422,8 +1449,17 @@ export class Launcher {
     }
     if (restorePending && !restore) {
       ownerLock?.close();
+      const pause = serviceRecoveryPause(databaseBackupDir(this.#baseDir, pending.id));
+      try {
+        await replaceFileDurably(
+          NodePath.join(this.#baseDir, "runtime", SERVICE_RECOVERY_PAUSE_FILE),
+          pending.id,
+        );
+      } catch (cause) {
+        this.#log(`[service-launcher] Could not record recovery pause marker: ${String(cause)}\n`);
+      }
       this.#log(
-        `[service-launcher] Automatic database recovery stopped: the backup claim is missing or belongs to another update during interrupted-restore recovery. No database was restored and no server was started. The backup remains at ${databaseBackupDir(this.#baseDir, pending.id)}. Stop the service and any server using this home, preserve both the current database and this backup, and verify or repair the database. Then move this backup directory out of runtime/db-backup and restart the service.\n`,
+        `[service-launcher] Automatic database recovery stopped: ${pause.reason} No database was restored and no server was started. ${pause.recovery}\n`,
       );
       // Stay alive without retrying recovery or triggering the service manager's restart loop.
       this.#timer = setInterval(() => {}, STATE_DIR_OWNER_POLL_MS);

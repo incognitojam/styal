@@ -19,6 +19,7 @@ import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 import * as ProcessRunner from "../processRunner.ts";
 import { acquireServiceSelectionLock } from "./serviceSelectionLock.ts";
 import {
+  readServiceRecoveryPause,
   serviceLauncherIsRunning,
   serviceLauncherLockPath,
   serviceTaskName,
@@ -36,6 +37,7 @@ import {
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_RESTART_PENDING_FILE,
   SERVICE_STATE_FILE,
+  serviceRecoveryPause,
   SERVICE_UNIT_ENV,
   compareExactServiceVersions,
   disabledServiceTask,
@@ -741,6 +743,7 @@ export interface BootServiceStatus {
   readonly installed: boolean;
   readonly current: boolean;
   readonly installedVersion?: string;
+  readonly recoveryPause?: ReturnType<typeof serviceRecoveryPause>;
   /**
    * The T3 home the installed unit serves. The unit name is fixed per user,
    * so a caller working against another base dir must not treat this service
@@ -1571,6 +1574,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       : undefined;
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const otherBaseDir = otherBaseDirOf(unit);
+    const recoveryPause =
+      otherBaseDir === undefined
+        ? yield* Effect.tryPromise({
+            try: () => readServiceRecoveryPause(input.baseDir, state),
+            catch: (cause) => new BootServiceInstallError({ cause }),
+          })
+        : undefined;
     const normalizeUnit = (contents: string) =>
       manager.kind === "launchd"
         ? contents.replace(/(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/, "$1$2")
@@ -1589,7 +1599,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       ...(installedBaseDir === undefined ? {} : { installedBaseDir }),
       ...(otherBaseDir === undefined ? {} : { otherBaseDir }),
       problems,
+      ...(recoveryPause === undefined ? {} : { recoveryPause }),
       current:
+        recoveryPause === undefined &&
         problems.length === 0 &&
         normalizeUnit(unit) === normalizeUnit(manager.render(planForUnit(unit))) &&
         runtimeEntryExists &&
