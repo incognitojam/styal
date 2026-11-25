@@ -203,7 +203,11 @@ export class PullRequestService extends Context.Service<
     ) => Effect.Effect<A, E | PullRequestError, R>;
     readonly summary: (
       input: PullRequestRef,
-      options?: { readonly recoverTransientFailure?: boolean },
+      options?: {
+        readonly recoverTransientFailure?: boolean;
+        /** Registration preflights must reach the provider despite a successful cached read. */
+        readonly bypassCache?: boolean;
+      },
     ) => Effect.Effect<PullRequestSummary, PullRequestError>;
     /** Whether the reference's host batches summary reads; false when it cannot be resolved. */
     readonly batchesReads: (input: PullRequestRef) => Effect.Effect<boolean>;
@@ -233,7 +237,13 @@ export class PullRequestService extends Context.Service<
     readonly withSharedProjectReads: <A, E, R>(
       effect: Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E, R>;
-    readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
+    readonly detail: (
+      input: PullRequestRef,
+      options?: {
+        /** Registration preflights must reach the provider despite a successful cached read. */
+        readonly bypassCache?: boolean;
+      },
+    ) => Effect.Effect<PullRequestDetail, PullRequestError>;
     readonly preview: (
       input: PullRequestRef,
     ) => Effect.Effect<PullRequestPreview, PullRequestError>;
@@ -3234,13 +3244,17 @@ export const make = Effect.gen(function* () {
 
   const summary: PullRequestService["Service"]["summary"] = (input, options) => {
     const key = refCacheKey(input);
-    const cached = persistedRead(input, "summary", summaryCodec, summaryUncached(input));
+    const read =
+      options?.bypassCache === true
+        ? summaryUncached(input)
+        : persistedRead(input, "summary", summaryCodec, summaryUncached(input));
     const held = lastGoodSummary.peek(key);
-    return held !== undefined &&
+    return options?.bypassCache !== true &&
+      held !== undefined &&
       input.allowStale !== false &&
       (options?.recoverTransientFailure !== false || held.state === "merged")
       ? Effect.succeed(held)
-      : cached.pipe(
+      : read.pipe(
           Effect.tap((value) =>
             noteState(input, value).pipe(
               Effect.andThen(
@@ -3599,11 +3613,18 @@ export const make = Effect.gen(function* () {
         }),
       ),
     );
-  const detail: PullRequestService["Service"]["detail"] = (input) => {
+  const detail: PullRequestService["Service"]["detail"] = (input, options) => {
     const key = refCacheKey(input);
     // Skip summary writes older than a later strict summary, so opening detail
     // cannot roll back the state a linked thread has already observed.
-    const read = Cache.get(detailCache, key).pipe(
+    const read = (
+      options?.bypassCache === true
+        ? // A fresh read replaces the cached one, so the next cached read cannot roll it back.
+          detailUncached(refOfCacheKey(key)).pipe(
+            Effect.tap((value) => Cache.set(detailCache, key, value)),
+          )
+        : Cache.get(detailCache, key)
+    ).pipe(
       Effect.tap((value) => {
         if (value.state === "merged") noteMerged(input);
         const summary = summaryFromDetail(value, lastGoodSummary.peek(key));

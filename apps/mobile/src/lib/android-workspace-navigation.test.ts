@@ -5,7 +5,6 @@ import {
   type AndroidWorkspaceNavigationTab,
 } from "../features/layout/workspace/android-workspace-tabs";
 import {
-  androidWorkspaceBackReturnsToPage,
   linkedThreadStep,
   parentThreadIsBelow,
   resetAndroidWorkspace,
@@ -93,31 +92,44 @@ function names(state: ReturnType<typeof router.getInitialState>) {
   return state.routes.map((route) => route.name);
 }
 
+function pressBack(initial: ReturnType<typeof router.getInitialState>) {
+  let state = initial;
+  returnToAndroidWorkspaceList({
+    dispatch: (action: RootStackResetAction) => {
+      state = apply(state, action);
+    },
+    getParent: () => undefined,
+    getState: () => state,
+    goBack: () => {
+      state = apply(state, StackActions.pop());
+    },
+  });
+  return state;
+}
+
 describe("Android workspace navigation", () => {
   it("returns from a pull request opened in a thread to that thread", () => {
     const opened = apply(
       select(router.getInitialState(options), thread),
       StackActions.push(pullRequest.name, pullRequest.params),
     );
-    expect(androidWorkspaceBackReturnsToPage(opened)).toBe(true);
-    const back = apply(opened, StackActions.pop());
+    const back = pressBack(opened);
     expect(names(back)).toEqual(["Home", "Thread"]);
-    expect(androidWorkspaceBackReturnsToPage(back)).toBe(false);
+    expect(names(pressBack(back))).toEqual(["Home"]);
   });
 
   it("returns from a pull request selected in the list to the list", () => {
     const selected = select(router.getInitialState(options), pullRequest);
-    expect(androidWorkspaceBackReturnsToPage(selected)).toBe(false);
-    expect(androidWorkspaceBackReturnsToPage(select(legacyHistory(), pullRequest))).toBe(false);
+    expect(names(pressBack(selected))).toEqual(["Home"]);
+    expect(names(pressBack(select(legacyHistory(), pullRequest)))).toEqual(["Home"]);
   });
 
-  it("returns to a distinct previous thread, otherwise to the workspace list", () => {
+  it("returns to the previous page, otherwise to the workspace list", () => {
     const parent = withThread();
     let state = apply(
       parent,
       StackActions.push("Thread", { ...thread.params, threadId: "child-a" }),
     );
-    let listSelected = false;
     const navigation = {
       dispatch: (action: RootStackResetAction) => {
         state = apply(state, action);
@@ -128,45 +140,46 @@ describe("Android workspace navigation", () => {
         state = apply(state, StackActions.pop());
       },
     };
-    const back = () =>
-      returnToAndroidWorkspaceList(navigation, () => {
-        listSelected = true;
-      });
+    const back = () => returnToAndroidWorkspaceList(navigation);
 
     back();
     expect(state.routes).toEqual(parent.routes);
     expect(state.index).toBe(parent.index);
-    expect(listSelected).toBe(false);
 
     back();
     expect(state.routes).toEqual([parent.routes[0]]);
     expect(state.index).toBe(0);
-    expect(listSelected).toBe(true);
 
     state = apply(
       parent,
       StackActions.push("Thread", { ...thread.params, environmentId: "environment-b" }),
     );
-    listSelected = false;
     back();
     expect(state.routes).toEqual(parent.routes);
     expect(state.index).toBe(parent.index);
-    expect(listSelected).toBe(false);
+
+    const pullRequestOverThread = legacyHistory();
+    state = pullRequestOverThread;
+    back();
+    expect(state.routes).toEqual(pullRequestOverThread.routes.slice(0, 2));
 
     // Confirming a Git action from the inline inspector can duplicate the current thread.
     state = apply(parent, StackActions.push("Thread", thread.params));
     back();
-    expect({ routes: names(state), index: state.index, listSelected }).toEqual({
-      routes: ["Home"],
-      index: 0,
-      listSelected: true,
-    });
+    expect({ routes: names(state), index: state.index }).toEqual({ routes: ["Home"], index: 0 });
+
+    const child = { ...thread.params, threadId: "child-a" };
+    state = apply(
+      apply(parent, StackActions.push("Thread", child)),
+      StackActions.push("Thread", child),
+    );
+    back();
+    expect(state.routes).toEqual(parent.routes);
   });
 
   it("returns from a linked pull request to its thread and from a thread to its source page", () => {
     const parent = select(router.getInitialState(options), thread);
     let state = apply(parent, StackActions.push("PullRequest", pullRequest.params));
-    let listSelected = false;
     const navigation = {
       dispatch: (action: RootStackResetAction) => {
         state = apply(state, action);
@@ -177,19 +190,13 @@ describe("Android workspace navigation", () => {
         state = apply(state, StackActions.pop());
       },
     };
-    returnToAndroidWorkspaceList(navigation, () => {
-      listSelected = true;
-    });
+    returnToAndroidWorkspaceList(navigation);
     expect(state.routes).toEqual(parent.routes);
-    expect(listSelected).toBe(false);
 
     const source = select(router.getInitialState(options), pullRequest);
     state = apply(source, StackActions.push("Thread", thread.params));
-    returnToAndroidWorkspaceList(navigation, () => {
-      listSelected = true;
-    });
+    returnToAndroidWorkspaceList(navigation);
     expect(state.routes).toEqual(source.routes);
-    expect(listSelected).toBe(false);
   });
 
   it("opens a linked thread above the current one so Back returns to it", () => {
