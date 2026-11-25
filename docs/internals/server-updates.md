@@ -100,7 +100,8 @@ Known limits: older servers that never clear the backup claim, and writers that
 take no ownership lock, can still leave a backup looking valid after their writes.
 A lock-aware server can open a half-restored database after the launcher crashes;
 if it clears the claim, automatic recovery pauses for verification or repair.
-Recovery pauses currently appear only in the service log, not in service status.
+Recovery pauses appear in `styal service status` with the same reason and recovery
+guidance as the service log.
 Attachments and other files outside SQLite are outside this rollback boundary.
 
 ## Client acknowledgement

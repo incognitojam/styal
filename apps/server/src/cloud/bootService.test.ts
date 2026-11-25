@@ -440,6 +440,57 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     }),
   );
 
+  it.effect("reports a recovery pause only for the matching interrupted update in this home", () =>
+    Effect.gen(function* () {
+      const { service, baseDir } = yield* makeHarness();
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* service.install();
+      const statePath = path.join(baseDir, "runtime", "service-state.json");
+      const state = {
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.2.3",
+        update: {
+          id: "paused-update",
+          fromVersion: "1.2.3",
+          targetVersion: "1.2.4",
+          dbPath: path.join(baseDir, "userdata", "statev2.sqlite"),
+          status: "pending",
+        },
+      } as const;
+      const marker = path.join(baseDir, "runtime", ".service-recovery-paused");
+      const backup = path.join(baseDir, "runtime", "db-backup", "paused-update");
+      yield* fs.makeDirectory(backup, { recursive: true });
+      yield* fs.writeFileString(path.join(backup, ".restore-pending"), "");
+      yield* fs.writeFileString(statePath, JSON.stringify(state));
+      expect((yield* service.status).recoveryPause).toBeUndefined();
+      yield* fs.writeFileString(marker, "older-update");
+      expect((yield* service.status).recoveryPause).toBeUndefined();
+      yield* fs.writeFileString(marker, "paused-update");
+      expect(yield* service.status).toMatchObject({
+        current: false,
+        recoveryPause: {
+          reason:
+            "A database restore was interrupted during an update, and styal can no longer confirm the backup belongs to that update. Nothing was started, so neither the database nor the backup is overwritten.",
+          recovery: expect.stringContaining(backup),
+        },
+      });
+      yield* fs.remove(backup, { recursive: true });
+      expect((yield* service.status).recoveryPause).toBeUndefined();
+      yield* fs.makeDirectory(backup, { recursive: true });
+      yield* fs.writeFileString(path.join(backup, ".restore-pending"), "");
+      yield* fs.writeFileString(
+        statePath,
+        JSON.stringify({
+          ...state,
+          update: { ...state.update, status: "rolled-back" },
+        }),
+      );
+      expect(yield* service.status).toMatchObject({ current: true });
+      expect((yield* service.status).recoveryPause).toBeUndefined();
+    }),
+  );
+
   // regression: #29881
   it.effect.each([
     { logind: "has lingering disabled", linger: "no" },
