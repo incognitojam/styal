@@ -1498,6 +1498,9 @@
   "fb6afead22f143ce": "Las variantes del tema deben ser un objeto.",
   "3dee932d6255e088": "Las variantes del tema solo pueden llamarse \"light\" o \"dark\".",
   "ebbb27effe11215e": "Las variantes del tema no deben repetir la apariencia base \"{appearance}\".",
+  "3f8a80f4f25167c4": "Finalización de styal",
+  "86a4d155c6ecd612": "Atención de styal",
+  "f86d1b3defd75cea": "Ninguno",
   "e4ce31d0ba14af56": "Desactivado",
   "e3209ad8642f43fc": "Solo notificaciones",
   "974035f5710af2c2": "Solo sonido",
@@ -5468,7 +5471,6 @@
   "1e3375e17e0b0704": "Requerida",
   "a7f7db481296601d": "Instaladas",
   "010a240f0d18e933": "No se han comprobado las versiones.",
-  "f86d1b3defd75cea": "Ninguno",
   "a1c433ed68afa03e": "Escala de grises",
   "29ae38749c912213": "Rojo / verde (protanopía)",
   "ab6d391ce2ab64c1": "Verde / rojo (deuteranopía)",
@@ -7924,15 +7926,14 @@
   "e1fcc4b74faaae02": "Quitar atajo…",
   "efa55bbb1d3aa45e": "Revisar cambios",
   "3e02b74615e20d82": "Configuración manual",
-  "ef8e001a6a1fb2dd": [
-    "Desactiva la captura en styal para detenerla. Quita el atajo de ",
+  "9b4ed81f45ca3e97": [
+    "Turn capture off in styal to stop it. Remove the shortcut from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " ",
-    "para liberar las teclas."
+    " to free up the keys."
   ],
   "4bf700ad94c0c486": "Ya he añadido el atajo",
   "bcdea6ebe1a65e63": "Cuenta de ChatGPT que conectar",
@@ -9140,6 +9141,10 @@
   "6b0b1dd4d399d3c6": "Las notificaciones no están disponibles en este navegador. Solo sonido sigue disponible.",
   "42983a4d32f489cc": "Permite las notificaciones en los ajustes del navegador o del sistema y vuelve a elegir esta opción. Solo sonido sigue disponible.",
   "5403662e10d321d9": "Notificaciones de hilos",
+  "ce129aac85a1af9b": "Sonido de finalización",
+  "8d8d0f2a9845fd20": "Sonido de entrada",
+  "5cf4ebd6bc8aafca": "Sonido de aprobación",
+  "0b7828f9e335fb3d": "Escuchar sonido",
   "a6b7c9465fe9a7f8": "La solicitud del manifiesto de licencias falló con el estado {status}.",
   "037d111c1f1ec1f2": "No se pudo cargar el manifiesto de licencias.",
   "a317709af3d4e2bb": "El manifiesto de licencias tardó demasiado en cargarse.",

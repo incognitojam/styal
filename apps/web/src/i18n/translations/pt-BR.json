@@ -1498,6 +1498,9 @@
   "fb6afead22f143ce": "As variantes do tema precisam ser um objeto.",
   "3dee932d6255e088": "As variantes do tema só podem se chamar \"light\" ou \"dark\".",
   "ebbb27effe11215e": "As variantes do tema não podem repetir a aparência base \"{appearance}\".",
+  "3f8a80f4f25167c4": "Conclusão do styal",
+  "86a4d155c6ecd612": "Atenção do styal",
+  "f86d1b3defd75cea": "Nenhum",
   "e4ce31d0ba14af56": "Desativadas",
   "e3209ad8642f43fc": "Só notificações",
   "974035f5710af2c2": "Só som",
@@ -5468,7 +5471,6 @@
   "1e3375e17e0b0704": "Exigida",
   "a7f7db481296601d": "Instaladas",
   "010a240f0d18e933": "As versões não foram verificadas.",
-  "f86d1b3defd75cea": "Nenhum",
   "a1c433ed68afa03e": "Escala de cinza",
   "29ae38749c912213": "Vermelho / verde (protanopia)",
   "ab6d391ce2ab64c1": "Verde / vermelho (deuteranopia)",
@@ -7924,15 +7926,14 @@
   "e1fcc4b74faaae02": "Remover atalho…",
   "efa55bbb1d3aa45e": "Revisar alterações",
   "3e02b74615e20d82": "Configuração manual",
-  "ef8e001a6a1fb2dd": [
-    "Desative a captura no styal para pará-la. Remova o atalho de ",
+  "9b4ed81f45ca3e97": [
+    "Turn capture off in styal to stop it. Remove the shortcut from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " ",
-    "para liberar as teclas."
+    " to free up the keys."
   ],
   "4bf700ad94c0c486": "Já adicionei o atalho",
   "bcdea6ebe1a65e63": "Conta do ChatGPT a conectar",
@@ -9141,6 +9142,10 @@
   "6b0b1dd4d399d3c6": "As notificações não estão disponíveis neste navegador. A opção só som continua disponível.",
   "42983a4d32f489cc": "Permita notificações nas configurações do navegador ou do sistema e escolha esta opção novamente. A opção só som continua disponível.",
   "5403662e10d321d9": "Notificações de threads",
+  "ce129aac85a1af9b": "Som de conclusão",
+  "8d8d0f2a9845fd20": "Som de entrada",
+  "5cf4ebd6bc8aafca": "Som de aprovação",
+  "0b7828f9e335fb3d": "Ouvir som",
   "a6b7c9465fe9a7f8": "A requisição do manifesto de licenças falhou com o status {status}.",
   "037d111c1f1ec1f2": "Não foi possível carregar o manifesto de licenças.",
   "a317709af3d4e2bb": "O manifesto de licenças demorou demais para carregar.",

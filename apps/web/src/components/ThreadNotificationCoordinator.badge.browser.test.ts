@@ -75,6 +75,9 @@ vi.mock(import("../hooks/useSettings"), async (original) => ({
   }) as never,
   getClientSettings: (() => ({
     notificationMode: state.mode,
+    completionSound: "t3-completion",
+    inputSound: "avanti",
+    approvalSound: "departures",
     inAppNotificationsEnabled: state.inApp,
   })) as never,
 }));
@@ -266,6 +269,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   async (flag) => {
     await using app = setup();
     app.start();
+    state.mode = "sound";
     const waiting = (turnId: string, pendingRequestId: string) =>
       shell({
         [flag]: true,
@@ -275,8 +279,12 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     state.shells.set("one", waiting("turn-1", "request-1"));
     state.shells.set("one", waiting("turn-2", "request-1"));
     state.shells.set("one", waiting("turn-2", "request-2"));
-    const title = flag === "hasPendingApprovals" ? "Approval needed" : "Input needed";
-    expect(TestNotification.sent.map(({ title }) => title)).toEqual([title, title]);
+    expect(TestNotification.sent).toEqual([]);
+    expect(state.sound).toHaveBeenLastCalledWith(
+      "input",
+      expect.any(Function),
+      flag === "hasPendingApprovals" ? "departures" : "avanti",
+    );
   },
 );
 
@@ -291,7 +299,22 @@ it("presents completion notifications and sound as soon as the shell completes",
     }),
   );
   expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
-  expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function));
+  expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function), "t3-completion");
+  const shouldPlay = state.sound.mock.calls[0]![1] as () => boolean;
+  expect(shouldPlay()).toBe(true);
+  app.openThread("one", "thread");
+  focused = true;
+  expect(shouldPlay()).toBe(false);
+  visibility = "hidden";
+  expect(shouldPlay()).toBe(true);
+  visibility = "visible";
+  focused = false;
+  expect(shouldPlay()).toBe(true);
+  focused = true;
+  app.openThread("two", "thread");
+  expect(shouldPlay()).toBe(true);
+  state.mode = "off";
+  expect(shouldPlay()).toBe(false);
 });
 
 it.each([

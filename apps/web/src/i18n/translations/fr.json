@@ -1498,6 +1498,9 @@
   "fb6afead22f143ce": "Les variantes du thème doivent être un objet.",
   "3dee932d6255e088": "Les variantes du thème ne peuvent s’appeler que « light » ou « dark ».",
   "ebbb27effe11215e": "Les variantes du thème ne doivent pas reprendre l’apparence de base « {appearance} ».",
+  "3f8a80f4f25167c4": "Fin styal",
+  "86a4d155c6ecd612": "Attention styal",
+  "f86d1b3defd75cea": "Aucun",
   "e4ce31d0ba14af56": "Désactivé",
   "e3209ad8642f43fc": "Notifications uniquement",
   "974035f5710af2c2": "Son uniquement",
@@ -5469,7 +5472,6 @@
   "1e3375e17e0b0704": "Requise",
   "a7f7db481296601d": "Installées",
   "010a240f0d18e933": "Les versions n’ont pas été vérifiées.",
-  "f86d1b3defd75cea": "Aucun",
   "a1c433ed68afa03e": "Niveaux de gris",
   "29ae38749c912213": "Rouge / vert (protanopie)",
   "ab6d391ce2ab64c1": "Vert / rouge (deutéranopie)",
@@ -7925,15 +7927,14 @@
   "e1fcc4b74faaae02": "Supprimer le raccourci…",
   "efa55bbb1d3aa45e": "Vérifier les modifications",
   "3e02b74615e20d82": "Configuration manuelle",
-  "ef8e001a6a1fb2dd": [
-    "Désactivez la capture dans styal pour l’arrêter. Supprimez le raccourci de ",
+  "9b4ed81f45ca3e97": [
+    "Turn capture off in styal to stop it. Remove the shortcut from ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " ",
-    "pour libérer les touches."
+    " to free up the keys."
   ],
   "4bf700ad94c0c486": "J’ai ajouté le raccourci",
   "bcdea6ebe1a65e63": "Compte ChatGPT à connecter",
@@ -9142,6 +9143,10 @@
   "6b0b1dd4d399d3c6": "Les notifications ne sont pas disponibles dans ce navigateur. Le son seul reste disponible.",
   "42983a4d32f489cc": "Autorisez les notifications dans les paramètres de votre navigateur ou de votre système, puis choisissez à nouveau cette option. Le son seul reste disponible.",
   "5403662e10d321d9": "Notifications des fils",
+  "ce129aac85a1af9b": "Son de fin",
+  "8d8d0f2a9845fd20": "Son de saisie",
+  "5cf4ebd6bc8aafca": "Son d’approbation",
+  "0b7828f9e335fb3d": "Écouter le son",
   "a6b7c9465fe9a7f8": "La requête du manifeste des licences a échoué avec le statut {status}.",
   "037d111c1f1ec1f2": "Impossible de charger le manifeste des licences.",
   "a317709af3d4e2bb": "Le chargement du manifeste des licences a pris trop de temps.",

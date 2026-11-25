@@ -16,6 +16,9 @@ class FakeAudioContext {
   decodeAudioData() {
     return Promise.resolve({ duration: SOUND_SECONDS });
   }
+  createGain() {
+    return { gain: { value: 1 }, connect() {} };
+  }
   createBufferSource() {
     return {
       buffer: null,
@@ -86,19 +89,34 @@ describe("playNotificationSound", () => {
 
   it("still plays an input alert over a completion sound", async () => {
     const { playNotificationSound } = await loadUnlocked();
-    await playNotificationSound("completion", () => true);
+    await playNotificationSound("completion", () => true, "avanti");
 
-    await playNotificationSound("input", () => true);
+    await playNotificationSound("input", () => true, "avanti");
 
     expect(audio.started).toBe(2);
   });
 
   it("leaves the slot free when a sound is turned off before it plays", async () => {
-    const { playNotificationSound } = await loadUnlocked();
+    const { playNotificationSound, notificationSoundForEvent } = await loadUnlocked();
+    const settings = {
+      completionSound: "none",
+      inputSound: "avanti",
+      approvalSound: "departures",
+    } as const;
+    expect(notificationSoundForEvent(settings, "completion")).toBe("none");
+    expect(notificationSoundForEvent(settings, "input")).toBe("avanti");
+    expect(notificationSoundForEvent(settings, "approval")).toBe("departures");
+    await playNotificationSound("completion", () => true, "none");
+    expect(audio.started).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
     await playNotificationSound("completion", () => false);
 
     await playNotificationSound("completion", () => true);
 
     expect(audio.started).toBe(1);
+    await playNotificationSound("input", () => true, "avanti");
+    await playNotificationSound("input", () => true, "departures");
+    expect(audio.started).toBe(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 });
