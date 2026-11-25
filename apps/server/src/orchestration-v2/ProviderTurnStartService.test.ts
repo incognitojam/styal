@@ -186,6 +186,8 @@ function startWithMissingWorktree(
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         Layer.succeed(FileSystem.FileSystem, {
           exists: () => Effect.succeed(folderExists),
+          stat: () => Effect.succeed({ type: "File" }),
+          readFileString: () => Effect.succeed("gitdir: /synthetic-git-data\n"),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -1661,6 +1663,18 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
       const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-start-" });
       const worktreePath = path.join(workspaceRoot, "project", "worktree");
       yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+      yield* fileSystem.makeDirectory(path.join(workspaceRoot, ".git"));
+      const link = fileSystem
+        .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
+        .pipe(
+          Effect.andThen(
+            fileSystem.writeFileString(
+              path.join(worktreePath, ".git", "HEAD"),
+              "ref: refs/heads/fixture\n",
+            ),
+          ),
+        );
+      if (order === "startup-first") yield* link;
       const release = yield* Deferred.make<void>();
       const openEntered = yield* Deferred.make<void>();
       const harness = makeLocalCommandHarness({
@@ -1671,7 +1685,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         failReadsAfterRunning: true,
       });
       harness.createWorktree.mockImplementation(() =>
-        fileSystem.makeDirectory(worktreePath).pipe(Effect.as({} as never), Effect.orDie),
+        link.pipe(Effect.as({} as never), Effect.orDie),
       );
       const open = harness.open.getMockImplementation()!;
       harness.open.mockImplementation(() =>
@@ -2483,4 +2497,37 @@ effectIt.effect.each(["success", "failure", "interrupted"] as const)(
       ),
       Effect.scoped,
     ),
+);
+
+effectIt.live.each(["missing", "broken"] as const)(
+  "refuses a managed worktree with a %s Git link even with a repository inside its managed folder",
+  (damage) =>
+    Effect.gen(function* () {
+      const f = yield* cleanupFixture;
+      const marker = `${f.worktree}/.git`;
+      yield* f.command(`${f.config.worktreesDir}/fixture`, ["init"]);
+      if (damage === "missing") yield* f.fs.remove(marker);
+      else yield* f.fs.writeFileString(marker, "gitdir: missing-admin\n");
+      yield* f.write("keep.txt", "keep these files");
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreePath: f.worktree,
+        worktreesDir: `${f.base}/worktrees`,
+        fileSystem: f.fs,
+      });
+      yield* harness.start;
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.startRootRun).not.toHaveBeenCalled();
+      expect(harness.projection().turnItems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "error",
+            failure: expect.objectContaining({
+              message: expect.stringContaining(`Worktree "${f.worktree}" has lost its Git data.`),
+            }),
+          }),
+        ]),
+      );
+      expect(yield* f.fs.readFileString(`${f.worktree}/keep.txt`)).toBe("keep these files");
+    }).pipe(Effect.provide(cleanupNodeLayer)),
 );

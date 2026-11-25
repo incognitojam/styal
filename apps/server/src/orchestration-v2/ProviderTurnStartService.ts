@@ -663,7 +663,7 @@ export const layer: Layer.Layer<
         if (input.willRetry === true) return yield* recreateResult.failure;
         yield* settleStartFailure({
           signal: "worktree-recreate-failure",
-          title: "Couldn't recreate thread workspace",
+          title: "Couldn't prepare thread workspace",
           error: recreateResult.failure,
           message: recreateResult.failure.message,
         });

@@ -1,3 +1,4 @@
+import * as GitCeiling from "./workspace/gitCeiling.ts";
 import * as RegenerableFilePatterns from "./worktreeCleanup/Patterns.ts";
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
 import * as PreEventPruneSafety from "./persistence/preEventPruneSafety.ts";
@@ -995,7 +996,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
-const layerMakeServer = Layer.unwrap(
+export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     // Before anything opens the database: one server per T3 home.
@@ -1451,27 +1452,19 @@ const layerMakeServer = Layer.unwrap(
     );
     return Layer.fromBuild((memoMap, scope) =>
       Effect.gen(function* () {
-        const pruningEnabled = yield* ServerConfig.eventPruningEnabled;
-        if (!pruningEnabled) yield* PreEventPruneSafety.cleanupInterruptedCopy(config.dbPath);
-        yield* Startup.prepareBeforeRuntime(
-          pruningEnabled,
-          Effect.gen(function* () {
-            const observability = yield* Layer.buildWithMemoMap(
-              layerApplicationObservability,
-              memoMap,
-              scope,
-            );
-            yield* Layer.buildWithMemoMap(http, memoMap, scope).pipe(
-              Effect.provideContext(observability),
-            );
-          }).pipe(Effect.provide(FetchHttpClient.layer)),
-          Effect.gen(function* () {
-            const observability = yield* Layer.buildWithMemoMap(
-              layerApplicationObservability,
-              memoMap,
-              scope,
-            );
-            yield* Effect.gen(function* () {
+        const observability = yield* Layer.buildWithMemoMap(
+          layerApplicationObservability,
+          memoMap,
+          scope,
+        );
+        return yield* Effect.gen(function* () {
+          yield* Layer.buildWithMemoMap(http, memoMap, scope);
+          const pruningEnabled = yield* ServerConfig.eventPruningEnabled;
+          if (!pruningEnabled) yield* PreEventPruneSafety.cleanupInterruptedCopy(config.dbPath);
+          yield* Startup.prepareBeforeRuntime(
+            pruningEnabled,
+            Effect.void,
+            Effect.gen(function* () {
               const persistence = yield* Layer.buildWithMemoMap(
                 SqlitePersistence.layerConfig,
                 memoMap,
@@ -1483,13 +1476,19 @@ const layerMakeServer = Layer.unwrap(
                 Effect.provideService(Scope.Scope, scope),
                 Effect.provideService(ServerActivation.ServerActivation, awaitActivation),
               );
-            }).pipe(Effect.provideContext(observability));
-          }).pipe(Effect.provide(FetchHttpClient.layer)),
-        );
-        return yield* Layer.buildWithMemoMap(runtimeLayer, memoMap, scope);
-      }),
+            }),
+          );
+          const settingsContext = yield* Layer.buildWithMemoMap(
+            layerServerSettings,
+            memoMap,
+            scope,
+          );
+          yield* GitCeiling.start().pipe(Effect.provideContext(settingsContext));
+          return yield* Layer.buildWithMemoMap(runtimeLayer, memoMap, scope);
+        }).pipe(Effect.provideContext(observability));
+      }).pipe(Effect.provide(FetchHttpClient.layer)),
     ).pipe(Layer.provide(layerPlatformServices));
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 
-export const runServer = Layer.launch(layerMakeServer);
+export const runServer = Layer.launch(layer);
