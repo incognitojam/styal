@@ -894,6 +894,9 @@ const layerRuntimeDependencies = CloudCliSession.layerStartupAdoption.pipe(
   Layer.provideMerge(DeviceSharing.layer.pipe(Layer.provide(layerRuntimeCoreDependencies))),
   Layer.provideMerge(layerUsage.pipe(traceShutdown("usage"))),
   Layer.provideMerge(layerBackground.pipe(traceShutdown("background"))),
+  Layer.provideMerge(
+    VcsStatusBroadcaster.layerAutomaticFetchInterval.pipe(Layer.provide(layerServerSettings)),
+  ),
   Layer.provideMerge(layerResourceDiagnostics.pipe(traceShutdown("resource-diagnostics"))),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),

@@ -6,6 +6,8 @@ import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
+import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -15,6 +17,7 @@ import * as NetAddress from "effect/net/NetAddress";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./cloud/serviceProtocol.ts";
+import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -38,8 +41,12 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import {
+  layerAutomaticFetchInterval,
+  VcsAutomaticFetchInterval,
+} from "./vcs/VcsStatusBroadcaster.ts";
 
-it.effect("parks automatic pull until activation without delaying command readiness", () =>
+it.effect.each(["parked", "periodic"] as const)("records auto-pull outcomes: %s", (scenario) =>
   Effect.scoped(
     Effect.gen(function* () {
       const activation = yield* Deferred.make<void>();
@@ -47,6 +54,10 @@ it.effect("parks automatic pull until activation without delaying command readin
       const commitTrial = yield* Deferred.make<void>();
       const statusCalled = yield* Deferred.make<string>();
       const statusInterrupted = yield* Deferred.make<void>();
+      const finishStartupPull = yield* Deferred.make<void>();
+      const nextInterval = yield* Deferred.make<void>();
+      let intervalReads = 0;
+      let statusReads = 0;
       const cwd = "/auto-pull-project";
       const updatedAt = "2026-01-01T00:00:00.000Z";
       const snapshot = {
@@ -132,9 +143,16 @@ it.effect("parks automatic pull until activation without delaying command readin
         Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({
           publish: (event) => Effect.succeed({ ...event, sequence: 1 }),
         }),
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+          shouldRunHostWork: Effect.succeed(true),
+        }),
         Layer.mock(ServerSettings.ServerSettingsService)({
           start: Effect.void,
-          getSettings: Effect.succeed({ ...DEFAULT_SERVER_SETTINGS, defaultAutoPull: true }),
+          getSettings: Effect.succeed({
+            ...DEFAULT_SERVER_SETTINGS,
+            defaultAutoPull: true,
+            automaticGitFetchInterval: Duration.seconds(5),
+          }),
         }),
         Layer.mock(ServerEnvironment.ServerEnvironment)({
           getDescriptor: Effect.succeed({
@@ -163,9 +181,28 @@ it.effect("parks automatic pull until activation without delaying command readin
             ),
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({
+          pullCurrentBranch: () =>
+            Effect.succeed({
+              status: "pulled",
+              refName: "main",
+              upstreamRef: "origin/main",
+            }),
           statusDetails: (root) =>
             Deferred.succeed(statusCalled, root).pipe(
-              Effect.andThen(Effect.never),
+              Effect.andThen(
+                scenario === "parked" ? Effect.never : Deferred.await(finishStartupPull),
+              ),
+              Effect.map(
+                () =>
+                  ({
+                    isRepo: true,
+                    isDefaultBranch: true,
+                    hasUpstream: true,
+                    hasWorkingTreeChanges: false,
+                    aheadCount: 0,
+                    behindCount: statusReads++,
+                  }) as never,
+              ),
               Effect.onInterrupt(() => Deferred.succeed(statusInterrupted, undefined)),
             ),
         }),
@@ -195,16 +232,43 @@ it.effect("parks automatic pull until activation without delaying command readin
         yield* Deferred.await(activation);
         expect(yield* Deferred.await(statusCalled)).toBe(cwd);
         yield* startup.awaitCommandReady;
+        if (scenario === "periodic") {
+          const outcomes = yield* AutoPullStatus.AutoPullStatus;
+          yield* Deferred.succeed(finishStartupPull, undefined);
+          yield* TestClock.adjust("5 seconds");
+          yield* Deferred.await(nextInterval);
+          expect(intervalReads).toBe(2);
+          expect(statusReads).toBe(2);
+          expect((yield* outcomes.get(cwd))?.outcome).toBe("pulled");
+        }
       }).pipe(
         Effect.provide(
           ServerRuntimeStartup.layerWithOptions({
             activate: Deferred.succeed(activation, undefined).pipe(Effect.asVoid),
             awaitAuxiliaryParked: Effect.void,
-          }).pipe(Layer.provide(dependencies)),
+          }).pipe(
+            Layer.provide(
+              Layer.effect(
+                VcsAutomaticFetchInterval,
+                Effect.gen(function* () {
+                  const configured = yield* VcsAutomaticFetchInterval;
+                  return configured.pipe(
+                    Effect.tap(() => {
+                      intervalReads += 1;
+                      return intervalReads === 2
+                        ? Deferred.succeed(nextInterval, undefined)
+                        : Effect.void;
+                    }),
+                  );
+                }),
+              ).pipe(Layer.provide(layerAutomaticFetchInterval)),
+            ),
+            Layer.provideMerge(dependencies),
+          ),
         ),
         Effect.provideService(ServerActivation, Deferred.await(activation)),
       );
-      expect(yield* Deferred.isDone(statusInterrupted)).toBe(true);
+      expect(yield* Deferred.isDone(statusInterrupted)).toBe(scenario === "parked");
     }),
   ),
 );

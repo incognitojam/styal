@@ -1,4 +1,5 @@
 import * as AutoPullStatus from "./vcs/AutoPullStatus.ts";
+import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -85,6 +86,7 @@ it.effect.each(["success", "retry"] as const)(
             autoBootstrapProjectFromCwd: true,
           } as never),
           Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
+          Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
           Layer.mock(Settings.ServerSettingsService)({
             start: Effect.void,
             getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
@@ -256,6 +258,7 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
           autoBootstrapProjectFromCwd: true,
         } as never),
         Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
         Layer.mock(Settings.ServerSettingsService)({
           start: Effect.void,
           getSettings: Effect.succeed(settings),
