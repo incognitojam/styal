@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - The serving child must finish this claim write before it can exit and release ownership.
+import * as NodeFS from "node:fs";
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -19,6 +21,7 @@ import {
   decodeServiceLauncherContext,
   decodeServiceLauncherParentMessage,
   SERVICE_LAUNCHER_CONTEXT_ENV,
+  SERVICE_BACKUP_CLAIM_FILE,
   type ServiceLauncherChildMessage,
   type ServiceLauncherParentMessage,
   type SupportedLauncherProtocol,
@@ -34,6 +37,7 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
       "send",
       "disconnect",
       "timeout",
+      "backup-claim",
     ]),
     cause: Schema.optional(Schema.Defect()),
   },
@@ -50,6 +54,8 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
         return "Could not send a request to the service launcher.";
       case "disconnect":
         return "The service launcher disconnected before acknowledging the request.";
+      case "backup-claim":
+        return "Could not claim the online update backup; the launcher will back up offline.";
       case "timeout":
         return "The service launcher did not respond within 30 seconds.";
     }
@@ -113,6 +119,7 @@ export class ServiceLauncherClient extends Context.Service<
     readonly requestUpdate: (input: {
       readonly targetVersion: string;
       readonly dbPath: string;
+      readonly baseDir: string;
     }) => Effect.Effect<string, ServiceLauncherClientError | ServiceLauncherRejectedError>;
     /** Owned `styal` symlinks move to the new runtime only when this start commits the trial. */
     readonly prepareTrial: (input: {
@@ -305,14 +312,30 @@ export const make = Effect.fn("cloud.service_launcher_client.make")(function* (o
       }),
     );
 
-  const requestUpdate = (input: { readonly targetVersion: string; readonly dbPath: string }) =>
+  const requestUpdate = (input: {
+    readonly targetVersion: string;
+    readonly dbPath: string;
+    readonly baseDir: string;
+  }) =>
     exchange(
-      { type: "request-update", ...input },
+      { type: "request-update", targetVersion: input.targetVersion, dbPath: input.dbPath },
       (reply) => reply.type === "update-accepted" || reply.type === "update-rejected",
     ).pipe(
       Effect.flatMap((reply) =>
         reply.type === "update-accepted"
-          ? Effect.succeed(reply.updateId)
+          ? Effect.try({
+              try: () =>
+                NodeFS.writeFileSync(
+                  path.join(input.baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE),
+                  reply.updateId,
+                  { mode: 0o600 },
+                ),
+              catch: (cause) =>
+                new ServiceLauncherClientError({ operation: "backup-claim", cause }),
+            }).pipe(
+              Effect.catch((error) => Effect.logWarning(error.message, { cause: error.cause })),
+              Effect.as(reply.updateId),
+            )
           : reply.type === "update-rejected"
             ? Effect.fail(
                 new ServiceLauncherRejectedError({

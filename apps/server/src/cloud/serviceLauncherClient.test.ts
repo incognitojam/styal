@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber";
 
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
+  SERVICE_BACKUP_CLAIM_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
   type ServiceLauncherChildMessage,
   type ServiceLauncherParentMessage,
@@ -115,24 +116,46 @@ it.effect.each([SERVICE_LAUNCHER_PROTOCOL])(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect("returns the launcher-generated ID only after update acceptance", () =>
-  Effect.gen(function* () {
-    const host = new FakeLauncherProcess({
-      protocol: SERVICE_LAUNCHER_PROTOCOL,
-      childVersion: "1.0.0",
-    });
-    const client = yield* makeClient(host, "1.0.0");
-    const requested = yield* Effect.forkChild(
-      client.requestUpdate({ targetVersion: "1.1.0", dbPath: "/tmp/state.sqlite" }),
-      { startImmediately: true },
-    );
-    yield* Effect.yieldNow;
-    host.emit({
-      type: "update-accepted",
-      updateId: "launcher-id",
-    });
-    expect(yield* Fiber.join(requested)).toBe("launcher-id");
-  }),
+it.effect.each(["writable", "unwritable"] as const)(
+  "returns the accepted update ID with a %s backup claim",
+  (claimState) =>
+    Effect.gen(function* () {
+      const host = new FakeLauncherProcess({
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        childVersion: "1.0.0",
+      });
+      const client = yield* makeClient(host, "1.0.0");
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-accepted-claim-" });
+      yield* fs.makeDirectory(path.join(baseDir, "userdata"));
+      const claim = path.join(baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE);
+      if (claimState === "unwritable") yield* fs.makeDirectory(claim);
+      const sent = Promise.withResolvers<void>();
+      const send = host.send;
+      host.send = (message, callback) => {
+        const result = send(message, callback);
+        sent.resolve();
+        return result;
+      };
+      const requested = yield* Effect.forkChild(
+        client.requestUpdate({
+          targetVersion: "1.1.0",
+          dbPath: path.join(baseDir, "database.sqlite"),
+          baseDir,
+        }),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(() => sent.promise);
+      if (claimState === "writable") assert.isFalse(yield* fs.exists(claim));
+      host.emit({
+        type: "update-accepted",
+        updateId: "launcher-id",
+      });
+      expect(yield* Fiber.join(requested)).toBe("launcher-id");
+      if (claimState === "writable") assert.equal(yield* fs.readFileString(claim), "launcher-id");
+      else assert.isTrue((yield* fs.stat(claim)).type === "Directory");
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("preserves a launcher rejection as a distinct error", () =>
@@ -142,18 +165,35 @@ it.effect("preserves a launcher rejection as a distinct error", () =>
       childVersion: "1.0.0",
     });
     const client = yield* makeClient(host, "1.0.0");
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-accepted-claim-" });
+    yield* fs.makeDirectory(path.join(baseDir, "userdata"));
+    const claim = path.join(baseDir, "userdata", SERVICE_BACKUP_CLAIM_FILE);
+    const sent = Promise.withResolvers<void>();
+    const send = host.send;
+    host.send = (message, callback) => {
+      const result = send(message, callback);
+      sent.resolve();
+      return result;
+    };
     const requested = yield* Effect.forkChild(
-      client.requestUpdate({ targetVersion: "1.1.0", dbPath: "/tmp/state.sqlite" }),
+      client.requestUpdate({
+        targetVersion: "1.1.0",
+        dbPath: path.join(baseDir, "database.sqlite"),
+        baseDir,
+      }),
       { startImmediately: true },
     );
-    yield* Effect.yieldNow;
+    yield* Effect.promise(() => sent.promise);
     host.emit({ type: "update-rejected", reason: "requires local update" });
     expect(yield* Fiber.join(requested).pipe(Effect.flip)).toMatchObject({
       _tag: "ServiceLauncherRejectedError",
       targetVersion: "1.1.0",
       reason: "requires local update",
     });
-  }),
+    assert.isFalse(yield* fs.exists(claim));
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("stops the server when the launcher asks over IPC", () =>
@@ -209,7 +249,11 @@ it.effect("ignores launcher context inherited without an IPC channel", () =>
     );
     const client = yield* makeClient(host, "1.1.0");
     const error = yield* client
-      .requestUpdate({ targetVersion: "1.2.0", dbPath: "/tmp/state.sqlite" })
+      .requestUpdate({
+        targetVersion: "1.2.0",
+        dbPath: "/synthetic/database.sqlite",
+        baseDir: "/synthetic",
+      })
       .pipe(Effect.flip);
     expect(error).toMatchObject({ _tag: "ServiceLauncherClientError", operation: "unmanaged" });
     expect(host.sent).toEqual([]);

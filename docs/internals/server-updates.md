@@ -76,13 +76,26 @@ Client update waits must outlast the deadline, or a slow update shows as failed.
 
 Before stopping the old child, the launcher refuses an update whose snapshot will
 not fit on disk, so a full disk does not cause an outage. After the old child
-exits, the launcher snapshots SQLite's main file, WAL, and shared-memory file. This makes trial migrations reversible without down
-migrations. The snapshot is made once per update and survives launcher restarts;
+exits, the launcher snapshots SQLite's main file, WAL, and shared-memory file. On
+filesystems without cloning, WAL databases can copy the main file while the child
+serves, then copy the WAL after it stops. Only the serving child writes this
+online backup's claim, synchronously after update acceptance while it still owns
+the home; older children or a failed claim write fall back to the offline copy.
+The launcher checks ownership, including a visible pre-lock server, under the
+ownership lock before offline backup and restore. This makes trial migrations
+reversible without down migrations. The snapshot is made once per update and
+survives launcher restarts;
 replacing it during a retry could capture changes from the failed trial.
 
-Rollback stops the trial before restoring. A durable restore marker makes an
-interrupted restore finish before either version boots. Keep the snapshot until
-commit, or until both restoration and the terminal rollback state are durable.
+Rollback stops the trial before restoring. Every restore, including an interrupted
+one, requires the update's intact backup claim. If an interrupted restore has lost
+its claim, the launcher preserves the backup and pending selection, logs recovery
+guidance, and stays paused without starting either version or retrying recovery.
+Keep the snapshot until commit, or until both restoration and the terminal
+rollback state are durable.
+
+Known limits: older servers that never clear the backup claim, and writers that
+take no ownership lock, can still leave a backup looking valid after their writes.
 Attachments and other files outside SQLite are outside this rollback boundary.
 
 ## Client acknowledgement

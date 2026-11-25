@@ -1027,6 +1027,8 @@ process.exit(0);
           // The unrestored live database while the launcher waits with the pending record and backup.
           pendingWhileIdle?: string;
           status?: "failed";
+          blocked?: boolean;
+          waitBeforeTrial?: boolean;
           expected: string;
         }> = [
           {
@@ -1074,11 +1076,45 @@ process.exit(0);
               writeBackup(paths, "before update");
               NodeFS.writeFileSync(path.join(paths.backup, ".restore-pending"), "");
               NodeFS.writeFileSync(paths.database, "partly restored");
+              NodeFS.writeFileSync(paths.claim, "update-1");
               return holdOwnerLock(paths);
             },
             pendingWhileIdle: "partly restored",
             status: "failed",
             expected: "before update",
+          },
+          ...["missing", "replaced"].map((claim) => ({
+            name: `interrupted restore with ${claim} claim`,
+            prepare: (paths: Paths) => {
+              writeBackup(paths, "before update");
+              NodeFS.writeFileSync(path.join(paths.backup, ".restore-pending"), "");
+              if (claim === "replaced") NodeFS.writeFileSync(paths.claim, "another-update");
+              NodeFS.writeFileSync(paths.database, "later owner's writes");
+              return undefined;
+            },
+            pendingWhileIdle: "later owner's writes",
+            blocked: true,
+            expected: "later owner's writes",
+          })),
+          {
+            name: "pre-lock owner before backup",
+            waitBeforeTrial: true,
+            prepare: (paths) => {
+              const record = path.join(path.dirname(paths.owner), "server-runtime.json");
+              NodeFS.writeFileSync(record, JSON.stringify({ pid: process.pid, startedAt: "" }));
+              return () => NodeFS.rmSync(record);
+            },
+            expected: "before update",
+          },
+          {
+            name: "pre-lock owner before restore",
+            onTrialSpawn: (paths) => {
+              const record = path.join(path.dirname(paths.owner), "server-runtime.json");
+              NodeFS.writeFileSync(record, JSON.stringify({ pid: process.pid, startedAt: "" }));
+              NodeFS.writeFileSync(paths.database, "pre-lock owner's writes");
+              return () => NodeFS.rmSync(record);
+            },
+            expected: "pre-lock owner's writes + trial",
           },
           {
             // An earlier trial migrated the database, then the launcher restarted.
@@ -1141,7 +1177,11 @@ process.exit(0);
                 Effect.sync(() =>
                   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
                     const line = String(chunk);
-                    if (line.includes("owns this styal home") || line.includes("Could not check"))
+                    if (
+                      line.includes("owns this styal home") ||
+                      line.includes("Could not check") ||
+                      line.includes("Automatic database recovery stopped")
+                    )
                       idle.resolve();
                     return true;
                   }),
@@ -1188,6 +1228,11 @@ process.exit(0);
                   scenario.name,
                 );
               }
+              if (scenario.waitBeforeTrial) assert.strictEqual(trialSpawns, 0, scenario.name);
+              if (scenario.blocked) {
+                assert.strictEqual(trialSpawns, 0, scenario.name);
+                return;
+              }
               release?.();
               yield* Effect.promise(() => active.promise);
             }),
@@ -1195,7 +1240,12 @@ process.exit(0);
 
           const state = yield* Effect.promise(() => readServiceState(statePath));
           assert.strictEqual(state.activeVersion, "1.0.0", scenario.name);
-          assert.strictEqual(state.update?.status, scenario.status ?? "rolled-back", scenario.name);
+          assert.strictEqual(
+            state.update?.status,
+            scenario.blocked ? "pending" : (scenario.status ?? "rolled-back"),
+            scenario.name,
+          );
+          if (scenario.blocked) assert.isTrue(yield* fs.exists(paths.backup));
           assert.strictEqual(
             yield* fs.readFileString(paths.database),
             scenario.expected,
@@ -1225,6 +1275,16 @@ process.exit(0);
         assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
         owner.close();
 
+        const kill = process.kill;
+        using _probe = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+          if (pid === process.pid && signal === 0) {
+            using contender = new NodeSqlite.DatabaseSync(
+              path.join(stateDir, "server-owner.sqlite"),
+            );
+            assert.throws(() => contender.exec("BEGIN EXCLUSIVE;"), /locked/);
+          }
+          return kill(pid, signal);
+        });
         const record = { version: 1, pid: process.pid, port: 1, origin: "", startedAt: "" };
         yield* fs.writeFileString(recordPath, JSON.stringify(record));
         assert.isTrue(yield* Effect.promise(() => stateDirOwned(root)));
@@ -1582,12 +1642,14 @@ if (context.update?.status === "pending") {
       }),
   );
 
-  it.effect.each(["wal", "delete"] as const)(
-    "backs up a %s-mode database (online when WAL) and restores its final state",
-    (journalMode) =>
+  it.effect.each(["wal", "delete", "unclaimed"] as const)(
+    "backs up a %s database and restores its final state",
+    (scenario) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
+        const journalMode = scenario === "delete" ? "delete" : "wal";
+        const online = scenario === "wal";
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-online-" });
         const statePath = path.join(root, "runtime", "service-state.json");
         const databasePath = path.join(root, "userdata", "state.sqlite");
@@ -1604,7 +1666,13 @@ if (context.update?.status === "pending") {
       `);
         seed.close();
 
-        const encoded = JSON.stringify({ root, databasePath, observationsPath, journalMode });
+        const encoded = JSON.stringify({
+          root,
+          databasePath,
+          observationsPath,
+          journalMode,
+          scenario,
+        });
         const childSource = `
 import { readdirSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -1634,6 +1702,10 @@ if (context.update?.status === "pending") {
     }));
     db.close();
     process.exit(0);
+  });
+  process.on("message", (message) => {
+    if (message.type !== "update-accepted") return;
+    if (paths.scenario !== "unclaimed") writeFileSync(paths.root + "/userdata/" + ${JSON.stringify(SERVICE_BACKUP_CLAIM_FILE)}, message.updateId);
   });
   process.send({ type: "request-update", targetVersion: "1.1.0", dbPath: paths.databasePath });
 } else {
@@ -1673,12 +1745,12 @@ if (context.update?.status === "pending") {
         assert.equal(state.update?.status, "rolled-back");
         const observed = JSON.parse(yield* fs.readFileString(observationsPath));
         // A WAL database's main file is copied before the server is asked to stop; others fall back offline.
-        assert.deepEqual(observed.backupsAtStop, journalMode === "wal" ? [["database"]] : []);
+        assert.deepEqual(observed.backupsAtStop, online ? [["database"]] : []);
         assert.isAbove(observed.rows, 501);
         // Only the online copy holds no -shm: the offline fallback copies the one the server left.
         assert.deepEqual(
           JSON.parse(yield* fs.readFileString(`${observationsPath}.trial`)),
-          journalMode === "wal" ? ["database", "database-wal"] : ["database"],
+          online ? ["database", "database-wal"] : ["database"],
         );
         const restored = new NodeSqlite.DatabaseSync(databasePath);
         try {
