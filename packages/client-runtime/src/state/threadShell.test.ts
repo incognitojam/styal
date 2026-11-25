@@ -188,13 +188,7 @@ describe("v2 thread shell lists", () => {
         ?.pendingSubagentRequest,
     ).toBe("user_input");
     const parentRef = { environmentId, threadId: root.id };
-    for (const status of [
-      "completed",
-      "failed",
-      "cancelled",
-      "interrupted",
-      "rolled_back",
-    ] as const) {
+    for (const status of ["completed", "failed", "cancelled", "interrupted"] as const) {
       for (const settledOverride of [null, "settled"] as const) {
         const endedChild = { ...child, status, activityRunStatus: null, settledOverride };
         registry.set(snapshotAtom(environmentId), {

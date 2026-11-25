@@ -9261,7 +9261,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
-  it.effect("selects the latest waiting secret only from active runs", () =>
+  it.effect("selects waiting secrets from active runs and links from runs not rolled back", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const sql = yield* SqlClient.SqlClient;
@@ -9270,7 +9270,12 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       const runId = RunId.make(`run:${suffix}:rolled-back`);
       const nodeId = NodeId.make(`node:${suffix}:rolled-back`);
       const now = yield* DateTime.now;
-      const addSecret = (id: string, ordinal: number, status: "waiting" | "completed") =>
+      const addCard = (
+        id: string,
+        ordinal: number,
+        status: "waiting" | "completed",
+        type: "secret_request" | "link_request" = "secret_request",
+      ) =>
         projectionStore.apply({
           id: EventId.make(`event:${id}`),
           type: "turn-item.updated",
@@ -9294,15 +9299,19 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             startedAt: now,
             completedAt: null,
             updatedAt: DateTime.add(now, { seconds: ordinal }),
-            type: "secret_request",
-            label: "Test credential",
             reason: "Test pending input",
-            secretStatus: status === "waiting" ? "pending" : "saved",
+            ...(type === "secret_request"
+              ? {
+                  type,
+                  label: "Test credential",
+                  secretStatus: status === "waiting" ? ("pending" as const) : ("saved" as const),
+                }
+              : { type, linkStatus: "pending" as const }),
           },
         });
-      yield* addSecret("secret:a", 2, "waiting");
-      yield* addSecret("secret:b", 3, "waiting");
-      yield* addSecret("secret:c", 4, "completed");
+      yield* addCard("secret:a", 2, "waiting");
+      yield* addCard("secret:b", 3, "waiting");
+      yield* addCard("secret:c", 4, "completed");
 
       yield* sql`
         UPDATE orchestration_v2_projection_runs
@@ -9416,6 +9425,31 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           [thread?.pendingRuntimeRequest?.userOnly, memoryShell.pendingRuntimeRequest?.userOnly],
           terminal ? [undefined, undefined] : [true, true],
         );
+      }
+      yield* sql`
+        UPDATE orchestration_v2_projection_runtime_requests
+        SET status = 'resolved', payload_json = json_set(payload_json, '$.status', 'resolved')
+        WHERE runtime_request_id = ${requestId}
+      `;
+      yield* addCard("link:a", 5, "waiting", "link_request");
+      for (const status of ["completed", "failed", "cancelled", "rolled_back"] as const) {
+        yield* sql`
+          UPDATE orchestration_v2_projection_runs
+          SET status = ${status}, payload_json = json_set(payload_json, '$.status', ${status})
+          WHERE run_id = ${runId}
+        `;
+        const shell = yield* projectionStore.getThreadShell(threadId);
+        const memoryShell = ProjectionStore.threadShellFromProjection(
+          yield* projectionStore.getThreadProjection(threadId),
+        );
+        for (const candidate of [shell, memoryShell]) {
+          if (status === "rolled_back") {
+            assert.isNull(candidate?.pendingRuntimeRequest);
+          } else {
+            assert.equal(candidate?.pendingRuntimeRequest?.id, "link:a");
+            assert.isTrue(candidate?.pendingRuntimeRequest?.userOnly);
+          }
+        }
       }
     }),
   );
