@@ -42,7 +42,7 @@ const EMPTY_THREAD_REFS_BY_PROJECT: ReadonlyMap<
   ReadonlyArray<ScopedThreadRef>
 > = new Map();
 
-// An async question outlives the subagent's run, but once that run ends the
+// An ordinary async question outlives the subagent's run, but once that run ends the
 // parent is no longer waiting on the answer, so it stops counting as input.
 // The activity run stays set when a follow-up is queued behind a blocked run;
 // older servers omit it, so fall back to the latest run's status.
@@ -79,7 +79,7 @@ function subagentRequest(thread: OrchestrationV2ThreadShell): PendingSubagentReq
     kind === "auth_refresh" ||
     (thread.lineage.relationshipToParent !== "subagent" && thread.delegatedFrom === undefined) ||
     isProviderNativeSubagentThread(thread) ||
-    !isChildRunLive(thread)
+    (!isChildRunLive(thread) && thread.pendingRuntimeRequest?.userOnly !== true)
   ) {
     return null;
   }

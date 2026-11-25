@@ -160,7 +160,7 @@ describe("v2 thread shell lists", () => {
     registry.dispose();
   });
 
-  it("flags the parent while a live subagent waits on a secret card", () => {
+  it("flags the parent while a subagent has a pending user-only card", () => {
     const { registry, threads, snapshotAtom } = makeHarness();
     const root = v2ThreadShell;
     const child = {
@@ -175,7 +175,7 @@ describe("v2 thread shell lists", () => {
         relationshipToParent: "subagent" as const,
       },
       pendingRuntimeRequest: {
-        id: RuntimeRequestId.make("secret-card"),
+        id: RuntimeRequestId.make("user-only-card"),
         kind: "user_input" as const,
         createdAt: v2Now,
         blocking: true,
@@ -187,6 +187,39 @@ describe("v2 thread shell lists", () => {
       registry.get(threads.threadShellAtom({ environmentId, threadId: root.id }))
         ?.pendingSubagentRequest,
     ).toBe("user_input");
+    const parentRef = { environmentId, threadId: root.id };
+    for (const status of [
+      "completed",
+      "failed",
+      "cancelled",
+      "interrupted",
+      "rolled_back",
+    ] as const) {
+      for (const settledOverride of [null, "settled"] as const) {
+        const endedChild = { ...child, status, activityRunStatus: null, settledOverride };
+        registry.set(snapshotAtom(environmentId), {
+          ...v2ShellSnapshot,
+          threads: [root, endedChild],
+        });
+        expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
+          "user_input",
+        );
+        expect(
+          registry.get(threads.childThreadInputsAtom(parentRef)).map((thread) => thread.id),
+        ).toEqual([child.id]);
+        registry.set(snapshotAtom(environmentId), {
+          ...v2ShellSnapshot,
+          threads: [root, { ...endedChild, pendingRuntimeRequest: null }],
+        });
+        expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
+      }
+    }
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [root, child] });
+    expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
+      "user_input",
+    );
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [root] });
+    expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
     registry.dispose();
   });
 
@@ -410,13 +443,15 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
     expect(registry.get(inputs).map((thread) => thread.id)).toEqual([helper.id]);
 
-    // A secret card needs the user, so it still reaches the parent here.
+    // A pending link card still reaches the parent here after its helper finishes.
     registry.set(snapshotAtom(remoteEnvironmentId), {
       ...v2ShellSnapshot,
       threads: [
         task,
         {
           ...helper,
+          status: "completed",
+          activityRunStatus: null,
           pendingRuntimeRequest: { ...approval, kind: "user_input" as const, userOnly: true },
         },
       ],
