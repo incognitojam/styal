@@ -8,7 +8,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-/** The launcher install.sh, `t3 install`, and `t3 update` write; exec by absolute path. */
+/** The launcher install.sh, `styal install`, and `styal update` write; exec by absolute path. */
 const launcherScript = (executable: string) =>
   `#!/bin/sh\nexec '${executable.replaceAll("'", "'\\''")}' "$@"\n`;
 
@@ -26,11 +26,11 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
     const home = NodePath.join(root, homeName);
     const version = "1.2.3";
     const target = NodePath.join(home, "runtime/versions", version);
-    const launcher = NodePath.join(root, "bin/t3");
+    const launcher = NodePath.join(root, "bin/styal");
     try {
       await NodeFSP.mkdir(target, { recursive: true });
       await NodeFSP.writeFile(NodePath.join(target, ".install-complete"), `${version}\n`);
-      await NodeFSP.writeFile(NodePath.join(target, "t3"), "#!/bin/sh\necho 't3 v1.2.3'\n", {
+      await NodeFSP.writeFile(NodePath.join(target, "styal"), "#!/bin/sh\necho 'styal v1.2.3'\n", {
         mode: 0o755,
       });
       const install = () =>
@@ -51,16 +51,16 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
       expect(first.status, first.stdout + first.stderr).toBe(0);
       const { status, stdout, stderr } = install();
       expect(status, stdout + stderr).toBe(0);
-      expect(stderr).toContain(`Installed T3 Code ${version}`);
+      expect(stderr).toContain(`Installed styal ${version}`);
       expect(await NodeFSP.readFile(launcher, "utf8")).toBe(
-        launcherScript(NodePath.join(target, "t3")),
+        launcherScript(NodePath.join(target, "styal")),
       );
       expect(
         NodeChildProcess.execFileSync(launcher, ["--version"], {
           cwd: NodeOS.tmpdir(),
           encoding: "utf8",
         }).trim(),
-      ).toBe("t3 v1.2.3");
+      ).toBe("styal v1.2.3");
     } finally {
       await NodeFSP.rm(temporaryRoot, { recursive: true, force: true });
     }
@@ -80,10 +80,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       if (failures-- > 0) return response.writeHead(504).end();
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
-        url.pathname === "/pingdotgg/t3code/releases/latest" &&
+        url.pathname === "/incognitojam/styal/releases/latest" &&
         request.headers.accept === "application/json"
           ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/pingdotgg/t3code/releases"
+          : url.pathname === "/repos/incognitojam/styal/releases"
             ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
                 url.searchParams.get("page") ?? ""
               ]
@@ -128,7 +128,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
         },
       );
       expect(code, output).toBe(0);
-      expect(output).toContain(`Installed T3 Code ${version}`);
+      expect(output).toContain(`Installed styal ${version}`);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -179,7 +179,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
           },
         );
         expect(code, output).not.toBe(0);
-        expect(output).toMatch(new RegExp(`t3 install: .*${archive.replaceAll(".", "\\.")}`));
+        expect(output).toMatch(new RegExp(`styal install: .*${archive.replaceAll(".", "\\.")}`));
       } finally {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -227,7 +227,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
     try {
       const home = NodePath.join(root, "home");
       const binDir = NodePath.join(root, "bin");
-      const link = NodePath.join(binDir, "t3");
+      const link = NodePath.join(binDir, "styal");
       await NodeFSP.mkdir(binDir, { recursive: true });
 
       await NodeFSP.writeFile(link, "#!/bin/sh\necho mine\n");
@@ -299,7 +299,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
         env: { HOME: root, PATH: `${binDir}/:/usr/bin:/bin` },
       });
       expect(slashed.code, slashed.output).toBe(0);
-      expect(slashed.output).toContain("Run t3 to use T3 Code here");
+      expect(slashed.output).toContain("Run t3 to use styal here");
 
       // A relative folder is made absolute, so the PATH command never follows the working directory.
       const relative = await installOver({
@@ -320,7 +320,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       expect(await NodeFSP.readFile(link, "utf8")).toBe(edited);
 
       await NodeFSP.rm(link);
-      await NodeFSP.symlink(NodePath.join(home, "bin/t3"), link);
+      await NodeFSP.symlink(NodePath.join(home, "bin/styal"), link);
       const overDesktop = await installOver({
         script: "install.sh",
         home: `${home}//`,
@@ -341,12 +341,12 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-install-ps1-"));
     try {
       // Windows PowerShell 5.1 reads files as ANSI by default and expands wildcards in paths.
-      const home = NodePath.join(root, "José", ".t3");
+      const home = NodePath.join(root, "José", ".styal");
       const binDir = NodePath.join(root, "bin[t3]");
-      const shim = NodePath.join(binDir, "t3.cmd");
+      const shim = NodePath.join(binDir, "styal.cmd");
       await NodeFSP.mkdir(binDir, { recursive: true });
 
-      const desktopShim = '@echo off\r\n"C:\\Program Files\\T3 Code\\T3 Code.exe" "x" %*\r\n';
+      const desktopShim = '@echo off\r\n"C:\\Program Files\\styal\\styal.exe" "x" %*\r\n';
       await NodeFSP.writeFile(shim, desktopShim);
       const foreign = await installOver({ script: "install.ps1", home, binDir });
       expect(foreign.code).not.toBe(0);
@@ -354,7 +354,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(desktopShim);
 
       // A hand-edited wrapper may set its own environment; replacing it would drop that.
-      const edited = `@echo off\r\nset "T3CODE_HOME=D:\\other"\r\n"${NodePath.join(home, "runtime", "versions", "1.0.0", "t3.exe")}" %*`;
+      const edited = `@echo off\r\nset "T3CODE_HOME=D:\\other"\r\n"${NodePath.join(home, "runtime", "versions", "1.0.0", "styal.exe")}" %*`;
       await NodeFSP.writeFile(shim, edited, "utf8");
       const wrapper = await installOver({ script: "install.ps1", home, binDir });
       expect(wrapper.code).not.toBe(0);
@@ -366,12 +366,12 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       expect(outside.code).not.toBe(0);
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(climbing);
 
-      const older = NodePath.join(home, "runtime", "versions", "1.0.0", "t3.exe");
+      const older = NodePath.join(home, "runtime", "versions", "1.0.0", "styal.exe");
       await NodeFSP.writeFile(shim, `@echo off\r\n"${older}" %*`, "utf8");
       const upgrade = await installOver({ script: "install.ps1", home, binDir });
       expect(upgrade.code, upgrade.output).toBe(0);
       expect(await NodeFSP.readFile(shim, "utf8")).toContain(
-        NodePath.join(upgrade.target, "t3.exe"),
+        NodePath.join(upgrade.target, "styal.exe"),
       );
 
       const again = await installOver({ script: "install.ps1", home, binDir });
@@ -380,7 +380,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       // Another t3 first on PATH still runs, so the installer names this one in full.
       const otherBin = NodePath.join(root, "other");
       await NodeFSP.mkdir(otherBin);
-      await NodeFSP.writeFile(NodePath.join(otherBin, "t3.cmd"), "@echo off\r\n");
+      await NodeFSP.writeFile(NodePath.join(otherBin, "styal.cmd"), "@echo off\r\n");
       // Windows spells it Path; a second PATH key would be ambiguous.
       const pathKey =
         Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
@@ -392,7 +392,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       });
       expect(shadowed.code, shadowed.output).toBe(0);
       expect(shadowed.output).toContain(
-        `Another t3 at ${NodePath.join(otherBin, "t3.cmd")} runs first`,
+        `Another t3 at ${NodePath.join(otherBin, "styal.cmd")} runs first`,
       );
 
       // Its own folder on PATH with a trailing separator is already on PATH.
@@ -403,7 +403,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
         env: { [pathKey]: `${binDir}\\;${process.env[pathKey] ?? ""}` },
       });
       expect(slashed.code, slashed.output).toBe(0);
-      expect(slashed.output).toContain("to use T3 Code here");
+      expect(slashed.output).toContain("to use styal here");
       // The same when the install folder itself is given with a trailing separator.
       const bothSlashed = await installOver({
         script: "install.ps1",
@@ -412,7 +412,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
         env: { [pathKey]: `${binDir}\\;${process.env[pathKey] ?? ""}` },
       });
       expect(bothSlashed.code, bothSlashed.output).toBe(0);
-      expect(bothSlashed.output).toContain("to use T3 Code here");
+      expect(bothSlashed.output).toContain("to use styal here");
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }
@@ -468,8 +468,8 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chec
           }
           await NodeFSP.mkdir(NodePath.join(root, stem));
           await NodeFSP.writeFile(
-            NodePath.join(root, stem, "t3"),
-            "#!/bin/sh\necho 't3 v1.2.3'\n",
+            NodePath.join(root, stem, "styal"),
+            "#!/bin/sh\necho 'styal v1.2.3'\n",
             { mode: 0o755 },
           );
           const archivePath = NodePath.join(root, archiveName);
@@ -517,14 +517,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chec
               await NodeFSP.readFile(NodePath.join(versions, version, ".install-complete"), "utf8"),
             ).toBe("1.2.3\n");
             expect(
-              NodeChildProcess.execFileSync(NodePath.join(root, "bin/t3"), ["--version"], {
+              NodeChildProcess.execFileSync(NodePath.join(root, "bin/styal"), ["--version"], {
                 encoding: "utf8",
               }).trim(),
-            ).toBe("t3 v1.2.3");
+            ).toBe("styal v1.2.3");
           } else {
             expect(code).not.toBe(0);
             expect(output).toContain("checksum mismatch");
-            expect(output).not.toContain("Installed T3 Code");
+            expect(output).not.toContain("Installed styal");
             expect(await NodeFSP.readdir(versions)).toEqual([]);
           }
         } finally {
@@ -551,9 +551,13 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("concurrent ins
       const tools = NodePath.join(root, "tools");
       await NodeFSP.mkdir(tools);
       await NodeFSP.mkdir(NodePath.join(root, stem));
-      await NodeFSP.writeFile(NodePath.join(root, stem, "t3"), "#!/bin/sh\necho 't3 v1.2.3'\n", {
-        mode: 0o755,
-      });
+      await NodeFSP.writeFile(
+        NodePath.join(root, stem, "styal"),
+        "#!/bin/sh\necho 'styal v1.2.3'\n",
+        {
+          mode: 0o755,
+        },
+      );
       const archivePath = NodePath.join(root, archiveName);
       NodeChildProcess.execFileSync("tar", ["-czf", archivePath, "-C", root, stem]);
       const archive = await NodeFSP.readFile(archivePath);

@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 // Above this, one slot per tunnel is too thin to read, so the bar fills instead.
 const MAX_SEGMENTS = 10;
 
-export const T3CHAT_SUBSCRIPTION_URL = "https://t3.chat/settings/subscription";
+export const T3CHAT_SUBSCRIPTION_URL = "https://restart.styal.invalid/settings/subscription";
 
 /** Components pass `useMessages()` so the copy follows a language switch. */
 export function tunnelUpgradeCopy(

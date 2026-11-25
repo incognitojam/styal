@@ -13,8 +13,8 @@ describe("prefersHttpMcpTransport", () => {
   it("uses HTTP for the vendored Command Code launcher", () => {
     expect(
       prefersHttpMcpTransport(
-        local("C:\\Users\\me\\.t3\\bin\\cmdcode\\node.exe", [
-          "C:\\Users\\me\\.t3\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
+        local("C:\\Users\\me\\.styal\\bin\\cmdcode\\node.exe", [
+          "C:\\Users\\me\\.styal\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
           "acp",
         ]),
       ),

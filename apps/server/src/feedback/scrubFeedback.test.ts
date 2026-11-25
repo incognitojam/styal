@@ -18,7 +18,7 @@ describe("scrubFeedback", () => {
     [
       "known values only as whole words",
       "t3_feedback failed for t3 and Bob, not bobcat",
-      ["t3", "Bob", "x"],
+      ["styal", "Bob", "x"],
       "t3_feedback failed for t3 and [redacted], not bobcat",
     ],
     [
@@ -143,9 +143,9 @@ describe("scrubFeedback", () => {
     ],
     [
       "a two-letter username such as t3",
-      "t3 thread send failed for t3",
-      ["t3"],
-      "t3 thread send failed for t3",
+      "styal thread send failed for t3",
+      ["styal"],
+      "styal thread send failed for t3",
     ],
     ["a 1,200-character adversarial path", `/a/b${" x/".repeat(398)}`, [], "[redacted]"],
   ])("scrubs %s", (_, text, sensitive, expected) => {

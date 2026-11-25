@@ -29,20 +29,20 @@ export const config: VercelConfig = {
   redirects: [
     {
       source: "/app",
-      destination: "https://app.t3.codes",
+      destination: "https://app.restart.styal.invalid",
       permanent: true,
     },
     // One QR code in the desktop app serves both stores. iPadOS reports a Mac, so it gets /download.
     {
       source: "/mobile",
       has: [{ type: "header", key: "user-agent", value: ".*(iPhone|iPad|iPod).*" }],
-      destination: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
+      destination: "https://restart.styal.invalid/us/app/t3-code-remote-claude-more/id6787819824",
       permanent: false,
     },
     {
       source: "/mobile",
       has: [{ type: "header", key: "user-agent", value: ".*Android.*" }],
-      destination: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
+      destination: "https://restart.styal.invalid/store/apps/details?id=build.styal.app",
       permanent: false,
     },
     {

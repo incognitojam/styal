@@ -65,7 +65,12 @@ const make = Effect.gen(function* () {
             allowNightly: policy.allowNightly,
           }),
     ),
-    Effect.map(({ policy }) => policy),
+    Effect.map((): UpdatePolicy => ({
+      mode: "off",
+      feedUrl: undefined,
+      allowNightly: false,
+      message: "Updates are disabled in restart builds.",
+    })),
     Effect.catchTags({
       ManagedPolicyFileError: (error) =>
         logError("updates are off because the managed policy cannot be used", {
@@ -76,7 +81,7 @@ const make = Effect.gen(function* () {
             mode: "off",
             feedUrl: undefined,
             allowNightly: false,
-            message: `Updates are off because T3 Code cannot use the managed policy at ${error.path}. Contact your administrator.`,
+            message: `Updates are off because styal cannot use the managed policy at ${error.path}. Contact your administrator.`,
           }),
         ),
     }),

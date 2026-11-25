@@ -229,7 +229,7 @@ const THREAD_ENV = "thread-env";
 function setup(options: { readonly destination?: string | null } = {}) {
   mocks.settings = {};
   setDestination(options.destination ?? null);
-  if (!options.destination) localStorage.removeItem("t3code:voice-audio-grant:v1");
+  if (!options.destination) localStorage.removeItem("styal:voice-audio-grant:v1");
   chooseTranscriptCleanup(false);
   mocks.primaryEnvironmentId = "primary-env";
   mocks.connected = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
@@ -340,7 +340,7 @@ it.each([
   expect(mocks.committed).not.toHaveBeenCalled();
   expect(mocks.voice.state.phase).toBe("idle");
   expect(mocks.voice.transcriptionEnvironmentId).toBeNull();
-  expect(localStorage.getItem("t3code:voice-audio-grant:v1")).toBeNull();
+  expect(localStorage.getItem("styal:voice-audio-grant:v1")).toBeNull();
 });
 
 it.each([true, false])(
@@ -774,7 +774,7 @@ it("revokes across windows even before the storage event and survives stale pref
   document.body.append(other);
   try {
     const storage = other.contentWindow!.localStorage;
-    const key = "t3code:voice-audio-grant:v1";
+    const key = "styal:voice-audio-grant:v1";
     const grant = JSON.parse(storage.getItem(key)!) as { id: string };
     const canSend = bindAudioGrant(grant.id);
     expect(canSend()).toBe(true);
@@ -806,7 +806,7 @@ it.each(["not-json", JSON.stringify("off")])(
     setup();
     mocks.cloudVoiceCapable.add("env-b");
     mocks.modelState = "missing-model";
-    window.localStorage.setItem("t3code:voice-audio-grant:v1", previous);
+    window.localStorage.setItem("styal:voice-audio-grant:v1", previous);
     const save = pendingCloudAudioChoice({
       kind: "cloud",
       environmentId: EnvironmentId.make("env-b"),
@@ -828,7 +828,7 @@ it.each(["not-json", JSON.stringify("off")])(
 it("sends audio to OpenRouter only under a device grant naming the exact model", async () => {
   setup();
   mocks.cloudVoiceCapable.add("env-b");
-  const key = "t3code:voice-audio-grant:v1";
+  const key = "styal:voice-audio-grant:v1";
   const destination = { kind: "cloud", environmentId: "env-b", provider: "openrouter" };
   window.localStorage.setItem(key, JSON.stringify({ id: "no-model", destination }));
   {
@@ -850,7 +850,7 @@ it("sends audio to OpenRouter only under a device grant naming the exact model",
 
 it("uses neither destination when the cloud save marker cannot be read", async () => {
   setup({ destination: "env-a" });
-  const key = "t3code:voice-audio-grant:v1";
+  const key = "styal:voice-audio-grant:v1";
   const previous = JSON.parse(window.localStorage.getItem(key)!) as { id: string };
   const canSendToPrevious = bindAudioGrant(previous.id);
   const save = pendingCloudAudioChoice({

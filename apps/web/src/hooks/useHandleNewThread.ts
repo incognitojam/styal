@@ -61,7 +61,7 @@ import { readUnloadedThreadCount } from "../state/olderSettledShelf";
 import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
-export const LAST_USED_PROJECT_STORAGE_KEY = "t3code:last-used-project:v1";
+export const LAST_USED_PROJECT_STORAGE_KEY = "styal:last-used-project:v1";
 export const lastUsedProjectKeySchema = Schema.NullOr(Schema.String);
 
 export function readLastUsedProjectKey(): string | null {

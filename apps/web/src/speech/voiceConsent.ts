@@ -11,8 +11,8 @@ import {
 } from "../hooks/useLocalStorage";
 
 // Separate keys: a stale window saving ordinary preferences must not restore either grant.
-const AUDIO_KEY = "t3code:voice-audio-grant:v1";
-const CLEANUP_KEY = "t3code:voice-cleanup-grant:v1";
+const AUDIO_KEY = "styal:voice-audio-grant:v1";
+const CLEANUP_KEY = "styal:voice-cleanup-grant:v1";
 // "device" is Apple Speech in the macOS desktop app. Audio stays on this device, so it stays out of the shared contract.
 const AudioDestination = Schema.Union([
   VoiceTranscriptionDestination,

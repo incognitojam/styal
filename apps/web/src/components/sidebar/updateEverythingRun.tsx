@@ -204,7 +204,7 @@ export function postponeUpdateRestart(): void {
   decideRestart?.(false);
 }
 
-const SAVED_RESULT_KEY = "t3code:update-everything-result:v1";
+const SAVED_RESULT_KEY = "styal:update-everything-result:v1";
 const SAVED_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 // Covers a background service's 30-minute trial start, like the server update itself.
 const HANDOFF_TIMEOUT_MS = 32 * 60 * 1000;
@@ -444,7 +444,7 @@ export function startDesktopUpdateLaunchNotice(): () => void {
           type: "error",
           title: m(msg("Update did not apply")),
           description: m(
-            msg("T3 Code is still on {current}. Install {version} again from the update button.", {
+            msg("styal is still on {current}. Install {version} again from the update button.", {
               current: APP_VERSION,
               version: notAppliedVersion,
             }),

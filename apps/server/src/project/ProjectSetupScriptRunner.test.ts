@@ -31,7 +31,7 @@ const event = { threadId, terminalId, sequence: 1, createdAt: "2026-01-01T00:00:
 const openSnapshot = (history: string): TerminalSessionSnapshot => ({
   threadId,
   terminalId,
-  cwd: "/repo/.t3/worktrees/feature",
+  cwd: "/repo/.styal/worktrees/feature",
   worktreePath: null,
   status: "running",
   pid: 123,
@@ -107,7 +107,7 @@ const makeHarness = Effect.fn(function* (options: {
   );
   const start = runner.runForThread({
     threadId,
-    worktreePath: "/repo/.t3/worktrees/feature",
+    worktreePath: "/repo/.styal/worktrees/feature",
     observeCompletion: { onOutputLine: (line) => Queue.offer(outputLines, line) },
     project: {
       id: ProjectId.make("project-1"),

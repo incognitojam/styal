@@ -129,7 +129,7 @@ export function decodeThreadSurface(surface: object): ThreadSurface | null {
   return threadId === "" ? null : threadSurface(ThreadId.make(threadId));
 }
 
-const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
+const RIGHT_PANEL_STORAGE_KEY = "styal:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 16;
 
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(

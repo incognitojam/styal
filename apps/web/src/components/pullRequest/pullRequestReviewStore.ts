@@ -97,7 +97,7 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()(
         }),
     }),
     {
-      name: "t3code:pull-request-review-drafts:v1",
+      name: "styal:pull-request-review-drafts:v1",
       storage: createJSONStorage(() =>
         resolveStorage(typeof localStorage !== "undefined" ? localStorage : undefined),
       ),

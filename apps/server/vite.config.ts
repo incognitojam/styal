@@ -100,7 +100,7 @@ export default mergeConfig(
       plugins: [
         {
           // Every server module reads its version from this manifest import.
-          name: "t3code:build-version",
+          name: "styal:build-version",
           load(id) {
             if (NodePath.resolve(id) !== serverManifestPath) return;
             return {
@@ -124,7 +124,7 @@ export default mergeConfig(
       ...(packMode === "1"
         ? {
             exe: {
-              fileName: "t3",
+              fileName: "styal",
               outDir: "dist-exe",
               ...(packExecutableTargets ? { targets: packExecutableTargets } : {}),
               // Node SEA useCodeCache breaks import(), which the server needs.

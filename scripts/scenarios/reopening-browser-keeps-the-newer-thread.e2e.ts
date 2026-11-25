@@ -38,7 +38,7 @@ test(
       const setItem = Storage.prototype.setItem;
       Storage.prototype.setItem = function (key, value) {
         setItem.call(this, key, value);
-        if (key !== "t3code:closed-views:v2") return;
+        if (key !== "styal:closed-views:v2") return;
         const hasBrowser = value.includes('"kind":"browser"');
         if (hasBrowser) closed.resolve();
         else if (hasClosedBrowser) restored.resolve();

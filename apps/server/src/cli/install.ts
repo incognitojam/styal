@@ -43,7 +43,7 @@ const standaloneRuntime = Effect.gen(function* () {
   return Option.some({ executable, versionsDir, runtimeDir });
 });
 
-/** Installs this runtime as the `t3` command the way the install scripts do, replacing only our own launcher. */
+/** Installs this runtime as the `styal` command the way the install scripts do, replacing only our own launcher. */
 export const installCli = Effect.fn("cli.install.install")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -54,8 +54,8 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const windows = platform === "win32";
   if (Option.isNone(runtime)) {
     const script = windows
-      ? "irm https://t3.codes/install.ps1 | iex"
-      : "curl -fsSL https://t3.codes/install.sh | sh";
+      ? "irm https://restart.styal.invalid/install.ps1 | iex"
+      : "curl -fsSL https://restart.styal.invalid/install.sh | sh";
     return yield* new CliInstallError({
       reason: `Only the standalone t3 can install itself. Use \`${script}\`, or Settings in the desktop app.`,
     });
@@ -71,7 +71,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const binDir = path.resolve(
     environment.T3CODE_INSTALL_BIN_DIR?.trim() || path.join(home, ".local", "bin"),
   );
-  const name = windows ? "t3.cmd" : "t3";
+  const name = windows ? "styal.cmd" : "styal";
   const link = path.join(binDir, name);
   const failed = (reason: string) => (cause: unknown) => new CliInstallError({ reason, cause });
 
@@ -157,7 +157,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
       if ((windows || absolute) && same(entry)) return null;
       const dir = absolute ? entry : windows || !cwd ? undefined : path.resolve(cwd, entry);
       if (dir === undefined || detectCliRunner(`${dir}/`) !== null) continue;
-      for (const name of windows ? ["t3.cmd", "t3.exe"] : ["t3"]) {
+      for (const name of windows ? ["styal.cmd", "styal.exe"] : ["styal"]) {
         const candidate = path.join(dir, name);
         if (!(yield* resolveCommandPath(candidate, { env: environment }))) continue;
         if (windows) return candidate;
@@ -205,7 +205,7 @@ const reportInstalled = Effect.fn("cli.install.report")(function* (
       `Another t3 at ${installed.shadowedBy} runs first, so run ${installed.link} to use this one.`,
     );
   }
-  if (installed.onPath) return yield* Console.log("Run `t3` to get started.");
+  if (installed.onPath) return yield* Console.log("Run `styal` to get started.");
   if (installed.pathCommand === undefined) {
     return yield* Console.log(`Add ${installed.binDir} to your PATH, then run \`t3\`.`);
   }
@@ -214,15 +214,15 @@ const reportInstalled = Effect.fn("cli.install.report")(function* (
       `${installed.binDir} is not on your PATH yet. In this PowerShell window, run:`,
     );
     yield* Console.log(`  ${installed.pathCommand}`);
-    return yield* Console.log("Then run `t3`. For new windows, add the folder to your PATH.");
+    return yield* Console.log("Then run `styal`. For new windows, add the folder to your PATH.");
   }
   yield* Console.log(`${installed.binDir} is not on your PATH yet. Add it with:`);
   yield* Console.log(`  ${installed.pathCommand}`);
-  yield* Console.log("Then open a new terminal and run `t3`.");
+  yield* Console.log("Then open a new terminal and run `styal`.");
 });
 
 export const installCommand = Command.make("install").pipe(
-  Command.withDescription("Install this version as the `t3` command."),
+  Command.withDescription("Install this version as the `styal` command."),
   Command.withHandler(() => installCli().pipe(Effect.flatMap(reportInstalled))),
 );
 
@@ -295,7 +295,7 @@ export const inTerminalForeground = Effect.gen(function* () {
 });
 
 /**
- * Before a command run through npx, pnpm dlx, or bunx at a terminal, asks to install the `t3`
+ * Before a command run through npx, pnpm dlx, or bunx at a terminal, asks to install the `styal`
  * command. Yes is the default. No, no answer, or a failed install is saved in the T3 home until
  * the next minor release. Returns false when the user quits the prompt, so the command does not run.
  */
@@ -326,13 +326,13 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
   // Any t3 already installed means no prompt: ours (even when off PATH) or another on PATH.
   // Runners put their own cache's node_modules/.bin on PATH, so skip those.
   const windows = platform === "win32";
-  const names = windows ? ["t3.cmd", "t3.exe"] : ["t3"];
+  const names = windows ? ["styal.cmd", "styal.exe"] : ["styal"];
   const launchers = yield* fs
     .readFileString(path.join(runtimeDir, "launchers"))
     .pipe(Effect.orElseSucceed(() => ""));
   const candidates = [
     ...launchers.split(/\r?\n/).filter((launcher) => path.isAbsolute(launcher)),
-    path.join(path.dirname(runtimeDir), "bin", windows ? "t3.cmd" : "t3"),
+    path.join(path.dirname(runtimeDir), "bin", windows ? "styal.cmd" : "styal"),
     ...(environment.PATH ?? environment.Path ?? "")
       .split(windows ? ";" : ":")
       .filter(
@@ -376,7 +376,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
 
 export const confirmCliInstall = Prompt.run(
   Prompt.Confirm({
-    message: "Install the t3 command? Then you can run `t3` directly.",
+    message: "Install the t3 command? Then you can run `styal` directly.",
     initial: true,
   }),
 ).pipe(Effect.catchTags({ QuitError: () => Effect.void }));

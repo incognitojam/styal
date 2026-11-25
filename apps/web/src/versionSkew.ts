@@ -19,7 +19,7 @@ export interface VersionMismatch {
   readonly hint: string;
 }
 
-const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
+const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "styal:version-mismatch-dismissals:v1";
 
 const dismissedServerUpdateFailures = new WeakSet<ServerUpdateState>();
 
@@ -77,7 +77,7 @@ export function resolveVersionMismatch(
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
     hint: resolve(
-      msg("Version mismatch. Try syncing the client and server to the same T3 Code version."),
+      msg("Version mismatch. Try syncing the client and server to the same styal version."),
     ),
   };
 }
@@ -107,7 +107,7 @@ export function manualServerUpdateCommand(
 ): string {
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   if (installation?.kind === "npm-global") {
-    return `npm install --global --prefix ${quote(installation.prefix)} t3@${targetVersion}`;
+    return `npm install --global --prefix ${quote(installation.prefix)} styal@${targetVersion}`;
   }
   if (installation?.kind === "t3-launcher") {
     // An inherited T3CODE_HOME would otherwise send the update to a home the launcher is not in.
@@ -115,7 +115,7 @@ export function manualServerUpdateCommand(
   }
   const runner =
     installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
-  return `${runner} t3@${targetVersion}`;
+  return `${runner} styal@${targetVersion}`;
 }
 
 export function buildVersionMismatchDismissalKey(

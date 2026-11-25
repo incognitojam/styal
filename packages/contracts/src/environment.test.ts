@@ -19,7 +19,7 @@ describe("ExecutionEnvironmentDescriptor", () => {
     for (const installation of [
       { kind: "npx" },
       { kind: "npm-global", prefix: "/opt/node" },
-      { kind: "t3-launcher", launcher: "/opt/bin/t3", baseDir: "/data/t3" },
+      { kind: "t3-launcher", launcher: "/opt/bin/styal", baseDir: "/data/t3" },
     ]) {
       expect(
         decodeDescriptor({
@@ -28,7 +28,7 @@ describe("ExecutionEnvironmentDescriptor", () => {
         }).capabilities.serverInstallation,
       ).toEqual(installation);
     }
-    const spaced = { kind: "t3-launcher", launcher: "/opt/bin/t3 ", baseDir: " /data/t3 " };
+    const spaced = { kind: "t3-launcher", launcher: "/opt/bin/styal ", baseDir: " /data/t3 " };
     expect(
       decodeDescriptor({
         ...descriptor,
@@ -38,7 +38,7 @@ describe("ExecutionEnvironmentDescriptor", () => {
     for (const installation of [
       { kind: "future-manager" },
       { kind: "npm-global" },
-      { kind: "t3-launcher", launcher: "t3" },
+      { kind: "t3-launcher", launcher: "styal" },
     ]) {
       expect(
         decodeDescriptor({

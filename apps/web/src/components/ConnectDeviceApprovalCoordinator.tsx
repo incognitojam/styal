@@ -59,7 +59,7 @@ function EnvironmentConnectDevices({
   );
 }
 
-const CONNECT_DEVICES_SEEN_KEY = "t3code:connect-devices-seen-through";
+const CONNECT_DEVICES_SEEN_KEY = "styal:connect-devices-seen-through";
 const ConnectDevicesSeenThrough = Schema.Record(Schema.String, Schema.Number);
 
 /** Devices approved by hand are already known, so only `announce` hosts that skip approval. */

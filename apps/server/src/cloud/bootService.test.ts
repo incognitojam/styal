@@ -66,12 +66,12 @@ it("reads the served T3 home and log back out of a rendered unit, plist, or task
     program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
     baseDir,
     logPath: `${baseDir}/userdata/logs/boot-service.log`,
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    unitPath: "/home/theo/.config/systemd/user/styal.service",
   });
 
   expect(
-    BootService.bootServiceBaseDirOf(BootService.renderBootServiceUnit(plan("/home/theo/.t3"))),
-  ).toBe("/home/theo/.t3");
+    BootService.bootServiceBaseDirOf(BootService.renderBootServiceUnit(plan("/home/theo/.styal"))),
+  ).toBe("/home/theo/.styal");
   expect(
     BootService.bootServiceBaseDirOf(
       BootService.renderBootServiceUnit(plan("/home/theo/T3 Data/100%")),
@@ -106,10 +106,10 @@ it("reads the served T3 home and log back out of a rendered unit, plist, or task
 
 it("protects the server unit from agents under CPU and memory pressure", () => {
   const unit = BootService.renderBootServiceUnit({
-    program: ["/home/theo/.t3/runtime/versions/1.2.3/t3", "__service-launcher"],
-    baseDir: "/home/theo/.t3",
-    logPath: "/home/theo/.t3/userdata/logs/boot-service.log",
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    program: ["/home/theo/.styal/runtime/versions/1.2.3/t3", "__service-launcher"],
+    baseDir: "/home/theo/.styal",
+    logPath: "/home/theo/.styal/userdata/logs/boot-service.log",
+    unitPath: "/home/theo/.config/systemd/user/styal.service",
   });
   const service = unit.slice(unit.indexOf("[Service]"), unit.indexOf("[Install]"));
   for (const line of [
@@ -159,7 +159,7 @@ it.each([
       program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
       baseDir,
       logPath: `${baseDir}/userdata/logs/boot-service.log`,
-      unitPath: "/home/theo/.config/systemd/user/t3code.service",
+      unitPath: "/home/theo/.config/systemd/user/styal.service",
     });
   } catch {
     return;
@@ -201,7 +201,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     "systemd",
     "user",
   );
-  const baseDir = path.join(home, ".t3");
+  const baseDir = path.join(home, ".styal");
   const statePath = path.join(baseDir, "runtime", "service-state.json");
   const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3", platform);
   yield* fs.makeDirectory(path.dirname(runtime.entryPath), { recursive: true });
@@ -249,9 +249,9 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       commands.push(command);
       const marker = path.join(baseDir, "runtime", DESKTOP_UPDATE_RESTART_MARKER_FILE);
       if (
-        command === "systemctl --user stop t3code.service" ||
-        command === "systemctl --user disable --now t3code.service" ||
-        command === "systemctl --user restart --no-block t3code.service" ||
+        command === "systemctl --user stop styal.service" ||
+        command === "systemctl --user disable --now styal.service" ||
+        command === "systemctl --user restart --no-block styal.service" ||
         command.startsWith("launchctl bootout --wait ") ||
         (input.command === SCHTASKS && input.args[0] === "/End")
       ) {
@@ -266,17 +266,17 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       if (command === control.interruptCommand) return yield* Effect.interrupt;
       invocations.push(input);
       timeouts.set(command, input.timeout);
-      if (command === "systemctl --user reset-failed t3code.service") control.startLimitHit = false;
+      if (command === "systemctl --user reset-failed styal.service") control.startLimitHit = false;
       const refusedStart = control.startLimitHit && command.startsWith("systemctl --user restart ");
       // `--no-block` only queues the job, so systemd reports success even when it refuses it.
       const failed =
         command === control.failCommand ||
-        (refusedStart && command === "systemctl --user restart t3code.service");
+        (refusedStart && command === "systemctl --user restart styal.service");
       if (!failed && command.startsWith("loginctl enable-linger --no-ask-password ")) {
         control.linger = "yes";
         control.managerReachable ||= control.lingerStartsManager;
       }
-      if (!failed && command === "systemctl --user enable t3code.service") control.enabled = true;
+      if (!failed && command === "systemctl --user enable styal.service") control.enabled = true;
       const taskMissing =
         input.command === SCHTASKS && input.args[0] !== "/Create" && control.task === undefined;
       if (input.command === SCHTASKS && !failed) {
@@ -294,13 +294,13 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         control.active = true;
       // The manager loads units only from its own unit directory.
       const unitOutsideManager =
-        command === "systemctl --user enable t3code.service" &&
-        !(yield* fs.exists(path.join(managerUnitDir, "t3code.service")));
+        command === "systemctl --user enable styal.service" &&
+        !(yield* fs.exists(path.join(managerUnitDir, "styal.service")));
       // A timed-out stop may still stop the service.
-      if (command === "systemctl --user stop t3code.service") control.active = false;
+      if (command === "systemctl --user stop styal.service") control.active = false;
       if (
         control.stateAfterStop !== undefined &&
-        (command === "systemctl --user stop t3code.service" ||
+        (command === "systemctl --user stop styal.service" ||
           command.startsWith("launchctl bootout --wait "))
       ) {
         yield* fs.writeFileString(statePath, control.stateAfterStop);
@@ -319,7 +319,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 ],
               })
             : input.args[0] === "--version"
-              ? `t3 v${/versions[\\/]([^\\/]+)[\\/]/.exec(input.command)?.[1] ?? "1.2.3"}\n`
+              ? `styal v${/versions[\\/]([^\\/]+)[\\/]/.exec(input.command)?.[1] ?? "1.2.3"}\n`
               : input.command === SCHTASKS && input.args.includes("/XML")
                 ? control.task?.enabled === false
                   ? disabledServiceTask(control.task.xml)
@@ -362,7 +362,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     cliVersion = "1.2.3",
     serviceBaseDir = baseDir,
     insideService = false,
-    hostExecPath = "/usr/bin/t3",
+    hostExecPath = "/usr/bin/styal",
     underSudo = false,
     serviceInstallBinDir: string | null | undefined = installBinDir,
   ) =>
@@ -407,7 +407,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 ...(insideService
                   ? {
                       T3_BOOT_SERVICE_UNIT:
-                        platform === "win32" ? "t3code-task.xml" : "t3code.service",
+                        platform === "win32" ? "t3code-task.xml" : "styal.service",
                     }
                   : {}),
                 ...(underSudo ? { SUDO_USER: "julius" } : {}),
@@ -460,7 +460,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         expect(markersAtStop).toEqual([true, true]);
         expect(yield* fs.exists(marker)).toBe(false);
 
-        control.failCommand = "systemctl --user stop t3code.service";
+        control.failCommand = "systemctl --user stop styal.service";
         const error = yield* next.restart.pipe(Effect.flip);
         expect(error._tag).toBe("BootServiceCommandError");
         expect(markersAtStop).toEqual([true, true, true]);
@@ -524,7 +524,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         );
         expect(yield* fs.readFileString(statePath)).toBe(before);
         expect(yield* fs.readFileString(plan.unitPath)).toBe(unit);
-        expect(commands).not.toContain("systemctl --user stop t3code.service");
+        expect(commands).not.toContain("systemctl --user stop styal.service");
       }),
   );
 
@@ -578,7 +578,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         _tag: "BootServicePrerequisiteError",
         problem: "user-manager-unavailable",
       });
-      expect(commands).not.toContain("systemctl --user enable t3code.service");
+      expect(commands).not.toContain("systemctl --user enable styal.service");
     }),
   );
 
@@ -615,7 +615,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
 
       const plan = yield* service.install();
 
-      const unitPath = path.join(home, ".config", "systemd", "user", "t3code.service");
+      const unitPath = path.join(home, ".config", "systemd", "user", "styal.service");
       expect(plan.unitPath).toBe(unitPath);
       expect(yield* service.status).toMatchObject({ current: true, unitPath });
     }),
@@ -797,7 +797,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           : path.join(home, ".config"),
         "systemd",
         "user",
-        "t3code.service",
+        "styal.service",
       );
       expect(yield* service.status).toMatchObject({ installed: false, unitPath });
       const plan = yield* service.install();
@@ -844,7 +844,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(yield* fs.exists(unitPath)).toBe(false);
       expect((yield* discoveredService.status).installed).toBe(false);
       // systemd can take 90s to stop, exceeding the runner's 60s default.
-      expect(timeouts.get("systemctl --user disable --now t3code.service")).toEqual(
+      expect(timeouts.get("systemctl --user disable --now styal.service")).toEqual(
         Duration.seconds(120),
       );
     }),
@@ -923,12 +923,12 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         ).toEqual(
           platform === "linux"
             ? [
-                "systemctl --user stop t3code.service",
-                "systemctl --user reset-failed t3code.service",
-                "systemctl --user restart t3code.service",
+                "systemctl --user stop styal.service",
+                "systemctl --user reset-failed styal.service",
+                "systemctl --user restart styal.service",
               ]
             : [
-                "launchctl bootout --wait gui/501/com.t3tools.t3code.service",
+                "launchctl bootout --wait gui/501/build.styal.app.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
               ],
         );
@@ -1231,7 +1231,7 @@ process.disconnect();
       expect(markersAtStop).toEqual([false]);
       expect(control.active).toBe(true);
 
-      control.failCommand = "systemctl --user stop t3code.service";
+      control.failCommand = "systemctl --user stop styal.service";
       let ran = false;
       const stopFailure = yield* service
         .withStopped(
@@ -1252,12 +1252,12 @@ process.disconnect();
       commands.length = 0;
       yield* service.withStopped(Effect.sync(() => commands.push("repair")));
       expect(commands).toEqual([
-        "systemctl --user is-enabled t3code.service",
-        "systemctl --user is-active t3code.service",
-        "systemctl --user stop t3code.service",
+        "systemctl --user is-enabled styal.service",
+        "systemctl --user is-active styal.service",
+        "systemctl --user stop styal.service",
         "repair",
-        "systemctl --user reset-failed t3code.service",
-        "systemctl --user restart t3code.service",
+        "systemctl --user reset-failed styal.service",
+        "systemctl --user restart styal.service",
       ]);
       expect(control.active).toBe(true);
       control.enabled = false;
@@ -1267,8 +1267,8 @@ process.disconnect();
       control.enabled = false;
       commands.length = 0;
       yield* service.withStopped(Effect.sync(() => commands.push("repair")));
-      expect(commands).toContain("systemctl --user stop t3code.service");
-      expect(commands).not.toContain("systemctl --user restart t3code.service");
+      expect(commands).toContain("systemctl --user stop styal.service");
+      expect(commands).not.toContain("systemctl --user restart styal.service");
       expect(control.active).toBe(false);
       control.enabled = true;
       control.active = true;
@@ -1290,7 +1290,7 @@ process.disconnect();
       const path = yield* Path.Path;
       const otherHome = yield* fs.makeTempDirectoryScoped({ prefix: "t3-other-home-" });
 
-      const other = yield* makeService(undefined, "1.2.3", path.join(otherHome, ".t3"));
+      const other = yield* makeService(undefined, "1.2.3", path.join(otherHome, ".styal"));
       commands.length = 0;
       expect(yield* other.restart).toBe("skipped");
       const refused = yield* other.install().pipe(Effect.flip);
@@ -1326,7 +1326,7 @@ process.disconnect();
       expect(yield* alias.restart).toBe("restarted");
       commands.length = 0;
       yield* alias.withStopped(Effect.void);
-      expect(commands).toContain("systemctl --user stop t3code.service");
+      expect(commands).toContain("systemctl --user stop styal.service");
       expect((yield* alias.install()).baseDir).toBe(aliasDir);
       expect(yield* service.status).toMatchObject({ current: true });
       expect((yield* service.status).otherBaseDir).toBeUndefined();
@@ -1352,7 +1352,7 @@ process.disconnect();
 
       expect(yield* fs.readFileString(statePath)).toBe(state);
       expect(yield* fs.readFileString(plan.unitPath)).toBe(unit);
-      expect(commands).not.toContain("systemctl --user stop t3code.service");
+      expect(commands).not.toContain("systemctl --user stop styal.service");
       expect(result).toMatchObject({ handedOff: true, logPath: plan.logPath });
       const handoffs = invocations.filter(({ command }) => command === "systemd-run");
       expect(handoffs).toHaveLength(1);
@@ -1378,7 +1378,7 @@ process.disconnect();
       expect(yield* fs.readFileString(statePath)).toBe(state);
       expect(yield* fs.readFileString(plan.unitPath)).toBe(unit);
       expect(control.active).toBe(true);
-      expect(commands).not.toContain("systemctl --user stop t3code.service");
+      expect(commands).not.toContain("systemctl --user stop styal.service");
     }),
   );
 
@@ -1413,7 +1413,7 @@ process.disconnect();
         expect(markersAtPreparation.at(-1)).toBe(false);
         expect(markersAtStop).toEqual([]);
 
-        const queueCommand = "systemctl --user restart --no-block t3code.service";
+        const queueCommand = "systemctl --user restart --no-block styal.service";
         control.failCommand = queueCommand;
         expect((yield* inside.restart.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
         expect(markersAtStop).toEqual([true]);
@@ -1433,9 +1433,9 @@ process.disconnect();
         expect(commands).toEqual([
           "systemctl --user daemon-reload",
           `/bin/sh -c ${RESTORE_OOMD_WATCH_SCRIPT}`,
-          "systemctl --user enable t3code.service",
-          "systemctl --user reset-failed t3code.service",
-          "systemctl --user restart --no-block t3code.service",
+          "systemctl --user enable styal.service",
+          "systemctl --user reset-failed styal.service",
+          "systemctl --user restart --no-block styal.service",
         ]);
         expect(outcome).toBe("queued");
         expect(markersAtStop).toEqual([true, true, true]);
@@ -1479,10 +1479,10 @@ process.disconnect();
           (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),
         ),
       ).toEqual([
-        "systemctl --user stop t3code.service",
+        "systemctl --user stop styal.service",
         "systemctl --user daemon-reload",
-        "systemctl --user reset-failed t3code.service",
-        "systemctl --user restart t3code.service",
+        "systemctl --user reset-failed styal.service",
+        "systemctl --user restart styal.service",
       ]);
     }),
   );
@@ -1514,9 +1514,9 @@ process.disconnect();
             (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),
           ),
         ).toEqual([
-          "systemctl --user stop t3code.service",
-          "systemctl --user reset-failed t3code.service",
-          "systemctl --user restart t3code.service",
+          "systemctl --user stop styal.service",
+          "systemctl --user reset-failed styal.service",
+          "systemctl --user restart styal.service",
         ]);
       }
     }),
@@ -1531,7 +1531,7 @@ process.disconnect();
 
       expect(
         plan.unitPath.endsWith(
-          path.join("Library", "LaunchAgents", "com.t3tools.t3code.service.plist"),
+          path.join("Library", "LaunchAgents", "build.styal.app.service.plist"),
         ),
       ).toBe(true);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
@@ -1558,7 +1558,7 @@ process.disconnect();
       expect((yield* service.status).installed).toBe(false);
       expect(commands.some((command) => command.startsWith("systemctl "))).toBe(false);
       // launchd can take 90s to bootout; the runner's 60s default could let bootstrap race it.
-      expect(timeouts.get("launchctl bootout --wait gui/501/com.t3tools.t3code.service")).toEqual(
+      expect(timeouts.get("launchctl bootout --wait gui/501/build.styal.app.service")).toEqual(
         Duration.seconds(120),
       );
     }),
@@ -1572,7 +1572,7 @@ process.disconnect();
       const task = decodeServiceUnit(yield* fs.readFile(plan.unitPath));
 
       expect(plan.unitPath).toBe(
-        path.join(path.dirname(plan.baseDir), "AppData", "Local", "t3code", "t3code-task.xml"),
+        path.join(path.dirname(plan.baseDir), "AppData", "Local", "styal", "t3code-task.xml"),
       );
       expect(BootService.bootServiceProgramOf(task)).toBe(runtime.entryPath);
       expect(BootService.bootServiceBaseDirOf(task)).toBe(plan.baseDir);
@@ -1783,7 +1783,7 @@ process.disconnect();
     Effect.gen(function* () {
       const { service, control } = yield* makeHarness("darwin");
       yield* service.install();
-      control.failCommand = "launchctl bootout --wait gui/501/com.t3tools.t3code.service";
+      control.failCommand = "launchctl bootout --wait gui/501/build.styal.app.service";
 
       yield* service.install();
       expect((yield* service.status).current).toBe(true);

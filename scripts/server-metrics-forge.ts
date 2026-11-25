@@ -433,7 +433,7 @@ export const serveFakeGitHub = Effect.fn("serverMetrics.serveFakeGitHub")(functi
     yield* git(["add", "."]);
     yield* git([
       "-c",
-      "user.email=bench@t3.codes",
+      "user.email=bench@restart.styal.invalid",
       "-c",
       "user.name=bench",
       "commit",
@@ -473,7 +473,7 @@ export const serveFakeGitHub = Effect.fn("serverMetrics.serveFakeGitHub")(functi
     const git = (args: ReadonlyArray<string>) => run("git", ["--git-dir", bare, ...args]);
     const commit = (yield* git([
       "-c",
-      "user.email=bench@t3.codes",
+      "user.email=bench@restart.styal.invalid",
       "-c",
       "user.name=bench",
       "commit-tree",

@@ -12,7 +12,7 @@ export const FEEDBACK_TRACE_TURNS = 5;
 
 const reportFields = {
   kind: AgentFeedbackKind,
-  subject: Schema.String.annotate({ description: "T3 tool name, `t3` command, or `general`." }),
+  subject: Schema.String.annotate({ description: "T3 tool name, `styal` command, or `general`." }),
   expected: FeedbackText,
   actual: FeedbackText,
   workaround: FeedbackText.annotate({ description: "What you did instead, or empty." }),
@@ -66,7 +66,7 @@ export const FeedbackAwaitingApproval = Schema.Struct({
 export type FeedbackAwaitingApproval = typeof FeedbackAwaitingApproval.Type;
 
 export const FEEDBACK_OFF_MESSAGE =
-  "Agent feedback is off. Turn it on in T3 Code under Settings > Labs, then try again.";
+  "Agent feedback is off. Turn it on in styal under Settings > Labs, then try again.";
 
 export class FeedbackOffError extends Schema.TaggedError<FeedbackOffError>()(
   "FeedbackOffError",
@@ -81,7 +81,7 @@ export type FeedbackSource = "mcp" | "cli";
 
 // Requested reports count when their card is shown, unprompted ones when stored.
 export const MAX_REPORTS_PER_TURN = 3;
-// Reports from no turn, such as `t3 feedback`, have no turn to count in.
+// Reports from no turn, such as `styal feedback`, have no turn to count in.
 export const MAX_REPORTS_OUTSIDE_TURNS_PER_HOUR = 10;
 
 export class FeedbackLimitError extends Schema.TaggedError<FeedbackLimitError>()(
@@ -120,91 +120,91 @@ export class FeedbackStorageError extends Schema.TaggedError<FeedbackStorageErro
   }
 }
 
-/** The MCP client label `t3 feedback` signs in with, so its reports count as `cli`. */
-export const FEEDBACK_CLI_CLIENT_LABEL = "t3 feedback cli";
+/** The MCP client label `styal feedback` signs in with, so its reports count as `cli`. */
+export const FEEDBACK_CLI_CLIENT_LABEL = "styal feedback cli";
 
-/** Listed `t3` command paths a report may name. A CLI test keeps this in step with binCli. */
+/** Listed `styal` command paths a report may name. A CLI test keeps this in step with binCli. */
 export const T3_CLI_COMMANDS: ReadonlyArray<string> = [
-  "t3",
-  "t3 help",
-  "t3 serve",
-  "t3 app",
-  "t3 pair",
-  "t3 auth",
-  "t3 auth connect-device",
-  "t3 auth connect-device approve",
-  "t3 auth connect-device list",
-  "t3 auth connect-device revoke",
-  "t3 auth pairing",
-  "t3 auth pairing create",
-  "t3 auth pairing list",
-  "t3 auth pairing revoke",
-  "t3 auth session",
-  "t3 auth session issue",
-  "t3 auth session list",
-  "t3 auth session revoke",
-  "t3 environment",
-  "t3 environment link",
-  "t3 environment list",
-  "t3 environment unlink",
-  "t3 browser",
-  "t3 browser setup",
-  "t3 project",
-  "t3 project add",
-  "t3 project remove",
-  "t3 project rename",
-  "t3 thread",
-  "t3 thread list",
-  "t3 thread start",
-  "t3 thread send",
-  "t3 thread show",
-  "t3 feedback",
-  "t3 feedback list",
-  "t3 workflow",
-  "t3 workflow start",
-  "t3 workflow list",
-  "t3 workflow show",
-  "t3 workflow resume",
-  "t3 workflow cancel",
-  "t3 workflow signal",
-  "t3 workflow withdraw",
-  "t3 workflow questions",
-  "t3 workflow hooks",
-  "t3 workflow store",
-  "t3 workflow store list",
-  "t3 workflow store set",
-  "t3 workflow store delete",
-  "t3 up",
-  "t3 status",
-  "t3 service",
-  "t3 service install",
-  "t3 service restart",
-  "t3 service uninstall",
-  "t3 service status",
-  "t3 service protect",
-  "t3 update",
-  "t3 install",
-  "t3 uninstall",
-  "t3 theme",
-  "t3 theme set",
-  "t3 theme clear",
-  "t3 theme show",
-  "t3 trace",
-  "t3 trace summary",
-  "t3 doctor",
-  "t3 policy",
-  "t3 policy show",
-  "t3 policy check",
-  "t3 policy templates",
-  "t3 policy settings",
-  "t3 triage",
-  "t3 connect",
-  "t3 connect link",
-  "t3 connect login",
-  "t3 connect logout",
-  "t3 connect publish",
-  "t3 connect status",
-  "t3 connect unlink",
+  "styal",
+  "styal help",
+  "styal serve",
+  "styal app",
+  "styal pair",
+  "styal auth",
+  "styal auth connect-device",
+  "styal auth connect-device approve",
+  "styal auth connect-device list",
+  "styal auth connect-device revoke",
+  "styal auth pairing",
+  "styal auth pairing create",
+  "styal auth pairing list",
+  "styal auth pairing revoke",
+  "styal auth session",
+  "styal auth session issue",
+  "styal auth session list",
+  "styal auth session revoke",
+  "styal environment",
+  "styal environment link",
+  "styal environment list",
+  "styal environment unlink",
+  "styal browser",
+  "styal browser setup",
+  "styal project",
+  "styal project add",
+  "styal project remove",
+  "styal project rename",
+  "styal thread",
+  "styal thread list",
+  "styal thread start",
+  "styal thread send",
+  "styal thread show",
+  "styal feedback",
+  "styal feedback list",
+  "styal workflow",
+  "styal workflow start",
+  "styal workflow list",
+  "styal workflow show",
+  "styal workflow resume",
+  "styal workflow cancel",
+  "styal workflow signal",
+  "styal workflow withdraw",
+  "styal workflow questions",
+  "styal workflow hooks",
+  "styal workflow store",
+  "styal workflow store list",
+  "styal workflow store set",
+  "styal workflow store delete",
+  "styal up",
+  "styal status",
+  "styal service",
+  "styal service install",
+  "styal service restart",
+  "styal service uninstall",
+  "styal service status",
+  "styal service protect",
+  "styal update",
+  "styal install",
+  "styal uninstall",
+  "styal theme",
+  "styal theme set",
+  "styal theme clear",
+  "styal theme show",
+  "styal trace",
+  "styal trace summary",
+  "styal doctor",
+  "styal policy",
+  "styal policy show",
+  "styal policy check",
+  "styal policy templates",
+  "styal policy settings",
+  "styal triage",
+  "styal connect",
+  "styal connect link",
+  "styal connect login",
+  "styal connect logout",
+  "styal connect publish",
+  "styal connect status",
+  "styal connect unlink",
 ];
 
 export type FeedbackInput = typeof FeedbackInput.Type;
@@ -228,7 +228,7 @@ export const resolveT3ToolName = (name: string, toolNames: ReadonlyArray<string>
     .toSorted((a, b) => b.length - a.length)[0];
 };
 
-/** The stored subject, or undefined when the value names no T3 tool, `t3` command, or `general`. */
+/** The stored subject, or undefined when the value names no T3 tool, `styal` command, or `general`. */
 export const resolveFeedbackSubject = (value: string, toolNames: ReadonlyArray<string>) => {
   const subject = value.trim();
   if (subject === "general" || T3_CLI_COMMANDS.includes(subject)) return subject;

@@ -176,7 +176,7 @@ export function migratePersistedBrowserHistoryState(persistedState: unknown): {
   return { byProjectKey: evictExcessProjects(byProjectKey) };
 }
 
-const BROWSER_HISTORY_STORAGE_KEY = "t3code:browser-history:v1";
+const BROWSER_HISTORY_STORAGE_KEY = "styal:browser-history:v1";
 
 const MAX_PERSISTED_THREAD_MAPPINGS = 100;
 const PENDING_MAX_PER_THREAD = 10;

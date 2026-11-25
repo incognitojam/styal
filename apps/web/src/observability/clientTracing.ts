@@ -51,7 +51,7 @@ const RELEASE_CHANNEL =
 const CLIENT_TRACING_RESOURCE = {
   serviceName: "t3code-web",
   attributes: {
-    "service.namespace": "t3code",
+    "service.namespace": "styal",
     "service.instance.id": ClientTracer.serviceInstanceId,
     ...releaseResourceAttributes(RELEASE_CHANNEL),
     "service.runtime": "t3-web",

@@ -4,7 +4,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { resetBrowserHistoryForTests, useBrowserHistoryStore } from "./browserHistoryStore";
 import { randomUUID } from "./lib/utils";
 
-const storageKey = "t3code:browser-history:v1";
+const storageKey = "styal:browser-history:v1";
 const oldEntry = { url: "http://example.test/removed", lastVisitedAt: 1 };
 const otherEntry = { url: "http://example.test/other", lastVisitedAt: 2 };
 const page = { url: "http://localhost:3000/page", lastVisitedAt: 3, title: "Page" };

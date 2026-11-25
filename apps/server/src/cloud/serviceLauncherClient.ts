@@ -118,7 +118,7 @@ export class ServiceLauncherClient extends Context.Service<
       readonly targetVersion: string;
       readonly dbPath: string;
     }) => Effect.Effect<string, ServiceLauncherClientError | ServiceLauncherRejectedError>;
-    /** Owned `t3` launchers move to the new runtime only when this start commits the trial. */
+    /** Owned `styal` launchers move to the new runtime only when this start commits the trial. */
     readonly prepareTrial: (input: {
       readonly baseDir: string;
     }) => Effect.Effect<ServerSelfUpdateOutcome | undefined, ServiceLauncherClientError>;
@@ -165,13 +165,13 @@ export const repointLaunchers = Effect.fn("cloud.service_launcher_client.repoint
       environment["T3CODE_INSTALL_BIN_DIR"] ||
       (environment["HOME"] ? path.join(environment["HOME"], ".local", "bin") : undefined);
     const candidates = new Set<string>();
-    if (installBinDir !== undefined) candidates.add(path.join(installBinDir, "t3"));
+    if (installBinDir !== undefined) candidates.add(path.join(installBinDir, "styal"));
     const searchPath = environment["PATH"] ?? "";
     const cwd = yield* HostProcess.WorkingDirectory;
     for (const directory of searchPath.split(":")) {
       // Like the shell, an empty entry of a nonempty PATH is the working directory.
       if (directory.length === 0 && searchPath.length === 0) continue;
-      const candidate = path.join(directory || cwd, "t3");
+      const candidate = path.join(directory || cwd, "styal");
       if (directory.length === 0) {
         // The shell passes over a working-directory entry it cannot run and keeps searching.
         const info = yield* fs.stat(candidate).pipe(Effect.option);
@@ -209,7 +209,7 @@ export const repointLaunchers = Effect.fn("cloud.service_launcher_client.repoint
               () => Effect.succeedNone,
             ),
           );
-          // A legacy symlink, or the script install.sh and `t3 update` write.
+          // A legacy symlink, or the script install.sh and `styal update` write.
           const current = Option.isSome(linkTarget)
             ? path.resolve(path.dirname(launchedAs), linkTarget.value)
             : yield* readPosixLauncherTarget(launchedAs);

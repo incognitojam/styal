@@ -19,15 +19,15 @@ const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-install-" });
-  const runtimeDir = path.join(root, ".t3/runtime");
-  const executable = path.join(runtimeDir, "versions", VERSION, "t3");
+  const runtimeDir = path.join(root, ".styal/runtime");
+  const executable = path.join(runtimeDir, "versions", VERSION, "styal");
   yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
   yield* fs.writeFileString(executable, "");
   const npmPackage = path.join(root, ".npm/_npx/abc/node_modules/t3");
   yield* fs.makeDirectory(path.join(npmPackage, "bin"), { recursive: true });
   yield* fs.writeFileString(
     path.join(npmPackage, "package.json"),
-    JSON.stringify({ name: "t3", version: VERSION }),
+    JSON.stringify({ name: "styal", version: VERSION }),
   );
   const binDir = path.join(root, "bin");
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>, env: NodeJS.ProcessEnv = {}) =>
@@ -40,14 +40,14 @@ const setup = Effect.gen(function* () {
         PATH: "/usr/bin",
         SHELL: "/bin/zsh",
         T3CODE_INSTALL_BIN_DIR: binDir,
-        T3CODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/t3.mjs"),
+        T3CODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/styal.mjs"),
         ...env,
       }),
     );
-  return { root, npmPackage, runtimeDir, executable, link: path.join(binDir, "t3"), provide };
+  return { root, npmPackage, runtimeDir, executable, link: path.join(binDir, "styal"), provide };
 });
 
-it.layer(NodeServices.layer)("t3 install", (it) => {
+it.layer(NodeServices.layer)("styal install", (it) => {
   it.effect("installs the running runtime, records it, and never replaces another t3", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -64,23 +64,23 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
 
       // A link written through a symlinked T3 home is still ours.
       const alias = path.join(root, "alias");
-      yield* fs.symlink(path.join(root, ".t3"), alias);
+      yield* fs.symlink(path.join(root, ".styal"), alias);
       yield* fs.remove(link);
-      yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "t3"), link);
+      yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "styal"), link);
       const onPath = yield* provide(installCli(), { PATH: `/usr/bin:${path.join(root, "bin")}/` });
       assert.isTrue(onPath.onPath);
-      // Another t3 earlier on PATH still runs first, so `t3` would not run this one.
+      // Another t3 earlier on PATH still runs first, so `styal` would not run this one.
       const binDir = path.join(root, "bin");
       const otherBin = path.join(root, "other-bin");
       yield* fs.makeDirectory(otherBin);
-      yield* fs.writeFileString(path.join(otherBin, "t3"), "", { mode: 0o755 });
+      yield* fs.writeFileString(path.join(otherBin, "styal"), "", { mode: 0o755 });
       const installIn = (cwd: string, PATH: string) =>
         provide(installCli().pipe(Effect.provideService(HostProcess.WorkingDirectory, cwd)), {
           PATH,
         });
       const assertShadowed = (result: Effect.Success<ReturnType<typeof installCli>>) => {
         assert.isFalse(result.onPath);
-        assert.equal(result.shadowedBy, path.join(otherBin, "t3"));
+        assert.equal(result.shadowedBy, path.join(otherBin, "styal"));
         assert.isUndefined(result.pathCommand);
       };
       assertShadowed(yield* provide(installCli(), { PATH: `${otherBin}:${binDir}` }));
@@ -100,8 +100,8 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
         assert.isUndefined(installedOnPath.shadowedBy);
       }
       yield* fs.remove(alias);
-      yield* fs.remove(path.join(otherBin, "t3"));
-      yield* fs.makeDirectory(path.join(otherBin, "t3"));
+      yield* fs.remove(path.join(otherBin, "styal"));
+      yield* fs.makeDirectory(path.join(otherBin, "styal"));
       const directory = yield* provide(installCli(), {
         PATH: `${otherBin}:${path.join(root, "bin")}`,
       });
@@ -123,7 +123,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.include(sibling.message, "Another t3 is already at");
       // This home's desktop launcher is replaced, as install.sh does.
       yield* fs.remove(link);
-      yield* fs.symlink(path.join(root, ".t3/bin/t3"), link);
+      yield* fs.symlink(path.join(root, ".styal/bin/styal"), link);
       yield* provide(installCli());
       assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
 
@@ -148,17 +148,16 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* fs.remove(link);
 
       // Windows writes a t3.cmd: only over its own, and only for paths cmd can run.
-      const shim = path.join(root, "bin", "t3.cmd");
+      const shim = path.join(root, "bin", "styal.cmd");
       const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")));
-      const desktopShim =
-        '@echo off\r\nrem Written by T3 Code\r\n"C:\\T3 Code\\T3 Code.exe" "x" %*\r\n';
+      const desktopShim = '@echo off\r\nrem Written by styal\r\n"C:\\styal\\styal.exe" "x" %*\r\n';
       yield* fs.writeFileString(shim, desktopShim);
       const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
       assert.include(foreignShim.message, "Another t3 is already at");
       assert.equal(yield* fs.readFileString(shim), desktopShim);
       // A user's wrapper that also runs a managed t3.exe is still theirs.
-      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`;
+      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/styal.exe")}" %*`;
       yield* fs.writeFileString(shim, wrapper);
       yield* windows(installCli()).pipe(Effect.flip);
       assert.equal(yield* fs.readFileString(shim), wrapper);
@@ -171,7 +170,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* fs.remove(shim);
       yield* fs.writeFileString(
         shim,
-        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`,
+        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/styal.exe")}" %*`,
       );
       const windowsInstalled = yield* windows(installCli());
       assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
@@ -232,18 +231,18 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* offer(false, { args: ["status", "--json=true"] });
       const globalBin = path.join(root, "global-bin");
       yield* fs.makeDirectory(globalBin);
-      yield* fs.writeFileString(path.join(globalBin, "t3"), "");
-      yield* fs.chmod(path.join(globalBin, "t3"), 0o755);
+      yield* fs.writeFileString(path.join(globalBin, "styal"), "");
+      yield* fs.chmod(path.join(globalBin, "styal"), 0o755);
       yield* offer(false, { env: { PATH: globalBin } });
       assert.equal(asked, 0);
       assert.isFalse(yield* fs.exists(link));
 
-      // A directory or non-executable file named `t3` on PATH is not an installed t3.
+      // A directory or non-executable file named `styal` on PATH is not an installed t3.
       const dirBin = path.join(root, "dir-bin");
-      yield* fs.makeDirectory(path.join(dirBin, "t3"), { recursive: true });
+      yield* fs.makeDirectory(path.join(dirBin, "styal"), { recursive: true });
       const nonExecBin = path.join(root, "non-exec-bin");
       yield* fs.makeDirectory(nonExecBin);
-      yield* fs.writeFileString(path.join(nonExecBin, "t3"), "");
+      yield* fs.writeFileString(path.join(nonExecBin, "styal"), "");
       assert.isFalse(yield* offer(undefined, { env: { PATH: dirBin } }));
       assert.equal(asked, 1);
       assert.isFalse(yield* offer(undefined, { env: { PATH: nonExecBin } }));
@@ -255,8 +254,8 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       const pnpmBin = path.join(root, ".cache/pnpm/dlx/abc/node_modules/.bin");
       for (const bin of [npxBin, pnpmBin]) {
         yield* fs.makeDirectory(bin, { recursive: true });
-        yield* fs.writeFileString(path.join(bin, "t3"), "");
-        yield* fs.chmod(path.join(bin, "t3"), 0o755);
+        yield* fs.writeFileString(path.join(bin, "styal"), "");
+        yield* fs.chmod(path.join(bin, "styal"), 0o755);
       }
       yield* fs.writeFileString(path.join(runtimeDir, "launchers"), "t3\n");
       assert.isFalse(yield* offer(undefined, { env: { PATH: `${npxBin}:${pnpmBin}` } }));
@@ -264,7 +263,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.isFalse(yield* fs.exists(path.join(runtimeDir, "install-prompt-declined")));
       asked = 0;
 
-      // `service install` is not `t3 install`; it still leaves the command unlinked.
+      // `service install` is not `styal install`; it still leaves the command unlinked.
       yield* offer(false, { args: ["service", "install"] });
       assert.equal(asked, 1);
       yield* offer(false);

@@ -160,7 +160,7 @@ it.effect("stops a daemon left for its owner when starting without agent tools",
     yield* Effect.promise(async () => {
       const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
       try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
+        const state = NodePath.join(home, ".styal/device/hosts/owner");
         const daemonFile = NodePath.join(state, "daemon.json");
         const calls = NodePath.join(home, "calls");
         const failMarker = NodePath.join(home, "fail-stop");
@@ -207,7 +207,7 @@ it.effect("keeps a daemon record its missing agent CLI cannot stop", () =>
     yield* Effect.promise(async () => {
       const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
       try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
+        const state = NodePath.join(home, ".styal/device/hosts/owner");
         const daemonFile = NodePath.join(state, "daemon.json");
         await NodeFSP.mkdir(NodePath.join(home, "bin"));
         await NodeFSP.mkdir(state, { recursive: true });
@@ -257,10 +257,10 @@ it.effect("starts the hub requiring a session token and reports the one it print
           encoding: "utf8",
         });
       try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
+        const state = NodePath.join(home, ".styal/device/hosts/owner");
         const install = NodePath.join(
           home,
-          ".t3/device/tools",
+          ".styal/device/tools",
           `expo-device-hub@${DEVICE_HUB_VERSION}`,
         );
         const entry = NodePath.join(install, "node_modules/expo-device-hub/dist/server/cli.mjs");

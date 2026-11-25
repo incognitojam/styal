@@ -41,7 +41,7 @@ function setup({ sent = 0, writable = true, alreadyStarred = false } = {}) {
   page.focused = true;
   page.activeElement = null;
   page.events = new EventTarget();
-  const store = new Map([["t3code:github-star-prompt:sent", String(sent)]]);
+  const store = new Map([["styal:github-star-prompt:sent", String(sent)]]);
   vi.stubGlobal("document", {
     hasFocus: () => page.focused,
     get activeElement() {
@@ -150,7 +150,7 @@ describe("recordPromptSent", () => {
     starred.failed = true;
     await (await startSession()).send();
     expect(add).not.toHaveBeenCalled();
-    expect(store.has("t3code:github-star-prompt:dismissed")).toBe(false);
+    expect(store.has("styal:github-star-prompt:dismissed")).toBe(false);
     starred.failed = false;
     await (await startSession()).send();
     expect(add).toHaveBeenCalledOnce();
@@ -159,7 +159,7 @@ describe("recordPromptSent", () => {
 
   it("never asks when another tab dismisses it during the star check", async () => {
     const store = setup({ sent: 5 });
-    starred.duringCheck = () => store.set("t3code:github-star-prompt:dismissed", "true");
+    starred.duringCheck = () => store.set("styal:github-star-prompt:dismissed", "true");
     await (await startSession()).send();
     expect(add).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -170,7 +170,7 @@ describe("recordPromptSent", () => {
     click(add.mock.lastCall?.[0].actionProps);
     await vi.advanceTimersByTimeAsync(0);
     expect(update.mock.lastCall?.[1]).toMatchObject({ title: "Thanks for the star!" });
-    expect(store.get("t3code:github-star-prompt:dismissed")).toBe("true");
+    expect(store.get("styal:github-star-prompt:dismissed")).toBe("true");
     expect(openExternal).not.toHaveBeenCalled();
 
     setup({ sent: 5 });
@@ -178,7 +178,7 @@ describe("recordPromptSent", () => {
     await (await startSession()).send();
     click(add.mock.lastCall?.[0].actionProps);
     await vi.advanceTimersByTimeAsync(0);
-    expect(openExternal).toHaveBeenCalledWith("https://github.com/pingdotgg/t3code");
+    expect(openExternal).toHaveBeenCalledWith("https://github.com/incognitojam/styal");
     expect(update.mock.lastCall?.[1]).not.toMatchObject({
       actionProps: { children: "Open GitHub" },
     });

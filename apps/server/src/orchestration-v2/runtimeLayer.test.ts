@@ -268,11 +268,11 @@ const watchedPullRequestDetail = (input: {
   projectId: input.projectId,
   projectTitle: "Watch wake",
   workspaceRoot: "/workspace/watch",
-  repository: "pingdotgg/t3code",
+  repository: "incognitojam/styal",
   number: input.number,
   title: "Watched pull request",
   body: "",
-  url: `https://github.com/pingdotgg/t3code/pull/${input.number}`,
+  url: `https://github.com/incognitojam/styal/pull/${input.number}`,
   author: { login: "agent-user", name: null, avatarUrl: null },
   state: "open",
   isDraft: false,
@@ -4042,9 +4042,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         },
         branchPullRequest: {
           projectId,
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 1,
-          url: "https://github.com/pingdotgg/t3code/pull/1",
+          url: "https://github.com/incognitojam/styal/pull/1",
         },
       });
       for (const [index, number] of [2, 2, 1, 3].entries()) {
@@ -4055,7 +4055,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           host: "GitHub.com",
           repository: "Pingdotgg/T3code",
           number,
-          url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+          url: `https://github.com/incognitojam/styal/pull/${number}`,
           source: "manual",
         });
         assert.deepEqual(
@@ -4068,7 +4068,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("branch-pr-unlink"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 1,
       });
       yield* orchestrator.dispatch({
@@ -4076,9 +4076,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("branch-pr-link-after-unlink"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 4,
-        url: "https://github.com/pingdotgg/t3code/pull/4",
+        url: "https://github.com/incognitojam/styal/pull/4",
         source: "manual",
       });
       assert.isTrue((yield* maintenance.rebuild).valid);
@@ -4092,9 +4092,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`gitcafe-pr-link-${index}`),
           threadId,
           host: "git.cafe",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 21353 + index,
-          url: `https://git.cafe/pingdotgg/t3code/${route}/${21353 + index}`,
+          url: `https://git.cafe/incognitojam/styal/${route}/${21353 + index}`,
           source: "manual",
         });
       }
@@ -4103,7 +4103,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         (yield* orchestrator.getThreadShell(threadId))?.pullRequests
           ?.filter((link) => link.host === "git.cafe")
           .map((link) => link.url),
-        [21353, 21354].map((number) => `https://git.cafe/pingdotgg/t3code/pulls/${number}`),
+        [21353, 21354].map((number) => `https://git.cafe/incognitojam/styal/pulls/${number}`),
       );
     }),
   );
@@ -4154,9 +4154,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           },
           branchPullRequest: {
             projectId,
-            repository: "pingdotgg/t3code",
+            repository: "incognitojam/styal",
             number: 1,
-            url: "https://github.com/pingdotgg/t3code/pull/1",
+            url: "https://github.com/incognitojam/styal/pull/1",
           },
         });
         yield* orchestrator.dispatch({
@@ -4175,12 +4175,12 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
       assert.deepEqual(
         yield* linkedNumbers("repository-pr-other", { repository: "pingdotgg/api", number: 7 }),
-        ["pingdotgg/t3code#1", "pingdotgg/api#7"],
+        ["incognitojam/styal#1", "pingdotgg/api#7"],
       );
       // A branch that moved on to a new pull request does not drag the old one along.
       assert.deepEqual(
-        yield* linkedNumbers("repository-pr-same", { repository: "pingdotgg/t3code", number: 2 }),
-        ["pingdotgg/t3code#2"],
+        yield* linkedNumbers("repository-pr-same", { repository: "incognitojam/styal", number: 2 }),
+        ["incognitojam/styal#2"],
       );
     }),
   );
@@ -4212,14 +4212,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
           ...key,
           number,
-          url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+          url: `https://github.com/incognitojam/styal/pull/${number}`,
           source: number === 1 ? "manual" : "stack",
         });
       }
       const linked = yield* orchestrator.getThreadShell(threadId);
       assert.deepEqual(
         linked?.pullRequests?.map(({ host, repository, number }) => ({ host, repository, number })),
-        [1, 2].map((number) => ({ host: "github.com", repository: "pingdotgg/t3code", number })),
+        [1, 2].map((number) => ({ host: "github.com", repository: "incognitojam/styal", number })),
       );
       yield* orchestrator.dispatch({
         type: "thread.pull-request.unlink",
@@ -4248,7 +4248,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
         ...key,
         number: 2,
-        url: "https://github.com/pingdotgg/t3code/pull/2",
+        url: "https://github.com/incognitojam/styal/pull/2",
         source: "stack",
       });
       assert.equal(
@@ -4266,7 +4266,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
         ...key,
         number: 2,
-        url: "https://github.com/pingdotgg/t3code/pull/2",
+        url: "https://github.com/incognitojam/styal/pull/2",
         source: "manual",
       });
       assert.equal(
@@ -4308,7 +4308,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
         ...key,
         projectId,
-        url: "https://github.com/pingdotgg/t3code/issues/42",
+        url: "https://github.com/incognitojam/styal/issues/42",
         displayKey: "#42",
         title: "Issue links",
         source: "manual",
@@ -4320,9 +4320,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
         ...key,
         host: "github.com",
-        scope: "pingdotgg/t3code",
+        scope: "incognitojam/styal",
         projectId,
-        url: "https://github.com/pingdotgg/t3code/issues/42",
+        url: "https://github.com/incognitojam/styal/issues/42",
         displayKey: "#42",
         title: "Issue links, renamed",
         source: "agent",
@@ -4378,8 +4378,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
-      const url = "https://github.com/pingdotgg/t3code/pull/7";
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 7 };
+      const url = "https://github.com/incognitojam/styal/pull/7";
       const watchOf = Effect.map(
         orchestrator.getThreadShell(threadId),
         (thread) => thread?.pullRequests?.[0]?.watch,
@@ -4497,7 +4497,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 7 };
       const watchOf = Effect.map(
         orchestrator.getThreadShell(threadId),
         (thread) => thread?.pullRequests?.[0]?.watch,
@@ -4509,7 +4509,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" },
           ...(until !== undefined && { until }),
         });
 
@@ -4564,7 +4564,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code" };
+      const key = { host: "github.com", repository: "incognitojam/styal" };
       for (const number of [7, 8]) {
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
@@ -4573,7 +4573,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           ...key,
           number,
           watching: true,
-          link: { url: `https://github.com/pingdotgg/t3code/pull/${number}`, source: "agent" },
+          link: { url: `https://github.com/incognitojam/styal/pull/${number}`, source: "agent" },
         });
       }
       const before = yield* orchestrator.getThreadShell(threadId);
@@ -4669,14 +4669,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: process.cwd(),
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 7 };
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
         commandId: CommandId.make(`${prefix}-start`),
         threadId,
         ...key,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" },
       });
       const started = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
       assert.isDefined(started);
@@ -4785,10 +4785,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         type: "thread.pull-request.watch" as const,
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 7,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" as const },
+        link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" as const },
       };
       const watched = Effect.map(
         orchestrator.getThreadShell(threadId),
@@ -4862,10 +4862,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`pr-watch-unreadable-start-${reason}-${activityFails}`),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 8,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/8", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/8", source: "agent" },
         });
         let disconnected = false;
         let passed = false;
@@ -4985,7 +4985,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`pr-watch-unreadable-stop-${reason}-${activityFails}`),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 8,
           watching: false,
         });
@@ -5025,10 +5025,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("pr-watch-merged-start"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 15,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/15", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/15", source: "agent" },
       });
       const reactor = yield* PullRequestWatchReactor.make.pipe(
         Effect.provide(
@@ -5131,10 +5131,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             commandId: CommandId.make(`pr-watch-own-merge-${key}-start-${number}`),
             threadId,
             host: "github.com",
-            repository: "pingdotgg/t3code",
+            repository: "incognitojam/styal",
             number,
             watching: true,
-            link: { url: `https://github.com/pingdotgg/t3code/pull/${number}`, source: "agent" },
+            link: { url: `https://github.com/incognitojam/styal/pull/${number}`, source: "agent" },
           });
         }
 
@@ -5280,7 +5280,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 16 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 16 };
       const watch = (id: string) =>
         orchestrator.dispatch({
           type: "thread.pull-request.watch",
@@ -5288,7 +5288,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/16", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/16", source: "agent" },
         });
       yield* watch("start");
 
@@ -5385,7 +5385,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           defaultModelSelection: null,
           createdAt: "2026-10-01T00:00:00.000Z",
         });
-        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 8 };
+        const key = { host: "github.com", repository: "incognitojam/styal", number: 8 };
         // Another thread watches the same pull request, before its own link syncs.
         const [merged, unsynced] = (["merged", "unsynced"] as const).map((which) =>
           ThreadId.make(`runtime-pull-request-watch-merged-unreadable-${name}-${which}`),
@@ -5411,7 +5411,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             threadId,
             ...key,
             watching: true,
-            link: { url: "https://github.com/pingdotgg/t3code/pull/8", source: "agent" },
+            link: { url: "https://github.com/incognitojam/styal/pull/8", source: "agent" },
           });
         }
         yield* orchestrator.dispatch({
@@ -5512,10 +5512,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("pr-watch-closed-unreadable-start"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 8,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/8", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/8", source: "agent" },
       });
       const reactor = yield* PullRequestWatchReactor.make.pipe(
         Effect.provide(
@@ -5609,13 +5609,13 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           branch: null,
           worktreePath: null,
         });
-        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 13 };
+        const key = { host: "github.com", repository: "incognitojam/styal", number: 13 };
         yield* orchestrator.dispatch({
           type: "thread.pull-request.link",
           commandId: CommandId.make(`pr-watch-start-link-${label}`),
           threadId,
           ...key,
-          url: "https://github.com/pingdotgg/t3code/pull/13",
+          url: "https://github.com/incognitojam/styal/pull/13",
           source: "manual",
         });
         yield* orchestrator.dispatch({
@@ -5733,10 +5733,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`pr-watch-told-${id}`),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 12,
           watching: on,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/12", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/12", source: "agent" },
         });
       yield* watch(true, "start");
 
@@ -5853,10 +5853,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             commandId: CommandId.make(`pr-watch-pass-start-${busy}-${number}`),
             threadId,
             host: "github.com",
-            repository: "pingdotgg/t3code",
+            repository: "incognitojam/styal",
             number,
             watching: true,
-            link: { url: `https://github.com/pingdotgg/t3code/pull/${number}`, source: "agent" },
+            link: { url: `https://github.com/incognitojam/styal/pull/${number}`, source: "agent" },
           });
         }
         if (busy) {
@@ -5922,7 +5922,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make("pr-watch-pass-stop-12"),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 12,
           watching: false,
         });
@@ -5980,10 +5980,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             commandId: CommandId.make(`pr-watch-quiet-start-${number}`),
             threadId,
             host: "github.com",
-            repository: "pingdotgg/t3code",
+            repository: "incognitojam/styal",
             number,
             watching: true,
-            link: { url: `https://github.com/pingdotgg/t3code/pull/${number}`, source: "agent" },
+            link: { url: `https://github.com/incognitojam/styal/pull/${number}`, source: "agent" },
           });
         }
 
@@ -6125,16 +6125,16 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`pr-watch-owed-${initialStatus}-${id}`),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number: 12,
           watching: on,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/12", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/12", source: "agent" },
         });
       yield* watch(true, "start");
 
       let remainingStatus: "pending" | "action-required" | "success" = initialStatus;
       const approval = initialStatus === "action-required";
-      const runUrl = "https://github.com/pingdotgg/t3code/actions/runs/123";
+      const runUrl = "https://github.com/incognitojam/styal/actions/runs/123";
       const host = Layer.mergeAll(
         NodeServices.layer,
         NodeCrypto.layer,
@@ -6252,7 +6252,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 13 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 13 };
       const watch = (id: string) =>
         orchestrator.dispatch({
           type: "thread.pull-request.watch",
@@ -6260,7 +6260,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/13", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/13", source: "agent" },
         });
       const watchOf = Effect.map(
         orchestrator.getThreadShell(threadId),
@@ -6307,7 +6307,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                   author: { login: "reviewer", name: null, avatarUrl: null },
                   body: "One more thing.",
                   createdAt: commentAt,
-                  url: "https://github.com/pingdotgg/t3code/pull/13#comment",
+                  url: "https://github.com/incognitojam/styal/pull/13#comment",
                   path: null,
                   reviewState: null,
                 },
@@ -6375,14 +6375,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 14 };
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
         commandId: CommandId.make("pr-watch-no-checks-start"),
         threadId,
         ...key,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/14", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/14", source: "agent" },
       });
 
       // A docs-only push that path filters keep every workflow off.
@@ -6482,14 +6482,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           branch: null,
           worktreePath: null,
         });
-        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 15 };
+        const key = { host: "github.com", repository: "incognitojam/styal", number: 15 };
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
           commandId: CommandId.make("pr-watch-host-event-start"),
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/15", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/15", source: "agent" },
         });
 
         let checks: PullRequestDetail["checks"] = [
@@ -6666,14 +6666,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         // The first sweep listed watches before this one existed, so it cannot be the read below.
         yield* Queue.take(watchListings);
 
-        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 16 };
+        const key = { host: "github.com", repository: "incognitojam/styal", number: 16 };
         const started = yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
           commandId: CommandId.make("pr-watch-start-read-start"),
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/16", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/16", source: "agent" },
         });
         yield* PubSub.publishAll(
           domainEvents,
@@ -6729,14 +6729,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 14 };
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
         commandId: CommandId.make("pr-watch-late-checks-start"),
         threadId,
         ...key,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/14", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/14", source: "agent" },
       });
 
       const headSha = "6074dd48ff";
@@ -6849,14 +6849,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           branch: null,
           worktreePath: null,
         });
-        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
+        const key = { host: "github.com", repository: "incognitojam/styal", number: 14 };
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
           commandId: CommandId.make(`pr-watch-due-start-${fingerprinted}`),
           threadId,
           ...key,
           watching: true,
-          link: { url: "https://github.com/pingdotgg/t3code/pull/14", source: "agent" },
+          link: { url: "https://github.com/incognitojam/styal/pull/14", source: "agent" },
         });
 
         let reads = 0;
@@ -7051,8 +7051,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 14 };
-      const url = "https://github.com/pingdotgg/t3code/pull/14";
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 14 };
+      const url = "https://github.com/incognitojam/styal/pull/14";
       const watchOf = Effect.map(
         orchestrator.getThreadShell(threadId),
         (thread) => thread?.pullRequests?.[0]?.watch,
@@ -7132,10 +7132,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("queue-removal-start"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 7,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" },
       });
       let removal: PullRequestDetail["mergeQueueRemoval"];
       const host = Layer.mergeAll(
@@ -7232,8 +7232,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
-      const url = "https://github.com/pingdotgg/t3code/pull/7";
+      const key = { host: "github.com", repository: "incognitojam/styal", number: 7 };
+      const url = "https://github.com/incognitojam/styal/pull/7";
       yield* orchestrator.dispatch({
         type: "thread.pull-request.link",
         commandId: CommandId.make(`pr-watch-wake-link-${mode}`),
@@ -7405,14 +7405,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       branch: null,
       worktreePath: process.cwd(),
     });
-    const key = { host: "github.com", repository: "pingdotgg/t3code", number: 7 };
+    const key = { host: "github.com", repository: "incognitojam/styal", number: 7 };
     yield* orchestrator.dispatch({
       type: "thread.pull-request.watch",
       commandId: CommandId.make(`${threadId}-watch`),
       threadId,
       ...key,
       watching: true,
-      link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+      link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" },
     });
     let watch = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
     assert.isDefined(watch);
@@ -7571,7 +7571,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             commandId: CommandId.make(`${threadId}-relink`),
             threadId,
             ...key,
-            url: "https://github.com/pingdotgg/t3code/pull/7",
+            url: "https://github.com/incognitojam/styal/pull/7",
             source: "manual",
           });
         }
@@ -7771,10 +7771,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`pr-watch-pipeline-start-${number}`),
           threadId,
           host: "github.com",
-          repository: "pingdotgg/t3code",
+          repository: "incognitojam/styal",
           number,
           watching: true,
-          link: { url: `https://github.com/pingdotgg/t3code/pull/${number}`, source: "agent" },
+          link: { url: `https://github.com/incognitojam/styal/pull/${number}`, source: "agent" },
         });
       }
       const at = "2026-10-02T12:00:00.000Z";
@@ -7909,7 +7909,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           notification: {
             source: { kind: "system" as const },
             outcome: "updated" as const,
-            summary: "T3 Code restarted and resumed this turn",
+            summary: "styal restarted and resumed this turn",
             detail: "Continue where you left off.",
           },
           attachments: [],
@@ -7930,7 +7930,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           continuationItems.flatMap((item) =>
             item.type === "notification" ? [[item.summary, item.detail]] : [],
           ),
-          ["T3 Code restarted and resumed this turn", "Continue where you left off."],
+          ["styal restarted and resumed this turn", "Continue where you left off."],
         );
         yield* orchestrator.dispatch({
           ...command,
@@ -8287,10 +8287,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         commandId: CommandId.make("runtime-layer-settle-then-watch-watch"),
         threadId,
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 7,
         watching: true,
-        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" },
+        link: { url: "https://github.com/incognitojam/styal/pull/7", source: "agent" },
       });
       assert.isDefined((yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch);
 
@@ -13652,8 +13652,8 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("PR link events", (it
         branch: null,
         worktreePath: null,
       });
-      const key = { host: "github.com", repository: "pingdotgg/t3code" };
-      const repositoryWebUrl = "https://github.com/pingdotgg/t3code/pull/2";
+      const key = { host: "github.com", repository: "incognitojam/styal" };
+      const repositoryWebUrl = "https://github.com/incognitojam/styal/pull/2";
       for (const number of [1, 2]) {
         yield* orchestrator.dispatch({
           type: "thread.pull-request.link",
@@ -13661,14 +13661,14 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("PR link events", (it
           threadId,
           ...key,
           number,
-          url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+          url: `https://github.com/incognitojam/styal/pull/${number}`,
           source: "manual",
           ...(number === 2 ? { repositoryWebUrl } : {}),
         });
       }
       const watchedLink = {
-        url: "https://github.com/pingdotgg/t3code/pull/3",
-        repositoryWebUrl: "https://github.com/pingdotgg/t3code/pull/3",
+        url: "https://github.com/incognitojam/styal/pull/3",
+        repositoryWebUrl: "https://github.com/incognitojam/styal/pull/3",
         source: "manual" as const,
       };
       yield* orchestrator.dispatch({
@@ -13708,7 +13708,7 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("PR link events", (it
           kind: "native",
           id: "updated",
           number: 2,
-          url: "https://github.com/pingdotgg/t3code/pull/2",
+          url: "https://github.com/incognitojam/styal/pull/2",
           base: "main",
           layers: [],
         },

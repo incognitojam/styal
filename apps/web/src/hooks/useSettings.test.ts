@@ -204,7 +204,7 @@ describe("persistClientSettingsPatch", () => {
       const otherTabSettings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
       persistenceMocks.getClientSettings.mockResolvedValue(otherTabSettings);
       window.dispatchEvent(
-        Object.assign(new Event("storage"), { key: "t3code:client-settings:v1" }),
+        Object.assign(new Event("storage"), { key: "styal:client-settings:v1" }),
       );
 
       await persistClientSettingsPatch({ wordWrap: false });

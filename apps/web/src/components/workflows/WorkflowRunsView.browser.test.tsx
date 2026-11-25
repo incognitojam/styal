@@ -545,7 +545,7 @@ describe("WorkflowRunsView", () => {
             kind: "ask",
             endedAt: at(1),
             detail: "withdrawn by t3 CLI: settled elsewhere",
-            result: { withdrawn: { by: "t3 CLI", reason: "settled elsewhere" } },
+            result: { withdrawn: { by: "styal CLI", reason: "settled elsewhere" } },
           }),
         ],
       },
@@ -649,7 +649,7 @@ describe("WorkflowRunsView", () => {
     await expect.element(runs).toMatchTextContent("Has not run yet.");
   });
 
-  const KIND_KEY = "t3code:workflows:question-kind";
+  const KIND_KEY = "styal:workflows:question-kind";
   const asked = (runId: string, kind?: string): WorkflowQuestion => ({
     ...question,
     runId,

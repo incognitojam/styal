@@ -29,7 +29,7 @@ vi.mock(expoLinking.modulesCore, () => ({
   Platform: { select: (options: { readonly ios?: unknown }) => options.ios },
 }));
 vi.mock("expo-constants", () => ({
-  default: { executionEnvironment: "bare", expoConfig: { scheme: "t3code-dev" } },
+  default: { executionEnvironment: "bare", expoConfig: { scheme: "styal-dev" } },
   ExecutionEnvironment: { Bare: "bare", Standalone: "standalone", StoreClient: "storeClient" },
 }));
 vi.mock("expo/internal/bundle-origin", () => ({ getBundleOrigin: () => null }));

@@ -34,7 +34,7 @@ const copyTriageCliCommand = () =>
   );
 
 /**
- * In-app `t3 triage`: the server writes the session files and starts cloning
+ * In-app `styal triage`: the server writes the session files and starts cloning
  * the matching source, then a No project draft opens with the playbook linked.
  * The draft hero explains the rest; the user picks a provider and describes
  * the problem.
@@ -89,7 +89,7 @@ export function useStartTriage() {
     // A null result means the user went elsewhere; only a throw is a failure.
     await handleNewThread(scopeProjectRef(project.value.environmentId, project.value.id), {
       prompt: prepared.value.prompt,
-    }).catch(() => fail(m(msg("T3 Code could not open a new thread."))));
+    }).catch(() => fail(m(msg("styal could not open a new thread."))));
   };
 
   return async (environmentId: EnvironmentId) => {

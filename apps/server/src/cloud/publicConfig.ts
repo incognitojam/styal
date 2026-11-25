@@ -115,11 +115,11 @@ export const hostedAppUrlConfig = makePublicValueConfig(
   DEFAULT_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
-const NIGHTLY_HOSTED_APP_URL = "https://nightly.app.t3.codes";
+const NIGHTLY_HOSTED_APP_URL = "https://nightly.app.restart.styal.invalid";
 
 /**
  * Where agent sign-ins on the T3 Connect address are approved. A nightly build defaults to the
- * nightly hosted app, which ships the same approval page; app.t3.codes serves stable.
+ * nightly hosted app, which ships the same approval page; app.restart.styal.invalid serves stable.
  */
 export const agentApprovalAppUrlConfig = makePublicValueConfig(
   "T3CODE_HOSTED_APP_URL",

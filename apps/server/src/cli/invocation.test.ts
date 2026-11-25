@@ -35,7 +35,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const bin = yield* fs.makeTempDirectoryScoped();
-    yield* fs.writeFileString(path.join(bin, "t3"), "#!/bin/sh\n", { mode: 0o755 });
+    yield* fs.writeFileString(path.join(bin, "styal"), "#!/bin/sh\n", { mode: 0o755 });
     return bin;
   });
 
@@ -80,7 +80,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
-      const shim = path.join(home, ".local bin", "t3");
+      const shim = path.join(home, ".local bin", "styal");
       yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
       yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
       const desktop = {
@@ -91,14 +91,14 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
 
-      // An unrelated `t3` on PATH, such as an older npm global, is another install's CLI.
+      // An unrelated `styal` on PATH, such as an older npm global, is another install's CLI.
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
         `sudo '${shim}' browser setup`,
       );
 
-      // The link the app installs onto PATH leads to its own launcher, so plain `t3` is right.
+      // The link the app installs onto PATH leads to its own launcher, so plain `styal` is right.
       const linked = yield* fs.makeTempDirectoryScoped();
-      yield* fs.symlink(shim, path.join(linked, "t3"));
+      yield* fs.symlink(shim, path.join(linked, "styal"));
       expect(yield* rootCommand({ ...desktop, path: linked })).toBe(
         'sudo env "PATH=$PATH" t3 browser setup',
       );
@@ -121,21 +121,21 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
         }),
       ).toBe("sudo /opt/t3/t3 browser setup");
 
-      // A global npm launcher runs the downloaded executable; PATH's `t3` is that launcher.
+      // A global npm launcher runs the downloaded executable; PATH's `styal` is that launcher.
       const prefix = path.join(home, "npm");
-      const npmLauncher = path.join(prefix, "lib/node_modules/t3/bin/t3.mjs");
+      const npmLauncher = path.join(prefix, "lib/node_modules/t3/bin/styal.mjs");
       yield* fs.makeDirectory(path.dirname(npmLauncher), { recursive: true });
       yield* fs.makeDirectory(path.join(prefix, "bin"));
       yield* fs.writeFileString(npmLauncher, "", { mode: 0o755 });
       yield* fs.writeFileString(
         path.join(prefix, "lib/node_modules/t3/package.json"),
-        `{"name":"t3","version":"${packageJson.version}"}`,
+        `{"name":"styal","version":"${packageJson.version}"}`,
       );
-      yield* fs.symlink(npmLauncher, path.join(prefix, "bin/t3"));
+      yield* fs.symlink(npmLauncher, path.join(prefix, "bin/styal"));
       expect(
         yield* rootCommand({
-          node: "/home/theo/.t3/runtime/versions/1.0.0/t3",
-          entry: "/home/theo/.t3/runtime/versions/1.0.0/t3",
+          node: "/home/theo/.styal/runtime/versions/1.0.0/t3",
+          entry: "/home/theo/.styal/runtime/versions/1.0.0/t3",
           executable: true,
           path: path.join(prefix, "bin"),
           env: { T3CODE_NPM_LAUNCHER_PATH: npmLauncher },
@@ -155,24 +155,24 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
-      const shim = path.join(home, "t3.cmd");
+      const shim = path.join(home, "styal.cmd");
       yield* fs.writeFileString(shim, "@echo off\r\n");
       const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
-        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
-          Effect.provideService(HostProcess.ExecutablePath, "C:\\Program Files\\T3 Code\\t3.exe"),
+        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.styal"]).pipe(
+          Effect.provideService(HostProcess.ExecutablePath, "C:\\Program Files\\styal\\t3.exe"),
           Effect.provideService(HostProcess.Arguments, [
-            "C:\\Program Files\\T3 Code\\t3.exe",
-            "C:\\Program Files\\T3 Code\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
+            "C:\\Program Files\\styal\\t3.exe",
+            "C:\\Program Files\\styal\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
           ]),
           Effect.provideService(HostProcess.IsExecutable, false),
           Effect.provideService(HostProcess.Platform, platform),
           Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
         );
       expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
-        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
+        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.styal"`,
       );
       expect((yield* hostCommand("win32", {})).command).toBe(
-        't3 doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+        'styal doctor "--base-dir" "C:\\Users\\Jane Doe\\.styal"',
       );
       expect(
         (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
@@ -182,9 +182,9 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Arguments, ["C:\\t3.exe", "C:\\bin.mjs"]),
           Effect.provideService(HostProcess.IsExecutable, false),
         )).command,
-      ).toBe('t3 doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
+      ).toBe('styal doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
       expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
-        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
+        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.styal'$/,
       );
     }),
   );
@@ -196,7 +196,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const bin = yield* fs.makeTempDirectoryScoped();
-        yield* fs.writeFileString(path.join(bin, "t3"), "#!/bin/sh\n", { mode: 0o755 });
+        yield* fs.writeFileString(path.join(bin, "styal"), "#!/bin/sh\n", { mode: 0o755 });
         const hostCommand = (searchPath: string) =>
           resolveHostCliCommand("doctor").pipe(
             Effect.provideService(HostProcess.ExecutablePath, "/usr/bin/node"),
@@ -211,15 +211,15 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
 
         // A relative entry was searched from this process's directory, unlike the user's shell.
         expect(yield* hostCommand(path.relative(process.cwd(), bin))).toEqual({
-          command: `${hostShellWord("linux", path.join(bin, "t3"))} doctor`,
+          command: `${hostShellWord("linux", path.join(bin, "styal"))} doctor`,
           launcher: false,
         });
         // An empty entry makes the shell search its own directory first, wherever that is.
         expect(yield* hostCommand(`:${bin}`)).toEqual({
-          command: `${hostShellWord("linux", path.join(bin, "t3"))} doctor`,
+          command: `${hostShellWord("linux", path.join(bin, "styal"))} doctor`,
           launcher: false,
         });
-        expect(yield* hostCommand(bin)).toEqual({ command: "t3 doctor", launcher: false });
+        expect(yield* hostCommand(bin)).toEqual({ command: "styal doctor", launcher: false });
       }),
   );
 });
@@ -230,12 +230,12 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
+      const executable = path.join(root, ".styal/runtime/versions/1.0.0/t3");
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
         ["npm/_npx/hash/node_modules/t3/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/t3/bin/t3.mjs", "npx"],
+        ["npm/_npx/hash/node_modules/t3/bin/styal.mjs", "npx"],
         ["pnpm/dlx/hash/node_modules/t3/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/t3/dist/bin.mjs", "bunx"],
       ] as const) {
@@ -244,9 +244,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         yield* fs.writeFileString(entry, "");
         yield* fs.writeFileString(
           path.join(path.dirname(entry), "../package.json"),
-          `{"name":"t3","version":"${packageJson.version}","bin":{"t3":"./bin/t3.mjs"}}`,
+          `{"name":"styal","version":"${packageJson.version}","bin":{"styal":"./bin/styal.mjs"}}`,
         );
-        const launchedBy = entry.endsWith("t3.mjs");
+        const launchedBy = entry.endsWith("styal.mjs");
         const installation = yield* resolveServerInstallation.pipe(
           Effect.provideService(HostProcess.Arguments, [launchedBy ? executable : "node", entry]),
           Effect.provideService(HostProcess.ExecutablePath, executable),
@@ -269,13 +269,13 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/t3");
       const entry = path.join(packageRoot, "dist/bin.mjs");
-      const globalBin = path.join(prefix, "bin/t3");
+      const globalBin = path.join(prefix, "bin/styal");
       yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
       yield* fs.makeDirectory(path.dirname(globalBin), { recursive: true });
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
         path.join(packageRoot, "package.json"),
-        '{"name":"t3","version":"0.0.45","bin":{"t3":"./dist/bin.mjs"}}',
+        '{"name":"styal","version":"0.0.45","bin":{"styal":"./dist/bin.mjs"}}',
       );
       const resolve = resolveServerInstallation.pipe(
         Effect.provideService(HostProcess.Arguments, ["node", entry]),
@@ -299,14 +299,14 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/t3");
-      const launcher = path.join(packageRoot, "bin/t3.mjs");
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
+      const launcher = path.join(packageRoot, "bin/styal.mjs");
+      const executable = path.join(root, ".styal/runtime/versions/1.0.0/t3");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.makeDirectory(path.join(prefix, "bin"));
       yield* fs.writeFileString(launcher, "");
       yield* fs.writeFileString(executable, "");
-      yield* fs.symlink(launcher, path.join(prefix, "bin/t3"));
+      yield* fs.symlink(launcher, path.join(prefix, "bin/styal"));
       const resolve = resolveServerInstallation.pipe(
         Effect.provideService(HostProcess.ExecutablePath, executable),
         Effect.provideService(HostProcess.Arguments, [executable, executable]),
@@ -320,7 +320,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       ] as const) {
         yield* fs.writeFileString(
           path.join(packageRoot, "package.json"),
-          `{"name":"t3","version":"${version}","bin":{"t3":"./bin/t3.mjs"}}`,
+          `{"name":"styal","version":"${version}","bin":{"styal":"./bin/styal.mjs"}}`,
         );
         expect(yield* resolve).toEqual(expected);
       }
@@ -334,14 +334,14 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
       // The install script's launcher names ~/.t3, which here links to a home elsewhere.
       const executable = path.join(root, "data/t3/runtime/versions/1.0.0/t3");
-      const launcher = path.join(root, "bin/t3");
-      const copy = path.join(root, "bin/t3-copy");
+      const launcher = path.join(root, "bin/styal");
+      const copy = path.join(root, "bin/styal-copy");
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.writeFileString(executable, "", { mode: 0o755 });
       yield* fs.writeFileString(copy, "", { mode: 0o755 });
-      yield* fs.symlink(path.join(root, "data/t3"), path.join(root, ".t3"));
-      yield* fs.symlink(path.join(root, ".t3/runtime/versions/1.0.0/t3"), launcher);
+      yield* fs.symlink(path.join(root, "data/t3"), path.join(root, ".styal"));
+      yield* fs.symlink(path.join(root, ".styal/runtime/versions/1.0.0/t3"), launcher);
       // Earlier PATH entries hold a directory and a non-executable file named t3.
       yield* fs.makeDirectory(path.join(root, "shadow-dir/t3"), { recursive: true });
       yield* fs.makeDirectory(path.join(root, "shadow-file"));
@@ -356,9 +356,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
           Effect.provideService(HostProcess.HomeDirectory, root),
           Effect.provideService(HostProcess.Platform, "linux"),
         );
-      const baseDir = path.join(root, ".t3");
+      const baseDir = path.join(root, ".styal");
 
-      expect(yield* resolve("t3")).toEqual({ kind: "t3-launcher", launcher, baseDir });
+      expect(yield* resolve("styal")).toEqual({ kind: "t3-launcher", launcher, baseDir });
       expect(yield* resolve(launcher)).toEqual({ kind: "t3-launcher", launcher, baseDir });
       expect(yield* resolve(executable)).toBeNull();
       expect(yield* resolve(copy)).toBeNull();
@@ -367,7 +367,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.remove(launcher);
       yield* fs.writeFileString(
         launcher,
-        posixLauncherScript(path.join(root, ".t3/runtime/versions/1.0.0/t3")),
+        posixLauncherScript(path.join(root, ".styal/runtime/versions/1.0.0/t3")),
         { mode: 0o755 },
       );
       expect(yield* resolve(executable, path.join(root, "bin"))).toEqual({
@@ -386,7 +386,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       for (const relative of [
         "project/node_modules/t3/dist/bin.mjs",
         "project/apps/server/dist/bin.mjs",
-        ".t3/runtime/0.0.45/t3",
+        ".styal/runtime/0.0.45/t3",
         "missing/dist/bin.mjs",
       ]) {
         const entry = path.join(root, relative);

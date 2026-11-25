@@ -69,7 +69,7 @@ test(
           if (location.pathname !== `/${via}/${parentId}`) return;
           const id = `linked-thread:${encodeURIComponent(via)}:${encodeURIComponent(linked)}:${encodeURIComponent(childId)}`;
           localStorage.setItem(
-            "t3code:right-panel-state:v2",
+            "styal:right-panel-state:v2",
             JSON.stringify({
               version: 16,
               state: {

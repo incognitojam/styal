@@ -65,9 +65,9 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-trial-" });
-      const baseDir = path.join(root, ".t3");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "t3");
-      const installed = path.join(root, ".local/bin/t3");
+      const baseDir = path.join(root, ".styal");
+      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "styal");
+      const installed = path.join(root, ".local/bin/styal");
       for (const file of [exe("1.0.0"), exe("1.1.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "");
@@ -248,10 +248,10 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-        const baseDir = path.join(root, ".t3");
-        const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "t3");
-        const installed = path.join(root, "custom/bin/t3");
-        const onPath = path.join(root, "bin/t3");
+        const baseDir = path.join(root, ".styal");
+        const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "styal");
+        const installed = path.join(root, "custom/bin/styal");
+        const onPath = path.join(root, "bin/styal");
         for (const file of [exe("1.0.0"), exe("1.5.0"), exe("2.0.0")]) {
           yield* fs.makeDirectory(path.dirname(file), { recursive: true });
           yield* fs.writeFileString(file, "");
@@ -280,10 +280,10 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const baseDir = path.join(root, ".t3");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "t3");
-      const installed = path.join(root, ".local/bin/t3");
-      const onPath = path.join(root, "bin/t3");
+      const baseDir = path.join(root, ".styal");
+      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "styal");
+      const installed = path.join(root, ".local/bin/styal");
+      const onPath = path.join(root, "bin/styal");
       for (const file of [exe("1.0.0"), exe("2.0.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "");
@@ -334,9 +334,9 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const baseDir = path.join(root, ".t3");
-      const installed = path.join(root, ".local/bin/t3");
-      const onPath = path.join(root, "bin/t3");
+      const baseDir = path.join(root, ".styal");
+      const installed = path.join(root, ".local/bin/styal");
+      const onPath = path.join(root, "bin/styal");
       const foreign = path.join(root, "other-home/runtime/versions/1.0.0/t3");
       const target = path.join(baseDir, "runtime/versions/2.0.0/t3");
       for (const file of [installed, foreign, target]) {
@@ -372,10 +372,10 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const baseDir = path.join(root, ".t3");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "t3");
+      const baseDir = path.join(root, ".styal");
+      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "styal");
       const cwd = path.join(root, "work");
-      const inCwd = path.join(cwd, "t3");
+      const inCwd = path.join(cwd, "styal");
       for (const file of [exe("1.0.0"), exe("2.0.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "", { mode: 0o755 });
@@ -405,16 +405,16 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
-      const baseDir = path.join(root, ".t3");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "t3");
+      const baseDir = path.join(root, ".styal");
+      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "styal");
       const cwd = path.join(root, "work");
-      const onPath = path.join(root, "bin/t3");
+      const onPath = path.join(root, "bin/styal");
       for (const file of [exe("1.0.0"), exe("2.0.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "", { mode: 0o755 });
       }
       // A directory named t3 in the working directory, which the shell skips.
-      yield* fs.makeDirectory(path.join(cwd, "t3"), { recursive: true });
+      yield* fs.makeDirectory(path.join(cwd, "styal"), { recursive: true });
       yield* fs.makeDirectory(path.dirname(onPath), { recursive: true });
       yield* fs.symlink(exe("1.0.0"), onPath);
 

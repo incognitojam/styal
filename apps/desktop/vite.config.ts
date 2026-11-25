@@ -35,7 +35,7 @@ const PAGE_WORLD_MODULE = /[\\/]src[\\/]preview[\\/]PageWorld\.ts$/;
  * that text is complete on its own.
  */
 const pageWorldFunction = (): Rolldown.Plugin => ({
-  name: "t3code:preview-page-world",
+  name: "styal:preview-page-world",
   async load(id) {
     if (!PAGE_WORLD_MODULE.test(id)) return null;
     const bundle = await Rolldown.rolldown({ input: id, platform: "browser" });

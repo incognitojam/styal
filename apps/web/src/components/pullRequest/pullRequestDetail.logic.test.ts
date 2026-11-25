@@ -687,7 +687,7 @@ describe("fix findings handoff", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/incognitojam/styal/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -803,7 +803,7 @@ describe("fix findings handoff", () => {
     const handoff = buildFixFindingsHandoff({
       ...base,
       title: "Add the page",
-      url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+      url: "https://gitlab.com/incognitojam/styal/-/merge_requests/42",
       reviewThreads: [],
       checks: [],
     });
@@ -818,7 +818,7 @@ describe("findings that cannot be attached", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/incognitojam/styal/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -884,7 +884,7 @@ describe("one finding handed over on its own", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/incognitojam/styal/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -1005,7 +1005,7 @@ describe("asking about a change rather than working on it", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/incognitojam/styal/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -1099,7 +1099,7 @@ describe("asking about a change rather than working on it", () => {
     const handoff = buildExplainPullRequestHandoff({
       ...base,
       title: "Add the page",
-      url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+      url: "https://gitlab.com/incognitojam/styal/-/merge_requests/42",
     });
     expect(handoff.prompt).toBe("Explain this merge request.");
     expect(handoff.reviewComments[0]?.text).toContain("The merge request is #42");
@@ -1107,7 +1107,7 @@ describe("asking about a change rather than working on it", () => {
     expect(
       buildResolveConflictsPrompt({
         ...base,
-        url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
+        url: "https://gitlab.com/incognitojam/styal/-/merge_requests/42",
       }),
     ).toMatch(/^MR #42 /u);
   });
@@ -1116,7 +1116,7 @@ describe("asking about a change rather than working on it", () => {
 describe("adding a remark to the chat", () => {
   const pullRequest = {
     number: 42,
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/incognitojam/styal/pull/42",
     reviewThreads: [],
   };
   const remark = (id: string, body: string): PullRequestComment => ({
@@ -1151,7 +1151,7 @@ describe("adding a remark to the chat", () => {
   });
 
   it("gives a GitHub review summary its link and the line comments it posted", () => {
-    const url = "https://github.com/pingdotgg/t3code/pull/42";
+    const url = "https://github.com/incognitojam/styal/pull/42";
     const review: PullRequestComment = {
       ...remark("r9", "One misplaced doc comment inline."),
       kind: "review",
@@ -1257,7 +1257,7 @@ describe("adding a remark to the chat", () => {
     const handedOff = buildAskAboutPullRequestHandoff({
       number: 42,
       title: "Add the pull requests page",
-      url: "https://github.com/pingdotgg/t3code/pull/42",
+      url: "https://github.com/incognitojam/styal/pull/42",
       headBranch: "feature",
       baseBranch: "main",
       state: "open",
@@ -1269,9 +1269,9 @@ describe("adding a remark to the chat", () => {
         (comment) => comment.id,
       ),
     ).toEqual([
-      "pr-comment:https://github.com/pingdotgg/t3code/pull/42:comment:c1",
-      "pr-comment:https://github.com/pingdotgg/t3code/pull/42:comment:c2",
-      "pull-request-context:https://github.com/pingdotgg/t3code/pull/42",
+      "pr-comment:https://github.com/incognitojam/styal/pull/42:comment:c1",
+      "pr-comment:https://github.com/incognitojam/styal/pull/42:comment:c2",
+      "pull-request-context:https://github.com/incognitojam/styal/pull/42",
     ]);
   });
 
@@ -1503,7 +1503,7 @@ describe("a second handoff into the same composer", () => {
       buildFixFindingsHandoff({
         number,
         title: "Add the pull requests page",
-        url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+        url: `https://github.com/incognitojam/styal/pull/${number}`,
         state: "open",
         isDraft: false,
         headBranch: `feat/${number}`,
@@ -1567,9 +1567,9 @@ describe("pull request panel context beside a thread", () => {
     overrides: Partial<ThreadPullRequestLink> = {},
   ): ThreadPullRequestLink => ({
     host: "github.com",
-    repository: "pingdotgg/t3code",
+    repository: "incognitojam/styal",
     number,
-    url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+    url: `https://github.com/incognitojam/styal/pull/${number}`,
     source: "manual",
     linkedAt: "2026-09-09T00:00:00Z",
     snapshot: null,
@@ -1582,7 +1582,7 @@ describe("pull request panel context beside a thread", () => {
   ) => ({
     projectId: "proj-a",
     host: "github.com",
-    repository: "pingdotgg/t3code",
+    repository: "incognitojam/styal",
     number,
     ...overrides,
   });
@@ -1597,9 +1597,9 @@ describe("pull request panel context beside a thread", () => {
     ],
     linkedPullRequest: {
       projectId: "proj-a",
-      repository: "pingdotgg/t3code",
+      repository: "incognitojam/styal",
       number: 10856,
-      url: "https://github.com/pingdotgg/t3code/pull/10856",
+      url: "https://github.com/incognitojam/styal/pull/10856",
     },
   };
 
@@ -1615,9 +1615,9 @@ describe("pull request panel context beside a thread", () => {
       pullRequests: [link(11101, { source: "created" }), link(11105, { source: "stack" })],
       linkedPullRequest: {
         projectId: "proj-a",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 11105,
-        url: "https://github.com/pingdotgg/t3code/pull/11105",
+        url: "https://github.com/incognitojam/styal/pull/11105",
       },
     };
     expect(pullRequestPanelContext(thread, surface(11101))).toBe("thread");
@@ -1662,9 +1662,9 @@ describe("pull request panel context beside a thread", () => {
   it("falls back to the legacy fields only for a thread with no link list", () => {
     const legacy = {
       projectId: "proj-a",
-      repository: "pingdotgg/t3code",
+      repository: "incognitojam/styal",
       number: 3,
-      url: "https://github.com/pingdotgg/t3code/pull/3",
+      url: "https://github.com/incognitojam/styal/pull/3",
     };
     expect(
       pullRequestPanelContext({ projectId: "proj-a", linkedPullRequest: legacy }, surface(3)),
@@ -1681,9 +1681,9 @@ describe("pull request panel context beside a thread", () => {
   describe("the Pull request entry's target", () => {
     const legacy = (number: number) => ({
       projectId: ProjectId.make("proj-a"),
-      repository: "pingdotgg/t3code",
+      repository: "incognitojam/styal",
       number,
-      url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+      url: `https://github.com/incognitojam/styal/pull/${number}`,
     });
 
     it("opens a linked pull request the legacy field never named, ahead of the branch PR", () => {
@@ -1702,7 +1702,9 @@ describe("pull request panel context beside a thread", () => {
       const onHost = (host: string) =>
         threadPullRequestPanelTarget({
           projectId: "proj-a",
-          pullRequests: [link(15046, { host, url: `https://${host}/pingdotgg/t3code/pull/15046` })],
+          pullRequests: [
+            link(15046, { host, url: `https://${host}/incognitojam/styal/pull/15046` }),
+          ],
           linkedPullRequest,
         });
       expect(onHost("github.com")).toBe(linkedPullRequest);

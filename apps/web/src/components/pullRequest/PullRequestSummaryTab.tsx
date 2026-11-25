@@ -477,7 +477,7 @@ interface SummaryView {
 // Session-only: switching right-panel tabs unmounts the Summary, which comes back as it was left.
 const summaryViewByScopeKey = new Map<string, SummaryView>();
 
-const COMMENT_FILTER_STORAGE_KEY = "t3code:pull-request-comment-filter:v1";
+const COMMENT_FILTER_STORAGE_KEY = "styal:pull-request-comment-filter:v1";
 const CommentFilterSchema = Schema.Struct({ bots: Schema.Boolean, resolved: Schema.Boolean });
 const DEFAULT_COMMENT_FILTER: typeof CommentFilterSchema.Type = { bots: false, resolved: false };
 

@@ -6,8 +6,8 @@ import { isTriagePrompt, replaceTriagePlaybookLink } from "./triagePrompt.ts";
 const appPrompt = (playbookPath: string) =>
   `Read ${serializeComposerFileLink(playbookPath)} and follow it. `;
 
-const MACHINE_A = "/Users/a/.t3/triage/1/triage-playbook.md";
-const MACHINE_B = "/home/b/.t3/triage/2/triage-playbook.md";
+const MACHINE_A = "/Users/a/.styal/triage/1/triage-playbook.md";
+const MACHINE_B = "/home/b/.styal/triage/2/triage-playbook.md";
 
 describe("replaceTriagePlaybookLink", () => {
   it("replaces only the playbook link and keeps the text the user typed", () => {

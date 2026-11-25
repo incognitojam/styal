@@ -22,7 +22,7 @@ export class BrowserDpopError extends Schema.TaggedError<BrowserDpopError>()("Br
 
 const isBrowserDpopError = Schema.is(BrowserDpopError);
 
-const DPOP_DATABASE_NAME = "t3code:cloud-auth";
+const DPOP_DATABASE_NAME = "styal:cloud-auth";
 const DPOP_DATABASE_VERSION = 1;
 const DPOP_KEY_STORE_NAME = "keys";
 const DPOP_KEY_ID = "relay-dpop-proof-key";

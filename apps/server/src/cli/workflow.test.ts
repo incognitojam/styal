@@ -64,7 +64,7 @@ const makeRun = (status: WorkflowRun["status"]): WorkflowRun => ({
   endedAt: ["running", "waiting", "paused"].includes(status) ? null : "2026-11-20T00:00:00.000Z",
 });
 
-/** Runs `t3 workflow <args>` against a live-looking server whose t3_workflow is `call`. */
+/** Runs `styal workflow <args>` against a live-looking server whose t3_workflow is `call`. */
 const runCli = (
   args: ReadonlyArray<string>,
   call: McpBridge.McpToolSession["call"] = () => Effect.die("no tool call expected"),
@@ -158,7 +158,7 @@ it.effect("reports what the server refused instead of calling it unreachable", (
     const refused = yield* runCli(["start", "review", "--key", "r1"], () =>
       Effect.fail(
         new McpBridge.AcpMcpBridgeError({
-          message: "T3 Code MCP tools/call failed.",
+          message: "styal MCP tools/call failed.",
           rpcError: {
             code: -32602,
             message: 'Expected a non-blank string\n  at ["idempotencyKey"]',
@@ -231,7 +231,7 @@ it.effect("signal from an agent's shell answers in the name of the agent's threa
       sessionLabels.length = 0;
       const { error } = yield* runCli(answer, call, env);
       assert.isUndefined(error);
-      assert.strictEqual(sessionLabels.at(-1), "t3 workflow signal");
+      assert.strictEqual(sessionLabels.at(-1), "styal workflow signal");
     }
   }),
 );

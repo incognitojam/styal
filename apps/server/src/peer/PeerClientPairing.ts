@@ -103,7 +103,7 @@ const makeIssuer = Effect.gen(function* () {
       });
     }
     // A full-access link's agents already run as this machine's user and could run
-    // `t3 auth pairing create` themselves, so minting here adds no power. Any lower link would
+    // `styal auth pairing create` themselves, so minting here adds no power. Any lower link would
     // gain more than it holds, and so would one an administrator's ceiling holds below full access.
     if (
       !caller.peerLink ||
@@ -169,7 +169,7 @@ const make = Effect.gen(function* () {
           sessions.find((session) => session.sessionId === sessionId)?.client,
         ),
       ),
-      Effect.orElseSucceed(() => "T3 Code client"),
+      Effect.orElseSucceed(() => "styal client"),
     );
 
   /** Asks the linked environment for a pairing; `payload` says for whom. */

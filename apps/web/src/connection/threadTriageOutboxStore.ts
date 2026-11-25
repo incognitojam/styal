@@ -4,7 +4,7 @@ import {
 } from "@t3tools/client-runtime/platform";
 import * as Effect from "effect/Effect";
 
-const KEY = "t3code:thread-triage-outbox";
+const KEY = "styal:thread-triage-outbox";
 
 /** In localStorage, so tabs share it and clearing the environment cache keeps unsynced changes. */
 export const browserThreadTriageOutboxStore = makeThreadTriageOutboxStore((next) =>

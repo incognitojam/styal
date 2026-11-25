@@ -25,7 +25,7 @@ export class RunningServerUnreachableError extends Schema.TaggedError<RunningSer
   { origin: Schema.String, cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `The T3 Code server at ${this.origin} is running but refused the connection, so nothing was changed. Retry, or restart the server and retry.`;
+    return `The styal server at ${this.origin} is running but refused the connection, so nothing was changed. Retry, or restart the server and retry.`;
   }
 }
 
@@ -34,7 +34,7 @@ export class RunningServerNoReplyError extends Schema.TaggedError<RunningServerN
   { origin: Schema.String, cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return `The T3 Code server at ${this.origin} did not reply, so the change may or may not have been made. Check the current state before you retry.`;
+    return `The styal server at ${this.origin} did not reply, so the change may or may not have been made. Check the current state before you retry.`;
   }
 }
 
@@ -51,7 +51,7 @@ export const serverClient = Effect.fn("RunningServer.serverClient")(function* (
 ) {
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const session = yield* Effect.acquireRelease(
-    environmentAuth.issueSession({ scopes, subject: "cli", label: "t3 cli", ttl: SESSION_TTL }),
+    environmentAuth.issueSession({ scopes, subject: "cli", label: "styal cli", ttl: SESSION_TTL }),
     ({ sessionId }) => environmentAuth.revokeSession(sessionId).pipe(Effect.ignore({ log: true })),
   );
   return yield* HttpApiClient.make(EnvironmentHttpApi, {

@@ -46,7 +46,7 @@ describe("resolveDraftEnvModeAfterBranchChange", () => {
     expect(
       resolveDraftEnvModeAfterBranchChange({
         nextWorktreePath: null,
-        currentWorktreePath: "/repo/.t3/worktrees/feature-a",
+        currentWorktreePath: "/repo/.styal/worktrees/feature-a",
         effectiveEnvMode: "worktree",
       }),
     ).toBe("local");
@@ -55,7 +55,7 @@ describe("resolveDraftEnvModeAfterBranchChange", () => {
   it("uses worktree mode when selecting a ref already attached to a worktree", () => {
     expect(
       resolveDraftEnvModeAfterBranchChange({
-        nextWorktreePath: "/repo/.t3/worktrees/feature-a",
+        nextWorktreePath: "/repo/.styal/worktrees/feature-a",
         currentWorktreePath: null,
         effectiveEnvMode: "local",
       }),
@@ -111,7 +111,7 @@ describe("resolveLocalCheckoutBranchMismatch", () => {
     expect(
       resolveLocalCheckoutBranchMismatch({
         effectiveEnvMode: "worktree",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-thread",
+        activeWorktreePath: "/repo/.styal/worktrees/feature-thread",
         activeThreadBranch: "feature/thread",
         currentGitBranch: "feature/current",
       }),
@@ -154,8 +154,8 @@ describe("offersWorkspaceModes", () => {
 
 describe("resolveLockedWorkspaceLabel", () => {
   it.each([
-    ["/home/me/.t3/worktrees/app/t3-ff466c42", "t3-ff466c42"],
-    ["/home/me/.t3/worktrees/app/t3-ff466c42/", "t3-ff466c42"],
+    ["/home/me/.styal/worktrees/app/t3-ff466c42", "t3-ff466c42"],
+    ["/home/me/.styal/worktrees/app/t3-ff466c42/", "t3-ff466c42"],
     ["C:\\Users\\me\\worktrees\\feature-x", "feature-x"],
   ])("names the worktree at %s", (path, label) => {
     expect(resolveLockedWorkspaceLabel(path, "worktree")).toBe(label);
@@ -261,15 +261,15 @@ describe("resolveBranchSelectionTarget", () => {
     expect(
       resolveBranchSelectionTarget({
         activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
+        activeWorktreePath: "/repo/.styal/worktrees/feature-a",
         refName: {
           isDefault: false,
-          worktreePath: "/repo/.t3/worktrees/feature-b",
+          worktreePath: "/repo/.styal/worktrees/feature-b",
         },
       }),
     ).toEqual({
-      checkoutCwd: "/repo/.t3/worktrees/feature-b",
-      nextWorktreePath: "/repo/.t3/worktrees/feature-b",
+      checkoutCwd: "/repo/.styal/worktrees/feature-b",
+      nextWorktreePath: "/repo/.styal/worktrees/feature-b",
       reuseExistingWorktree: true,
       staysInActiveCheckout: false,
     });
@@ -279,10 +279,10 @@ describe("resolveBranchSelectionTarget", () => {
     // A subdirectory project's own checkout is reported at the repository root.
     // The checkout root is undefined until the project's status loads.
     for (const [activeProjectCwd, activeWorktreePath, activeProjectCheckoutRoot] of [
-      ["/repo", "/repo/.t3/worktrees/feature-a", "/repo"],
-      ["/repo/packages/app", "/repo/.t3/worktrees/feature-a", "/repo"],
+      ["/repo", "/repo/.styal/worktrees/feature-a", "/repo"],
+      ["/repo/packages/app", "/repo/.styal/worktrees/feature-a", "/repo"],
       ["/repo/packages/app", null, "/repo"],
-      ["/repo/packages/app", "/repo/.t3/worktrees/feature-a", undefined],
+      ["/repo/packages/app", "/repo/.styal/worktrees/feature-a", undefined],
       ["/repo/packages/app", null, undefined],
     ] as const) {
       expect(
@@ -309,15 +309,15 @@ describe("resolveBranchSelectionTarget", () => {
     expect(
       resolveBranchSelectionTarget({
         activeProjectCwd: "/repo",
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
+        activeWorktreePath: "/repo/.styal/worktrees/feature-a",
         refName: {
           isDefault: false,
           worktreePath: null,
         },
       }),
     ).toEqual({
-      checkoutCwd: "/repo/.t3/worktrees/feature-a",
-      nextWorktreePath: "/repo/.t3/worktrees/feature-a",
+      checkoutCwd: "/repo/.styal/worktrees/feature-a",
+      nextWorktreePath: "/repo/.styal/worktrees/feature-a",
       reuseExistingWorktree: false,
       staysInActiveCheckout: true,
     });

@@ -614,13 +614,13 @@ describe("workflowAnswer", () => {
       workflowAnswer({
         choice: "Hold",
         reason: "Too risky",
-        answeredBy: "t3 workflow signal",
+        answeredBy: "styal workflow signal",
         answeredAt: "2026-11-24T10:00:00.000Z",
       }),
     ).toEqual({
       choice: "Hold",
       reason: "Too risky",
-      answeredBy: "t3 workflow signal",
+      answeredBy: "styal workflow signal",
       answeredBySession: null,
       answeredAt: "2026-11-24T10:00:00.000Z",
     });
@@ -637,7 +637,7 @@ describe("workflowAnswer", () => {
     expect(own(fromBrowser, "session-b")).toBe(false);
     // An agent and the CLI answer as a thread or a tool, which no viewer is.
     expect(own({ answeredBy: "Fix the login bug" }, "session-a")).toBe(false);
-    expect(own({ answeredBy: "t3 workflow signal" }, "session-a")).toBe(false);
+    expect(own({ answeredBy: "styal workflow signal" }, "session-a")).toBe(false);
     // An answer kept before answers recorded a session, and a viewer whose own is not known.
     expect(own({ answeredBy: "Chrome on Linux" }, "session-a")).toBe(false);
     expect(own({}, undefined)).toBe(false);
@@ -720,8 +720,8 @@ describe("workflowOneLine", () => {
 describe("workflowWithdrawal", () => {
   it("reads who withdrew a question, and why, off its result", () => {
     expect(
-      workflowWithdrawal({ withdrawn: { by: "t3 CLI", reason: "settled elsewhere" } }),
-    ).toEqual({ by: "t3 CLI", reason: "settled elsewhere" });
+      workflowWithdrawal({ withdrawn: { by: "styal CLI", reason: "settled elsewhere" } }),
+    ).toEqual({ by: "styal CLI", reason: "settled elsewhere" });
     expect(workflowWithdrawal({ withdrawn: { by: "run r1", reason: null } })).toEqual({
       by: "run r1",
       reason: null,

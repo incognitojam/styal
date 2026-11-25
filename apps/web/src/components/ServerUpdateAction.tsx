@@ -179,7 +179,7 @@ export function useServerUpdate() {
                   version: result.value.targetVersion,
                 }),
               )
-            : m(msg("Reconnected on t3@{version}.", { version: result.value.targetVersion })),
+            : m(msg("Reconnected on styal@{version}.", { version: result.value.targetVersion })),
       });
     }
     return { status: "updated" };
@@ -222,7 +222,7 @@ export function ServerUpdatesAction({
         const confirmed =
           (await requestConfirmDialog(
             gt(
-              "Update the T3 Code desktop apps on {servers}? They will close and relaunch on those machines.",
+              "Update the styal desktop apps on {servers}? They will close and relaunch on those machines.",
               { servers: desktopTargets.map((target) => target.serverLabel).join(", ") },
             ),
             { initialFocus: "confirm" },
@@ -355,7 +355,7 @@ export function ServerUpdateAction({
       const confirmed =
         (await requestConfirmDialog(
           gt(
-            "Update the T3 Code desktop app that runs the {serverLabel}? It will close and relaunch on that machine.",
+            "Update the styal desktop app that runs the {serverLabel}? It will close and relaunch on that machine.",
             { serverLabel },
           ),
           { initialFocus: "confirm" },
@@ -483,7 +483,9 @@ export function OutdatedServerUpdateAction({
     toastManager.add({
       type: "success",
       title: m(msg("{serverLabel} updated", { serverLabel })),
-      description: m(msg("Reconnected on t3@{version}.", { version: result.value.targetVersion })),
+      description: m(
+        msg("Reconnected on styal@{version}.", { version: result.value.targetVersion }),
+      ),
     });
   };
   if (fromVersion !== undefined && crossesReleaseTrack(fromVersion, targetVersion)) {
