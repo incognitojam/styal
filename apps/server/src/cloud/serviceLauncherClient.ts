@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - The serving child must finish this claim write before it can exit and release ownership.
+import * as NodeFS from "node:fs";
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -19,6 +21,7 @@ import {
   decodeServiceLauncherContext,
   decodeServiceLauncherParentMessage,
   SERVICE_LAUNCHER_CONTEXT_ENV,
+  SERVICE_BACKUP_CLAIM_FILE,
   type ServiceLauncherChildMessage,
   type ServiceLauncherParentMessage,
   type SupportedLauncherProtocol,
@@ -113,6 +116,7 @@ export class ServiceLauncherClient extends Context.Service<
     readonly requestUpdate: (input: {
       readonly targetVersion: string;
       readonly dbPath: string;
+      readonly baseDir: string;
     }) => Effect.Effect<string, ServiceLauncherClientError | ServiceLauncherRejectedError>;
     /** Owned `styal` symlinks move to the new runtime only when this start commits the trial. */
     readonly prepareTrial: (input: {
@@ -305,14 +309,52 @@ export const make = Effect.fn("cloud.service_launcher_client.make")(function* (o
       }),
     );
 
-  const requestUpdate = (input: { readonly targetVersion: string; readonly dbPath: string }) =>
+  const requestUpdate = (input: {
+    readonly targetVersion: string;
+    readonly dbPath: string;
+    readonly baseDir: string;
+  }) =>
     exchange(
-      { type: "request-update", ...input },
+      { type: "request-update", targetVersion: input.targetVersion, dbPath: input.dbPath },
       (reply) => reply.type === "update-accepted" || reply.type === "update-rejected",
     ).pipe(
       Effect.flatMap((reply) =>
         reply.type === "update-accepted"
-          ? Effect.succeed(reply.updateId)
+          ? Effect.suspend(() => {
+              try {
+                const directory = path.join(input.baseDir, "userdata");
+                const claim = path.join(directory, SERVICE_BACKUP_CLAIM_FILE);
+                const temporary = `${claim}.${process.pid}.tmp`;
+                try {
+                  const file = NodeFS.openSync(temporary, "w", 0o600);
+                  try {
+                    NodeFS.writeFileSync(file, reply.updateId);
+                    NodeFS.fsyncSync(file);
+                  } finally {
+                    NodeFS.closeSync(file);
+                  }
+                  NodeFS.renameSync(temporary, claim);
+                  const parent = NodeFS.openSync(directory, "r");
+                  try {
+                    NodeFS.fsyncSync(parent);
+                  } catch (cause) {
+                    // Windows refuses directory flushes; NTFS journals the rename itself.
+                    if (!(cause instanceof Error && "code" in cause && cause.code === "EPERM"))
+                      throw cause;
+                  } finally {
+                    NodeFS.closeSync(parent);
+                  }
+                } finally {
+                  NodeFS.rmSync(temporary, { force: true });
+                }
+              } catch (cause) {
+                return Effect.logWarning(
+                  "Could not durably claim the online update backup; the launcher will verify the claim or back up offline.",
+                  { cause },
+                ).pipe(Effect.as(reply.updateId));
+              }
+              return Effect.succeed(reply.updateId);
+            })
           : reply.type === "update-rejected"
             ? Effect.fail(
                 new ServiceLauncherRejectedError({

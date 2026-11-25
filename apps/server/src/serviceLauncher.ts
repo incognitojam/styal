@@ -424,6 +424,13 @@ async function startOnlineDatabaseBackup(
     return undefined;
   const NodeSqlite = await import("node:sqlite").catch(() => undefined);
   if (NodeSqlite === undefined) return undefined;
+  // Only the serving child can create an online claim, while it still owns the home.
+  if (!(await databaseBackupClaimed(baseDir, pending))) {
+    process.stderr.write(
+      "[service-launcher] The serving child has no online backup claim; backing up offline.\n",
+    );
+    return undefined;
+  }
 
   const stagingDir = `${backupDir}.staging`;
   const discardStaging = () =>
@@ -449,8 +456,6 @@ async function startOnlineDatabaseBackup(
   try {
     await discardStaging();
     await NodeFSP.mkdir(stagingDir, { recursive: true, mode: 0o700 });
-    // The serving child owns the home, so no other server can clear this before the snapshot.
-    await claimDatabaseBackup(baseDir, pending);
     dbPath = await NodeFSP.realpath(pending.dbPath);
     snapshot = new NodeSqlite.DatabaseSync(dbPath, { readOnly: true });
     const mode = String(snapshot.prepare("PRAGMA journal_mode").get()?.journal_mode);
@@ -513,6 +518,10 @@ async function backupOwnedDatabase(baseDir: string, pending: PendingServiceUpdat
   if (!(await databaseBackupClaimed(baseDir, pending))) {
     await discardDatabaseBackup(baseDir, pending.id);
     await claimDatabaseBackup(baseDir, pending);
+  } else {
+    // The child may have published the rename just before it died during its directory flush.
+    await syncFile(backupClaimPath(baseDir));
+    await syncDirectory(NodePath.dirname(backupClaimPath(baseDir)));
   }
   await backupDatabaseOnce(baseDir, pending);
 }
@@ -751,7 +760,15 @@ async function tryAcquireStateDirLock(
   try {
     await NodeFSP.mkdir(stateDir, { recursive: true });
     // Wait out a moment's probe, as server startup does.
-    return await tryAcquireSqliteLock(NodePath.join(stateDir, "server-owner.sqlite"), 250);
+    const lock = await tryAcquireSqliteLock(NodePath.join(stateDir, "server-owner.sqlite"), 250);
+    if (lock === undefined) return undefined;
+    let owned = true;
+    try {
+      owned = await preLockServerOwns(stateDir);
+      return owned ? undefined : lock;
+    } finally {
+      if (owned) lock.close();
+    }
   } catch (cause) {
     return cause instanceof Error ? cause : new Error(String(cause));
   }
@@ -760,10 +777,13 @@ async function tryAcquireStateDirLock(
 // Mirror acquireServerOwnership: the lock, then a live pre-lock server-runtime.json owner. A lock
 // that cannot be checked counts as owned; leave other failures for server startup to report.
 export async function stateDirOwned(baseDir: string): Promise<boolean> {
-  const stateDir = NodePath.join(baseDir, "userdata");
   const lock = await tryAcquireStateDirLock(baseDir);
   if (lock === undefined || lock instanceof Error) return true;
   lock.close();
+  return false;
+}
+
+async function preLockServerOwns(stateDir: string): Promise<boolean> {
   let record: unknown;
   try {
     record = JSON.parse(
@@ -1381,9 +1401,7 @@ export class Launcher {
       this.#child = null;
       await this.#terminate(child.process);
     }
-    // Restore only holding the home, and only a backup whose claim no other server cleared,
-    // unless an interrupted restore must finish. If the lock or claim cannot be checked, keep the
-    // pending record and backup; the resumed trial or restore decides once the home frees.
+    // Unknown ownership or claims preserve the pending record and backup for recovery.
     const ownerLock = await tryAcquireStateDirLock(this.#baseDir);
     if (ownerLock instanceof Error) {
       await this.#idleWhileStateDirOwned(ownerLock);
@@ -1396,12 +1414,19 @@ export class Launcher {
     }
     let restore: boolean;
     try {
-      restore =
-        ownerLock !== undefined &&
-        (restorePending || (await databaseBackupClaimed(this.#baseDir, pending)));
+      restore = ownerLock !== undefined && (await databaseBackupClaimed(this.#baseDir, pending));
     } catch (cause) {
       ownerLock?.close();
       await this.#idleWhileStateDirOwned(cause instanceof Error ? cause : new Error(String(cause)));
+      return;
+    }
+    if (restorePending && !restore) {
+      ownerLock?.close();
+      this.#log(
+        `[service-launcher] Automatic database recovery stopped: the backup claim is missing or belongs to another update during interrupted-restore recovery. No database was restored and no server was started. The backup remains at ${databaseBackupDir(this.#baseDir, pending.id)}. Stop the service and any server using this home, preserve both the current database and this backup, and verify or repair the database. Then move this backup directory out of runtime/db-backup and restart the service.\n`,
+      );
+      // Stay alive without retrying recovery or triggering the service manager's restart loop.
+      this.#timer = setInterval(() => {}, STATE_DIR_OWNER_POLL_MS);
       return;
     }
     const outcome = terminalUpdate({ pending, status, reason });

@@ -368,17 +368,23 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* <E>(
       yield* reportProgress("installing");
       yield* checkUpdateHandoffActivity(input, inspect);
       const updateId = yield* Effect.uninterruptible(
-        launcher.requestUpdate({ targetVersion, dbPath: serverConfig.dbPath }).pipe(
-          Effect.mapError((error) =>
-            failWith(
-              error._tag === "ServiceLauncherRejectedError"
-                ? error.reason
-                : "Could not ask the service launcher to activate the prepared update.",
-              error,
+        launcher
+          .requestUpdate({
+            targetVersion,
+            dbPath: serverConfig.dbPath,
+            baseDir: serverConfig.baseDir,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              failWith(
+                error._tag === "ServiceLauncherRejectedError"
+                  ? error.reason
+                  : "Could not ask the service launcher to activate the prepared update.",
+                error,
+              ),
             ),
+            Effect.tap(() => onHandoffAccepted()),
           ),
-          Effect.tap(() => onHandoffAccepted()),
-        ),
       );
 
       yield* Effect.logInfo("Server update prepared; handing off to the service launcher.", {
