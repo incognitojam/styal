@@ -432,6 +432,7 @@ export interface AcpAdapterV2Flavor {
    * `reasoningEffort` is its `effortLevel`).
    */
   readonly ownedModelOptionIds?: ReadonlyArray<string>;
+  readonly lockSessionModeToPolicy?: true;
   readonly sessionModeForPolicy?: (
     policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
   ) => string | undefined;
@@ -445,7 +446,7 @@ export interface AcpAdapterV2Flavor {
   ) => ReadonlyArray<{ readonly id: string; readonly value: string }>;
   /**
    * The runtime mode a native session mode grants, for flavors whose modes are permission levels.
-   * Under a policy ceiling, a mode the user picks that this does not place under it is not applied.
+   * A picked mode this does not place within the thread's runtime mode is not applied.
    */
   readonly runtimeModeForSessionMode?: (modeId: string) => RuntimeMode | undefined;
   readonly clientFileSystem?: {
@@ -2039,6 +2040,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         });
         const activeSelection = yield* Ref.make<ModelSelection | null>(null);
         const activeInteractionMode = yield* Ref.make<ProviderInteractionMode | null>(null);
+        const configuredRuntimeMode = yield* Ref.make<
+          ProviderAdapter.ProviderAdapterV2RuntimePolicy["runtimeMode"] | null
+        >(null);
         const promptInstructionStates = yield* Ref.make(new Map<string, T3AcpInstructionState>());
         // Unique markers keep delayed prompt completions from clearing later compactions.
         const compactionMarkers = yield* Ref.make(new Map<string, symbol>());
@@ -7437,9 +7441,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             });
           }
           const configOptions = yield* runtime.getConfigOptions;
-          // Under a policy ceiling, a mode the user picks applies only when the flavor can place
-          // it under the ceiling; an unknown mode could be the agent's own skip-approval mode.
-          const ceiling = runtimePolicy.maxRuntimeMode;
+          // A picked mode applies only when the flavor places it within the bound; an unknown mode
+          // could be the agent's own skip-approval mode. Modes known to be permission levels are
+          // also bounded by the thread's runtime mode, so model options cannot widen it.
+          const ceiling =
+            flavor.runtimeModeForSessionMode === undefined ||
+            (runtimePolicy.maxRuntimeMode !== undefined &&
+              isRuntimeModeAbove(runtimePolicy.runtimeMode, runtimePolicy.maxRuntimeMode))
+              ? runtimePolicy.maxRuntimeMode
+              : runtimePolicy.runtimeMode;
           const isModeChoice = (id: string) =>
             id === ACP_SESSION_MODE_OPTION_ID ||
             configOptions.some(
@@ -7535,11 +7545,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* runtime.setConfigOption(selection.id, selection.value);
           }
           const policyMode = flavor.sessionModeForPolicy?.(runtimePolicy);
+          const modeLocked = flavor.lockSessionModeToPolicy && policyMode !== undefined;
           if (policyMode !== undefined) {
             yield* runtime.setMode(policyMode);
           }
           const modeState = yield* runtime.getModeState;
           if (
+            !modeLocked &&
             modeSelection !== undefined &&
             typeof modeSelection.value === "string" &&
             modeState?.availableModes.some((mode) => mode.id === modeSelection.value) === true &&
@@ -7590,6 +7602,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const nativeBuild = nativeBuildConfigurationBySessionId.get(startResult.sessionId);
             if (nativeBuild !== undefined) {
               if (
+                policyMode === undefined &&
                 nativeBuild.modeId !== undefined &&
                 effectiveModeState?.currentModeId !== nativeBuild.modeId &&
                 effectiveModeState?.availableModes.some(
@@ -7602,7 +7615,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 const option = effectiveConfigOptions.find(
                   (candidate) => candidate.type === "select" && candidate.id === saved.id,
                 );
-                if (option === undefined || option.type !== "select") continue;
+                if (
+                  option === undefined ||
+                  option.type !== "select" ||
+                  (policyMode !== undefined && option.category === "mode")
+                )
+                  continue;
                 const choices = option.options.flatMap((entry) =>
                   "value" in entry ? [entry.value] : entry.options.map((choice) => choice.value),
                 );
@@ -7614,6 +7632,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             }
           }
           yield* validateModelSelection(modelSelection);
+          yield* Ref.set(configuredRuntimeMode, runtimePolicy.runtimeMode);
           yield* (
             flavor.onSessionConfigurationUpdate?.(
               yield* runtime.getConfigOptions,
@@ -8254,7 +8273,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               if (
                 configuredSelection === null ||
                 !modelSelectionsEqual(configuredSelection, turnInput.modelSelection) ||
-                configuredInteractionMode !== turnInput.runtimePolicy.interactionMode
+                configuredInteractionMode !== turnInput.runtimePolicy.interactionMode ||
+                (yield* Ref.get(configuredRuntimeMode)) !== turnInput.runtimePolicy.runtimeMode
               ) {
                 const currentSessionSetup = yield* Ref.get(activeSessionSetup);
                 if (currentSessionSetup === null) {

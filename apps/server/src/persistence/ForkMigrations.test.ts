@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -12,6 +13,10 @@ import {
 } from "./ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import {
+  DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+  DATABASE_MIGRATIONS_STARTED_MESSAGE,
+} from "@t3tools/shared/databaseMigrationLog";
 
 import dropWorktreeSetupState from "./ForkMigrations/014_DropWorktreeSetupState.ts";
 
@@ -107,6 +112,7 @@ organizedLayer("ForkMigrations project pins from fork migration 11", (it) => {
         [83, "CommandReadIndexes"],
         [84, "LastExecutedRunIndex"],
         [85, "TurnItemCounts"],
+        [86, "QueuedTurnInputIndex"],
       ]);
       assert.deepStrictEqual(
         yield* sql`
@@ -364,3 +370,31 @@ for (const hasTable of [true, false]) {
     },
   );
 }
+
+const forkOnlyLayer = it.layer(NodeSqliteClient.layer({ filename: ":memory:" }));
+
+forkOnlyLayer("ForkMigrations upgrade markers", (it) => {
+  it.effect("marks a fork-only upgrade so the desktop keeps waiting", () =>
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const messages: Array<unknown> = [];
+      const logger = Logger.make(({ message }) => {
+        messages.push(message);
+      });
+      yield* runAllMigrations().pipe(
+        Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
+      );
+      const markers = messages
+        .flat()
+        .filter(
+          (message) =>
+            message === DATABASE_MIGRATIONS_STARTED_MESSAGE ||
+            message === DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+        );
+      assert.deepStrictEqual(markers, [
+        DATABASE_MIGRATIONS_STARTED_MESSAGE,
+        DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+      ]);
+    }),
+  );
+});

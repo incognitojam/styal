@@ -15,8 +15,10 @@ import {
   deriveProjectionTurnUsage,
   sumThreadTokenUsage,
 } from "@t3tools/shared/turnUsage";
-import { isOrchestrationV2SupersededInterrupt } from "@t3tools/shared/orchestrationV2Timeline";
-import { isTurnItemAtOrBeforeRun } from "../orchestration-v2/ProjectionStore.ts";
+import {
+  createInheritedTurnItemVisibility,
+  isTurnItemAtOrBeforeRun,
+} from "../orchestration-v2/ProjectionStore.ts";
 
 /** An excluded ancestor contributes history, without becoming a visible imported thread. */
 export function materializeV2ForkHistory(
@@ -50,6 +52,12 @@ export function materializeV2ForkHistory(
     )
       collect(parent.thread.forkedFrom.threadId, parent.thread.forkedFrom.runId);
     const ordinals = new Map(parent.runs.map((run) => [run.id, run.ordinal]));
+    const isVisible = createInheritedTurnItemVisibility({
+      runs: parent.runs,
+      attempts: parent.attempts,
+      items: parent.turnItems,
+      providerTurns: parent.providerTurns,
+    });
     inherited.push({
       projection: parent,
       items: parent.turnItems.filter(
@@ -60,12 +68,7 @@ export function materializeV2ForkHistory(
             itemRunId: item.runId,
             runOrdinalById: ordinals,
             sourceRunOrdinal: anchor.ordinal,
-          }) &&
-          !isOrchestrationV2SupersededInterrupt({
-            item,
-            attempts: parent.attempts,
-            items: parent.turnItems,
-          }),
+          }) && isVisible(item),
       ),
     });
   };
