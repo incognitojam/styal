@@ -470,7 +470,8 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(yield* service.status).toMatchObject({
         current: false,
         recoveryPause: {
-          reason: expect.stringContaining("backup claim is missing or belongs to another update"),
+          reason:
+            "A database restore was interrupted during an update, and styal can no longer confirm the backup belongs to that update. Nothing was started, so neither the database nor the backup is overwritten.",
           recovery: expect.stringContaining(backup),
         },
       });

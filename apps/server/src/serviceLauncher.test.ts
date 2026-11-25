@@ -1276,9 +1276,9 @@ process.exit(0);
                 scenario.name,
               );
               if (pause) {
-                assert.include(
+                assert.strictEqual(
                   pause.reason,
-                  "backup claim is missing or belongs to another update",
+                  "A database restore was interrupted during an update, and styal can no longer confirm the backup belongs to that update. Nothing was started, so neither the database nor the backup is overwritten.",
                 );
                 assert.include(pause.recovery, paths.backup);
               }

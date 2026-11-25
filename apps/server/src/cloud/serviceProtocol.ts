@@ -22,7 +22,7 @@ export const SERVICE_RECOVERY_PAUSE_FILE = ".service-recovery-paused";
 
 export const serviceRecoveryPause = (backupDir: string) => ({
   reason:
-    "The backup claim is missing or belongs to another update during interrupted database recovery.",
+    "A database restore was interrupted during an update, and styal can no longer confirm the backup belongs to that update. Nothing was started, so neither the database nor the backup is overwritten.",
   recovery: `Stop the service and any server using this home, preserve both the current database and the backup at ${backupDir}, and verify or repair the database. Then move this backup directory out of runtime/db-backup and restart the service.`,
 });
 /** Set by the unit or launch agent to its own file name, so the launcher can

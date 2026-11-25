@@ -1459,7 +1459,7 @@ export class Launcher {
         this.#log(`[service-launcher] Could not record recovery pause marker: ${String(cause)}\n`);
       }
       this.#log(
-        `[service-launcher] Automatic database recovery stopped: ${pause.reason} No database was restored and no server was started. ${pause.recovery}\n`,
+        `[service-launcher] Automatic database recovery stopped: The backup claim is missing or belongs to another update during interrupted database recovery. No database was restored and no server was started. ${pause.recovery}\n`,
       );
       // Stay alive without retrying recovery or triggering the service manager's restart loop.
       this.#timer = setInterval(() => {}, STATE_DIR_OWNER_POLL_MS);
