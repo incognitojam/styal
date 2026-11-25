@@ -11,7 +11,7 @@ test(
 
     await screen.getByRole("button", "Add project").tap();
     await screen.getByText("Git URL").tap();
-    await screen.getByRole("combobox").fill("https://github.com/pingdotgg/t3code.git");
+    await screen.getByRole("combobox").fill("https://github.com/incognitojam/styal.git");
     const submit = screen.getByRole("button", "Continue (Enter)");
     await expect(submit).toBeEnabled();
 

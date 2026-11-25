@@ -135,7 +135,7 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
-const bundleId = "com.t3tools.t3code.dev";
+const bundleId = "build.styal.app.dev";
 const roots = Effect.gen(function* () {
   const path = yield* Path.Path;
   const repo = yield* path.fromFileUrl(new URL("../", import.meta.url));
@@ -876,7 +876,7 @@ const buildOnBlacksmith = Effect.fn("nativeClient.buildOnBlacksmith")(
     if (environment.GITHUB_ACTIONS === "true" || environment.T3_NATIVE_CLIENT_BUILD === "local")
       return false;
     if (!(yield* isCommandAvailable("gh"))) return false;
-    const repository = environment.T3_NATIVE_CLIENT_REPOSITORY ?? "pingdotgg/t3code";
+    const repository = environment.T3_NATIVE_CLIENT_REPOSITORY ?? "incognitojam/styal";
     const { repo } = yield* roots;
     const sha = yield* command("git", ["rev-parse", "HEAD"], false, repo);
     const pushed = yield* command(
@@ -1139,7 +1139,7 @@ const installIntoSession = Effect.fn("nativeClient.installIntoSession")(function
   // A session behind a gateway (a device pool) is reachable only with the config that opened it.
   const target = ["--session", session, ...(config ? ["--config", config] : [])];
   // Daemon variables in the shell (a device-pool login) override the config and authenticate
-  // as someone who does not hold this lease; T3 Code's own launcher drops them the same way.
+  // as someone who does not hold this lease; styal's own launcher drops them the same way.
   const agentDeviceEnvironment = config
     ? ["AGENT_DEVICE_DAEMON_BASE_URL", "AGENT_DEVICE_DAEMON_AUTH_TOKEN", "AGENT_DEVICE_CONFIG"]
     : [];
@@ -1193,7 +1193,7 @@ const installIntoSession = Effect.fn("nativeClient.installIntoSession")(function
         agentDevice,
         "open",
         bundleId,
-        `t3code-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
+        `styal-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
         ...target,
       ],
       true,
@@ -1244,7 +1244,7 @@ const main = Command.make(
     ),
     config: Flag.String("config").pipe(
       Flag.withDescription(
-        "With --session, the agent-device config the session was opened with (T3 Code's device_open returns it in targetArgs). Needed for a device pool behind a gateway.",
+        "With --session, the agent-device config the session was opened with (styal's device_open returns it in targetArgs). Needed for a device pool behind a gateway.",
       ),
       Flag.optional,
     ),

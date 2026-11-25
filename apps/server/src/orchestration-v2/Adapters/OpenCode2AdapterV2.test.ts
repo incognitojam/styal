@@ -3177,7 +3177,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal(ended?.status, "failed");
       assert.equal(
         ended?.status === "failed" ? ended.failure.message : undefined,
-        "OpenCode is waiting on a request T3 Code couldn't answer.",
+        "OpenCode is waiting on a request styal couldn't answer.",
       );
     }),
   );
@@ -5522,7 +5522,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
-  // regression: #16142 OpenCode 2 threads were missing T3 Code's MCP tools
+  // regression: #16142 OpenCode 2 threads were missing styal's MCP tools
   it.effect("names each thread's MCP server within OpenCode's limits, one name per thread", () =>
     Effect.gen(function* () {
       const project = "thread:project:ce04e4e2-6c29-4ff0-a1d7-b089dd63e258";
@@ -5554,7 +5554,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3 oc2 #images-",
+        prefix: "styal oc2 #images-",
       });
       const image = (id: string, name: string, mimeType = "image/png") =>
         ChatImageAttachment.make({

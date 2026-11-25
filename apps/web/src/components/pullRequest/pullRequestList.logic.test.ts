@@ -55,9 +55,9 @@ function entry(
     host: "github.com",
     projectId: "project-1",
     projectTitle: "t3code",
-    repository: "pingdotgg/t3code",
+    repository: "incognitojam/styal",
     title: "Add the pull requests page",
-    url: `https://github.com/pingdotgg/t3code/pull/${overrides.number}`,
+    url: `https://github.com/incognitojam/styal/pull/${overrides.number}`,
     author: { login: "octocat", name: null, avatarUrl: null },
     headBranch: `feat/branch-${overrides.number}`,
     baseBranch: "main",
@@ -101,7 +101,7 @@ describe("visible pull request line-count targets", () => {
     );
     expect([...keys]).toEqual([secondKey]);
     expect(pullRequestStatsBatches(entriesByKey, keys)[0]?.input.refs).toEqual([
-      { projectId: "project-1", repository: "pingdotgg/t3code", number: 2 },
+      { projectId: "project-1", repository: "incognitojam/styal", number: 2 },
     ]);
   });
 
@@ -688,7 +688,7 @@ describe("pull request list overrides", () => {
   const entry = (number: number, state: "open" | "closed" | "merged") =>
     ({
       host: "github.com",
-      repository: "pingdotgg/t3code",
+      repository: "incognitojam/styal",
       number,
       state,
       isDraft: false,

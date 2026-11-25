@@ -215,7 +215,7 @@ export const findWindowsShim = Effect.fn("cli.update.find_windows_shim")(functio
     ...(environment["PATH"] ?? environment["Path"] ?? "").split(";"),
   ].filter((entry) => entry.trim().length > 0);
   for (const directory of candidates) {
-    const shimPath = path.join(directory, "t3.cmd");
+    const shimPath = path.join(directory, "styal.cmd");
     const contents = yield* fs.readFileString(shimPath).pipe(Effect.option);
     if (Option.isNone(contents)) continue;
     const target = windowsShimTarget(contents.value);
@@ -311,7 +311,7 @@ const belongsToBootService = Effect.fn("cli.update.belongs_to_boot_service")(fun
   const runner = yield* ProcessRunner.ProcessRunner;
   if (platform === "linux") {
     const cgroup = yield* fs.readFileString(`/proc/${pid}/cgroup`).pipe(Effect.option);
-    return Option.isSome(cgroup) && cgroup.value.includes("/t3code.service");
+    return Option.isSome(cgroup) && cgroup.value.includes("/styal.service");
   }
   if (platform === "darwin") {
     const parent = yield* runner
@@ -384,10 +384,10 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   if (targetChannel === "preview" && currentChannel !== "preview") {
     yield* Console.log(
       [
-        `t3@${targetVersion} is a preview build.`,
+        `styal@${targetVersion} is a preview build.`,
         "  Preview builds are cut by maintainers from unreleased branches to exercise the release",
         "  pipeline. They can be broken, receive no fixes, and are never offered as updates; you",
-        `  will have to switch back to ${currentChannel} yourself with \`t3 update --channel ${currentChannel} --allow-downgrade\`.`,
+        `  will have to switch back to ${currentChannel} yourself with \`styal update --channel ${currentChannel} --allow-downgrade\`.`,
       ].join("\n"),
     );
     if (!(process.stdin.isTTY && process.stdout.isTTY)) {
@@ -430,14 +430,14 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   if (executableCurrent && serviceCurrent) {
     yield* Console.log(
       serviceVersion !== undefined
-        ? `t3 and its background service are already on ${targetVersion} (${targetChannel}).`
-        : `t3 is already on ${targetVersion} (${targetChannel}).`,
+        ? `styal and its background service are already on ${targetVersion} (${targetChannel}).`
+        : `styal is already on ${targetVersion} (${targetChannel}).`,
     );
     return;
   }
   if (!input.allowDowngrade && compareExactServiceVersions(targetVersion, newestInstalled) < 0) {
     return yield* new CliUpdateError({
-      reason: `t3@${targetVersion} is older than the installed ${newestInstalled}. Pass --allow-downgrade to install it anyway.`,
+      reason: `styal@${targetVersion} is older than the installed ${newestInstalled}. Pass --allow-downgrade to install it anyway.`,
     });
   }
 
@@ -454,8 +454,8 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       : executableCurrent
         ? `Updating the background service ${serviceVersion ?? "(unknown version)"} -> ${targetVersion} (${targetChannel}).`
         : alreadyOnDisk
-          ? "Switching T3 Code"
-          : "Updating T3 Code",
+          ? "Switching styal"
+          : "Updating styal",
     executableCurrent
       ? ""
       : `${currentVersion} → ${targetVersion}${targetChannel === "stable" ? "" : ` (${targetChannel})`}`,
@@ -476,7 +476,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       ).pipe(Effect.catchTags({ QuitError: () => Effect.succeed(false) }));
     } else {
       yield* Console.log(
-        "  Not a terminal, so the service keeps running its current version. Rerun with --yes to restart it now, or run `t3 service restart` later.",
+        "  Not a terminal, so the service keeps running its current version. Rerun with --yes to restart it now, or run `styal service restart` later.",
       );
     }
   }
@@ -513,7 +513,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
                 ? error
                 : new PinnedRuntimePreflightBlockedError({
                     version: targetVersion,
-                    reason: `t3@${targetVersion} could not confirm it supports this database (its check exited with code ${error.exitCode}), so t3 did not switch to it.`,
+                    reason: `styal@${targetVersion} could not confirm it supports this database (its check exited with code ${error.exitCode}), so t3 did not switch to it.`,
                   }),
             ),
         }),
@@ -529,8 +529,8 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
         new CliUpdateError({
           reason:
             mirror === undefined
-              ? `No release archive was published for t3@${targetVersion}.`
-              : `${mirror.organization}'s update mirror has no t3@${targetVersion} for this machine.`,
+              ? `No release archive was published for styal@${targetVersion}.`
+              : `${mirror.organization}'s update mirror has no styal@${targetVersion} for this machine.`,
         }),
       ),
     ),
@@ -566,7 +566,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       Effect.mapError(
         (error) =>
           new CliUpdateError({
-            reason: `t3@${targetVersion} is installed but the background service could not be ${restartService ? "updated" : "pointed at it"}: ${error.message}`,
+            reason: `styal@${targetVersion} is installed but the background service could not be ${restartService ? "updated" : "pointed at it"}: ${error.message}`,
           }),
       ),
     );
@@ -585,7 +585,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     });
   }
 
-  progress.success(`Installed T3 Code ${targetVersion}`);
+  progress.success(`Installed styal ${targetVersion}`);
   if (Option.isSome(repointed)) {
     yield* Console.log("  Run t3 to get started.\n");
   } else {
@@ -608,7 +608,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
           ? `the version before ${serviceVersion}`
           : serviceVersion;
     yield* Console.log(
-      `  Background service still running ${running}. Run \`t3 service restart\` when you are ready to switch it to ${targetVersion}.`,
+      `  Background service still running ${running}. Run \`styal service restart\` when you are ready to switch it to ${targetVersion}.`,
     );
   } else if (status.installed && !servesThisHome) {
     yield* Console.log(

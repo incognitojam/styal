@@ -173,7 +173,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
             stackedThreadToast({
               type: "info",
               title: m(msg("Preview is desktop-only")),
-              description: m(msg("Open T3 Code in the desktop app to use the in-app preview.")),
+              description: m(msg("Open styal in the desktop app to use the in-app preview.")),
             }),
           );
           return;

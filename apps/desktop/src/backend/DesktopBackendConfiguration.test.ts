@@ -388,7 +388,7 @@ describe("DesktopBackendConfiguration", () => {
     }> = [];
     let probeCount = 0;
     let legacyCleanupCount = 0;
-    const linuxAppRoot = "/home/test/.t3/wsl-runtime/1.2.3-x64";
+    const linuxAppRoot = "/home/test/.styal/wsl-runtime/1.2.3-x64";
     const resolvedPath = "/home/test/.local/bin:/usr/bin:/bin";
 
     return withPackagedWslHarness(
@@ -526,7 +526,7 @@ describe("DesktopBackendConfiguration", () => {
 
   it.effect("resolveWsl retires a staged runtime whose launch probe fails", () => {
     const archiveHash = "c".repeat(64);
-    const stagedAppRoot = `/home/test/.t3/wsl-runtime/sha256-${archiveHash}`;
+    const stagedAppRoot = `/home/test/.styal/wsl-runtime/sha256-${archiveHash}`;
     let probeCount = 0;
     const observedNodePtyRoots: string[] = [];
     const invalidatedRuntimeIds: string[] = [];
@@ -568,7 +568,7 @@ describe("DesktopBackendConfiguration", () => {
   });
 
   it.effect("resolveWsl keeps WSL retryable when the mounted fallback fails transiently", () => {
-    const stagedAppRoot = "/home/test/.t3/wsl-runtime/cache";
+    const stagedAppRoot = "/home/test/.styal/wsl-runtime/cache";
     const invalidatedRuntimeIds: string[] = [];
     return withPackagedWslHarness(
       {

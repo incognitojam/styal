@@ -483,21 +483,21 @@ if [ -z "$T3_ARCHIVE_VERSION" ]; then
   exit 1
 fi
 T3_SYSTEM_EXECUTABLE="$(command -v t3 2>/dev/null || true)"
-if [ -n "$T3_SYSTEM_EXECUTABLE" ] && T3_SYSTEM_VERSION="$("$T3_SYSTEM_EXECUTABLE" --version 2>/dev/null)" && [ "$T3_SYSTEM_VERSION" = "t3 v$T3_ARCHIVE_VERSION" ]; then
+if [ -n "$T3_SYSTEM_EXECUTABLE" ] && T3_SYSTEM_VERSION="$("$T3_SYSTEM_EXECUTABLE" --version 2>/dev/null)" && [ "$T3_SYSTEM_VERSION" = "styal v$T3_ARCHIVE_VERSION" ]; then
   # A matching host-provided runtime supports platforms such as musl Linux,
   # where the portable release archive cannot run.
   exec "$T3_SYSTEM_EXECUTABLE" "$@"
 fi
 # Self-contained release archive: no Node, npm, or compiler on the remote.
-# Unpacked into the pinned-runtime layout so \`t3 service install\` reuses it.
+# Unpacked into the pinned-runtime layout so \`styal service install\` reuses it.
 T3_RELEASE_BASE_URL=@@T3_RELEASE_BASE_URL@@
-T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"
+T3_RUNTIME_DIR="$HOME/.styal/runtime/versions/$T3_ARCHIVE_VERSION"
 t3_runtime_ready() {
   [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
 }
 if ! t3_runtime_ready; then
-  mkdir -p "$HOME/.t3/runtime/versions"
-  T3_LOCK="$HOME/.t3/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"
+  mkdir -p "$HOME/.styal/runtime/versions"
+  T3_LOCK="$HOME/.styal/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"
   # uutils mkdir can report success on EEXIST, so use shell noclobber.
   # An empty lock gets a short grace period for its owner to publish a PID.
   T3_LOCK_WAITED=0
@@ -539,14 +539,14 @@ if ! t3_runtime_ready; then
     printf 'Remote host needs tar to unpack %s. Install tar on it and try again.\\n' "$T3_ARCHIVE" >&2
     exit 1
   fi
-  T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
+  T3_STAGING="$(mktemp -d "$HOME/.styal/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
   t3_fetch() {
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
     else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; exit 1
     fi || {
-      printf 'Could not download t3 %s from %s. If this host cannot reach it, install t3 %s on it with https://t3.codes/install.sh (T3CODE_VERSION=%s; T3CODE_RELEASE_BASE_URL selects a mirror).\\n' "$T3_ARCHIVE_VERSION" "$1" "$T3_ARCHIVE_VERSION" "$T3_ARCHIVE_VERSION" >&2
+      printf 'Could not download t3 %s from %s. If this host cannot reach it, install t3 %s on it with https://restart.styal.invalid/install.sh (T3CODE_VERSION=%s; T3CODE_RELEASE_BASE_URL selects a mirror).\\n' "$T3_ARCHIVE_VERSION" "$1" "$T3_ARCHIVE_VERSION" "$T3_ARCHIVE_VERSION" >&2
       exit 1
     }
   }
@@ -601,16 +601,16 @@ const REMOTE_MANAGED_SERVER_RUNNING_SCRIPT = `managed_server_running() {
 
 // NFS-shared homes can link ~/.t3 to a directory that does not exist yet, and
 // mkdir -p fails with EEXIST on a dangling symlink, so create its target first.
-const REMOTE_ENSURE_T3_HOME_SCRIPT = `if [ -L "$HOME/.t3" ] && [ ! -e "$HOME/.t3" ]; then
-  (cd "$HOME" && mkdir -p "$(readlink .t3)")
+const REMOTE_ENSURE_T3_HOME_SCRIPT = `if [ -L "$HOME/.styal" ] && [ ! -e "$HOME/.styal" ]; then
+  (cd "$HOME" && mkdir -p "$(readlink .styal)")
 fi`;
 
 const REMOTE_LAUNCH_SCRIPT = `set -eu
 @@T3_NODE_ENV_SCRIPT@@
 STATE_KEY="$1"
 LAUNCHER_ID="\${2:-}"
-STATE_DIR="$HOME/.t3/ssh-launch/$STATE_KEY"
-DEFAULT_SERVER_HOME="$HOME/.t3"
+STATE_DIR="$HOME/.styal/ssh-launch/$STATE_KEY"
+DEFAULT_SERVER_HOME="$HOME/.styal"
 DEFAULT_RUNTIME_FILE="$DEFAULT_SERVER_HOME/userdata/server-runtime.json"
 PORT_FILE="$STATE_DIR/port"
 PID_FILE="$STATE_DIR/pid"
@@ -1040,8 +1040,8 @@ printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGE
 `;
 
 const REMOTE_PAIRING_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
-DEFAULT_SERVER_HOME="$HOME/.t3"
+STATE_DIR="$HOME/.styal/ssh-launch/@@T3_STATE_KEY@@"
+DEFAULT_SERVER_HOME="$HOME/.styal"
 RUNNER_FILE="$STATE_DIR/run-t3.sh"
 @@T3_ENSURE_T3_HOME_SCRIPT@@
 mkdir -p "$STATE_DIR"
@@ -1054,7 +1054,7 @@ PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
 `;
 
 const REMOTE_STOP_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/.styal/ssh-launch/@@T3_STATE_KEY@@"
 PID_FILE="$STATE_DIR/pid"
 PORT_FILE="$STATE_DIR/port"
 MANAGED_FILE="$STATE_DIR/managed"
@@ -1078,7 +1078,7 @@ printf '{"stopped":true}\\n'
 `;
 
 const REMOTE_LOG_TAIL_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/.styal/ssh-launch/@@T3_STATE_KEY@@"
 LOG_FILE="$STATE_DIR/server.log"
 if [ -f "$LOG_FILE" ]; then
   tail -n 80 "$LOG_FILE" 2>/dev/null || true

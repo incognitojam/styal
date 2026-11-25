@@ -398,8 +398,8 @@ describe("change request media urls", () => {
     ["https://example.com/a.png", "https://example.com/a.png"],
     ["docs/a.png", "docs/a.png"],
   ])("resolves %s against the forge", (url, expected) => {
-    expect(resolveChangeRequestMediaUrl(url, "https://git.cafe/pingdotgg/t3code/pulls/31251")).toBe(
-      expected,
-    );
+    expect(
+      resolveChangeRequestMediaUrl(url, "https://git.cafe/incognitojam/styal/pulls/31251"),
+    ).toBe(expected);
   });
 });

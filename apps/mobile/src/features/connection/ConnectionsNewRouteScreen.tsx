@@ -363,7 +363,7 @@ function PairingScanCard(props: {
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
           {gt("Scan the code from {command} or desktop Connections settings", {
-            command: "t3 pair",
+            command: "styal pair",
           })}
         </Text>
       </View>

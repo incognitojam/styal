@@ -75,7 +75,7 @@ interface ManagedChild {
 const runtimePaths = (baseDir: string, version: string) => {
   const versionDir = NodePath.join(baseDir, "runtime", "versions", version);
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
-  const executableName = process.platform === "win32" ? "t3.exe" : "t3";
+  const executableName = process.platform === "win32" ? "styal.exe" : "styal";
   return {
     versionDir,
     entryPath: NodePath.join(versionDir, executableName),
@@ -89,7 +89,7 @@ const runtimeSpawnArguments = (paths: ReturnType<typeof runtimePaths>) => ({
 });
 
 /**
- * The unit or launch agent that `t3 service install` wrote. Its program names
+ * The unit or launch agent that `styal service install` wrote. Its program names
  * the runtime that ran the install, and a remote update never replaces it, so
  * after a commit the launcher points it at the committed runtime. Otherwise the
  * next start lands on a runtime that nothing in the service state records.
@@ -164,7 +164,7 @@ async function serviceUnitFromEnvironment(
   if (unitName.endsWith(".xml")) {
     const localAppData = env.LOCALAPPDATA?.trim();
     if (!localAppData) return undefined;
-    const path = NodePath.win32.join(localAppData, "t3code", unitName);
+    const path = NodePath.win32.join(localAppData, "styal", unitName);
     const taskName = serviceTaskName(env.USERDOMAIN ?? "", env.USERNAME ?? "");
     return { path, reload: () => registerServiceTask(path, taskName) };
   }
@@ -215,7 +215,7 @@ const SERVICE_UNIT_PROGRAMS = [
 
 /**
  * The unit contents with their program pointed at `version`'s runtime. A unit
- * already at that version or a newer one is returned unchanged: `t3 update`
+ * already at that version or a newer one is returned unchanged: `styal update`
  * may have repointed it to a later version while this commit was in flight.
  */
 function repointServiceUnit(contents: string, version: string): string {
@@ -935,7 +935,7 @@ export class Launcher {
       const lock = await tryAcquireSqliteLock(lockPath);
       if (lock !== undefined) return lock;
       if (attempt >= LOCK_ATTEMPTS) {
-        throw new Error("Another T3 Code service launcher still runs for this T3 home.");
+        throw new Error("Another styal service launcher still runs for this T3 home.");
       }
       await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
     }
@@ -1040,7 +1040,7 @@ export class Launcher {
     ]);
     const free = Math.min(...available);
     return free < MIN_SERVICE_START_FREE_BYTES
-      ? `T3 Code needs at least ${MIN_SERVICE_START_FREE_BYTES} bytes free before starting the server; ${free} bytes available.`
+      ? `styal needs at least ${MIN_SERVICE_START_FREE_BYTES} bytes free before starting the server; ${free} bytes available.`
       : undefined;
   }
 
@@ -1169,7 +1169,7 @@ export class Launcher {
     )
       return;
     if (!(await runtimeExists(this.#baseDir, version))) {
-      throw new Error(`Selected t3@${version} runtime is missing or incomplete.`);
+      throw new Error(`Selected styal@${version} runtime is missing or incomplete.`);
     }
     if (this.#stopping) return;
     const paths = runtimePaths(this.#baseDir, version);
@@ -1386,7 +1386,7 @@ export class Launcher {
       }
     } catch (error) {
       process.stderr.write(
-        `[service-launcher] Could not point ${unit.path} at t3@${version}: ${error instanceof Error ? error.message : String(error)}\n`,
+        `[service-launcher] Could not point ${unit.path} at styal@${version}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
   }
@@ -1464,7 +1464,7 @@ export class Launcher {
     }
     this.#releaseServing();
     this.#log(
-      "[service-launcher] Another T3 Code server owns this T3 home. This service starts again once it stops.\n",
+      "[service-launcher] Another styal server owns this T3 home. This service starts again once it stops.\n",
     );
     this.#stateDirFreeProbes = 0;
     // The interval also keeps Node alive: signal listeners alone do not.
@@ -1533,7 +1533,7 @@ export interface LauncherOptions {
 export async function main(options: LauncherOptions = {}): Promise<void> {
   const baseDir = options.baseDir ?? process.env.T3CODE_HOME;
   if (baseDir === undefined || baseDir.trim() === "") {
-    throw new Error("T3CODE_HOME is required by the T3 Code service launcher.");
+    throw new Error("T3CODE_HOME is required by the styal service launcher.");
   }
   const output =
     options.logFile === undefined ? undefined : NodeFS.openSync(options.logFile, "a", 0o600);
@@ -1558,7 +1558,7 @@ export async function main(options: LauncherOptions = {}): Promise<void> {
       state = adoptLegacyServiceState(contents);
       if (state === undefined) throw new Error("Service state is invalid or unsupported.");
       if (!(await runtimeExists(baseDir, state.activeVersion))) {
-        throw new Error(`Selected t3@${state.activeVersion} runtime is missing or incomplete.`);
+        throw new Error(`Selected styal@${state.activeVersion} runtime is missing or incomplete.`);
       }
     }
     const serviceUnit = await serviceUnitFromEnvironment(managerEnvironment);

@@ -218,7 +218,7 @@ const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configured
 // Brotli quality 5 encodes in hundreds of ms; default quality 11 would replace transfer stalls with encode stalls.
 function devCompressionPlugin(): Plugin {
   return {
-    name: "t3code:dev-compression",
+    name: "styal:dev-compression",
     apply: "serve",
     configureServer(server) {
       server.middlewares.use(
@@ -234,7 +234,7 @@ function devCompressionPlugin(): Plugin {
 // which blanks the app at boot. Fail the build instead of shipping it.
 function chunkCycleGuardPlugin(): Plugin {
   return {
-    name: "t3code:chunk-cycle-guard",
+    name: "styal:chunk-cycle-guard",
     apply: "build",
     generateBundle(_options, bundle) {
       const done = new Set<string>();
@@ -258,7 +258,7 @@ function chunkCycleGuardPlugin(): Plugin {
 // a copy of every changed chunk from every rebuild. Fixed names overwrite the previous copy.
 function bundledDevStableNamesPlugin(): Plugin {
   return {
-    name: "t3code:bundled-dev-stable-names",
+    name: "styal:bundled-dev-stable-names",
     apply: "serve",
     outputOptions: (options) => ({
       ...options,
@@ -274,7 +274,7 @@ function bundledDevStableNamesPlugin(): Plugin {
 function bootstrapTitlePlugin(): Plugin {
   let development = false;
   return {
-    name: "t3code:bootstrap-title",
+    name: "styal:bootstrap-title",
     configResolved(config) {
       // The same flag Vite exposes to the app as import.meta.env.DEV.
       development = !config.isProduction;
@@ -284,7 +284,7 @@ function bootstrapTitlePlugin(): Plugin {
         hostedAppChannel: configuredHostedAppChannel,
         development,
       });
-      const title = formatAppDisplayName({ baseName: "T3 Code", stageLabel });
+      const title = formatAppDisplayName({ baseName: "styal", stageLabel });
       return html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
     },
   };

@@ -125,7 +125,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           mode: "dev",
           baseEnv: {
             T3_SERVICE_LAUNCHER_CONTEXT: '{"childVersion":"9.9.9"}',
-            T3_BOOT_SERVICE_UNIT: "t3code.service",
+            T3_BOOT_SERVICE_UNIT: "styal.service",
           },
           serverOffset: 0,
           webOffset: 0,
@@ -505,7 +505,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
           mode: "dev",
-          baseEnv: { T3CODE_HOME: "/home/user/.t3" },
+          baseEnv: { T3CODE_HOME: "/home/user/.styal" },
           serverOffset: 0,
           webOffset: 0,
           t3Home: undefined,
@@ -549,9 +549,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         assert.equal(yield* homeFor("~someone/t3-dev"), path.resolve("~someone/t3-dev"));
         assert.equal(yield* homeFor("relative/t3-dev"), path.resolve("relative/t3-dev"));
         assert.equal(yield* homeFor("/tmp/t3-dev"), path.resolve("/tmp/t3-dev"));
-        // An explicit ~/.t3 would put state in the live userdata; leaving it implicit selects ~/.t3/dev.
-        assert.equal(yield* homeFor("~/.t3"), undefined);
-        assert.equal(yield* homeFor("/home/dev/.t3/"), undefined);
+        // An explicit ~/.t3 would put state in the live userdata; leaving it implicit selects ~/.styal/dev.
+        assert.equal(yield* homeFor("~/.styal"), undefined);
+        assert.equal(yield* homeFor("/home/dev/.styal/"), undefined);
       }),
     );
 
@@ -761,7 +761,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       });
     });
 
-    describe("t3 home precedence", () => {
+    describe("styal home precedence", () => {
       const makeWorktree = Effect.acquireRelease(
         Effect.sync(() => {
           const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-devrunner-"));
@@ -815,7 +815,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: "/tmp/explicit-home",
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: "/home/user/.styal",
           });
           assert.equal(home, path.resolve("/tmp/explicit-home"));
         }).pipe(Effect.scoped),
@@ -828,9 +828,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: "   ",
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: "/home/user/.styal",
           });
-          assert.equal(home, path.join(path.resolve(root), ".t3"));
+          assert.equal(home, path.join(path.resolve(root), ".styal"));
         }).pipe(Effect.scoped),
       );
 
@@ -841,9 +841,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: undefined,
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: "/home/user/.styal",
           });
-          assert.equal(home, path.join(path.resolve(root), ".t3"));
+          assert.equal(home, path.join(path.resolve(root), ".styal"));
         }).pipe(Effect.scoped),
       );
 
@@ -852,8 +852,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const path = yield* Path.Path;
           const root = yield* makeWorktree;
           const home = path.join(root, "home");
-          NodeFS.mkdirSync(path.join(home, ".t3", "userdata"), { recursive: true });
-          NodeFS.writeFileSync(path.join(home, ".t3", "userdata", "statev2.sqlite"), "");
+          NodeFS.mkdirSync(path.join(home, ".styal", "userdata"), { recursive: true });
+          NodeFS.writeFileSync(path.join(home, ".styal", "userdata", "statev2.sqlite"), "");
 
           const spawnedArgs = (seed: boolean | undefined) =>
             Effect.gen(function* () {
@@ -881,11 +881,11 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
 
           assert.deepStrictEqual(yield* spawnedArgs(false), []);
           const [seedArgs] = yield* spawnedArgs(undefined);
-          assert.includeMembers([...(seedArgs ?? [])], ["--base-dir", path.join(root, ".t3")]);
+          assert.includeMembers([...(seedArgs ?? [])], ["--base-dir", path.join(root, ".styal")]);
 
           // Either database means the worktree already has data.
           for (const name of ["state.sqlite", "statev2.sqlite"]) {
-            const file = path.join(root, ".t3", "userdata", name);
+            const file = path.join(root, ".styal", "userdata", name);
             NodeFS.mkdirSync(path.dirname(file), { recursive: true });
             NodeFS.writeFileSync(file, "");
             assert.deepStrictEqual(yield* spawnedArgs(undefined), []);
@@ -906,7 +906,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             const path = yield* Path.Path;
             const root = yield* makeWorktree;
             const home = path.join(root, "home");
-            const source = path.join(home, ".t3", "userdata", "statev2.sqlite");
+            const source = path.join(home, ".styal", "userdata", "statev2.sqlite");
             NodeFS.mkdirSync(path.dirname(source), { recursive: true });
             NodeFS.writeFileSync(source, "");
             const spawned: Array<ReadonlyArray<string>> = [];
@@ -974,9 +974,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: undefined,
             cwd: NodeOS.tmpdir(),
-            ambientHome: "/home/user/.t3",
+            ambientHome: "/home/user/.styal",
           });
-          assert.equal(home, path.resolve("/home/user/.t3"));
+          assert.equal(home, path.resolve("/home/user/.styal"));
         }),
       );
     });

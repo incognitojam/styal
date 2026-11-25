@@ -2,7 +2,7 @@
 async function fetchGithubStars(): Promise<string> {
   const token = process.env.GITHUB_TOKEN;
   try {
-    const response = await fetch("https://api.github.com/repos/pingdotgg/t3code", {
+    const response = await fetch("https://api.github.com/repos/incognitojam/styal", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!response.ok) throw new Error(`GitHub API responded ${response.status}`);

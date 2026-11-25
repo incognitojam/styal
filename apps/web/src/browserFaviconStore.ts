@@ -27,7 +27,7 @@ import {
 import { useComposerDraftStore } from "./composerDraftStore";
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 
-const BROWSER_FAVICON_STORAGE_KEY = "t3code:browser-favicons:v1";
+const BROWSER_FAVICON_STORAGE_KEY = "styal:browser-favicons:v1";
 const MAX_PENDING_ORIGINS_PER_THREAD = 10;
 const MAX_PENDING_THREADS = 20;
 

@@ -634,7 +634,7 @@ export default function DiffPanel({
   const refreshBranchDiffPreview = refreshPreviewQuery;
   const diffRefreshKey = `diff:${activeThreadRefreshKey ?? ""}`;
 
-  // The panel stays mounted while hidden, and edits made outside T3 Code bump no mutation id, so
+  // The panel stays mounted while hidden, and edits made outside styal bump no mutation id, so
   // showing it revalidates the diff; that also stands in for focus events missed while hidden.
   // A git diff is too costly to repeat on a timer nobody asked for. A diff read within the floor,
   // such as a mutation's refetch while hidden, already counts as that revalidation.
@@ -1567,7 +1567,7 @@ export default function DiffPanel({
                 {fileTreeOpen ? (
                   <FileExplorerPane
                     resizable
-                    storageKey="t3code:diff-file-tree-width"
+                    storageKey="styal:diff-file-tree-width"
                     defaultWidthFraction={0.4}
                     resizeLabel={gt("Resize Changes files")}
                   >

@@ -146,7 +146,7 @@ const unitPlan = (root: string, version: string) => ({
   program: [`${root}/runtime/versions/${version}/t3`, "__service-launcher"],
   baseDir: root,
   logPath: `${root}/logs/boot-service.log`,
-  unitPath: `${root}/unit/t3code.service`,
+  unitPath: `${root}/unit/styal.service`,
 });
 
 const writeFakeRuntime = (
@@ -156,7 +156,7 @@ const writeFakeRuntime = (
   childSource: string,
 ) =>
   Effect.gen(function* () {
-    const entryPath = path.join(versionDir, "t3");
+    const entryPath = path.join(versionDir, "styal");
     yield* fs.makeDirectory(versionDir, { recursive: true });
     yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
     yield* fs.chmod(entryPath, 0o755);
@@ -467,7 +467,7 @@ setInterval(() => {}, 1_000);
         conhostPath: "conhost.exe",
       });
       yield* fs.writeFileString(unitPath, unit);
-      // Task Scheduler's copy: `t3 doctor` disabled it to keep the service stopped.
+      // Task Scheduler's copy: `styal doctor` disabled it to keep the service stopped.
       let task = disabledServiceTask(unit.replace("1.1.0", "1.0.0"));
       const schtasks = async (...args: ReadonlyArray<string>) => {
         if (args[0] === "/Create") task = decodeServiceUnit(await NodeFSP.readFile(args[2] ?? ""));
@@ -490,7 +490,7 @@ setInterval(() => {}, 1_000);
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-unit-" });
       const home = path.join(root, "home");
-      const unitPath = path.join(home, "Library", "LaunchAgents", "t3code.plist");
+      const unitPath = path.join(home, "Library", "LaunchAgents", "styal.plist");
       const render = (version: string) =>
         renderBootServicePlist(unitPlan(root, version), { homeDir: home, environmentPath: "" });
       yield* fs.makeDirectory(path.dirname(unitPath), { recursive: true });
@@ -516,7 +516,7 @@ setInterval(() => {}, 1_000);
         }),
       );
       vi.stubEnv("HOME", home);
-      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "t3code.plist");
+      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "styal.plist");
 
       yield* Effect.promise(() =>
         expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
@@ -535,7 +535,7 @@ setInterval(() => {}, 1_000);
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-xdg-" });
         const home = path.join(root, "home");
         const managerUnitDir = path.join(home, ".config", "systemd", "user");
-        const unitPath = path.join(managerUnitDir, "t3code.service");
+        const unitPath = path.join(managerUnitDir, "styal.service");
         const render = (version: string) =>
           renderBootServiceUnit({ ...unitPlan(root, version), unitPath });
         yield* fs.makeDirectory(managerUnitDir, { recursive: true });
@@ -579,7 +579,7 @@ setInterval(() => {}, 1_000);
         vi.stubEnv("HOME", home);
         // environment.d changes what services inherit, not where the manager reads units.
         vi.stubEnv("XDG_CONFIG_HOME", path.join(home, "service-config"));
-        vi.stubEnv("T3_BOOT_SERVICE_UNIT", "t3code.service");
+        vi.stubEnv("T3_BOOT_SERVICE_UNIT", "styal.service");
 
         yield* Effect.promise(() =>
           expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
@@ -596,7 +596,7 @@ setInterval(() => {}, 1_000);
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-log-" });
       const home = path.join(root, "home");
-      const unitPath = path.join(home, "Library", "LaunchAgents", "t3code.plist");
+      const unitPath = path.join(home, "Library", "LaunchAgents", "styal.plist");
       const plan = unitPlan(root, "1.0.0");
       yield* fs.makeDirectory(path.dirname(unitPath), { recursive: true });
       yield* fs.writeFileString(
@@ -620,7 +620,7 @@ setInterval(() => {}, 1_000);
         }),
       );
       vi.stubEnv("HOME", home);
-      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "t3code.plist");
+      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "styal.plist");
 
       yield* Effect.promise(() =>
         expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
@@ -749,7 +749,7 @@ process.exit(0);
 
       yield* Effect.promise(() =>
         expect(runLauncher(root)).rejects.toThrow(
-          "Selected t3@1.0.0 runtime is missing or incomplete.",
+          "Selected styal@1.0.0 runtime is missing or incomplete.",
         ),
       );
       assert.equal(yield* fs.readFileString(statePath), contents);

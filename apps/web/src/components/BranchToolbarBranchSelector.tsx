@@ -629,7 +629,7 @@ export function BranchToolbarBranchSelector({
   useEffect(() => {
     if (projectCloneDone) refreshStaleRefs();
   }, [projectCloneDone]);
-  // A checkout made outside T3 Code, such as a clone finishing, leaves refs listed before it.
+  // A checkout made outside styal, such as a clone finishing, leaves refs listed before it.
   const statusBranch = branchStatusQuery.data?.refName ?? null;
   const refreshRefsMissingStatusBranch = useEffectEvent((branch: string | null) => {
     if (isInitialBranchesLoadPending || branch === null) return;

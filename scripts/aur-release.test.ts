@@ -117,7 +117,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("AUR release", 
         assert.deepEqual(selected.stdout.trim().split("\n"), [
           version.replace("-nightly.", "_nightly."),
           "x86_64 aarch64",
-          `${localName}::https://github.com/pingdotgg/t3code/releases/download/v${version}/${prefix}-${upstreamArch}.AppImage`,
+          `${localName}::https://updates.styal.invalid/releases/download/v${version}/${prefix}-${upstreamArch}.AppImage`,
           checksum.repeat(64),
           localName,
         ]);

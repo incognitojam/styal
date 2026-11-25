@@ -9,7 +9,7 @@ import * as GitHubRest from "./GitHubRest.ts";
 describe("starred", () => {
   it.effect("checks and stars only a valid repository, true only on 204", () => {
     const paths: Array<string> = [];
-    const starred = new Set(["user/starred/pingdotgg/t3code"]);
+    const starred = new Set(["user/starred/incognitojam/styal"]);
     const api = Layer.mock(GitHubRest.GitHubRest)({
       rest: (input) => {
         paths.push(`${input.method ?? "GET"} ${input.path}`);
@@ -32,18 +32,18 @@ describe("starred", () => {
     return Effect.gen(function* () {
       const isStarred = yield* makeIsRepositoryStarred;
       const star = yield* makeStarRepository;
-      assert.isTrue(yield* isStarred("github.com", "pingdotgg/t3code"));
+      assert.isTrue(yield* isStarred("github.com", "incognitojam/styal"));
       assert.isFalse(yield* isStarred("github.com", "pingdotgg/uploadthing"));
-      assert.isFalse(yield* isStarred("github.com", "pingdotgg/t3code/../../user"));
+      assert.isFalse(yield* isStarred("github.com", "incognitojam/styal/../../user"));
       assert.isFalse(yield* isStarred("github.com", "../repos"));
-      assert.isTrue(yield* star("github.com", "pingdotgg/t3code"));
+      assert.isTrue(yield* star("github.com", "incognitojam/styal"));
       assert.isFalse(yield* star("github.com", "pingdotgg/uploadthing"));
-      assert.isFalse(yield* star("github.com", "pingdotgg/t3code/../../user"));
+      assert.isFalse(yield* star("github.com", "incognitojam/styal/../../user"));
       assert.isFalse(yield* star("github.com", "../repos"));
       assert.deepStrictEqual(paths, [
-        "GET user/starred/pingdotgg/t3code",
+        "GET user/starred/incognitojam/styal",
         "GET user/starred/pingdotgg/uploadthing",
-        "PUT user/starred/pingdotgg/t3code",
+        "PUT user/starred/incognitojam/styal",
         "PUT user/starred/pingdotgg/uploadthing",
       ]);
     }).pipe(Effect.provide(api));

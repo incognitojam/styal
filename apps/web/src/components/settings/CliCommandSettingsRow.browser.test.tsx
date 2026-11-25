@@ -12,11 +12,11 @@ it("blocks installation behind another t3 without blocking removal of our instal
     supported: true,
     installedPath: null,
     onPath: false,
-    launcherPath: "/home/test/.t3/bin/t3",
+    launcherPath: "/home/test/.styal/bin/styal",
   };
   const getState = vi.fn(async (): Promise<DesktopCliCommandState> => ({
     ...state,
-    shadowedBy: "/usr/local/bin/t3",
+    shadowedBy: "/usr/local/bin/styal",
   }));
   const uninstall = vi.fn(async () => state);
   using _bridge = stubGlobal("desktopBridge", {
@@ -40,8 +40,8 @@ it("blocks installation behind another t3 without blocking removal of our instal
 
   getState.mockResolvedValue({
     ...state,
-    installedPath: "/home/test/.local/bin/t3",
-    shadowedBy: "/usr/local/bin/t3",
+    installedPath: "/home/test/.local/bin/styal",
+    shadowedBy: "/usr/local/bin/styal",
   });
   await act(() => registry.refresh(desktopCliCommandStateAtom));
   const remove = screen.getByRole("button", { name: "Remove" });

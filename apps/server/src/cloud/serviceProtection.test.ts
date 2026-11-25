@@ -233,7 +233,7 @@ it.effect("counts memory.min as protection and names the first cgroup that grant
     "user-1000.slice",
     "user@1000.service",
     "app.slice",
-    "t3code.service",
+    "styal.service",
   ];
   const write = (depth: number, file: string, value: string) => {
     const directory = NodePath.join(root, ...controlGroup.slice(0, depth));
@@ -290,7 +290,7 @@ it.effect(
       Effect.provideService(
         ProcessRunner.ProcessRunner,
         runner(
-          "ControlGroup=/user.slice/user-1000.slice/user@1000.service/app.slice/t3code.service\nMainPID=0\n",
+          "ControlGroup=/user.slice/user-1000.slice/user@1000.service/app.slice/styal.service\nMainPID=0\n",
         ),
       ),
       Effect.provide(NodeServices.layer),

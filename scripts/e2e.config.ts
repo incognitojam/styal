@@ -18,7 +18,7 @@ const resolved = await Effect.gen(function* () {
   const path = yield* Path.Path;
   const env = yield* HostProcess.Environment;
   const scripts = yield* path.fromFileUrl(new URL(".", import.meta.url));
-  const home = path.resolve(scripts, "../.t3/scenarios");
+  const home = path.resolve(scripts, "../.styal/scenarios");
   // A pooled device reaches this machine over the tailnet, not localhost.
   const host = yield* run("tailscale", ["ip", "-4"]).pipe(
     Effect.map((result) => result.stdout.trim().split("\n")[0] ?? ""),
@@ -47,7 +47,7 @@ const resolved = await Effect.gen(function* () {
 }).pipe(Effect.provide(NodeServices.layer), Effect.runPromise);
 
 export const APP_DIR = resolved.appDir;
-/** T3 homes only scenarios use, recreated on every run. `.t3` is gitignored. */
+/** T3 homes only scenarios use, recreated on every run. `.styal` is gitignored. */
 export const T3_HOME = resolved.home;
 export const MOBILE_T3_HOME = `${T3_HOME}-mobile`;
 export const MOBILE = resolved.mobile;
@@ -177,7 +177,7 @@ export default {
         session: "t3-scenarios",
       }),
       app: {
-        bundleId: "com.t3tools.t3code.dev",
+        bundleId: "build.styal.app.dev",
         // Metro starts after the server listens, so it answering means both are up.
         readyUrl: `http://127.0.0.1:${MOBILE.metroPort}/status`,
         command: {

@@ -27,7 +27,7 @@ const legacyPermissionEnvironmentsAtom = Atom.make((get) =>
 ).pipe(Atom.withLabel("web-legacy-permission-environments"));
 
 const dismissalKey = (environmentId: EnvironmentId) =>
-  `t3code:permission-update:v1:${environmentId}`;
+  `styal:permission-update:v1:${environmentId}`;
 
 /** Shows the notice and returns a withdraw that closes it without recording a dismissal. */
 function showPermissionNotice(

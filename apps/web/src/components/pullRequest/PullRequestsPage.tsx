@@ -1261,7 +1261,7 @@ export function PullRequestsPage() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title={gt("Pull requests unavailable")}
-          error={gt("Update your T3 Code servers to browse pull requests.")}
+          error={gt("Update your styal servers to browse pull requests.")}
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} caption={gt("Loading pull requests…")} />
@@ -1592,7 +1592,7 @@ export function PullRequestsPage() {
             maximized={rightPanelMaximized}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
-            widthStorageKey="t3code:pull-request-panel-width"
+            widthStorageKey="styal:pull-request-panel-width"
             defaultWidth={typeof window === "undefined" ? 640 : Math.floor(window.innerWidth / 2)}
             surfaces={renderedRightPanelSurfaces}
             environmentId={panelEnvironmentId}

@@ -611,7 +611,7 @@ const layerTelemetry = Layer.unwrap(
       serviceName: "t3code-desktop",
       serviceVersion,
       attributes: {
-        "service.namespace": "t3code",
+        "service.namespace": "styal",
         "service.runtime": "desktop",
         "t3code.desktop.mode": environment.isDevelopment ? "development" : "packaged",
         "service.instance.id": processServiceInstanceId(endpoints.resourceAttributes),

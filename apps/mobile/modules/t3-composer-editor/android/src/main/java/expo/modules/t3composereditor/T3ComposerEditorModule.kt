@@ -11,7 +11,7 @@ import org.json.JSONArray
 internal object T3ComposerClipboard {
   // Pasted thread links become chips in JS; packages/shared/src/threadLinks.ts parses them.
   fun hasThreadLink(text: String): Boolean =
-    text.contains("t3-thread://v2/") || text.contains("https://app.t3.codes/threads/")
+    text.contains("t3-thread://v2/") || text.contains("https://app.restart.styal.invalid/threads/")
 
   fun write(context: Context, text: String, fragment: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -22,7 +22,7 @@ internal object T3ComposerClipboard {
     }
     val records = payload?.optJSONArray("records")
     if (payload == null || records == null) {
-      clipboard.setPrimaryClip(ClipData.newPlainText("T3 Code", text))
+      clipboard.setPrimaryClip(ClipData.newPlainText("styal", text))
       return
     }
     val all = (0 until records.length()).map { records.getJSONObject(it) }
@@ -40,12 +40,12 @@ internal object T3ComposerClipboard {
     clipboard.setPrimaryClip(
       if (selected.isEmpty()) {
         ClipData.newPlainText(
-          "T3 Code",
+          "styal",
           text
         )
       } else {
         ClipData.newHtmlText(
-          "T3 Code",
+          "styal",
           text,
           "<pre data-t3-context-fragment=\"$encoded\">$escaped</pre>"
         )

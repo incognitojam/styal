@@ -26,7 +26,7 @@ const failureMessage = (cause: Cause.Cause<unknown>) => {
 
 const openUrl = (url: string) => void Linking.openURL(url).catch(() => undefined);
 
-/** Signs an environment in through a forge's own app, such as T3 Code for GitHub. */
+/** Signs an environment in through a forge's own app, such as styal for GitHub. */
 export function AppSignInRow(props: {
   readonly environment: SettingsTarget;
   readonly label: string;

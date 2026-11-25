@@ -95,7 +95,7 @@ async function warmLazyEntries(
 // Warm them on listening to avoid serial compilation before first paint.
 export function warmBundledDevPlugin(): Plugin {
   return {
-    name: "t3code:warm-bundled-dev",
+    name: "styal:warm-bundled-dev",
     apply: "serve",
     configureServer(server) {
       if (!server.config.experimental.bundledDev) return;

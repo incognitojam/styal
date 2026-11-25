@@ -126,7 +126,7 @@ export const otlpResource = (
   serviceName: "t3code-server",
   serviceVersion: packageJson.version,
   attributes: {
-    "service.namespace": "t3code",
+    "service.namespace": "styal",
     "service.runtime": "t3-server",
     "t3code.server.managed_by": config.mode === "desktop" ? "desktop" : "standalone",
     "service.instance.id": processServiceInstanceId(config.otelEnvironment.resourceAttributes),

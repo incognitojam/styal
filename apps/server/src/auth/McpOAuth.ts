@@ -87,7 +87,7 @@ export const protectedResourceMetadata = (
   authorization_servers: [urls.issuer],
   scopes_supported: MCP_OAUTH_SCOPES,
   bearer_methods_supported: ["header"],
-  resource_name: "T3 Code",
+  resource_name: "styal",
 });
 
 export const authorizationServerMetadata = (
@@ -148,7 +148,7 @@ const ClientIdPayload = Schema.Struct({
   v: Schema.Literal(1),
   n: Schema.String,
   r: Schema.Array(Schema.String),
-  /** Registered as another T3 Code environment's peer link. */
+  /** Registered as another styal environment's peer link. */
   p: Schema.optionalKey(Schema.Literal(1)),
 });
 const decodeClientIdPayload = Schema.decodeUnknownOption(Schema.fromJsonString(ClientIdPayload));
@@ -611,9 +611,9 @@ export const layerMcpClientAuthenticator = Layer.effect(
     const environmentId = yield* environment.getEnvironmentId;
     const hostedAppUrl = yield* hostedAppUrlConfig.pipe(
       Effect.catch((cause) =>
-        Effect.logWarning("Outside MCP clients get app.t3.codes thread links", { cause }).pipe(
-          Effect.as(DEFAULT_HOSTED_APP_URL),
-        ),
+        Effect.logWarning("Outside MCP clients get app.restart.styal.invalid thread links", {
+          cause,
+        }).pipe(Effect.as(DEFAULT_HOSTED_APP_URL)),
       ),
     );
     return McpHttpServer.McpClientAuthenticator.of({

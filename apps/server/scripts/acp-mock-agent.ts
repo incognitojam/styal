@@ -1374,11 +1374,11 @@ const program = Effect.gen(function* () {
             rawOutput: {
               action: {
                 type: "search",
-                query: "t3 code",
+                query: "styal code",
                 sources: [
-                  { type: "url", url: "https://t3.codes" },
-                  { type: "url", url: "https://t3.codes" },
-                  { type: "url", url: "https://github.com/pingdotgg/t3code" },
+                  { type: "url", url: "https://restart.styal.invalid" },
+                  { type: "url", url: "https://restart.styal.invalid" },
+                  { type: "url", url: "https://github.com/incognitojam/styal" },
                 ],
               },
               id: "grok-web-search",
@@ -1388,15 +1388,15 @@ const program = Effect.gen(function* () {
           {
             sessionUpdate: "tool_call_update",
             toolCallId: "grok-web-fetch",
-            title: "Fetch: https://t3.codes",
+            title: "Fetch: https://restart.styal.invalid",
             kind: "fetch",
             status: "completed",
-            rawInput: { variant: "WebFetch", url: "https://t3.codes" },
+            rawInput: { variant: "WebFetch", url: "https://restart.styal.invalid" },
             rawOutput: {
               type: "WebFetch",
-              Content: { url: "https://t3.codes", content: "T3 Code page" },
+              Content: { url: "https://restart.styal.invalid", content: "styal page" },
             },
-            content: [{ type: "content", content: { type: "text", text: "T3 Code page" } }],
+            content: [{ type: "content", content: { type: "text", text: "styal page" } }],
           },
           {
             sessionUpdate: "tool_call_update",
@@ -1879,7 +1879,7 @@ const program = Effect.gen(function* () {
             status: "completed",
             rawOutput: {
               exitCode: 0,
-              stdout: '{ "name": "t3" }',
+              stdout: '{ "name": "styal" }',
               stderr: "",
             },
           },

@@ -112,9 +112,9 @@ describe("withReferenceDefinitions", () => {
     for (const [reply, pick, expected] of [
       // Into a fold, with an escaped label and a Windows destination kept as written.
       [
-        "<details>\n<summary>A</summary>\n\n[config][c] ![B][a\\]b]\n\n</details>\n\n[c]: C:\\work\\.t3\\settings.json\n[a\\]b]: https://example.com/a",
+        "<details>\n<summary>A</summary>\n\n[config][c] ![B][a\\]b]\n\n</details>\n\n[c]: C:\\work\\.styal\\settings.json\n[a\\]b]: https://example.com/a",
         0,
-        ["C:\\work\\.t3\\settings.json", "https://example.com/a"],
+        ["C:\\work\\.styal\\settings.json", "https://example.com/a"],
       ],
       // Out of a fold.
       [

@@ -224,7 +224,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
   const metro = yield* start({
     cwd: path.join(checkout, "apps/mobile"),
     command: "npx",
-    args: ["expo", "start", "--dev-client", "--scheme", "t3code-dev", "--lan", "--port", metroPort],
+    args: ["expo", "start", "--dev-client", "--scheme", "styal-dev", "--lan", "--port", metroPort],
     env: {
       ...env,
       APP_VARIANT: "development",

@@ -17,4 +17,4 @@ export type WelcomeImportSelection = typeof WelcomeImportSelection.Type;
 export const StoredWelcomeImportSelection = Schema.NullOr(WelcomeImportSelection);
 
 export const welcomeImportSelectionKey = (environmentId: EnvironmentId) =>
-  `t3code:welcome-import-selection:${environmentId}`;
+  `styal:welcome-import-selection:${environmentId}`;

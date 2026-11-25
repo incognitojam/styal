@@ -60,7 +60,7 @@ export function pinnedRuntimePaths(
   const versionDir = path.join(pinnedRuntimeVersionsDir(path, baseDir), version);
   return {
     versionDir,
-    entryPath: path.join(versionDir, platform === "win32" ? "t3.exe" : "t3"),
+    entryPath: path.join(versionDir, platform === "win32" ? "styal.exe" : "styal"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
 }
@@ -493,7 +493,7 @@ const PINNED_RUNTIME_PRUNED_PREFIX = ".pruned-";
  */
 const PINNED_RUNTIME_PRUNE_GRACE = Duration.hours(1);
 /**
- * One `t3` launcher path per line, appended by the install scripts and by any prune that finds a
+ * One `styal` launcher path per line, appended by the install scripts and by any prune that finds a
  * launcher on PATH. A service does not see the installer's `T3CODE_INSTALL_BIN_DIR` or the
  * interactive PATH, so this is how it finds a custom one, including installs that predate the file.
  */
@@ -544,7 +544,7 @@ export const resolveLauncherPath = Effect.gen(function* () {
 });
 
 /**
- * `t3 update` repoints the launcher it was started through, which may be on neither PATH nor the
+ * `styal update` repoints the launcher it was started through, which may be on neither PATH nor the
  * default bin dir. Unrecorded, the next prune would remove the runtime it now points at.
  */
 export const recordPinnedRuntimeLauncher = Effect.fn("cloud.pinned_runtime.record_launcher")(
@@ -575,7 +575,7 @@ export function isVersionExecutable(
   return !path.isAbsolute(relative) && /^(?!\.\.)[^\\/]+[\\/]t3(?:\.exe)?$/i.test(relative);
 }
 
-/** The executable a `t3.cmd` shim written by the install script or `t3 update` runs. */
+/** The executable a `styal.cmd` shim written by the install script or `styal update` runs. */
 export const windowsShimTarget = (contents: string) => /^"([^"]+)"/m.exec(contents)?.[1];
 
 /** Like {@link windowsShimTarget}, but only for a shim exactly as written; never a user's wrapper. */
@@ -583,7 +583,7 @@ export const generatedWindowsShimTarget = (contents: string) =>
   /^@echo off\r?\n"([^"]+)" %\*\s*$/.exec(contents)?.[1];
 
 /**
- * The `t3` script the install scripts and `t3 update` write on macOS and Linux. Exec by absolute
+ * The `styal` script the install scripts and `styal update` write on macOS and Linux. Exec by absolute
  * path: through a symlink, argv0 is the link, and the Cursor SDK looks for its helpers beside it.
  */
 export const posixLauncherScript = (executable: string) =>
@@ -606,7 +606,7 @@ export const readPosixLauncherTarget = Effect.fn("cloud.pinned_runtime.read_posi
 );
 
 /**
- * The `t3` this executable was started through on macOS or Linux: a legacy symlink into this
+ * The `styal` this executable was started through on macOS or Linux: a legacy symlink into this
  * home's runtime/versions, or, since a script execs the executable and argv0 names it, an unedited
  * {@link posixLauncherScript} that runs it.
  */
@@ -640,11 +640,11 @@ export const findPosixLauncher = Effect.fn("cloud.pinned_runtime.find_posix_laun
       ...(environment["PATH"] ?? "")
         .split(":")
         .filter((directory) => directory.length > 0)
-        .map((directory) => path.resolve(cwd, directory, "t3")),
+        .map((directory) => path.resolve(cwd, directory, "styal")),
       path.join(
         environment["T3CODE_INSTALL_BIN_DIR"] ||
           path.join(yield* HostProcess.HomeDirectory, ".local", "bin"),
-        "t3",
+        "styal",
       ),
       ...recorded.split(/\r?\n/),
     ].filter((candidate) => path.isAbsolute(candidate));
@@ -683,7 +683,7 @@ export const writePosixLauncher = Effect.fn("cloud.pinned_runtime.write_posix_la
   Effect.scoped,
 );
 
-/** Where the `t3` launchers written by the install scripts and `t3 update` point. */
+/** Where the `styal` launchers written by the install scripts and `styal update` point. */
 const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targets")(function* (
   baseDir: string,
 ) {
@@ -692,7 +692,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
   const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
   const home = yield* HostProcess.HomeDirectory;
-  const launcherName = platform === "win32" ? "t3.cmd" : "t3";
+  const launcherName = platform === "win32" ? "styal.cmd" : "styal";
   const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
   const recorded = (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
     .split(/\r?\n/)
@@ -754,9 +754,9 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
 });
 
 /**
- * Resolved executables rather than command lines: a server started through the `t3` symlink
- * shows up as `t3 serve`, possibly from another T3 home that runs this home's runtimes. Windows
- * has no symlink launcher, and its `t3.cmd` shim runs the absolute path, so command lines do there.
+ * Resolved executables rather than command lines: a server started through the `styal` symlink
+ * shows up as `styal serve`, possibly from another T3 home that runs this home's runtimes. Windows
+ * has no symlink launcher, and its `styal.cmd` shim runs the absolute path, so command lines do there.
  */
 const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")(function* () {
   const fs = yield* FileSystem.FileSystem;

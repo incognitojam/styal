@@ -2557,7 +2557,7 @@ it.layer(
       runtimeEnv: { Term_Program: "", term_program_version: "custom-version" },
     },
   ] as const)(
-    "identifies as T3 Code unless the terminal env overrides it on $platform",
+    "identifies as styal unless the terminal env overrides it on $platform",
     ({ platform, parentEnv, runtimeEnv }) =>
       Effect.gen(function* () {
         const originalEnv = { ...parentEnv };
@@ -2571,7 +2571,7 @@ it.layer(
 
         expect(ptyAdapter.spawnInputs).toHaveLength(2);
         for (const [index, expected] of [
-          { TERM_PROGRAM: "t3code", TERM_PROGRAM_VERSION: packageJson.version },
+          { TERM_PROGRAM: "styal", TERM_PROGRAM_VERSION: packageJson.version },
           { TERM_PROGRAM: "", TERM_PROGRAM_VERSION: "custom-version" },
         ].entries()) {
           const spawnEnv = ptyAdapter.spawnInputs[index]!.env;

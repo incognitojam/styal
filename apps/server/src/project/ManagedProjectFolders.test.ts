@@ -129,7 +129,7 @@ it.effect("offers nothing, and says why once, when the data dir sits inside a Gi
     const path = yield* Path.Path;
     const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-scratch-repo-" });
     yield* git(checkout, ["init", "--quiet"]);
-    const baseDir = path.join(checkout, ".t3");
+    const baseDir = path.join(checkout, ".styal");
     yield* fileSystem.makeDirectory(baseDir);
     const repositoryRoot = (yield* git(baseDir, ["rev-parse", "--show-toplevel"])).stdout.trim();
     yield* Effect.gen(function* () {

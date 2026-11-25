@@ -41,7 +41,7 @@ vi.mock("../../state/environments", async (importOriginal) => ({
 }));
 
 const id = EnvironmentId.make("voice-host");
-const grantKey = "t3code:voice-audio-grant:v1";
+const grantKey = "styal:voice-audio-grant:v1";
 
 async function withVoicePanel(
   route: (url: URL, request: RequestInfo | URL, init?: RequestInit) => Promise<Response> | null,

@@ -39,7 +39,7 @@ interface Setup {
   readonly service: BootService.BootServiceStatus;
   /** Null in builds without T3 Connect. Off when T3 Connect revoked the link. */
   readonly connect: boolean | null;
-  /** T3 Connect revoked the link; `t3 connect` links again. */
+  /** T3 Connect revoked the link; `styal connect` links again. */
   readonly connectRevoked: boolean;
   readonly lan: boolean;
   /** An installed service with no T3CODE_LAN or T3CODE_HOST keeps the old default: on. */
@@ -92,7 +92,7 @@ const readSetup = Effect.fn("cli.up.read_setup")(function* () {
 });
 
 /**
- * The routes `t3 up` starts from. With no route flag it asks about every
+ * The routes `styal up` starts from. With no route flag it asks about every
  * route, starting a machine with no service from T3 Connect. Any route flag
  * means it asks nothing and keeps the routes not named as they are.
  */
@@ -159,7 +159,7 @@ const formatSetup = (setup: Setup, hints: Hints) => {
       !service.supported
         ? "unavailable"
         : service.installed
-          ? `installed · t3@${service.installedVersion ?? packageJson.version}`
+          ? `installed · styal@${service.installedVersion ?? packageJson.version}`
           : "not installed",
     ],
     ...(setup.connect === null
@@ -209,8 +209,8 @@ const formatNextSteps = (routes: Routes, serviceInstalled: boolean, hints: Hints
       ? []
       : [
           serviceInstalled
-            ? "Remote access is off. T3 Code still runs here in the background."
-            : `Remote access is off. Run \`${hints.run}\` to use T3 Code here.`,
+            ? "Remote access is off. styal still runs here in the background."
+            : `Remote access is off. Run \`${hints.run}\` to use styal here.`,
         ]),
   ].join("\n");
 
@@ -277,7 +277,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
       cause: "routes",
       userMessage: `No terminal. Choose access with ${
         before.connect === null ? "--lan" : "--connect or --lan"
-      }, or use --yes for the default. See \`t3 up --help\`.`,
+      }, or use --yes for the default. See \`styal up --help\`.`,
     });
   }
   if (routes.connect && !current.connect) yield* requireConnectAllowed;
@@ -314,7 +314,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     const confirmed = yield* Prompt.run(
       Prompt.Confirm({
         message: update
-          ? "Update and restart T3 Code? Running agent turns will stop."
+          ? "Update and restart styal? Running agent turns will stop."
           : "Apply changes and restart? Running agent turns will stop.",
         initial: true,
       }),
@@ -338,7 +338,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
       ? (yield* disconnectCloud({ clearAuthorization: false })).status === "failed"
       : false;
   const previousLan = (yield* CliService.readServiceEnv(baseDir)).entries.T3CODE_LAN;
-  // Also with no service manager: the file records the choice that `t3 status` shows.
+  // Also with no service manager: the file records the choice that `styal status` shows.
   yield* CliService.writeServiceEnv(baseDir, { T3CODE_LAN: String(routes.lan) });
   // When the service step fails, an installed service still runs with the old
   // value, so the file goes back to match it.
@@ -386,10 +386,10 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     yield* printServeCommand("Background service unavailable.");
   } else {
     if (newer) {
-      yield* Console.log(`Keeping installed service version t3@${installedVersion}.`);
+      yield* Console.log(`Keeping installed service version styal@${installedVersion}.`);
     }
     if (update && !interactive) {
-      yield* Console.log("Updating T3 Code. Running agent turns will stop.");
+      yield* Console.log("Updating styal. Running agent turns will stop.");
     }
     const result = newer
       ? ({ changed: false } as const)
@@ -427,7 +427,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
         yield* Console.log(`Run \`${command}\` to turn T3 Connect off.`);
       } else {
         if (!interactive && !stopped) {
-          yield* Console.log("Restarting T3 Code. Running agent turns will stop.");
+          yield* Console.log("Restarting styal. Running agent turns will stop.");
         }
         const outcome = yield* service.restart.pipe(Effect.tapError(() => rollBack));
         if (outcome === "queued") {
@@ -435,7 +435,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
         }
         if (outcome === "skipped") {
           yield* Console.log(
-            "The installed service was not restarted. Run `t3 service status` to see why.",
+            "The installed service was not restarted. Run `styal service status` to see why.",
           );
         }
         started = outcome === "restarted";
@@ -477,17 +477,17 @@ export const upCommand = Command.make("up", {
   ),
   headless: headlessFlag,
 }).pipe(
-  Command.withShortDescription("Set up remote access and the T3 Code background service."),
+  Command.withShortDescription("Set up remote access and the styal background service."),
   Command.withDescription(
-    "Set up remote access and the T3 Code background service. Access flags skip the question, and routes not named keep their settings. Without a terminal, a needed restart runs without asking and stops running agent turns.",
+    "Set up remote access and the styal background service. Access flags skip the question, and routes not named keep their settings. Without a terminal, a needed restart runs without asking and stops running agent turns.",
   ),
   Command.withExamples([
-    { command: "t3 up", description: "Choose remote access." },
-    { command: "t3 up --connect", description: "Turn on T3 Connect. Keep other settings." },
-    { command: "t3 up --lan", description: "Allow LAN access with pairing codes." },
-    { command: "t3 up --no-lan", description: "Stop LAN access." },
-    { command: "t3 up --yes", description: "Take the defaults with no questions." },
-    { command: "t3 status --json", description: "Read the settings from a script." },
+    { command: "styal up", description: "Choose remote access." },
+    { command: "styal up --connect", description: "Turn on T3 Connect. Keep other settings." },
+    { command: "styal up --lan", description: "Allow LAN access with pairing codes." },
+    { command: "styal up --no-lan", description: "Stop LAN access." },
+    { command: "styal up --yes", description: "Take the defaults with no questions." },
+    { command: "styal status --json", description: "Read the settings from a script." },
   ]),
   Command.withHandler((flags) => runCloudCommand(flags, setUp(flags), { quietLogs: true })),
 );
@@ -496,7 +496,7 @@ export const connectCommand = Command.make("connect", {
   ...projectLocationFlags,
   headless: headlessFlag,
 }).pipe(
-  Command.withDescription("Set up T3 Connect for this machine. Same as `t3 up --connect`."),
+  Command.withDescription("Set up T3 Connect for this machine. Same as `styal up --connect`."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -507,7 +507,7 @@ export const connectCommand = Command.make("connect", {
   Command.withSubcommands(connectSubcommands),
 );
 
-/** `t3 status --json`, for scripts and agents. */
+/** `styal status --json`, for scripts and agents. */
 const setupJson = (setup: Setup) =>
   JSON.stringify(
     {
@@ -538,8 +538,8 @@ export const statusCommand = Command.make("status", {
 }).pipe(
   Command.withDescription("Show service setup and remote access settings."),
   Command.withExamples([
-    { command: "t3 status", description: "Show the settings." },
-    { command: "t3 status --json", description: "Print them for scripts and agents." },
+    { command: "styal status", description: "Show the settings." },
+    { command: "styal status --json", description: "Print them for scripts and agents." },
   ]),
   Command.withHandler(
     Effect.fn("cli.status")(function* (flags) {

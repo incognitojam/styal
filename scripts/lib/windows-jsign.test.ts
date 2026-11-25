@@ -61,7 +61,7 @@ const runSign = Effect.fn("test.runSign")(function* (replies: ReadonlyArray<Repl
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jsign-" });
-  const file = path.join(dir, "t3.exe");
+  const file = path.join(dir, "styal.exe");
   yield* fs.writeFileString(file, UNSIGNED);
   const stub = stubJsign(replies);
   const sleeps: Array<number> = [];
@@ -118,7 +118,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
       );
       assert.isFalse(result.signedInPlace);
       assert.deepStrictEqual(result.sleeps, [5, 10]);
-      assert.deepStrictEqual(result.entries, ["t3.exe"]);
+      assert.deepStrictEqual(result.entries, ["styal.exe"]);
     }),
   );
 
@@ -134,7 +134,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
         assert.strictEqual(result.inputs.length, 1);
         assert.deepStrictEqual(result.sleeps, []);
         assert.strictEqual(result.content, UNSIGNED);
-        assert.deepStrictEqual(result.entries, ["t3.exe"]);
+        assert.deepStrictEqual(result.entries, ["styal.exe"]);
       }
     }),
   );
@@ -146,7 +146,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
       assert.strictEqual(result.inputs.length, 4);
       assert.deepStrictEqual(result.sleeps, [5, 10, 20]);
       assert.strictEqual(result.content, UNSIGNED);
-      assert.deepStrictEqual(result.entries, ["t3.exe"]);
+      assert.deepStrictEqual(result.entries, ["styal.exe"]);
     }),
   );
 });

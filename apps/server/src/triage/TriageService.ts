@@ -16,7 +16,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { buildTriageAppPrompt, type TriageSourceClone } from "./triagePrompt.ts";
 import { triageSourceCacheDir, writeTriageSession } from "./triageSession.ts";
 
-const T3CODE_REPOSITORY_URL = "https://github.com/pingdotgg/t3code";
+const T3CODE_REPOSITORY_URL = "https://github.com/incognitojam/styal";
 
 // No tty: a credential prompt would hang until the timeout, so git must fail
 // instead. An empty GIT_ASKPASS also skips core.askPass and SSH_ASKPASS helpers.
@@ -27,7 +27,7 @@ const GIT_ENV = {
   LANGUAGE: "C",
 } satisfies NodeJS.ProcessEnv;
 
-/** Starts in-app triage sessions: the same files `t3 triage` writes, plus a source clone. */
+/** Starts in-app triage sessions: the same files `styal triage` writes, plus a source clone. */
 export class TriageService extends Context.Service<
   TriageService,
   {
@@ -43,7 +43,7 @@ const describeClient = (client: AuthClientPresentationMetadata) =>
     client.appVersion === undefined ? undefined : `version ${client.appVersion}`,
     client.os === undefined ? undefined : `on ${client.os}`,
     client.browser === undefined ? undefined : `in ${client.browser}`,
-    client.webDeployment === "hosted" ? "(app.t3.codes)" : undefined,
+    client.webDeployment === "hosted" ? "(app.restart.styal.invalid)" : undefined,
   ]
     .filter((part) => part !== undefined)
     .join(" ");

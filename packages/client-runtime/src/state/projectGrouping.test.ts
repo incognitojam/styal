@@ -88,7 +88,7 @@ const repositoryIdentity = {
   provider: SourceControlProviderKind.make("github"),
   owner: "t3tools",
   name: "t3code",
-  displayName: "T3 Code",
+  displayName: "styal",
 };
 
 function makeProject(
@@ -299,7 +299,7 @@ describe("buildProjectGroups", () => {
 
     const label = (projects: ReadonlyArray<EnvironmentProject>) =>
       buildProjectGroups({ projects, settings: settings("repository") })[0]?.label;
-    expect(label(folderTitles)).toBe("T3 Code");
+    expect(label(folderTitles)).toBe("styal");
     expect(label(renamed)).toBe("t3code");
   });
 
@@ -310,7 +310,7 @@ describe("buildProjectGroups", () => {
     const root = makeProject("NewCo", "/work/NewCo");
     const lowercasedClone = makeProject("NewCo", "/remote/NewCo", {
       environmentId: EnvironmentId.make("remote"),
-      repositoryIdentity: { ...repositoryIdentity, name: "T3CODE", displayName: "t3 code" },
+      repositoryIdentity: { ...repositoryIdentity, name: "T3CODE", displayName: "styal code" },
     });
 
     const groups = buildProjectGroups({
@@ -319,7 +319,7 @@ describe("buildProjectGroups", () => {
       preferredEnvironmentId: environmentId,
     });
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.label).toBe("T3 Code");
+    expect(groups[0]?.label).toBe("styal");
 
     // A subfolder group in repository_path mode keeps its own title.
     const localIdentity = { ...repositoryIdentity, rootPath: "/work/t3code" };
@@ -336,7 +336,7 @@ describe("buildProjectGroups", () => {
             ...repositoryIdentity,
             rootPath: "/remote/t3code",
             name: "T3CODE",
-            displayName: "t3 code",
+            displayName: "styal code",
           },
         }),
         makeProject("t3code", "/work/t3code", { repositoryIdentity: localIdentity }),

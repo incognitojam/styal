@@ -229,7 +229,7 @@ describe("serializeRenderedMarkdownFragment", () => {
   });
 
   it.each([
-    String.raw`see C:\me\.t3\shot.png`,
+    String.raw`see C:\me\.styal\shot.png`,
     String.raw`C:\work\_build`,
     "C:/work/_build/out.txt",
     String.raw`C:\work\a-_b.txt`,
