@@ -3,8 +3,10 @@ import {
   AntigravitySettings,
   ProviderDriverKind,
   ProviderSetupError,
+  RuntimeMode,
   settingsSecretLiteral,
 } from "@t3tools/contracts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import {
@@ -16,6 +18,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -44,8 +47,8 @@ import {
   type AntigravityAuthConfig,
 } from "../antigravityAuthSupport.ts";
 import {
-  antigravityCliSessionMode,
   antigravityModelOptions,
+  antigravitySessionMode,
   antigravityThinkingConfig,
   makeAntigravityAcpRuntime,
   type AntigravityAcpRuntimeInput,
@@ -58,7 +61,10 @@ import {
 } from "../acp/AntigravitySessionFiles.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { makeAntigravityAdapterV2 } from "../../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
+import {
+  makeAntigravityAdapterV2,
+  type AntigravityAdapterV2RuntimeInput,
+} from "../../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
@@ -80,6 +86,11 @@ const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const isNodeRuntimeUnavailableError = Schema.is(NodeRuntimeUnavailableError);
 const isAcpRequestError = Schema.is(AcpErrors.AcpRequestError);
 const isAcpErrorDetails = Schema.is(Schema.Struct({ details: Schema.String }));
+const RememberedRuntimeModes = Schema.fromJsonString(
+  Schema.Struct({ authMethod: Schema.String, modes: Schema.Array(RuntimeMode) }),
+);
+const decodeRememberedRuntimeModes = Schema.decodeUnknownOption(RememberedRuntimeModes);
+const encodeRememberedRuntimeModes = Schema.encodeSync(RememberedRuntimeModes);
 const REFRESH_FAILED =
   "Could not refresh Antigravity models. The previous model list is unchanged.";
 const PYTHON_SOCKS_REQUIRED = "python-socks is required to use a SOCKS proxy";
@@ -172,6 +183,18 @@ export const AntigravityDriver: ProviderDriver<
       ),
     );
     const profileDirectory = directories.profile;
+    // Only a session reports whether agy offers Auto, so keep the last answer across restarts.
+    const runtimeModesPath = path.join(profileDirectory, "styal-runtime-modes.json");
+    const rememberedRuntimeModes = yield* fileSystem.readFileString(runtimeModesPath).pipe(
+      Effect.map((contents) =>
+        decodeRememberedRuntimeModes(contents).pipe(
+          Option.filter((saved) => saved.authMethod === auth.authMethod),
+          Option.map((saved) => saved.modes),
+          Option.getOrUndefined,
+        ),
+      ),
+      Effect.orElseSucceed(() => undefined),
+    );
     for (const directory of [
       directories.runtimeTemp,
       path.join(profileDirectory, "antigravity-acp", "tmp"),
@@ -199,7 +222,7 @@ export const AntigravityDriver: ProviderDriver<
       );
 
     const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (
-      input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner">,
+      input: AntigravityAdapterV2RuntimeInput,
     ): Effect.fn.Return<
       AcpSessionRuntime.AcpSessionRuntime["Service"],
       AcpErrors.AcpError | ProviderSetupError,
@@ -268,31 +291,46 @@ export const AntigravityDriver: ProviderDriver<
               ),
             ),
       );
+      // `buildAntigravityAcpSpawnInput` sets `extendEnv: false`, so thread variables only reach the
+      // agent's shell through `baseEnv`.
+      const { processEnvironment: threadEnvironment, ...runtimeInput } = input;
+      const spawnEnvironment =
+        threadEnvironment === undefined
+          ? processEnvironment
+          : { ...processEnvironment, ...threadEnvironment };
       const runtime = yield* makeAntigravityAcpRuntime({
-        ...input,
+        ...runtimeInput,
         runtimeVersion: executable.version,
         authMethod: auth.authMethod,
         childProcessSpawner: spawner,
         spawn: buildAntigravityAcpSpawnInput({
           installation: executable,
           profile,
-          cwd: input.cwd,
-          baseEnv: processEnvironment,
+          cwd: runtimeInput.cwd,
+          baseEnv: spawnEnvironment,
           auth,
           runtimeTempDirectory,
         }),
       }).pipe(Effect.provideService(SecureRandom.SecureRandom, random));
       return {
         ...runtime,
-        ...(executable.harnessPath === null
-          ? { setMode: (modeId: string) => runtime.setMode(antigravityCliSessionMode(modeId)) }
-          : {}),
+        setMode: (modeId: string) =>
+          runtime.getModeState.pipe(
+            Effect.flatMap((modeState) =>
+              runtime.setMode(
+                executable.harnessPath !== null && modeId !== "auto"
+                  ? modeId
+                  : antigravitySessionMode(modeId, modeState),
+              ),
+            ),
+          ),
         start: () =>
           runtime
             .start()
             .pipe(
               Effect.tapError((cause): Effect.Effect<void> =>
-                input.onAuthorizationUrl === undefined && isAntigravitySignInRequiredError(cause)
+                runtimeInput.onAuthorizationUrl === undefined &&
+                isAntigravitySignInRequiredError(cause)
                   ? provider.onAuthRequired
                   : Effect.void,
               ),
@@ -435,11 +473,22 @@ export const AntigravityDriver: ProviderDriver<
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     const provider = yield* makeAntigravityProvider(settings, {
+      environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
       probeUsage: usage.probe,
       clearUsage: usage.clear,
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
+      ...(rememberedRuntimeModes ? { rememberedRuntimeModes } : {}),
+      rememberRuntimeModes: (modes) =>
+        writeFileStringAtomically({
+          filePath: runtimeModesPath,
+          contents: encodeRememberedRuntimeModes({ authMethod: auth.authMethod, modes }),
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.catch(() => Effect.logWarning("Could not save Antigravity permission modes.")),
+        ),
       supportsTextGeneration: isAntigravityTextGenerationAvailable(profileDirectory).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),

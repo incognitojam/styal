@@ -320,6 +320,13 @@ export const PullRequestReviewThreadConnection = Schema.Struct({
 })
 export interface PullRequestReviewThreadConnection extends Schema.Struct.Type<typeof PullRequestReviewThreadConnection.fields> {}
 
+/** The connection type for PullRequestTimelineItems. */
+export const PullRequestTimelineItemsConnection = Schema.Struct({
+  /** Identifies the count of items after applying `before` and `after` filters. */
+  filteredCount: Shared.Int
+})
+export interface PullRequestTimelineItemsConnection extends Schema.Struct.Type<typeof PullRequestTimelineItemsConnection.fields> {}
+
 /** Represents a count of the state of a check run. */
 export const CheckRunStateCount = Schema.Struct({
   /** The state of a check run. */
@@ -389,6 +396,8 @@ export const PullRequestWatchFingerprintRepositoryPullRequestPullRequest = Schem
   reviews: Schema.NullOr(ReviewsPullRequestReviewConnection),
   /** The list of all review threads for this pull request. */
   reviewThreads: PullRequestReviewThreadConnection,
+  /** A list of events, comments, commits, etc. associated with the pull request. */
+  mergeQueueRemovals: Schema.optionalKey(PullRequestTimelineItemsConnection),
   /** A list of commits present in this pull request's head branch not present in the base branch. */
   commits: PullRequestWatchFingerprintRepositoryPullRequestCommitsPullRequestCommitConnection
 })
@@ -407,6 +416,62 @@ export const PullRequestWatchFingerprint = GraphQL.query("PullRequestWatchFinger
     variables: [
       { name: "owner", body: "String!" },
       { name: "name", body: "String!" },
+      { name: "number", body: "Int!" },
+      { name: "mergeQueue", body: "Boolean!" }
+    ],
+    selections: [
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){state mergeable headRefOid comments(first:100 orderBy:{field:UPDATED_AT direction:DESC}){totalCount nodes{lastEditedAt}}reviews(last:100){totalCount nodes{lastEditedAt}}reviewThreads{totalCount}mergeQueueRemovals:timelineItems(itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT])@include(if:$", "mergeQueue", "){filteredCount}commits(last:1){nodes{commit{statusCheckRollup{contexts{checkRunCountsByState{state count}statusContextCountsByState{state count}}}}}}}}"] }
+    ],
+    fragments: []
+  },
+  variables: {
+    owner: Schema.String,
+    name: Schema.String,
+    number: Shared.Int,
+    mergeQueue: Schema.Boolean
+  },
+  result: Schema.Struct({
+    /** Lookup a given repository by the owner and repository name. */
+    repository: Schema.NullOr(PullRequestWatchFingerprintRepositoryRepository)
+  })
+})
+export declare namespace PullRequestWatchFingerprint {
+  export type Variables = typeof PullRequestWatchFingerprint.variables.Type
+  export type Result = typeof PullRequestWatchFingerprint.result.Type
+}
+
+/** A repository pull request. */
+export const PullRequestWatchFingerprintEnterpriseRepositoryPullRequestPullRequest = Schema.Struct({
+  /** Identifies the state of the pull request. */
+  state: GraphQL.enumLiterals(Shared.PullRequestState.literals),
+  /** Whether or not the pull request can be merged based on the existence of merge conflicts. */
+  mergeable: GraphQL.enumLiterals(Shared.MergeableState.literals),
+  /** Identifies the oid of the head ref associated with the pull request, even if the ref has been deleted. */
+  headRefOid: Shared.GitObjectID,
+  /** A list of comments associated with the pull request. */
+  comments: IssueCommentConnection,
+  /** A list of reviews associated with the pull request. */
+  reviews: Schema.NullOr(ReviewsPullRequestReviewConnection),
+  /** The list of all review threads for this pull request. */
+  reviewThreads: PullRequestReviewThreadConnection,
+  /** A list of commits present in this pull request's head branch not present in the base branch. */
+  commits: PullRequestWatchFingerprintRepositoryPullRequestCommitsPullRequestCommitConnection
+})
+export interface PullRequestWatchFingerprintEnterpriseRepositoryPullRequestPullRequest extends Schema.Struct.Type<typeof PullRequestWatchFingerprintEnterpriseRepositoryPullRequestPullRequest.fields> {}
+
+/** A repository contains the content for a project. */
+export const PullRequestWatchFingerprintEnterpriseRepositoryRepository = Schema.Struct({
+  /** Returns a single pull request from the current repository by number. */
+  pullRequest: Schema.NullOr(PullRequestWatchFingerprintEnterpriseRepositoryPullRequestPullRequest)
+})
+export interface PullRequestWatchFingerprintEnterpriseRepositoryRepository extends Schema.Struct.Type<typeof PullRequestWatchFingerprintEnterpriseRepositoryRepository.fields> {}
+
+/** `query PullRequestWatchFingerprintEnterprise` */
+export const PullRequestWatchFingerprintEnterprise = GraphQL.query("PullRequestWatchFingerprintEnterprise", {
+  document: {
+    variables: [
+      { name: "owner", body: "String!" },
+      { name: "name", body: "String!" },
       { name: "number", body: "Int!" }
     ],
     selections: [
@@ -421,12 +486,12 @@ export const PullRequestWatchFingerprint = GraphQL.query("PullRequestWatchFinger
   },
   result: Schema.Struct({
     /** Lookup a given repository by the owner and repository name. */
-    repository: Schema.NullOr(PullRequestWatchFingerprintRepositoryRepository)
+    repository: Schema.NullOr(PullRequestWatchFingerprintEnterpriseRepositoryRepository)
   })
 })
-export declare namespace PullRequestWatchFingerprint {
-  export type Variables = typeof PullRequestWatchFingerprint.variables.Type
-  export type Result = typeof PullRequestWatchFingerprint.result.Type
+export declare namespace PullRequestWatchFingerprintEnterprise {
+  export type Variables = typeof PullRequestWatchFingerprintEnterprise.variables.Type
+  export type Result = typeof PullRequestWatchFingerprintEnterprise.result.Type
 }
 
 /** A repository pull request. */
@@ -511,4 +576,4 @@ export declare namespace PullRequestSummaryEnterprise {
 }
 
 /** Every operation in pullRequestBatches.graphql. */
-export const PullRequestBatchesGraphQLGroup = GraphQLGroup.make(PullRequestSummary, PullRequestStats, PullRequestStackMembership, PullRequestWatchFingerprint, PullRequestSummaryEnterprise)
+export const PullRequestBatchesGraphQLGroup = GraphQLGroup.make(PullRequestSummary, PullRequestStats, PullRequestStackMembership, PullRequestWatchFingerprint, PullRequestWatchFingerprintEnterprise, PullRequestSummaryEnterprise)

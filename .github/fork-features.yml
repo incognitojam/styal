@@ -3630,32 +3630,30 @@ features:
       retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
 
   - id: mobile-android-page-back
-    title: Back on Android returns to the page a thread or pull request was opened from
+    title: On Android the list tab follows the page shown, and a thread row's pull request badge opens as a list selection
     status: maintained
     tier: yield
     prs: [1148]
-    rationale: Opening a pull request linked in a thread replaced the thread, and Back always went to the list for the page's tab, so reading a linked pull request lost the thread. Compared with upstream revision 37fbefd147 on October 29, 2026, where only a thread opened from its delegator returns to it.
+    rationale: Upstream selects the list tab only when a page is picked from a list or on cold start, so a warm app link or a pull request chosen from a thread's multi-PR sheet leaves the other list behind it, and a thread row's single-PR badge opens over the current page. Back following page history is shared since upstream 532bf2ee19 (#27653).
     invariants:
-      - On Android, a pull request opened from a page (a link in a thread or pull request, or a thread's pull request controls) opens over that page, and Back or the app bar's back button returns to it.
-      - Selecting a thread or pull request from a list, including a thread row's pull request badge, still replaces the workspace page, and Back from it returns to the list for its tab.
+      - On Android, showing a thread selects the thread list's tab and showing a pull request selects the pull request list's tab, however the page was reached, so Back to the list reveals that list.
+      - On Android, a thread row's pull request badge replaces the workspace page, as picking the pull request from its list does.
     implementation_paths:
       - apps/mobile/src/features/layout/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
-      - apps/mobile/src/lib/android-workspace-navigation.ts
       - apps/mobile/src/native/useOpenPullRequest.ts
     upstream_paths:
       - apps/mobile/src/features/layout/workspace/useAndroidWorkspaceNavigation.ts
       - apps/mobile/src/features/threads/use-open-thread-pull-requests.ts
-      - apps/mobile/src/lib/android-workspace-navigation.ts
       - apps/mobile/src/native/useOpenPullRequest.ts
     tests:
       - apps/mobile/src/lib/android-workspace-navigation.test.ts
     upstream:
       status: partial
-      # Compared against 37fbefd147; upstream returns to a delegator thread (#23795) but replaces the page for pull request links.
+      # Compared against 532bf2ee19; upstream Back follows page history, and a pull request opened from a page returns there.
       tracking:
-        - https://github.com/pingdotgg/t3code/pull/23795
-      retire_when: Upstream Android opens a pull request linked from a page over that page and Back returns there.
+        - https://github.com/pingdotgg/t3code/pull/27653
+      retire_when: Upstream Android selects the shown page's list tab for app links, sheet picks and shared drafts, and opens a thread row's pull request badge as a list selection.
 
   - id: mobile-attended-alert-delay
     title: Delay phone alerts while the user is at a computer
@@ -4761,7 +4759,7 @@ features:
     prs: [928, 930, 943]
     invariants:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
-      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, Grok, and fx report one. An unloaded snapshot or an older server counts as no reviewer.
+      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, Grok, and fx report one; Antigravity reports one only when its signed-in session offers native Auto. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
       - Under a managed policy's `maxRuntimeMode` below Full access, a default of Auto stays Auto on a provider without a reviewer rather than starting a thread the ceiling refuses.
       - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
@@ -4773,6 +4771,7 @@ features:
       - apps/server/scripts/verify-provider-live.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ClaudeProvider.ts
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/serverRuntimeStartup.ts
@@ -7873,6 +7872,7 @@ features:
       - apps/server/src/orchestration-v2/ThreadForkService.ts
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
+      - apps/server/src/pullRequest/PullRequestWatchService.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx

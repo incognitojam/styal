@@ -31,6 +31,7 @@ import {
   reportStackTop,
 } from "./reportStack.logic";
 import { MESSAGE_HEADING_LEVEL } from "./TimelineRowParts";
+import { SidebarAttentionIcon } from "../sidebar/attentionStatus";
 
 export type ReportStackActions = {
   answer: (text: string, ref: ReportReference) => void;
@@ -187,9 +188,11 @@ export function ReportPile({ stack }: { stack: ReportStackState }) {
         type="button"
         onClick={open}
         aria-label={`Open reports waiting on you: ${tag.title}`}
-        className="relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-border/80 bg-card px-4 py-2.5 text-left shadow-xs/5 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        // The hover tint sits over bg-card; an accent background alone is see-through over the chat.
+        className="relative isolate flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-border/80 bg-card px-4 py-2.5 text-left shadow-xs/5 outline-none before:absolute before:inset-0 before:-z-10 hover:before:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         {tag.blocking ? <BlockingMark className="inset-y-2.5" /> : null}
+        <SidebarAttentionIcon attention="input" />
         <span className="min-w-0 flex-1 truncate text-sm">
           <span className="font-medium text-foreground">{tag.title}</span>
           <span className="ms-2 text-muted-foreground">{tag.question}</span>

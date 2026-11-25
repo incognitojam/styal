@@ -358,7 +358,12 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
-import { getProviderStatusBannerKey, resolveProviderBanner } from "./chat/ProviderStatusBanner";
+import {
+  dismissProviderStatusBannerForSession,
+  getProviderStatusDismissalKey,
+  resolveProviderBanner,
+  useProviderStatusBannerDismissed,
+} from "./chat/ProviderStatusBanner";
 import {
   getThreadErrorBannerKey,
   isThreadErrorBannerDismissedForSession,
@@ -1914,13 +1919,11 @@ export default function ChatView(props: ChatViewProps) {
     null,
     DismissedFallbackWindowSchema,
   );
-  const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
-  const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
-    string | null
-  >(null);
-  if (providerStatusBannerKey === null && dismissedProviderStatusBannerKey !== null) {
-    setDismissedProviderStatusBannerKey(null);
-  }
+  const providerStatusDismissalKey = getProviderStatusDismissalKey(
+    providerEnvironmentId,
+    activeProviderStatus,
+  );
+  const providerStatusDismissed = useProviderStatusBannerDismissed(providerStatusDismissalKey);
   const providerBanner = resolveProviderBanner({
     failed: serverRuntime?.status === "failed",
     lastErrorCode: serverRuntime?.lastErrorCode,
@@ -1928,7 +1931,7 @@ export default function ChatView(props: ChatViewProps) {
       (provider) => provider.instanceId === serverRuntime?.providerInstanceId,
     ),
     selectedProvider: activeProviderStatus,
-    dismissedStatusBannerKey: dismissedProviderStatusBannerKey,
+    statusBannerDismissed: providerStatusDismissed,
   });
   const providerSignIn = useProviderSignInBanner({
     environmentId,
@@ -1945,7 +1948,7 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     },
-    onDismiss: () => setDismissedProviderStatusBannerKey(providerStatusBannerKey),
+    onDismiss: () => dismissProviderStatusBannerForSession(providerStatusDismissalKey),
   });
   const visibleProviderStatus = providerBanner?.kind === "status" ? providerBanner.provider : null;
   // The sign-in banner after a failed turn says what the thread error says, and offers the fix.
@@ -3782,8 +3785,7 @@ export default function ChatView(props: ChatViewProps) {
             <ChatBannerLane
               environmentId={activeThread.environmentId}
               providerStatus={visibleProviderStatus}
-              providerStatusBannerKey={providerStatusBannerKey}
-              setDismissedProviderStatusBannerKey={setDismissedProviderStatusBannerKey}
+              providerStatusDismissalKey={providerStatusDismissalKey}
               onOpenProviderSetup={openProviderSetupStable}
               threadId={activeThread.id}
               threadError={bannerThreadError}

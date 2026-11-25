@@ -21,6 +21,7 @@ import type { AntigravityAuth } from "../../provider/AntigravityAuth.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import {
   antigravityAppendsSystemPrompt,
+  antigravityPermissionDisposition,
   antigravityPermissionMode,
   antigravityRuntimeModeForSessionMode,
   applyAntigravityAcpModelSelection,
@@ -70,11 +71,17 @@ const AntigravityProviderCapabilitiesV2 = {
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
+/** Thread variables reach the driver here; `makeAntigravityAcpRuntime` never reads them. */
+export type AntigravityAdapterV2RuntimeInput = Omit<
+  AntigravityAcpRuntimeInput,
+  "spawn" | "childProcessSpawner"
+> & { readonly processEnvironment?: NodeJS.ProcessEnv };
+
 export interface AntigravityAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly selfInvocation: SelfInvocation;
   readonly makeRuntime: (
-    input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner">,
+    input: AntigravityAdapterV2RuntimeInput,
   ) => Effect.Effect<
     AcpSessionRuntime.AcpSessionRuntime["Service"],
     EffectAcpErrors.AcpError | ProviderSetupError,
@@ -260,6 +267,7 @@ export function makeAntigravityAcpAdapterFlavor(
           request,
         }),
     },
+    permissionDisposition: antigravityPermissionDisposition,
     approvalOptions: antigravityApprovalOptions,
     extractPermissionQuestion: (request) => {
       const question = extractAntigravityUserInputQuestion(request);

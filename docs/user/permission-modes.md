@@ -8,7 +8,7 @@ on your default mode, open the model picker and choose **Permissions** at its bo
 Set the default for new threads in **Settings → Threads → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
 mode of the thread you were viewing. The initial default is **Full access**. With **Auto** as the
-default, new threads on a provider without automatic review, such as OpenCode or Antigravity,
+default, new threads on a provider without automatic review, such as OpenCode,
 start in **Full access** instead of asking about every action; choose **Auto** in the composer to
 keep it for one thread. Existing threads and modes you choose in a draft keep their permissions.
 
@@ -30,9 +30,16 @@ the parent conversation with the subagent's name, so you can respond without swi
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto** uses automatic review on Codex, Claude, Cursor, Grok, and fx; providers without an equivalent,
-including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
-to you for approval. On fx, prompts it still sends also come to you.
+**Auto** uses automatic review on Codex, Claude, Cursor, Grok, Antigravity, and fx; providers without
+an equivalent, including OpenCode, fall back to asking. On Grok and Antigravity, actions their review
+does not approve come to you for approval. On fx, prompts it still sends also come to you.
+
+Antigravity Auto relies on Antigravity's own reviewer, with no workspace sandbox, so actions that
+reviewer approves run without a styal approval request.
+
+Antigravity offers **Auto** only when your Antigravity sign-in provides its Auto mode; some accounts,
+including some personal Google accounts, do not. Without it, an Antigravity thread already set to
+**Auto** runs in **Supervised**.
 
 On Claude, actions its review blocks are not run, and the agent carries on without them. The
 conversation marks each one **Blocked by Auto mode** with Claude's reason. Ask the agent to try

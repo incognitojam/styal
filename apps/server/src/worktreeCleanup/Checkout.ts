@@ -6,6 +6,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { WorktreeGitDataMissingError } from "../workspace/gitCeiling.ts";
 import { makeInspectGit } from "./gitInspection.ts";
 
 export class CheckoutLimits extends Context.Reference<{
@@ -42,6 +43,8 @@ const io = <A>(run: () => Promise<A>) =>
 export const makeCheckoutRoot = Effect.gen(function* () {
   const fs = yield* PhysicalFileSystem.PhysicalFileSystem;
   const path = yield* Path.Path;
+  const separator = (yield* HostProcess.Platform) === "win32" ? ";" : ":";
+  const environment = yield* HostProcess.Environment;
   return Effect.fn("WorktreeCleanup.checkoutRoot")(function* (
     cwd: string,
     options?: { readonly worktree?: boolean },
@@ -65,9 +68,14 @@ export const makeCheckoutRoot = Effect.gen(function* () {
       missing.unshift(path.basename(parent));
       parent = path.dirname(parent);
     }
-    // A missing worktree is recreated at its own path, not in a checkout that encloses it.
-    if (options?.worktree === true && missing.length > 0) return canonical;
+    if (options?.worktree === true) return canonical;
+    const ceilings = (environment.GIT_CEILING_DIRECTORIES ?? "").split(separator).filter(Boolean);
     for (let directory = canonical; ; directory = path.dirname(directory)) {
+      if (
+        directory !== canonical &&
+        ceilings.some((ceiling) => path.relative(ceiling, directory) === "")
+      )
+        return canonical;
       const marker = yield* io(() =>
         fs.lstat(path.join(directory, ".git")).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
@@ -113,7 +121,7 @@ export const makeCheckout = Effect.gen(function* () {
     if (!stat?.isFile()) return null;
     const text = yield* io(() => fs.readFile(file, "utf8"));
     if (!text.startsWith("gitdir: ") || !text.endsWith("\n"))
-      return yield* fail("Invalid worktree gitfile.");
+      return yield* fail(new WorktreeGitDataMissingError({ worktreePath: root }).message);
     return path.resolve(root, text.slice(8).trimEnd());
   });
   const identity = Effect.fn("WorktreeCleanup.checkoutIdentity")(function* (

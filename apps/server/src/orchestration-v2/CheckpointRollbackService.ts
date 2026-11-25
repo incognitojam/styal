@@ -409,7 +409,10 @@ export const layer: Layer.Layer<
               ? Option.getOrUndefined(yield* projects.get(thread.projectId))
               : undefined;
           const cwd = thread.worktreePath ?? project?.workspaceRoot;
-          const workspace = cwd === undefined ? undefined : yield* checkout.root(cwd);
+          const workspace =
+            cwd === undefined
+              ? undefined
+              : yield* checkout.root(cwd, { worktree: thread.worktreePath !== null });
           yield* Effect.scoped(
             workspace === undefined
               ? execute(input)

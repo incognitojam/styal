@@ -67,6 +67,7 @@ function resolveAndPersistPreferredEditor(availableEditors: readonly EditorId[])
 export function useOpenInPreferredEditor(
   environmentId: EnvironmentId | null,
   availableEditors: readonly EditorId[],
+  projectRoot?: string,
 ) {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
@@ -75,6 +76,7 @@ export function useOpenInPreferredEditor(
 
   return async (
     targetPath: string,
+    targetProjectRoot = projectRoot,
   ): Promise<
     AtomCommandResult<
       EditorId,
@@ -120,6 +122,7 @@ export function useOpenInPreferredEditor(
       input: {
         cwd: targetPath,
         editor,
+        ...(targetProjectRoot ? { projectRoot: targetProjectRoot } : {}),
       },
     });
     return mapAtomCommandResult(result, () => editor);

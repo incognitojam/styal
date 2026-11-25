@@ -24,6 +24,7 @@ import type {
   PullRequestMergeCapabilities,
   PullRequestMergeMethod,
   PullRequestMergeReadiness,
+  PullRequestMergeQueueRemoval,
   PullRequestMergeability,
   PullRequestOmittedFileStat,
   PullRequestReaction,
@@ -225,6 +226,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly workflowApprovalsRequired?: number;
   /** The head commit observed by the host. */
   readonly headSha?: string;
+  readonly mergeQueueRemoval?: PullRequestMergeQueueRemoval;
 }
 
 export interface ProviderChangeRequestActivity {

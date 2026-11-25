@@ -779,6 +779,18 @@ it.effect("roots a missing worktree at its own path inside an enclosing checkout
       expect(yield* checkout.root(missing)).toBe(f.worktree);
       expect(yield* checkout.root(missing, { worktree: true })).toBe(missing);
       expect(yield* checkout.root(f.worktree, { worktree: true })).toBe(f.worktree);
+      yield* f.fs.makeDirectory(`${f.base}/.git`);
+      yield* f.fs.remove(`${f.worktree}/.git`);
+      expect(yield* checkout.root(f.worktree, { worktree: true })).toBe(f.worktree);
+      const environment = yield* HostProcess.Environment;
+      const inherited = environment.GIT_CEILING_DIRECTORIES;
+      try {
+        environment.GIT_CEILING_DIRECTORIES = f.config.worktreesDir;
+        expect(yield* checkout.root(f.worktree)).toBe(f.worktree);
+      } finally {
+        if (inherited === undefined) delete environment.GIT_CEILING_DIRECTORIES;
+        else environment.GIT_CEILING_DIRECTORIES = inherited;
+      }
     }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, f.git));
   }).pipe(Effect.provide(nodeLayer)),
 );

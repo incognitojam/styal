@@ -10,6 +10,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import { WorktreeGitDataMissingError } from "./gitCeiling.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { TerminalLaunchPreparation } from "../terminal/Manager.ts";
 
@@ -120,9 +121,25 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
 
   return Effect.fn("restoreMissingWorktree")(function* (thread: WorktreeThread) {
     const { worktreePath, branch } = thread;
-    if (worktreePath === null || branch === null) return;
+    if (worktreePath === null) return;
     const exists = yield* fileSystem.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
-    if (exists || !(yield* isManagedWorktreePath(worktreePath))) return;
+    if (!(yield* isManagedWorktreePath(worktreePath))) return;
+    if (exists) {
+      const marker = path.join(worktreePath, ".git");
+      const intact = yield* fileSystem.readFileString(marker).pipe(
+        Effect.flatMap((text) => {
+          const target = /^gitdir: (.+)\s*$/.exec(text)?.[1];
+          return target === undefined
+            ? Effect.succeed(false)
+            : fileSystem.exists(path.resolve(worktreePath, target, "HEAD"));
+        }),
+        Effect.catchTags({ PlatformError: () => fileSystem.exists(path.join(marker, "HEAD")) }),
+        Effect.orElseSucceed(() => false),
+      );
+      if (!intact) return yield* new WorktreeGitDataMissingError({ worktreePath });
+      return;
+    }
+    if (branch === null) return;
     const project = yield* projects.getById(thread.projectId).pipe(
       Effect.map(Option.getOrUndefined),
       Effect.orElseSucceed(() => undefined),

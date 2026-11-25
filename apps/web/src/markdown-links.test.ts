@@ -9,6 +9,7 @@ import {
 } from "./markdown-links";
 import {
   markdownFileCopyPaths,
+  markdownFileEditorProjectRoot,
   markdownFileEditorTarget,
   resolveMarkdownFileHostPath,
 } from "./markdownFileHostPath";
@@ -270,5 +271,21 @@ describe("chat file chip paths", () => {
       fullPath: String.raw`C:\Users\alice\project\src\discord\events\user.ts:261:7`,
       relativePath: "src/discord/events/user.ts:261:7",
     });
+  });
+
+  it("opens a link resolved into another project in that project", () => {
+    const roots = ["/work/api", "/work/web", "/work/web/packages/ui"];
+    expect(markdownFileEditorProjectRoot("/work/web/src/app.ts", "/work/api", roots)).toBe(
+      "/work/web",
+    );
+    expect(
+      markdownFileEditorProjectRoot("/work/web/packages/ui/button.tsx", "/work/api", roots),
+    ).toBe("/work/web/packages/ui");
+    expect(markdownFileEditorProjectRoot("/work/api/src/main.ts", "/work/api", roots)).toBe(
+      "/work/api",
+    );
+    expect(markdownFileEditorProjectRoot("/elsewhere/notes.md", "/work/api", roots)).toBe(
+      "/work/api",
+    );
   });
 });

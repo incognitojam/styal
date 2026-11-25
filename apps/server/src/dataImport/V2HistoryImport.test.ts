@@ -436,6 +436,72 @@ it.layer(layer)("V2 fork history import", (it) => {
         },
       );
       assert.equal(forkOfSideChat.turnItems.length, excluded.turnItems.length);
+      // Like a live fork, an imported one does not inherit a steer still waiting in the queue.
+      // A cancelled run whose prompt the provider accepted (a provider turn of one of its
+      // attempts, as recovery checks) had received the steer, so the fork keeps it. Output the
+      // server wrote itself does not count, so a run cancelled before acceptance hides it.
+      const attempt = {
+        id: "steer-attempt",
+        runId: encodedParentBase.runs[0]!.id,
+        attemptOrdinal: 1,
+        rootNodeId: "node",
+        providerInstanceId: "codex",
+        providerThreadId: "native-thread",
+        providerTurnId: null,
+        reason: "initial",
+        status: "cancelled",
+        startedAt: encodedParentBase.runs[0]!.startedAt,
+        completedAt: null,
+      } as const;
+      for (const [status, accepted, inherited] of [
+        ["queued", true, ["dynamic_tool", "fork"]],
+        ["completed", true, ["dynamic_tool", "user_message", "fork"]],
+        ["cancelled", false, ["dynamic_tool", "fork"]],
+        ["cancelled", true, ["dynamic_tool", "user_message", "fork"]],
+      ] as const) {
+        const steered = yield* decodeProjection({
+          ...encodedParentBase,
+          runs: [
+            { ...encodedParentBase.runs[0], status },
+            { ...encodedParentBase.runs[0], id: "later-run", ordinal: 2 },
+          ],
+          attempts: [attempt],
+          providerTurns: encodedParentBase.providerTurns.map((turn) => ({
+            ...turn,
+            runAttemptId: accepted ? attempt.id : null,
+          })),
+          turnItems: [
+            ...encodedParentBase.turnItems,
+            {
+              ...encodedParentBase.turnItems[0],
+              id: "steer-item",
+              type: "user_message",
+              createdBy: "user",
+              creationSource: "web",
+              messageId: "steer-message",
+              inputIntent: "queued_turn",
+              text: "Steer",
+              attachments: [],
+              ordinal: 2,
+            },
+          ],
+        });
+        const forkAfterSteer = materializeV2ForkHistory(
+          {
+            ...child,
+            thread: {
+              ...child.thread,
+              forkedFrom: { type: "run", threadId: source.thread.id, runId: steered.runs[1]!.id },
+            },
+          },
+          new Set(),
+          () => steered,
+        );
+        assert.deepEqual(
+          forkAfterSteer.turnItems.map((item) => item.type),
+          [...inherited],
+        );
+      }
       const write = yield* makeV2HistoryWriter;
       yield* write(excluded, ProjectId.make("fork-project"));
       const store = yield* ProjectionStore.ProjectionStoreV2;

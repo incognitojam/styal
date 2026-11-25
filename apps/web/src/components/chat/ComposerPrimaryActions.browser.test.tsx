@@ -13,7 +13,7 @@ vi.mock("../SidebarStageBackdrop", () => ({
   useSidebarStageBackdropVariant: () => null,
 }));
 
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { CollapsedComposerStopAction, ComposerPrimaryActions } from "./ComposerPrimaryActions";
 
 it("explains why sending is disabled while feedback is uploading", async () => {
   await using screen = await render(
@@ -191,4 +191,46 @@ it("keeps a pending stop when the run id clears and resets it for a different ru
   expect(screen.getByRole("button", { name: "Stopping", exact: true }).element()).toBeDisabled();
   await screen.rerender(<ComposerPrimaryActions {...props} runId="second" />);
   expect(screen.getByRole("button", { name: "Stop generation" }).element()).toBeEnabled();
+});
+
+it("swaps the collapsed composer's send button for Stop while a turn can be stopped", async () => {
+  const onInterrupt = vi.fn();
+  const onSend = vi.fn();
+  const collapsed = (overrides: { canInterrupt?: boolean; hasSendableContent?: boolean } = {}) => (
+    <CollapsedComposerStopAction
+      canOperateThread
+      canInterrupt={overrides.canInterrupt ?? true}
+      runId="run"
+      hasSendableContent={overrides.hasSendableContent ?? false}
+      isEditingQueuedMessage={false}
+      onInterrupt={onInterrupt}
+    >
+      <button type="button" onClick={onSend}>
+        Send message
+      </button>
+    </CollapsedComposerStopAction>
+  );
+  await using screen = await render(collapsed({ hasSendableContent: true }));
+  await expect.element(screen.getByRole("button", { name: "Send message" })).toBeVisible();
+  await screen.rerender(collapsed());
+  await act(() =>
+    (
+      screen.getByRole("button", { name: "Stop generation" }).element() as HTMLButtonElement
+    ).click(),
+  );
+  expect(onInterrupt).toHaveBeenCalledTimes(1);
+  await expect
+    .element(screen.getByRole("button", { name: "Stopping", exact: true }))
+    .toBeDisabled();
+  using _timers = fakeTimers();
+  await screen.rerender(collapsed({ canInterrupt: false }));
+  const send = () =>
+    screen.getByRole("button", { name: "Send message" }).element() as HTMLButtonElement;
+  const guarded = send();
+  await act(() => guarded.click());
+  expect(onSend).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTime(500));
+  expect(send()).toBe(guarded);
+  await act(() => send().click());
+  expect(onSend).toHaveBeenCalledTimes(1);
 });

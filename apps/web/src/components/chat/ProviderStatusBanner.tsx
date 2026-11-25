@@ -5,7 +5,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { memo, useRef, useState } from "react";
+import { memo, useRef, useState, useSyncExternalStore } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
@@ -83,14 +83,47 @@ function signInFixesProvider(status: ServerProvider): boolean {
 
 export function shouldShowProviderStatusBanner(
   status: ServerProvider | null,
-  dismissedBannerKey: string | null,
+  isDismissed: boolean,
 ): boolean {
-  const bannerKey = getProviderStatusBannerKey(status);
   return (
     status !== null &&
-    bannerKey !== null &&
-    bannerKey !== dismissedBannerKey &&
+    getProviderStatusBannerKey(status) !== null &&
+    !isDismissed &&
     !signInFixesProvider(status)
+  );
+}
+
+// Built-in instance ids such as `codex` repeat across environments.
+export function getProviderStatusDismissalKey(
+  environmentId: string | undefined,
+  status: ServerProvider | null,
+): string | null {
+  const bannerKey = getProviderStatusBannerKey(status);
+  return bannerKey === null ? null : `${environmentId ?? ""}\u0000${bannerKey}`;
+}
+
+// A dismissal lasts the session, not one view, so opening another thread cannot bring it back.
+const sessionDismissedProviderStatusBannerKeys = new Set<string>();
+const dismissalListeners = new Set<() => void>();
+
+export function dismissProviderStatusBannerForSession(bannerKey: string | null): void {
+  if (bannerKey === null || sessionDismissedProviderStatusBannerKeys.has(bannerKey)) return;
+  sessionDismissedProviderStatusBannerKeys.add(bannerKey);
+  for (const listener of dismissalListeners) listener();
+}
+
+export function isProviderStatusBannerDismissedForSession(bannerKey: string | null): boolean {
+  return bannerKey !== null && sessionDismissedProviderStatusBannerKeys.has(bannerKey);
+}
+
+function subscribeToDismissals(listener: () => void) {
+  dismissalListeners.add(listener);
+  return () => dismissalListeners.delete(listener);
+}
+
+export function useProviderStatusBannerDismissed(bannerKey: string | null): boolean {
+  return useSyncExternalStore(subscribeToDismissals, () =>
+    isProviderStatusBannerDismissedForSession(bannerKey),
   );
 }
 
@@ -109,7 +142,7 @@ export function resolveProviderBanner(input: {
   readonly lastErrorCode: string | null | undefined;
   readonly turnProvider: ServerProvider | undefined;
   readonly selectedProvider: ServerProvider | null;
-  readonly dismissedStatusBannerKey: string | null;
+  readonly statusBannerDismissed: boolean;
 }): ProviderBanner {
   const { turnProvider, selectedProvider } = input;
   if (
@@ -121,12 +154,11 @@ export function resolveProviderBanner(input: {
     return { kind: "sign-in", provider: turnProvider, afterFailedTurn: true };
   }
   if (!selectedProvider) return null;
-  if (shouldShowProviderStatusBanner(selectedProvider, input.dismissedStatusBannerKey)) {
+  if (shouldShowProviderStatusBanner(selectedProvider, input.statusBannerDismissed)) {
     return { kind: "status", provider: selectedProvider };
   }
-  const bannerKey = getProviderStatusBannerKey(selectedProvider);
-  return bannerKey !== null &&
-    bannerKey !== input.dismissedStatusBannerKey &&
+  return getProviderStatusBannerKey(selectedProvider) !== null &&
+    !input.statusBannerDismissed &&
     signInFixesProvider(selectedProvider)
     ? { kind: "sign-in", provider: selectedProvider, afterFailedTurn: false }
     : null;

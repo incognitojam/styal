@@ -1,6 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+  DATABASE_MIGRATIONS_STARTED_MESSAGE,
+} from "@t3tools/shared/databaseMigrationLog";
 
 import ForkMigration0001 from "./ForkMigrations/001_ComposerDrafts.ts";
 import ForkMigration0002 from "./ForkMigrations/002_WorkspacePortAllocations.ts";
@@ -64,14 +68,20 @@ export interface RunForkMigrationsOptions {
 export const runForkMigrations = Effect.fn("runForkMigrations")(function* ({
   toMigrationInclusive,
 }: RunForkMigrationsOptions = {}) {
+  // Upstream's runMigrations has already logged its finished line, so the desktop needs its own
+  // pair around fork migrations to keep waiting past its readiness budget.
+  const pending = yield* hasPendingForkMigrations();
+  if (pending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
   const executedMigrations = yield* runFork({
     loader: makeForkMigrationLoader(toMigrationInclusive),
     table: FORK_MIGRATIONS_TABLE,
   });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
-  yield* migrations.length === 0
-    ? Effect.logDebug("Fork database schema is current")
-    : Effect.log("Fork migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
+  yield* pending
+    ? Effect.log(DATABASE_MIGRATIONS_FINISHED_MESSAGE).pipe(
+        Effect.annotateLogs({ forkMigrations: migrations }),
+      )
+    : Effect.logDebug("Fork database schema is current");
   return executedMigrations;
 });
 
@@ -80,9 +90,7 @@ const MISPLACED_LATEST_MESSAGE_MIGRATION_NAME = "ProjectionThreadLatestMessageAt
 
 const latestForkMigrationId = Math.max(...forkMigrationEntries.map(([id]) => id));
 
-/** Whether runAllMigrations would write: upstream's pending check, the fork's own history, or a misplaced record to release. */
-export const hasPendingAllMigrations = Effect.fn("hasPendingAllMigrations")(function* () {
-  if (yield* hasPendingMigrations()) return true;
+const hasPendingForkMigrations = Effect.fn("hasPendingForkMigrations")(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tables = yield* sql`
     SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${FORK_MIGRATIONS_TABLE}
@@ -91,7 +99,14 @@ export const hasPendingAllMigrations = Effect.fn("hasPendingAllMigrations")(func
   const rows = yield* sql<{ readonly latestId: number | null }>`
     SELECT MAX(migration_id) AS latestId FROM yngatech_sql_migrations
   `;
-  if ((rows[0]?.latestId ?? 0) < latestForkMigrationId) return true;
+  return (rows[0]?.latestId ?? 0) < latestForkMigrationId;
+});
+
+/** Whether runAllMigrations would write: upstream's pending check, the fork's own history, or a misplaced record to release. */
+export const hasPendingAllMigrations = Effect.fn("hasPendingAllMigrations")(function* () {
+  if (yield* hasPendingMigrations()) return true;
+  if (yield* hasPendingForkMigrations()) return true;
+  const sql = yield* SqlClient.SqlClient;
   const misplaced = yield* sql`
     SELECT 1 FROM effect_sql_migrations
     WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}

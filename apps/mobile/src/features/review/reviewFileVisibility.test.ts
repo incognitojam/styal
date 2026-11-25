@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { getValidReviewFileIds } from "./reviewFileVisibility";
+import { getExpandedReviewFileIds } from "./reviewFileVisibility";
 import type { ReviewRenderableFile } from "./reviewModel";
 
 function makeFile(id: string): ReviewRenderableFile {
@@ -27,8 +27,9 @@ describe("review file visibility", () => {
       makeFile("dist/app.js"),
     ];
 
-    expect(getValidReviewFileIds(generatedFiles, undefined, ["src/generated.ts"])).toEqual([]);
-    expect(getValidReviewFileIds(generatedFiles, ["packages/app/bun.lock"])).toEqual([
+    expect(getExpandedReviewFileIds(generatedFiles, undefined, ["src/generated.ts"])).toEqual([]);
+    // Stored expansion keys are the path with its occurrence index.
+    expect(getExpandedReviewFileIds(generatedFiles, ["0:packages/app/bun.lock"])).toEqual([
       "packages/app/bun.lock",
     ]);
   });
