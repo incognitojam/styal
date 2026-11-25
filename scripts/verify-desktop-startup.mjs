@@ -31,7 +31,11 @@ export function verifyDesktopStartup(executable, version) {
       [...(needsDisplay ? ["-a", executable] : []), "--no-sandbox", "--version"],
       { cwd: home, env, encoding: "utf8", timeout: 30_000 },
     );
-    if (result.error || result.status !== 0 || result.stdout.trim() !== version) {
+    if (
+      result.error ||
+      result.status !== 0 ||
+      result.stdout.trim().split(/\r?\n/).at(-1) !== version
+    ) {
       throw new Error(
         `Packaged desktop startup failed (${result.status ?? result.signal}): ${result.error ?? ""}\n${result.stdout}\n${result.stderr}`,
       );
