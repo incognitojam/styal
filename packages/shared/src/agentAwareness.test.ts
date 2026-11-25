@@ -10,7 +10,7 @@ import type {
 import { ProviderInstanceId, RuntimeRequestId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { projectThreadAwarenessV2 } from "./agentAwareness.ts";
+import { projectThreadAwarenessV2, subagentAwaitsUser } from "./agentAwareness.ts";
 
 const NOW = "2026-05-22T12:00:00.000Z";
 
@@ -398,5 +398,43 @@ describe("projectThreadAwarenessV2", () => {
         },
       })?.threadTitle,
     ).toBe(threadTitle);
+  });
+});
+
+describe("subagentAwaitsUser", () => {
+  it.each([
+    ["running", true],
+    ["ended", false],
+  ] as const)("keeps user-only input pending with a %s run", (_, live) => {
+    const child = {
+      activityRunStatus: live ? ("running" as const) : null,
+      creationSource: "mcp" as const,
+      lineage: {
+        rootThreadId: "parent" as ThreadId,
+        parentThreadId: "parent" as ThreadId,
+        relationshipToParent: "subagent" as const,
+      },
+      pendingRuntimeRequest: {
+        id: RuntimeRequestId.make("link-card"),
+        kind: "user_input" as const,
+        createdAt: DateTime.makeUnsafe(NOW),
+        userOnly: true,
+      },
+    };
+    expect(subagentAwaitsUser(child)).toBe(true);
+    expect(subagentAwaitsUser({ ...child, pendingRuntimeRequest: null })).toBe(false);
+    expect(
+      subagentAwaitsUser({
+        ...child,
+        pendingRuntimeRequest: { ...child.pendingRuntimeRequest, userOnly: false },
+      }),
+    ).toBe(false);
+    expect(
+      subagentAwaitsUser({
+        ...child,
+        pendingRuntimeRequest: { ...child.pendingRuntimeRequest, kind: "command", userOnly: false },
+      }),
+    ).toBe(live);
+    expect(subagentAwaitsUser({ ...child, creationSource: "provider" })).toBe(false);
   });
 });

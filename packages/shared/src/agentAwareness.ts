@@ -59,7 +59,7 @@ export function subagentAwaitsUser(
     thread.lineage.relationshipToParent === "subagent" &&
     !isProviderNativeSubagentThread(thread) &&
     // The activity run stays set when a follow-up is queued behind a blocked run.
-    thread.activityRunStatus != null
+    (thread.activityRunStatus != null || thread.pendingRuntimeRequest?.userOnly === true)
   );
 }
 
@@ -106,7 +106,7 @@ export interface ProjectThreadAwarenessV2Input {
     | "updatedAt"
     | "workflowRuns"
   >;
-  /** What a live subagent below this thread is waiting on the user for. */
+  /** What a subagent below this thread is waiting on the user for. */
   readonly pendingSubagentRequest?: SubagentRequestAwareness | null;
   readonly settings?:
     | Pick<ServerSettings, "projectCoordinatorsEnabled" | "projectCoordinators">

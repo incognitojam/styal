@@ -1877,6 +1877,9 @@ export function threadShellFromProjection(
     runs.filter(isActivityRunForShell).toSorted((left, right) => right.ordinal - left.ordinal)[0] ??
     null;
   const liveRunIds = new Set(runs.filter(isActivityRunForShell).map((run) => run.id));
+  const rolledBackRunIds = new Set(
+    projection.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
+  );
   let pendingRuntimeRequest = pendingRuntimeRequestSummary(
     projection.runtimeRequests
       .filter((request) => request.status === "pending")
@@ -1902,7 +1905,9 @@ export function threadShellFromProjection(
       projection.turnItems
         .filter(
           (item) =>
-            item.status === "waiting" && waitsOnUser(item, liveRunIds, latestUserAuthoredMessageAt),
+            item.status === "waiting" &&
+            (item.runId === null || !rolledBackRunIds.has(item.runId)) &&
+            waitsOnUser(item, liveRunIds, latestUserAuthoredMessageAt),
         )
         .toSorted(
           (left, right) =>
@@ -8242,6 +8247,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   INDEXED BY orchestration_v2_projection_turn_items_waiting_link_idx
                 WHERE link.thread_id = t.thread_id
                   AND link.type = 'link_request' AND link.status = 'waiting'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM orchestration_v2_projection_runs run
+                    WHERE run.run_id = link.run_id AND run.status = 'rolled_back'
+                  )
                 ORDER BY link.updated_at DESC, link.turn_item_id DESC
                 LIMIT 1
               ) AS pending_link_request_payload_json,
@@ -8651,6 +8660,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   INDEXED BY orchestration_v2_projection_turn_items_waiting_link_idx
                 WHERE link.thread_id = t.thread_id
                   AND link.type = 'link_request' AND link.status = 'waiting'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM orchestration_v2_projection_runs run
+                    WHERE run.run_id = link.run_id AND run.status = 'rolled_back'
+                  )
                   -- linkCardStillAsks: once the user writes after the card, it stops asking.
                   AND NOT EXISTS (
                     SELECT 1 FROM orchestration_v2_projection_messages message
