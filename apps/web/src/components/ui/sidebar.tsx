@@ -1,3 +1,4 @@
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -455,6 +456,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       {...props}
     >
       {isOpen ? <PanelLeftCloseIcon className="size-4" /> : <PanelLeftIcon className="size-4" />}
+      <ShortcutHintBadge command="sidebar.toggle" />
       <span className="sr-only">
         <T>Toggle Sidebar</T>
       </span>

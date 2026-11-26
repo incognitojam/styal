@@ -1,3 +1,4 @@
+import { ShortcutHintBadge } from "../ShortcutHint";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
@@ -447,6 +448,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             </Badge>
           ) : null}
         </span>
+        <ShortcutHintBadge command="modelPicker.toggle" side="start" />
       </PopoverTrigger>
       <PopoverPopup
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}

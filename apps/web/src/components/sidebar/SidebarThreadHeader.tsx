@@ -1,3 +1,4 @@
+import { ShortcutHintBadge } from "../ShortcutHint";
 import { useGT } from "gt-react";
 import { SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
@@ -120,6 +121,7 @@ export function SidebarThreadHeader({
           onClick={onNewThread}
         >
           <SquarePenIcon />
+          <ShortcutHintBadge command="chat.new" />
         </SidebarHeaderIconButton>
       </div>
     </div>

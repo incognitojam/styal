@@ -1,3 +1,4 @@
+import { ShortcutHintBadge } from "../ShortcutHint";
 import {
   PanelBottomIcon,
   PanelRightIcon,
@@ -69,6 +70,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       size="sm"
     >
       <SquareMenuIcon className="size-4" />
+      <ShortcutHintBadge command="threadPanel.toggle" row={0} />
     </Toggle>
   );
   const threadPanelControl = (
@@ -107,6 +109,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               disabled={!terminalAvailable}
             >
               <PanelBottomIcon className="size-4" />
+              <ShortcutHintBadge command="terminal.toggle" row={1} />
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">
@@ -132,6 +135,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               disabled={!rightPanelAvailable}
             >
               <PanelRightIcon className="size-4" />
+              <ShortcutHintBadge command="rightPanel.toggle" row={2} />
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">
