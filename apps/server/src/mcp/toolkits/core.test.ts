@@ -10,6 +10,7 @@ import {
   EnvironmentId,
   NodeId,
   OrchestratorMcpThreadReadResult,
+  OrchestratorMcpThreadSearchPage,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -64,7 +65,6 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { dispatchFailure } from "../threadAccess.ts";
 import * as EnvironmentHandlers from "./environment/handlers.ts";
 import * as AttachmentHandlers from "./attachment/handlers.ts";
-import { ThreadToolkit } from "./thread/tools.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
@@ -81,10 +81,8 @@ const declaredFailure = (result: McpSchema.CallToolResult) => {
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
+const decodeThreadSearchPage = Schema.decodeUnknownEffect(OrchestratorMcpThreadSearchPage);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);
-const decodeThreadSearchResult = Schema.decodeUnknownEffect(
-  ThreadToolkit.tools.t3_thread_search.successSchema,
-);
 
 const layerThreadToolkit = McpHttpServer.layerThreadToolkit.pipe(
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
@@ -930,7 +928,9 @@ it.effect("search names the calling thread, so an agent can tell its own match a
     expect(fromClient.structuredContent).toMatchObject({ currentThreadId: null });
 
     // A linked environment on an older version answers without the field.
-    const fromOlderPeer = yield* decodeThreadSearchResult({ matches: [] });
+    const fromOlderPeer = yield* decodeThreadSearchPage({
+      matches: [],
+    });
     expect(fromOlderPeer).toEqual({ matches: [] });
   }).pipe(
     Effect.provide(
@@ -954,7 +954,12 @@ it.effect("search names the calling thread, so an agent can tell its own match a
           }),
         ),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-        Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+        Layer.provide(
+          Layer.mock(PeerForwarding.PeerForwarding)({
+            links: () =>
+              Effect.succeed({ environmentId: scope.environmentId, links: [], notListed: "" }),
+          }),
+        ),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
         Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
       ),

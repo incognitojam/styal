@@ -6,6 +6,8 @@ import {
   OrchestratorMcpThreadInterruptResult,
   OrchestratorMcpThreadReadInput,
   OrchestratorMcpThreadReadResult,
+  OrchestratorMcpThreadSearchInput,
+  OrchestratorMcpThreadSearchPage,
   OrchestratorMcpThreadWaitInput,
   OrchestratorMcpThreadWaitResult,
   type PeerLinkError,
@@ -60,6 +62,11 @@ export class PeerForwarding extends Context.Service<
       environmentId: EnvironmentId,
       input: OrchestratorMcpThreadReadInput,
     ) => Effect.Effect<OrchestratorMcpThreadReadResult, OrchestratorMcpFailure>;
+    readonly searchThreads: (
+      scope: Scope,
+      environmentId: EnvironmentId,
+      input: OrchestratorMcpThreadSearchInput,
+    ) => Effect.Effect<OrchestratorMcpThreadSearchPage, OrchestratorMcpFailure>;
     /** `t3_thread_interrupt` there. */
     readonly interruptThread: (
       scope: Scope,
@@ -218,6 +225,19 @@ const make = Effect.gen(function* () {
       input,
     );
 
+  const searchThreads: PeerForwarding["Service"]["searchThreads"] = (scope, environmentId, input) =>
+    Effect.andThen(
+      requireEnabled,
+      forward<OrchestratorMcpThreadSearchPage>(
+        scope,
+        "t3_thread_search",
+        OrchestratorMcpThreadSearchInput,
+        OrchestratorMcpThreadSearchPage,
+        environmentId,
+        input,
+      ),
+    );
+
   const interruptThread: PeerForwarding["Service"]["interruptThread"] = (
     scope,
     environmentId,
@@ -314,6 +334,7 @@ const make = Effect.gen(function* () {
   return PeerForwarding.of({
     call,
     readThread,
+    searchThreads,
     interruptThread,
     waitForThread,
     links: listLinks,
