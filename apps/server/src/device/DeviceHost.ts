@@ -11,6 +11,7 @@ import type {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
 export class DeviceHostError extends Schema.TaggedError<DeviceHostError>()("DeviceHostError", {
@@ -175,6 +176,11 @@ export interface DeviceHostReady {
     readonly serveSimAxSettings: string | null;
     readonly serveSimCli: string | null;
   };
+  /** Keeps a physical Android device awake until the scope closes. Local hosts only. */
+  readonly holdPhysicalDevice?: (
+    serial: string,
+    options: { readonly screenOff: boolean },
+  ) => Effect.Effect<void, DeviceHostError, Scope.Scope>;
   /** Routes proxied hub requests itself; otherwise they go to `hub.origin`. */
   readonly upstream?: (
     hubPath: string,

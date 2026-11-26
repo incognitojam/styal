@@ -39,6 +39,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
+import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import { deviceHubNodeArgs } from "./deviceHubNodeArgs.ts";
 import {
@@ -106,6 +107,7 @@ interface RunningHost {
   readonly hub: HubProcess;
   readonly agentDevice: DeviceHost.AgentDeviceEndpoint | null;
   readonly helpers: DeviceHost.DeviceHostReady["helpers"];
+  readonly scrcpyServer: PhysicalAndroidHold.DeviceHoldTools["server"] | null;
 }
 
 const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
@@ -813,12 +815,18 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
         Effect.ignore,
       );
       const candidate = helperPaths(hubTool);
-      const [axExists, cliExists] = yield* Effect.all([
+      const [axExists, cliExists, emuVendorFiles] = yield* Effect.all([
         fs.exists(candidate.serveSimAxSettings).pipe(Effect.orElseSucceed(() => false)),
         fs.exists(candidate.serveSimCli).pipe(Effect.orElseSucceed(() => false)),
+        fs.readDirectory(candidate.serveEmuVendor).pipe(Effect.orElseSucceed(() => [])),
       ]);
+      const scrcpyServer = emuVendorFiles.flatMap((name) => {
+        const version = PhysicalAndroidHold.scrcpyServerVersion(name);
+        return version ? [{ path: path.join(candidate.serveEmuVendor, name), version }] : [];
+      })[0];
       const next: RunningHost = {
         hub,
+        scrcpyServer: scrcpyServer ?? null,
         agentDevice: running?.agentDevice ?? null,
         helpers: {
           serveSimAxSettings: axExists ? candidate.serveSimAxSettings : null,
@@ -906,6 +914,14 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     return {
       serveSimAxSettings: path.join(serveSimDist, "simax", "serve-sim-ax-settings"),
       serveSimCli: path.join(serveSimDist, "serve-sim.js"),
+      serveEmuVendor: path.join(
+        hubTool.installDir,
+        "node_modules",
+        "expo-device-hub",
+        "vendor",
+        "serve-emu",
+        "vendor",
+      ),
     };
   };
 
@@ -957,6 +973,37 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     nodePath: running.hub.nodePath,
     run,
     helpers: running.helpers,
+    ...(running.scrcpyServer
+      ? {
+          holdPhysicalDevice: Effect.fn("LocalDeviceHost.holdPhysicalDevice")(
+            function* (serial: string, options: PhysicalAndroidHold.DeviceHoldOptions) {
+              const sdk = yield* currentSdk;
+              if (!sdk.adb || !sdk.root)
+                return yield* new DeviceHost.DeviceHostError({
+                  hostId,
+                  step: "starting the device hold helper",
+                  cause: "Android platform tools were not found.",
+                });
+              yield* PhysicalAndroidHold.holdDevice(
+                {
+                  hostId,
+                  adb: path.join(
+                    sdk.root,
+                    "platform-tools",
+                    hostPlatform === "win32" ? "adb.exe" : "adb",
+                  ),
+                  env: yield* currentHostEnvironment,
+                  server: running.scrcpyServer!,
+                  run,
+                },
+                serial,
+                options,
+              );
+            },
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
+        }
+      : {}),
     ...(running.agentDevice
       ? { releaseAgentSession: releaseAgentDeviceSession(httpClient, running.agentDevice) }
       : {}),

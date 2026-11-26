@@ -77,6 +77,7 @@ import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretReso
 import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import { requireSettingsSecret } from "../secrets/settingsSecretValue.ts";
 import * as DeviceHost from "./DeviceHost.ts";
+import * as PhysicalAndroidHold from "./PhysicalAndroidHold.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
 import * as EasDeviceHost from "./EasDeviceHost.ts";
 import * as SimlockDeviceHost from "./SimlockDeviceHost.ts";
@@ -1584,11 +1585,17 @@ export const make = Effect.gen(function* () {
     }
     return hosts;
   };
-  yield* reconcile(configuredHosts(yield* settings.getSettings));
+  const currentSettings = yield* settings.getSettings;
+  yield* reconcile(configuredHosts(currentSettings));
   yield* changes.pipe(
     Stream.runForEach((value) => reconcile(configuredHosts(value))),
     Effect.forkIn(scope),
   );
+  yield* PhysicalAndroidHold.holdHeldDevices({
+    host: localHost,
+    settings: Stream.concat(Stream.make(currentSettings), yield* settings.subscribeChanges),
+    states: stateStream(service),
+  }).pipe(Effect.forkIn(scope));
   yield* Effect.addFinalizer(() =>
     Effect.forEach(configured.values(), (value) => Scope.close(value.scope, Exit.void), {
       discard: true,
