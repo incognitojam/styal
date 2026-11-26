@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, other {스레드 {count}개를 읽음}}",
   "e1eaf0526bf5a107": "{count, plural, other {스레드 {count}개 읽기 시도함}}",
   "a259da1772c6478b": "{count, plural, other {스레드 {count}회 읽음}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, other {스레드 읽기 {count}회 시도함}}",
   "2f9bc8d8cec6258e": "{count, plural, other {스레드 {count}개를 기다림}}",
   "651a8c4e0b6d842a": "{count, plural, other {스레드 {count}개 기다리기 시도함}}",

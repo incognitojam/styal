@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, other {{count} 件のスレッドを読み取りました}}",
   "e1eaf0526bf5a107": "{count, plural, other {{count} 件のスレッドを読み取ろうとしました}}",
   "a259da1772c6478b": "{count, plural, other {スレッドを {count} 回読み取りました}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, other {スレッドを {count} 回読み取ろうとしました}}",
   "2f9bc8d8cec6258e": "{count, plural, other {{count} 件のスレッドを待機しました}}",
   "651a8c4e0b6d842a": "{count, plural, other {{count} 件のスレッドを待機しようとしました}}",

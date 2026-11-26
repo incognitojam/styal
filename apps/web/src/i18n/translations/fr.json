@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, one {{count} fil lu} other {{count} fils lus}}",
   "e1eaf0526bf5a107": "{count, plural, one {Tentative de lecture de {count} fil} other {Tentative de lecture de {count} fils}}",
   "a259da1772c6478b": "{count, plural, one {Fils lus {count} fois} other {Fils lus {count} fois}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, one {Tentative de lire des fils {count} fois} other {Tentative de lire des fils {count} fois}}",
   "2f9bc8d8cec6258e": "{count, plural, one {Attente de {count} fil} other {Attente de {count} fils}}",
   "651a8c4e0b6d842a": "{count, plural, one {Tentative d’attendre {count} fil} other {Tentative d’attendre {count} fils}}",

@@ -1,3 +1,4 @@
+import { WebBuildWatcher } from "./components/WebBuildNotice";
 import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
@@ -15,6 +16,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
         <ElectronBrowserHost />
         <QuitHoldOverlay />
       </AppAtomRegistryProvider>
+      <WebBuildWatcher />
     </I18nProvider>
   );
 }

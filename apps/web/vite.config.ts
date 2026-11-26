@@ -1,3 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite build identity is created before the Effect runtime.
+import * as NodeCrypto from "node:crypto";
+import { buildMetadataPlugin } from "./vite/buildMetadata";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeZlib from "node:zlib";
@@ -22,6 +25,7 @@ import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 import { formatAppDisplayName, resolveWebAppStageLabel } from "./src/branding.logic";
 
+const appBuildId = NodeCrypto.randomUUID();
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
@@ -323,6 +327,7 @@ export default defineConfig(({ command }) => {
     },
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      buildMetadataPlugin(appBuildId),
       bootstrapTitlePlugin(),
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
@@ -357,6 +362,7 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: {
+      "import.meta.env.APP_BUILD_ID": JSON.stringify(appBuildId),
       "import.meta.env.VITE_WS_URL": JSON.stringify(configuredWsUrl ?? ""),
       // Override .env URLs with empty values in single-origin dev so clients use window.location.origin.
       "import.meta.env.VITE_HTTP_URL": JSON.stringify(configuredHttpUrl ?? ""),

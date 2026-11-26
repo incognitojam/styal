@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, other {已读取 {count} 个会话}}",
   "e1eaf0526bf5a107": "{count, plural, other {尝试读取 {count} 个会话}}",
   "a259da1772c6478b": "{count, plural, other {已读取会话 {count} 次}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, other {尝试读取会话 {count} 次}}",
   "2f9bc8d8cec6258e": "{count, plural, other {已等待 {count} 个会话}}",
   "651a8c4e0b6d842a": "{count, plural, other {尝试等待 {count} 个会话}}",

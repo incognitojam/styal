@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, one {Leu {count} thread} other {Leu {count} threads}}",
   "e1eaf0526bf5a107": "{count, plural, one {Tentou ler {count} thread} other {Tentou ler {count} threads}}",
   "a259da1772c6478b": "{count, plural, one {Leu threads {count} vez} other {Leu threads {count} vezes}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, one {Tentou ler threads {count} vez} other {Tentou ler threads {count} vezes}}",
   "2f9bc8d8cec6258e": "{count, plural, one {Aguardou {count} thread} other {Aguardou {count} threads}}",
   "651a8c4e0b6d842a": "{count, plural, one {Tentou aguardar {count} thread} other {Tentou aguardar {count} threads}}",

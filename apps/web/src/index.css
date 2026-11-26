@@ -246,6 +246,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-error-surface: var(--error-surface);
   --color-update-foreground: var(--update-foreground);
   --color-update: var(--update);
+  --color-update-surface: var(--update-surface);
+  --color-update-surface-hover: color-mix(
+    in srgb,
+    var(--update-surface) 90%,
+    var(--update-foreground)
+  );
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-diff-addition: var(--diff-addition);
@@ -1199,6 +1205,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
   --update: var(--primary);
   --update-foreground: var(--primary);
+  --update-surface: color-mix(in srgb, var(--update) 12%, transparent);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
   --sidebar: var(--color-zinc-50);
@@ -1250,6 +1257,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
     --update-foreground: var(--color-blue-400);
+    --update-surface: color-mix(in srgb, var(--update) 18%, transparent);
     --sidebar: var(--card);
     --sidebar-control-surface: var(--muted);
     --sidebar-row-hover: var(--accent);
@@ -1399,6 +1407,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --warning: var(--app-theme-warning);
   --warning-foreground: var(--app-theme-warning-foreground);
   --warning-surface: var(--app-theme-warning-surface);
+  --update-surface: var(--app-theme-update-surface);
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
   --border: var(--app-theme-border);

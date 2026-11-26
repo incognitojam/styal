@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, one {{count} Thread gelesen} other {{count} Threads gelesen}}",
   "e1eaf0526bf5a107": "{count, plural, one {Versucht, {count} Thread zu lesen} other {Versucht, {count} Threads zu lesen}}",
   "a259da1772c6478b": "{count, plural, one {Threads {count}-mal gelesen} other {Threads {count}-mal gelesen}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, one {Versucht, Threads {count}-mal zu lesen} other {Versucht, Threads {count}-mal zu lesen}}",
   "2f9bc8d8cec6258e": "{count, plural, one {Auf {count} Thread gewartet} other {Auf {count} Threads gewartet}}",
   "651a8c4e0b6d842a": "{count, plural, one {Versucht, auf {count} Thread zu warten} other {Versucht, auf {count} Threads zu warten}}",

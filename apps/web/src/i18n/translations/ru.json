@@ -361,6 +361,7 @@
   "b5ab4f13edefadf7": "{count, plural, one {Прочитан {count} тред} few {Прочитано {count} треда} many {Прочитано {count} тредов} other {Прочитано {count} треда}}",
   "e1eaf0526bf5a107": "{count, plural, one {Попытка прочитать {count} тред} few {Попытка прочитать {count} треда} many {Попытка прочитать {count} тредов} other {Попытка прочитать {count} треда}}",
   "a259da1772c6478b": "{count, plural, one {Треды прочитаны {count} раз} few {Треды прочитаны {count} раза} many {Треды прочитаны {count} раз} other {Треды прочитаны {count} раза}}",
+  "f535ce29c394cde5": "New build available. Refresh",
   "d35c112357359457": "{count, plural, one {Попытка прочитать треды: {count} раз} few {Попытка прочитать треды: {count} раза} many {Попытка прочитать треды: {count} раз} other {Попытка прочитать треды: {count} раза}}",
   "2f9bc8d8cec6258e": "{count, plural, one {Ожидание {count} треда} few {Ожидание {count} тредов} many {Ожидание {count} тредов} other {Ожидание {count} треда}}",
   "651a8c4e0b6d842a": "{count, plural, one {Попытка дождаться {count} треда} few {Попытка дождаться {count} тредов} many {Попытка дождаться {count} тредов} other {Попытка дождаться {count} треда}}",

@@ -3,6 +3,7 @@
 import type { DesktopBridge, ThreadId } from "@t3tools/contracts";
 
 interface ImportMetaEnv {
+  readonly APP_BUILD_ID: string;
   readonly VITE_HTTP_URL: string;
   readonly VITE_WS_URL: string;
   readonly VITE_HOSTED_APP_URL: string;
