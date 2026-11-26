@@ -505,6 +505,7 @@
   "a80f88e893129bd9": "Verifique se {host} está ativo e online.",
   "47bd201d6291d340": "Reinicie o styal neste dispositivo.",
   "6a1d53c7bee371aa": "Se continuar falhando, remova {host} deste dispositivo e adicione-o novamente.",
+  "1daabddfc6f892ff": "Adicione outra resposta ou deixe em branco para usar as opções selecionadas",
   "41dd22a83e2fa219": "Saia do T3 Connect e entre novamente.",
   "a569ba31753e80a3": "Verifique a conexão com a internet deste dispositivo.",
   "74d36a4b4a67340f": "Uma VPN, um firewall ou um bloqueador de anúncios neste dispositivo pode bloquear o T3 Connect.",

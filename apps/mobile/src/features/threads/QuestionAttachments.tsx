@@ -211,7 +211,9 @@ export function QuestionAttachments(props: {
             focusedRef.current = false;
             onInputFocusChange?.(false);
           }}
-          placeholder={gt("Or type a custom answer")}
+          placeholder={
+            props.question.multiSelect ? gt("Add to your selection") : gt("Or type a custom answer")
+          }
           className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
         />
       </TextInputWrapper>

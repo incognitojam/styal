@@ -69,7 +69,7 @@ export function resolvePendingUserInputAnswer(
       : question.initialAnswer !== undefined
         ? (draft?.customAnswer ?? null)
         : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer !== null && customAnswer.length > 0) {
+  if (!question.multiSelect && customAnswer !== null && customAnswer.length > 0) {
     return customAnswer;
   }
   if (question.required === false && question.options.length === 0) {
@@ -81,6 +81,8 @@ export function resolvePendingUserInputAnswer(
     customAnswer ??
     (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null);
   if (question.multiSelect) {
+    if (customAnswer && !selectedOptionValues.includes(customAnswer))
+      return [...selectedOptionValues, customAnswer];
     // Checking nothing answers "none of these" unless the provider requires a choice.
     return selectedOptionValues.length > 0
       ? selectedOptionValues
@@ -99,7 +101,8 @@ export function setPendingUserInputCustomAnswer(
   }
 
   const selectedOptionValues =
-    question.initialAnswer !== undefined || customAnswer.trim().length > 0
+    !question.multiSelect &&
+    (question.initialAnswer !== undefined || customAnswer.trim().length > 0)
       ? undefined
       : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   return {
@@ -113,7 +116,11 @@ export function isPendingUserInputOptionSelected(
   draft: PendingUserInputDraftAnswer | undefined,
   optionValue: string,
 ): boolean {
-  if (question.allowCustomAnswer !== false && normalizeDraftAnswer(draft?.customAnswer)) {
+  if (
+    !question.multiSelect &&
+    question.allowCustomAnswer !== false &&
+    normalizeDraftAnswer(draft?.customAnswer)
+  ) {
     return false;
   }
 
@@ -147,7 +154,7 @@ export function togglePendingUserInputOptionSelection(
       : [...selectedOptionValues, resolvedOptionValue];
 
     return {
-      customAnswer: "",
+      customAnswer: draft?.customAnswer ?? "",
       ...(nextSelectedOptionValues.length > 0
         ? { selectedOptionValues: nextSelectedOptionValues }
         : {}),

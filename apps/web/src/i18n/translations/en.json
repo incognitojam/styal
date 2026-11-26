@@ -505,6 +505,7 @@
   "a80f88e893129bd9": "Make sure {host} is awake and online.",
   "47bd201d6291d340": "Restart styal on this device.",
   "6a1d53c7bee371aa": "If it keeps failing, remove {host} from this device and add it again.",
+  "1daabddfc6f892ff": "Add another answer, or leave this blank to use the selected options",
   "41dd22a83e2fa219": "Sign out of T3 Connect and sign in again.",
   "a569ba31753e80a3": "Check this device's internet connection.",
   "74d36a4b4a67340f": "A VPN, firewall, or ad blocker on this device can block T3 Connect.",

@@ -532,6 +532,24 @@ export function usePendingThreadRequests(input: {
     if (!activePendingUserInput) {
       return;
     }
+    const multiSelectQuestion = activePendingUserInput.questions.find(
+      (question) => question.id === questionId && question.multiSelect,
+    );
+    if (multiSelectQuestion) {
+      setPendingUserInputAnswersByRequestId((existing) => ({
+        ...existing,
+        [activePendingRequestKey]: {
+          ...existing[activePendingRequestKey],
+          [questionId]: togglePendingUserInputOptionSelection(
+            multiSelectQuestion,
+            existing[activePendingRequestKey]?.[questionId] ??
+              readPendingUserInputDraft(draftScope).activePendingDraftAnswers[questionId],
+            optionValue,
+          ),
+        },
+      }));
+      return;
+    }
     // The option replaces the custom answer. Anything typed there is the
     // user's text, so it goes back to the thread draft instead of vanishing.
     const displacedAnswer =

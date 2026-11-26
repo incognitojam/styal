@@ -113,3 +113,24 @@ it.each<{ focus: string; control: ReactNode; toggles: boolean }>([
     expect(onToggleOption.mock.calls).toEqual(toggles ? [["question", "Incremental"]] : []);
   },
 );
+
+it("keeps a multi-select option checked beside a typed addition", async () => {
+  await using screen = await render(
+    <ComposerPendingUserInputPanel
+      pendingUserInputs={[prompt]}
+      cwd={undefined}
+      threadRef={threadRef}
+      respondingRequestIds={[]}
+      answers={{
+        question: { selectedOptionValues: ["Incremental"], customAnswer: "Check accessibility" },
+      }}
+      questionIndex={0}
+      onToggleOption={vi.fn()}
+      onAdvance={vi.fn()}
+      onDismiss={vi.fn()}
+    />,
+  );
+  await expect
+    .element(screen.getByRole("button", { name: /Incremental/ }))
+    .toHaveAttribute("aria-pressed", "true");
+});

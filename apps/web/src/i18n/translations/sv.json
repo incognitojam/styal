@@ -505,6 +505,7 @@
   "a80f88e893129bd9": "Se till att {host} är vaken och online.",
   "47bd201d6291d340": "Starta om styal på den här enheten.",
   "6a1d53c7bee371aa": "Om det fortsätter att misslyckas, ta bort {host} från den här enheten och lägg till den igen.",
+  "1daabddfc6f892ff": "Lägg till ett annat svar eller lämna tomt för att använda de valda alternativen",
   "41dd22a83e2fa219": "Logga ut från T3 Connect och logga in igen.",
   "a569ba31753e80a3": "Kontrollera den här enhetens internetanslutning.",
   "74d36a4b4a67340f": "Ett VPN, en brandvägg eller en annonsblockerare på den här enheten kan blockera T3 Connect.",

@@ -251,3 +251,39 @@ it.each([
 
   expect(JSON.stringify(answers)).toBe(`{"__proto__":${json},"name":"Orchestration-first"}`);
 });
+
+it.each([true, false])(
+  "combines multi-select options and typed additions (type first: %s)",
+  (typeFirst) => {
+    const question = { ...singleSelectQuestion, multiSelect: true };
+    const typed = "  Include examples  ";
+    const draft = typeFirst
+      ? togglePendingUserInputOptionSelection(
+          question,
+          setPendingUserInputCustomAnswer(question, undefined, typed),
+          "Node.js",
+        )
+      : setPendingUserInputCustomAnswer(
+          question,
+          togglePendingUserInputOptionSelection(question, undefined, "Node.js"),
+          typed,
+        );
+    expect(isPendingUserInputOptionSelected(question, draft, "Node.js")).toBe(true);
+    expect(buildPendingUserInputAnswers([question], { scope: draft })).toEqual({
+      scope: ["Node.js", "Include examples"],
+    });
+    const duplicate = setPendingUserInputCustomAnswer(question, draft, " Node.js ");
+    expect(buildPendingUserInputAnswers([question], { scope: duplicate })).toEqual({
+      scope: ["Node.js"],
+    });
+    const removed = togglePendingUserInputOptionSelection(question, draft, "Node.js");
+    expect(buildPendingUserInputAnswers([question], { scope: removed })).toEqual({
+      scope: ["Include examples"],
+    });
+    expect(
+      buildPendingUserInputAnswers([question], {
+        scope: setPendingUserInputCustomAnswer(question, draft, ""),
+      }),
+    ).toEqual({ scope: ["Node.js"] });
+  },
+);

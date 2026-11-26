@@ -102,7 +102,8 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   // Read before later hooks to preserve the question's compiler cache.
   const draftSelectedOptions = activeQuestion?.options.map(
     (option) =>
-      !customAnswerActive && progress.selectedOptionValues.includes(option.value ?? option.label),
+      (activeQuestion.multiSelect || !customAnswerActive) &&
+      progress.selectedOptionValues.includes(option.value ?? option.label),
   );
   const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
 
