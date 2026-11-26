@@ -1,3 +1,4 @@
+import { ReplyModelLabel } from "./ReplyModelLabel";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/assistantInsights";
 import { MessageId, type TurnItemId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -236,20 +237,29 @@ function AssistantMessageMeta({
         <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
       ) : null}
       {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(
-              message.updatedAt,
-              ctx.timestampFormat,
-              undefined,
-              undefined,
-              m,
-            )}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat, m)}
-          </TooltipPopup>
-        </Tooltip>
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Tooltip>
+            <TooltipTrigger render={<p className="text-xs tabular-nums" />}>
+              {formatDayAwareTimestamp(
+                message.updatedAt,
+                ctx.timestampFormat,
+                undefined,
+                undefined,
+                m,
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat, m)}
+            </TooltipPopup>
+          </Tooltip>
+          {projectedItem ? (
+            <ReplyModelLabel
+              environmentId={ctx.activeThreadEnvironmentId}
+              sourceThreadId={projectedItem.sourceThreadId}
+              sourceItemId={projectedItem.sourceItemId}
+            />
+          ) : null}
+        </div>
       )}
     </div>
   );
