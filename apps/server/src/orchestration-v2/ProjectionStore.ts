@@ -492,6 +492,7 @@ export interface ProjectionTimelinePage {
 }
 
 export interface ShellSnapshotOptions {
+  readonly busyOnly?: boolean;
   readonly location?: "active" | "archive";
   readonly projectId?: ProjectId;
   readonly unsettledOnly?: boolean;
@@ -8468,6 +8469,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         location,
         projectId,
         unsettledOnly = false,
+        busyOnly = false,
         familyOf,
         worktreePath,
         threadIds,
@@ -8693,6 +8695,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   sql` AND CASE WHEN json_valid(t.payload_json)
                     THEN lower(rtrim(replace(trim(json_extract(t.payload_json, '$.worktreePath')), '\\', '/'), '/'))
                   END = lower(rtrim(replace(trim(${worktreePath}), '\\', '/'), '/'))`
+            }${
+              busyOnly
+                ? sql` AND t.thread_id IN (
+              SELECT thread_id FROM orchestration_v2_projection_runs
+              WHERE status IN ('preparing', 'starting', 'running', 'waiting')
+                AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+              UNION
+              SELECT thread_id FROM orchestration_v2_projection_runtime_requests WHERE status = 'pending'
+              UNION
+              SELECT thread_id FROM orchestration_v2_projection_turn_items
+              WHERE type IN ('command_execution', 'dynamic_tool', 'subagent')
+                AND status NOT IN ('completed', 'interrupted', 'failed', 'cancelled')
+              UNION
+              SELECT thread_id FROM orchestration_v2_projection_provider_threads
+              WHERE CASE WHEN json_valid(payload_json)
+                THEN json_array_length(payload_json, '$.pendingBackgroundTasks') > 0
+                ELSE 0 END
+            )`
+                : sql``
             }${threadIds === undefined ? sql`` : sql` AND t.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))`}
             ORDER BY t.updated_at ASC, t.thread_id ASC
           `;

@@ -70,7 +70,7 @@ export function OutdatedServerUpdateSection({
             setCheckErrorDismissed(true);
             void update({
               environmentId,
-              input: { targetVersion },
+              input: { targetVersion, confirmed: true },
               fromVersion: release.fromVersion,
             });
           },

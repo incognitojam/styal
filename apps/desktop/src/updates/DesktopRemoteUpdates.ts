@@ -1,3 +1,5 @@
+import { summarizeDesktopUpdateActivity } from "@t3tools/contracts";
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import type {
   DesktopTelemetryRequestDesktopUpdate,
   DesktopUpdateRemoteOutcome,
@@ -35,6 +37,7 @@ interface PreparedUpdate {
   readonly channel: DesktopTelemetryRequestDesktopUpdate["channel"];
   readonly targetVersion: DesktopTelemetryRequestDesktopUpdate["targetVersion"];
   readonly downloadedVersion: string;
+  readonly confirmed: boolean;
   readonly status: "prepared" | "committing" | "failed";
   readonly failureReason?: string;
   readonly expiresAt: number;
@@ -52,11 +55,32 @@ export const listen: Effect.Effect<
   | DesktopUpdates.DesktopUpdates
   | DesktopTelemetryPublisher.DesktopTelemetryPublisher
   | DesktopBackendPool.DesktopBackendPool
+  | DesktopShutdownGuard.DesktopShutdownGuard
   | Scope.Scope
 > = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const backends = yield* DesktopBackendPool.DesktopBackendPool;
   const publisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
+  const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+  yield* Stream.runForEach(publisher.updateActivityRequests, (request) =>
+    guard.inspect.pipe(
+      Effect.catchCause(() => Effect.succeed([null])),
+      Effect.flatMap((hosts) =>
+        publisher.publishUpdateActivity({
+          version: 1,
+          type: "desktopUpdateActivity",
+          requestId: request.requestId,
+          hosts: hosts.map(
+            (host) =>
+              host && {
+                ...summarizeDesktopUpdateActivity(host),
+                isRequestingEnvironment: host.environmentId === request.requestingEnvironmentId,
+              },
+          ),
+        }),
+      ),
+    ),
+  ).pipe(Effect.forkScoped);
   const activeRequestIdRef = yield* Ref.make(Option.none<string>());
   const requestControlRef = yield* Ref.make<{
     readonly active: Option.Option<{
@@ -183,6 +207,12 @@ export const listen: Effect.Effect<
             prepared.value.targetVersion === request.targetVersion &&
             state.downloadedVersion === prepared.value.downloadedVersion
           ) {
+            yield* Ref.update(preparedUpdateRef, (current) =>
+              Option.map(current, (value) => ({
+                ...value,
+                confirmed: value.confirmed && request.confirmed === true,
+              })),
+            );
             yield* publishReport(
               state,
               { outcome: "ready-to-install", preparedRequestId: prepared.value.requestId },
@@ -328,6 +358,7 @@ export const listen: Effect.Effect<
                   targetVersion: request.targetVersion,
                   downloadedVersion: state.downloadedVersion,
                   status: "prepared",
+                  confirmed: request.confirmed === true,
                   expiresAt:
                     (yield* Clock.currentTimeMillis) + Duration.toMillis(PREPARED_UPDATE_TTL),
                 }),
@@ -509,7 +540,10 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion);
+      const result = yield* updates.installPrepared(
+        claim.prepared.downloadedVersion,
+        claim.prepared.confirmed ? "confirmed" : "require-safe",
+      );
       if (
         !result.accepted &&
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&
@@ -522,7 +556,8 @@ export const listen: Effect.Effect<
         return;
       }
       if (!result.accepted || result.failed) {
-        const reason = result.state.message ?? "The desktop app could not start the install.";
+        const reason =
+          result.reason ?? result.state.message ?? "The desktop app could not start the install.";
         if (yield* recordPreparedFailure(commit.requestId, reason)) {
           yield* publishReport(result.state, { outcome: "failed", reason }, commit.requestId);
         }

@@ -6,6 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as DesktopLifecycle from "../../app/DesktopLifecycle.ts";
 import * as DesktopServerExposure from "../../backend/DesktopServerExposure.ts";
 import * as IpcChannels from "../channels.ts";
@@ -33,9 +34,15 @@ export const setServerExposureMode = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.serverExposure.setMode")(function* (mode) {
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const previousSettings = yield* appSettings.get;
+    const previousConfig = yield* serverExposure.backendConfig;
     const change = yield* serverExposure.setMode(mode);
     if (change.requiresRelaunch) {
-      yield* lifecycle.relaunch(`serverExposureMode=${mode}`);
+      if (!(yield* lifecycle.relaunch(`serverExposureMode=${mode}`))) {
+        yield* appSettings.setServerExposureMode(previousSettings.serverExposureMode);
+        return yield* serverExposure.configureFromSettings({ port: previousConfig.port });
+      }
     }
     return change.state;
   }),
@@ -48,11 +55,22 @@ export const setTailscaleServeEnabled = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.serverExposure.setTailscaleServeEnabled")(function* (input) {
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    const previous = yield* serverExposure.getState;
     const change = yield* serverExposure.setTailscaleServeEnabled(input);
     if (change.requiresRelaunch) {
-      yield* lifecycle.relaunch(
-        change.state.tailscaleServeEnabled ? "tailscale-serve-enabled" : "tailscale-serve-disabled",
-      );
+      if (
+        !(yield* lifecycle.relaunch(
+          change.state.tailscaleServeEnabled
+            ? "tailscale-serve-enabled"
+            : "tailscale-serve-disabled",
+        ))
+      ) {
+        const restored = yield* serverExposure.setTailscaleServeEnabled({
+          enabled: previous.tailscaleServeEnabled,
+          port: previous.tailscaleServePort,
+        });
+        return restored.state;
+      }
     }
     return change.state;
   }),

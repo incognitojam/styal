@@ -1,3 +1,5 @@
+import * as SchemaGetter from "effect/SchemaGetter";
+import { ProjectId, EnvironmentId } from "./baseSchemas.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -81,7 +83,7 @@ import {
   OrchestrationV2ThreadHistoryPage,
   OrchestrationV2ThreadTranscript,
 } from "./orchestrationV2.ts";
-import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
+import { Project, ProjectIconOverride, ProjectMutation, ProjectSnapshot } from "./project.ts";
 import {
   PullRequestDiffInput,
   PullRequestDiffResult,
@@ -152,6 +154,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "project_snapshot_failed",
   "project_mutation_failed",
   "orchestration_snapshot_failed",
+  "host_activity_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_thread_bounded_snapshot_failed",
   "orchestration_thread_history_failed",
@@ -1100,7 +1103,69 @@ class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
   .add(HttpApiEndpoint.get("webhookGet", WEBHOOK_PATH, webhookEndpoint))
   .annotate(HttpApi.RedactedNames, { params: ["token"] }) {}
 
+const HostActivityReason = Schema.Literals([
+  "preparing",
+  "starting",
+  "running",
+  "input",
+  "approval",
+  "waiting",
+  "command",
+  "monitor",
+  "subagent",
+  "background_task",
+]);
+
+/** Drops reasons this build does not know, so a newer server cannot break the check. */
+const HostActivityReasons = Schema.Array(Schema.String).pipe(
+  Schema.decodeTo(Schema.Array(HostActivityReason), {
+    decode: SchemaGetter.transform((reasons) => reasons.filter(Schema.is(HostActivityReason))),
+    encode: SchemaGetter.passthroughSupertype(),
+  }),
+);
+
+export const HostActivityThread = Schema.Struct({
+  threadId: ThreadId,
+  title: Schema.String,
+  /** Saved project identity, including icon overrides, for shutdown dialogs. */
+  project: Schema.optionalKey(
+    Schema.Struct({
+      id: ProjectId,
+      title: Schema.String,
+      workspaceRoot: Schema.String,
+      faviconPath: Schema.NullOr(Schema.String),
+      projectIcon: Schema.NullOr(ProjectIconOverride),
+    }),
+  ),
+  reasons: HostActivityReasons,
+  continuable: Schema.Boolean,
+});
+export type HostActivityThread = typeof HostActivityThread.Type;
+
+/** Fresh host activity; counts and thread details cover all connected clients. */
+export const HostActivity = Schema.Struct({
+  environmentId: Schema.optionalKey(EnvironmentId),
+  activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Active threads that thread continuation resumes after a restart, when enabled. */
+  continuableSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Omitted by older servers; an empty list means no affected threads. */
+  threads: Schema.optionalKey(Schema.Array(HostActivityThread)),
+  terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type HostActivity = typeof HostActivity.Type;
+
+class EnvironmentActivityHttpApi extends HttpApiGroup.make("activity").add(
+  HttpApiEndpoint.get("get", "/api/environment/activity", {
+    headers: OptionalBearerHeaders,
+    success: HostActivity,
+    error: EnvironmentScopedOperationErrors,
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
+  .add(EnvironmentActivityHttpApi)
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentMcpOAuthHttpApi)

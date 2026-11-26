@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -122,6 +123,12 @@ describe("DesktopLifecycle", () => {
       } as DesktopEnvironment.DesktopEnvironment["Service"]);
 
       const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+            confirm: () => Effect.succeed(true),
+            inspect: Effect.succeed([]),
+          }),
+        ),
         Layer.provideMerge(layerElectronApp(appListeners)),
         Layer.provideMerge(layerElectronTheme),
         Layer.provideMerge(
@@ -200,6 +207,12 @@ describe("DesktopLifecycle", () => {
       } as DesktopEnvironment.DesktopEnvironment["Service"]);
 
       const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+            confirm: () => Effect.succeed(true),
+            inspect: Effect.succeed([]),
+          }),
+        ),
         Layer.provideMerge(layerElectronApp(appListeners, quit)),
         Layer.provideMerge(layerElectronTheme),
         Layer.provideMerge(layerElectronWindow(destroyAll)),
@@ -238,6 +251,12 @@ describe("DesktopLifecycle", () => {
       } as DesktopEnvironment.DesktopEnvironment["Service"]);
       const layer = DesktopLifecycle.layer.pipe(
         Layer.provideMerge(
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+            confirm: () => Effect.succeed(true),
+            inspect: Effect.succeed([]),
+          }),
+        ),
+        Layer.provideMerge(
           layerElectronApp(
             new Map(),
             Effect.void,
@@ -264,7 +283,7 @@ describe("DesktopLifecycle", () => {
         Effect.provideService(HostProcess.Arguments, [
           "/opt/Example App/styal",
           "--no-sandbox",
-          "T3CODE://pair?token=spent",
+          "STYAL://pair?token=spent",
           "styal://new?prompt=hello",
         ]),
       );
@@ -286,6 +305,12 @@ describe("DesktopLifecycle", () => {
         isDevelopment: false,
       } as DesktopEnvironment.DesktopEnvironment["Service"]);
       const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+            confirm: () => Effect.succeed(true),
+            inspect: Effect.succeed([]),
+          }),
+        ),
         Layer.provideMerge(layerElectronApp(appListeners, Effect.void, exit)),
         Layer.provideMerge(layerElectronTheme),
         Layer.provideMerge(layerElectronWindow()),
@@ -321,7 +346,7 @@ describe("DesktopLifecycle", () => {
           appListeners.get("before-quit")?.(event);
 
           assert.deepEqual(exitCodes, [0]);
-          assert.equal(prevented, 4);
+          assert.equal(prevented, 5);
         }),
       ).pipe(Effect.provide(layer));
     }),
@@ -339,6 +364,12 @@ describe("DesktopLifecycle", () => {
         isDevelopment: false,
       } as DesktopEnvironment.DesktopEnvironment["Service"]);
       const layer = DesktopLifecycle.layer.pipe(
+        Layer.provideMerge(
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+            confirm: () => Effect.succeed(true),
+            inspect: Effect.succeed([]),
+          }),
+        ),
         Layer.provideMerge(layerElectronApp(appListeners)),
         Layer.provideMerge(layerElectronTheme),
         Layer.provideMerge(layerElectronWindow()),

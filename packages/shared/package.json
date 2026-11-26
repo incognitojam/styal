@@ -690,6 +690,14 @@
     "./assistantInsights": {
       "types": "./src/assistantInsights.ts",
       "import": "./src/assistantInsights.ts"
+    },
+    "./hostActivity": {
+      "types": "./src/hostActivity.ts",
+      "import": "./src/hostActivity.ts"
+    },
+    "./hostActivityCopy": {
+      "types": "./src/hostActivityCopy.ts",
+      "import": "./src/hostActivityCopy.ts"
     }
   },
   "scripts": {

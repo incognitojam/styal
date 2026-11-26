@@ -1,3 +1,4 @@
+import { SettingsServerUpdateConfirmRouteScreen } from "./features/settings/SettingsServerUpdateConfirmRouteScreen";
 import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -250,6 +251,10 @@ const SETTINGS_SCREENS = {
     screen: SettingsEnvironmentDetailRouteScreen,
     linking: "settings/environments/:environmentId",
     options: settingsPage(),
+  }),
+  SettingsServerUpdateConfirm: createNativeStackScreen({
+    screen: SettingsServerUpdateConfirmRouteScreen,
+    options: sheetRoute({ header: "none", detent: 0.6, androidMaxDetent: 1, androidFit: true }),
   }),
   // Old links to New threads and Agent behavior open Threads, which absorbed them.
   SettingsEnvironmentNewThreads: createNativeStackScreen({

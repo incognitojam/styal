@@ -1,6 +1,8 @@
+import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import {
   ServerSelfUpdateError,
   type DesktopUpdateState,
+  type DesktopUpdateActivity,
   type DesktopUpdateStatusReport,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
@@ -40,10 +42,12 @@ export class DesktopAppUpdate extends Context.Service<
   DesktopAppUpdate,
   {
     readonly available: boolean;
+    readonly inspectActivity: Effect.Effect<ReadonlyArray<DesktopUpdateActivity | null>>;
     readonly run: (
       reportProgress: (
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
+      confirmed?: boolean,
       trackSwitch?: DesktopTelemetryReceiver.DesktopTrackSwitch,
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     /** Success stops the server; returns only on installation failure or timeout. */
@@ -58,6 +62,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   const config = yield* ServerConfig.ServerConfig;
   const random = yield* SecureRandom.SecureRandom;
   const receiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
+  const identity = yield* ServerEnvironmentIdentity;
   const inFlight = yield* Ref.make(false);
 
   const available = config.mode === "desktop" && config.desktopTelemetryControlFd !== undefined;
@@ -152,7 +157,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   });
 
   const run: DesktopAppUpdate["Service"]["run"] = Effect.fn("desktopUpdate.desktopAppUpdate.run")(
-    function* (reportProgress, trackSwitch) {
+    function* (reportProgress, confirmed = false, trackSwitch) {
       if (!available) {
         return yield* failWith(
           "This server was not started by the styal desktop app, so it cannot drive a desktop update.",
@@ -174,7 +179,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
           // Subscribe before requesting to catch fast reports.
           const { changes } = yield* receiver.desktopUpdates;
           yield* receiver
-            .requestDesktopUpdate(requestId, trackSwitch)
+            .requestDesktopUpdate(requestId, confirmed, trackSwitch)
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not reach the styal desktop app on this machine.", error),
@@ -239,7 +244,26 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     );
   });
 
-  return DesktopAppUpdate.of({ available, run, commit });
+  const inspectActivity = Effect.scoped(
+    Effect.gen(function* () {
+      if (!available) return [null];
+      const requestId = yield* random.uuidV4();
+      const reports = yield* receiver.updateActivity;
+      yield* receiver.requestUpdateActivity(requestId, yield* identity.getEnvironmentId);
+      const report = yield* reports.pipe(
+        Stream.filter((report) => report.requestId === requestId),
+        Stream.runHead,
+      );
+      return Option.isSome(report) ? report.value.hosts : [null];
+    }),
+  ).pipe(
+    // Each pool member's inspection has a three-second deadline. Older apps
+    // ignore this request, so bound the wait and retain unknown coverage.
+    Effect.timeout("4 seconds"),
+    Effect.catchCause(() => Effect.succeed([null])),
+  );
+
+  return DesktopAppUpdate.of({ available, run, commit, inspectActivity });
 });
 
 export const layer = Layer.effect(DesktopAppUpdate, make());

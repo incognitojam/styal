@@ -1,3 +1,5 @@
+import { EnvironmentId } from "./baseSchemas.ts";
+import { HostActivity } from "./environmentHttp.ts";
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -296,6 +298,39 @@ export const DesktopUpdateStatusReport = Schema.Struct({
 });
 export type DesktopUpdateStatusReport = typeof DesktopUpdateStatusReport.Type;
 
+/** Pool checks cross environment boundaries; sibling activity stays anonymous. */
+export const DesktopUpdateActivity = Schema.Struct({
+  /** Only identifies the requesting environment, never a sibling. */
+  isRequestingEnvironment: Schema.Boolean,
+  activeSessions: HostActivity.fields.activeSessions,
+  continuableSessions: HostActivity.fields.continuableSessions,
+  waitingSessions: HostActivity.fields.waitingSessions,
+  terminalsRequiringConfirmation: HostActivity.fields.terminalsRequiringConfirmation,
+  terminalsWithUnknownActivity: HostActivity.fields.terminalsWithUnknownActivity,
+});
+export type DesktopUpdateActivity = typeof DesktopUpdateActivity.Type;
+
+export function summarizeDesktopUpdateActivity(
+  activity: HostActivity,
+): Omit<DesktopUpdateActivity, "isRequestingEnvironment"> {
+  return {
+    activeSessions: activity.activeSessions,
+    continuableSessions: activity.continuableSessions,
+    waitingSessions: activity.waitingSessions,
+    terminalsRequiringConfirmation: activity.terminalsRequiringConfirmation,
+    terminalsWithUnknownActivity: activity.terminalsWithUnknownActivity,
+  };
+}
+
+export const DesktopUpdateActivityReport = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("desktopUpdateActivity"),
+  requestId: TrimmedNonEmptyString,
+  /** Every backend the desktop app will stop, including sibling WSL environments. */
+  hosts: Schema.Array(Schema.NullOr(DesktopUpdateActivity)),
+});
+export type DesktopUpdateActivityReport = typeof DesktopUpdateActivityReport.Type;
+
 export const ShellEnvironmentPatch = Schema.Struct({
   PATH: Schema.optionalKey(Schema.NullOr(Schema.String)),
   ANDROID_HOME: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -345,6 +380,7 @@ export const DesktopHostTelemetryMessage = Schema.Union([
   DesktopShellEnvironmentSnapshot,
   DesktopHostTelemetrySnapshot,
   DesktopUpdateStatusReport,
+  DesktopUpdateActivityReport,
 ]);
 export type DesktopHostTelemetryMessage = typeof DesktopHostTelemetryMessage.Type;
 
@@ -368,6 +404,7 @@ export type DesktopTelemetrySetHostPowerIntervals =
 export const DesktopTelemetryRequestDesktopUpdate = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("requestDesktopUpdate"),
+  confirmed: Schema.optionalKey(Schema.Boolean),
   requestId: TrimmedNonEmptyString,
   /** A track switch: move to this channel first, and install only `targetVersion`. */
   channel: Schema.optionalKey(DesktopUpdateChannelSchema),
@@ -396,11 +433,21 @@ export const DesktopTelemetryServerReady = Schema.Struct({
 });
 export type DesktopTelemetryServerReady = typeof DesktopTelemetryServerReady.Type;
 
+export const DesktopTelemetryRequestUpdateActivity = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("requestDesktopUpdateActivity"),
+  requestId: TrimmedNonEmptyString,
+  requestingEnvironmentId: EnvironmentId,
+});
+export type DesktopTelemetryRequestUpdateActivity =
+  typeof DesktopTelemetryRequestUpdateActivity.Type;
+
 export const DesktopTelemetryControlMessage = Schema.Union([
   DesktopTelemetryServerReady,
   DesktopTelemetrySetDiagnosticsDemand,
   DesktopTelemetrySetHostPowerIntervals,
   DesktopTelemetryRequestDesktopUpdate,
+  DesktopTelemetryRequestUpdateActivity,
   DesktopTelemetryCommitDesktopUpdate,
   DesktopTelemetryCancelDesktopUpdate,
 ]);

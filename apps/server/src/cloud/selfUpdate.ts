@@ -1,3 +1,6 @@
+import type { HostActivity } from "@t3tools/contracts";
+import { describeHostActivity } from "@t3tools/shared/hostActivity";
+import * as Duration from "effect/Duration";
 import {
   DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
   ServerSelfUpdateError,
@@ -133,7 +136,49 @@ export function trackSwitchBlockReason(input: {
     : null;
 }
 
-export const make = Effect.fn("cloud.server_self_update.make")(function* () {
+// Match the client check so a busy host can finish its final safety report.
+const HANDOFF_ACTIVITY_TIMEOUT = Duration.minutes(1);
+
+const checkUpdateHandoffActivity = <E>(
+  input: ServerSelfUpdateInput,
+  inspect: Effect.Effect<HostActivity, E>,
+) =>
+  input.confirmed === true
+    ? Effect.void
+    : inspect.pipe(
+        Effect.timeout(HANDOFF_ACTIVITY_TIMEOUT),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Could not recheck server activity before the update handoff.", {
+            cause,
+          }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ServerSelfUpdateError({
+                  reason:
+                    "Could not check the server for running work before restarting. Try updating again. The downloaded update is ready to retry.",
+                }),
+              ),
+            ),
+          ),
+        ),
+        Effect.flatMap((activity) =>
+          describeHostActivity([activity], {
+            uncheckedHostsLine: "Could not check the server for running work.",
+            continueRunningThreads: input.continueRunningThreads === true,
+          }).interrupts
+            ? Effect.fail(
+                new ServerSelfUpdateError({
+                  reason:
+                    "Activity changed while the server update was preparing. Try updating again to review and confirm any running work. The downloaded update is ready to retry.",
+                }),
+              )
+            : Effect.void,
+        ),
+      );
+
+export const make = Effect.fn("cloud.server_self_update.make")(function* <E>(
+  inspect: Effect.Effect<HostActivity, E> = Effect.die("Activity inspector not configured"),
+) {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
   const policy = yield* ManagedPolicy.ManagedPolicy;
@@ -185,6 +230,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       if (desktopAppUpdate.available) {
         return yield* desktopAppUpdate.run(
           reportProgress,
+          input.confirmed === true,
           input.channel === undefined
             ? undefined
             : { channel: input.channel, targetVersion: input.targetVersion },
@@ -262,6 +308,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         return { targetVersion, method: "boot-service" as const };
       }
       yield* reportProgress("installing");
+      yield* checkUpdateHandoffActivity(input, inspect);
       const updateId = yield* Effect.uninterruptible(
         launcher.requestUpdate({ targetVersion, dbPath: serverConfig.dbPath }).pipe(
           Effect.mapError((error) =>
@@ -302,9 +349,14 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   });
 });
 
-export const layer = Layer.effect(ServerSelfUpdate, make()).pipe(
-  Layer.provide(ProcessRunner.layer),
-);
+export const layer = <E, R>(inspect: Effect.Effect<HostActivity, E, R>) =>
+  Layer.effect(
+    ServerSelfUpdate,
+    Effect.gen(function* () {
+      const activityContext = yield* Effect.context<R>();
+      return yield* make(inspect.pipe(Effect.provideContext(activityContext)));
+    }),
+  ).pipe(Layer.provide(ProcessRunner.layer));
 
 // The update outlives client sockets; progress offers to a closed queue are ignored.
 export const updateProgressStream = (

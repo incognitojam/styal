@@ -238,6 +238,24 @@ export function restartContinuationRun(
   return run;
 }
 
+export const restartContinuationDeclined = Effect.fn(
+  "RestartContinuation.restartContinuationDeclined",
+)(function* <E>(
+  getThreadRecords: <K extends ProjectionRecordField>(
+    threadId: ThreadId,
+    fields: ReadonlyArray<K>,
+    filter: ProjectionRecordFilter,
+  ) => Effect.Effect<ProjectionRecords<K>, E>,
+  thread: Pick<ProjectionRuntimeRecoveryState["thread"], "id" | "lineage" | "forkedFrom">,
+  source: OrchestrationV2Run,
+) {
+  if (yield* restartStopRequested(getThreadRecords, thread, source)) return true;
+  const sourceMessage = (yield* getThreadRecords(thread.id, ["messages"], {
+    messageIds: [source.userMessageId],
+  })).messages.find((message) => message.id === source.userMessageId);
+  return sourceMessage !== undefined && isNativeMaintenanceCommand(sourceMessage);
+});
+
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
   function* (input: {
     readonly threadId: ThreadId;
@@ -311,11 +329,8 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       });
       return;
     }
-    if (yield* restartStopRequested(threads.getThreadRecords, projection.thread, source)) return;
-    const sourceMessage = (yield* threads.getThreadRecords(input.threadId, ["messages"], {
-      messageIds: [source.userMessageId],
-    })).messages.find((message) => message.id === source.userMessageId);
-    if (sourceMessage !== undefined && isNativeMaintenanceCommand(sourceMessage)) return;
+    if (yield* restartContinuationDeclined(threads.getThreadRecords, projection.thread, source))
+      return;
     const note = restartContinuationNote(
       source,
       projection.runs,

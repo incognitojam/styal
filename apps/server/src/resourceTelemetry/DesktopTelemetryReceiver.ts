@@ -12,6 +12,8 @@ import {
   DesktopTelemetryControlMessage,
   type DesktopUpdateChannel,
   type DesktopUpdateStatusReport,
+  type DesktopUpdateActivityReport,
+  type EnvironmentId,
   type ResourceTelemetrySourceStatus,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
@@ -191,8 +193,18 @@ export class DesktopTelemetryReceiver extends Context.Service<
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     /** Tells the desktop parent that the server accepts requests, so it can skip readiness polling. */
     readonly announceServerReady: Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly requestUpdateActivity: (
+      requestId: string,
+      requestingEnvironmentId: EnvironmentId,
+    ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly updateActivity: Effect.Effect<
+      Stream.Stream<DesktopUpdateActivityReport>,
+      never,
+      Scope.Scope
+    >;
     readonly requestDesktopUpdate: (
       requestId: string,
+      confirmed?: boolean,
       trackSwitch?: DesktopTrackSwitch,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
     readonly commitDesktopUpdate: (
@@ -442,6 +454,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const changes = yield* PubSub.sliding<DesktopHostTelemetrySnapshot>(8);
   const healthChanges = yield* PubSub.sliding<DesktopTelemetryReceiverHealth>(4);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
+  const activityReports = yield* PubSub.unbounded<DesktopUpdateActivityReport>();
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
   const controlMutex = yield* Semaphore.make(1);
   const snapshotMutex = yield* Semaphore.make(1);
@@ -619,6 +632,12 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
           );
         }
 
+        if (message.type === "desktopUpdateActivity") {
+          return recordContact.pipe(
+            Effect.andThen(PubSub.publish(activityReports, message)),
+            Effect.asVoid,
+          );
+        }
         if (message.type === "shellEnvironment") {
           return recordContact.pipe(Effect.andThen(shellEnvironment.apply(message)));
         }
@@ -744,16 +763,30 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     announceServerReady: sendControlMessage({ version: 1, type: "serverReady" }).pipe(
       Effect.withSpan("DesktopTelemetryReceiver.announceServerReady"),
     ),
-    requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(
-      function (requestId, trackSwitch) {
+    requestUpdateActivity: Effect.fn("DesktopTelemetryReceiver.requestUpdateActivity")(
+      function (requestId, requestingEnvironmentId) {
         return sendControlMessage({
           version: 1,
-          type: "requestDesktopUpdate",
+          type: "requestDesktopUpdateActivity",
           requestId,
-          ...trackSwitch,
+          requestingEnvironmentId,
         });
       },
     ),
+    updateActivity: PubSub.subscribe(activityReports).pipe(Effect.map(Stream.fromSubscription)),
+    requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(function (
+      requestId,
+      confirmed = false,
+      trackSwitch,
+    ) {
+      return sendControlMessage({
+        version: 1,
+        type: "requestDesktopUpdate",
+        requestId,
+        confirmed,
+        ...trackSwitch,
+      });
+    }),
     commitDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.commitDesktopUpdate")(
       function (requestId) {
         return sendControlMessage({ version: 1, type: "commitDesktopUpdate", requestId });
@@ -816,6 +849,10 @@ export const layerTest = (
         return Effect.void;
       }),
       announceServerReady: Effect.void,
+      requestUpdateActivity: Effect.fn("DesktopTelemetryReceiver.requestUpdateActivity")(
+        () => Effect.void,
+      ),
+      updateActivity: Effect.succeed(Stream.empty),
       requestDesktopUpdate: Effect.fn("DesktopTelemetryReceiver.requestDesktopUpdate")(function () {
         return Effect.void;
       }),

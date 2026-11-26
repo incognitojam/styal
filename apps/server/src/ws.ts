@@ -1,3 +1,5 @@
+import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
+import { inspectHostActivity } from "./environment/HostActivity.ts";
 import { GitCommandError, OrchestrationDispatchCommandError } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
@@ -1569,6 +1571,8 @@ export const layerWsRpc = (
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
+      const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
+      const activityContext = yield* Effect.context<Effect.Services<typeof inspectHostActivity>>();
       const prepareTerminalLaunch = yield* makePrepareTerminalLaunch(
         threadManagement.getThreadShell,
       );
@@ -2871,6 +2875,9 @@ export const layerWsRpc = (
             maxFiles: config.traceMaxFiles,
           }),
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) => processDiagnostics.read,
+        [WS_METHODS.serverGetDesktopHostActivity]: () => desktopAppUpdate.inspectActivity,
+        [WS_METHODS.serverGetHostActivity]: () =>
+          inspectHostActivity.pipe(Effect.provideContext(activityContext)),
         [WS_METHODS.serverGetHostResources]: (_input) => hostResources.read,
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           processResourceMonitor.readHistory(input),
@@ -3802,6 +3809,7 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
@@ -3816,6 +3824,7 @@ export const layer = Layer.unwrap(
     const peerThreadRelay = yield* PeerThreadRelay.PeerThreadRelay;
     const peerClientPairing = yield* PeerClientPairing.PeerClientPairing;
     const sql = yield* SqlClient.SqlClient;
+    const activityServices = yield* Effect.context<Effect.Services<typeof inspectHostActivity>>();
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3903,6 +3912,8 @@ export const layer = Layer.unwrap(
                   providerMaintenanceRunner,
                 ),
               ),
+              Layer.provide(Layer.succeed(DesktopAppUpdate.DesktopAppUpdate, desktopAppUpdate)),
+              Layer.provide(Layer.succeedContext(activityServices)),
               Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.

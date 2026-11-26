@@ -3521,4 +3521,51 @@ it.layer(
       expect(missingEvents).toEqual([]);
     }),
   );
+
+  it.effect("shutdown inspection treats an absent terminal process as unknown", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager(5, {
+        processTable: Effect.succeed([]),
+        subprocessPollIntervalMs: 60_000,
+      });
+      yield* manager.open(openInput());
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 1,
+      });
+    }),
+  );
+
+  it.effect("shutdown inspection counts fresh terminal activity without closing sessions", () =>
+    Effect.gen(function* () {
+      let busy = false;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        subprocessInspector: () =>
+          Effect.succeed({
+            hasRunningSubprocess: busy,
+            childCommand: busy ? "synthetic-command" : null,
+            processIds: [],
+          }),
+        subprocessPollIntervalMs: 60_000,
+      });
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+      });
+      yield* manager.open(openInput());
+      busy = true;
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 0,
+      });
+      busy = false;
+      expect(yield* manager.shutdownPreflight).toEqual({
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+      });
+      expect(ptyAdapter.processes).toHaveLength(1);
+      yield* manager.open(openInput());
+      expect(ptyAdapter.processes).toHaveLength(1);
+    }),
+  );
 });

@@ -1,3 +1,5 @@
+import { DesktopUpdateActivity } from "./resourceTelemetry.ts";
+import { HostActivity } from "./environmentHttp.ts";
 import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
@@ -629,6 +631,8 @@ export const WS_METHODS = {
   serverLogoutAcpRegistry: "server.logoutAcpRegistry",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
+  serverGetDesktopHostActivity: "server.getDesktopHostActivity",
+  serverGetHostActivity: "server.getHostActivity",
   serverGetHostResources: "server.getHostResources",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
@@ -1132,6 +1136,22 @@ const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDia
   payload: Schema.Struct({}),
   success: ServerProcessDiagnosticsResult,
   error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetDesktopHostActivityRpc = Rpc.make(WS_METHODS.serverGetDesktopHostActivity, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(Schema.NullOr(DesktopUpdateActivity)),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetHostActivityRpc = Rpc.make(WS_METHODS.serverGetHostActivity, {
+  payload: Schema.Struct({}),
+  success: HostActivity,
+  error: Schema.Union([
+    TerminalError,
+    OrchestrationV2GetShellSnapshotError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, {
@@ -2556,6 +2576,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerLogoutAcpRegistryRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
+  WsServerGetHostActivityRpc,
+  WsServerGetDesktopHostActivityRpc,
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,

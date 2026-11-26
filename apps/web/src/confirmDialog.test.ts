@@ -35,6 +35,7 @@ describe("confirm dialog coordinator", () => {
     expect(readConfirmDialogState()).toEqual({
       status: "closing",
       message: "Delete the project?",
+      confirmLabel: "Confirm",
       variant: "default",
       initialFocus: "confirm",
     });
@@ -43,6 +44,7 @@ describe("confirm dialog coordinator", () => {
     expect(readConfirmDialogState()).toEqual({
       status: "confirming",
       message: "Delete the worktree too?",
+      confirmLabel: "Confirm",
       variant: "default",
     });
 

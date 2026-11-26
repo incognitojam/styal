@@ -1,0 +1,556 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { assert, describe, it } from "@effect/vitest";
+import { ThreadId, type ConfirmDialogThreadActivity, type HostActivity } from "@t3tools/contracts";
+import {
+  DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
+  isValidDesktopBootstrapToken,
+} from "@t3tools/shared/desktopBootstrapToken";
+import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopLocalEnvironmentAuth from "../backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
+import * as Guard from "./DesktopShutdownGuard.ts";
+
+const idle: HostActivity = {
+  activeSessions: 0,
+  continuableSessions: 0,
+  waitingSessions: 0,
+  terminalsRequiringConfirmation: 0,
+  terminalsWithUnknownActivity: 0,
+};
+function harness(
+  options: {
+    activity?: (host: string) => Effect.Effect<unknown>;
+    dialog?: Effect.Effect<number>;
+    stopped?: boolean;
+    quitOverride?: boolean;
+    status?: number;
+    secret?: string;
+  } = {},
+) {
+  const messages: string[] = [];
+  const details: ReadonlyArray<ConfirmDialogThreadActivity>[] = [];
+  let checks = 0;
+  let exchanges = 0;
+  let primaryReads = 0;
+  let overrideChecks = 0;
+  const instances = ["primary", "wsl"].map(
+    (id, index): DesktopBackendPool.DesktopBackendInstance => ({
+      id: DesktopBackendPool.BackendInstanceId(id),
+      label: Effect.succeed(id),
+      start: Effect.void,
+      stop: () => Effect.void,
+      waitForReady: () => Effect.succeed(true),
+      snapshot: Effect.succeed({
+        desiredRunning: !options.stopped,
+        ready: !options.stopped,
+        activePid: options.stopped ? Option.none() : Option.some(index + 100),
+        restartAttempt: 0,
+        restartScheduled: false,
+      }),
+      currentConfig: Effect.succeedSome({
+        executablePath: "/synthetic/electron",
+        entryPath: "/synthetic/server.mjs",
+        cwd: "/synthetic",
+        args: [],
+        extendEnv: true,
+        bootstrapDelivery: "fd3",
+        preflightFailure: Option.none(),
+        env: {},
+        captureOutput: true,
+        httpBaseUrl: new URL(`http://127.0.0.1:${3773 + index}`),
+        bootstrap: {
+          mode: "desktop",
+          noBrowser: true,
+          port: 3773 + index,
+          t3Home: "/synthetic/state",
+          host: "127.0.0.1",
+          desktopBootstrapToken: "synthetic-bootstrap",
+          ...(options.secret ? { desktopBootstrapSecret: options.secret } : {}),
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+        },
+      }),
+    }),
+  );
+  const pool = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
+    list: Effect.succeed(instances),
+    primary: Effect.succeed(instances[0]!),
+    get: () => Effect.succeedNone,
+    register: () => Effect.die("unexpected register"),
+    unregister: () => Effect.void,
+  });
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.gen(function* () {
+        const auth = request.url.endsWith("/oauth/token");
+        if (auth) exchanges++;
+        else checks++;
+        if (auth && options.secret) {
+          const body =
+            request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+          const credential = new URLSearchParams(body).get("subject_token") ?? "";
+          const now = yield* Clock.currentTimeMillis;
+          if (
+            !(yield* isValidDesktopBootstrapToken(options.secret, credential, now).pipe(
+              Effect.provide(NodeCrypto.layerMac),
+            ))
+          ) {
+            return HttpClientResponse.fromWeb(request, Response.json({}, { status: 401 }));
+          }
+        }
+        const body = auth
+          ? {
+              access_token: "synthetic-bearer",
+              issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+              token_type: "Bearer",
+              expires_in: 3600,
+              scope: "orchestration:read",
+            }
+          : yield* options.activity?.(new URL(request.url).port) ?? Effect.succeed(idle);
+        return HttpClientResponse.fromWeb(
+          request,
+          Response.json(body, { status: auth ? 200 : (options.status ?? 200) }),
+        );
+      }),
+    ),
+  );
+  const dialog = Layer.succeed(DesktopShutdownConfirmation.DesktopShutdownConfirmation, {
+    current: Effect.succeed(null),
+    acknowledge: () => Effect.void,
+    rendererReady: Effect.void,
+    consumeQuitOverride: Effect.sync(() => {
+      overrideChecks++;
+      return options.quitOverride ?? false;
+    }),
+    resolve: () => Effect.void,
+    request: (message, _confirmLabel, threadActivity) =>
+      Effect.gen(function* () {
+        messages.push(message);
+        details.push(threadActivity ?? []);
+        return (yield* options.dialog ?? Effect.succeed(0)) === 1;
+      }),
+  });
+  return {
+    messages,
+    details,
+    checks: () => checks,
+    overrideChecks: () => overrideChecks,
+    exchanges: () => exchanges,
+    primaryReads: () => primaryReads,
+    layer: Guard.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          pool,
+          http,
+          dialog,
+          NodeCrypto.layerMac,
+          Layer.succeed(DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth, {
+            getBearerToken: Effect.sync(() => {
+              primaryReads++;
+              return "synthetic-primary-bearer";
+            }),
+          }),
+        ),
+      ),
+    ),
+  };
+}
+
+describe("DesktopShutdownGuard", () => {
+  it.effect("shares the primary renderer bearer instead of exchanging another", () => {
+    const h = harness();
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      yield* guard.inspect;
+      yield* guard.inspect;
+      assert.equal(h.primaryReads(), 2);
+      assert.equal(h.exchanges(), 1);
+      assert.equal(h.checks(), 4);
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("restarts resumable work without consent but still lets the user cancel Quit", () => {
+    const h = harness({
+      activity: () =>
+        Effect.succeed({
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          threads: [
+            {
+              threadId: ThreadId.make("release"),
+              title: "Prepare release",
+              reasons: ["running"],
+              continuable: true,
+            },
+          ],
+        }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isTrue(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 2);
+      assert.isEmpty(h.messages);
+
+      assert.isFalse(yield* guard.confirm("quit"));
+      assert.equal(h.checks(), 4);
+      assert.lengthOf(h.messages, 1);
+      assert.include(h.messages[0]!, "Quit with running work?");
+      assert.include(h.messages[0]!, "2 threads will continue when styal next starts.");
+      assert.deepEqual(
+        h.details[0]?.map((item) => item.continuesAfterRestart),
+        [true, true],
+      );
+
+      assert.isTrue(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 6);
+      assert.lengthOf(h.messages, 1);
+
+      assert.isFalse(yield* guard.confirm("restart", { continueThreads: false }));
+      assert.lengthOf(h.messages, 2);
+      assert.deepEqual(
+        h.details[1]?.map((item) => item.continuesAfterRestart),
+        [false, false],
+      );
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect.each([
+    { name: "waiting requests or secrets", blocker: { waitingSessions: 1 } },
+    { name: "non-continuable turns", blocker: { activeSessions: 2 } },
+    { name: "terminal commands", blocker: { terminalsRequiringConfirmation: 1 } },
+    {
+      name: "unknown terminal activity",
+      blocker: { terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
+    },
+  ])("asks before restarting resumable turns alongside $name", ({ blocker }) => {
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed({
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          ...(port === "3774" ? blocker : {}),
+        }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isFalse(yield* guard.confirm("restart"));
+      assert.equal(h.checks(), 2);
+      assert.lengthOf(h.messages, 1);
+      assert.include(h.messages[0]!, "Make sure you're ready before continuing.");
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("does not infer a safe restart from the hosts that answered successfully", () => {
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed(
+          port === "3773" ? { ...idle, activeSessions: 1, continuableSessions: 1 } : {},
+        ),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isFalse(yield* guard.confirm("restart"));
+      assert.include(h.messages[0]!, "Could not check every local environment");
+      assert.equal(h.checks(), 2);
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("names affected threads from each owned backend and preserves cancellation", () => {
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed({
+          ...idle,
+          activeSessions: 1,
+          threads: [
+            {
+              threadId: ThreadId.make(`thread-${port}`),
+              title: "Check the release",
+              reasons: [port === "3773" ? "running" : "monitor"],
+              continuable: false,
+            },
+          ],
+        }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isFalse(yield* guard.confirm("restart"));
+      assert.notInclude(h.messages[0]!, "2 threads will be interrupted.");
+      assert.deepEqual(
+        h.details[0]?.map(({ thread, hostLabel }) => ({
+          title: thread.title,
+          reasons: thread.reasons,
+          hostLabel,
+        })),
+        [
+          { title: "Check the release", reasons: ["running"], hostLabel: "primary" },
+          { title: "Check the release", reasons: ["monitor"], hostLabel: "wsl" },
+        ],
+      );
+      assert.notInclude(h.messages[0]!, "unavailable");
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("rechecks activity on every attempt but reuses authentication", () => {
+    let active = false;
+    const h = harness({
+      activity: (port) =>
+        Effect.succeed({ ...idle, activeSessions: active && port === "3774" ? 1 : 0 }),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isTrue(yield* guard.confirm("quit"));
+      assert.lengthOf(h.messages, 0);
+      active = true;
+      assert.isFalse(
+        yield* guard.confirm("restart", { title: "Install update 9.0.363 and restart styal?" }),
+      );
+      assert.include(h.messages[0]!, "Install update 9.0.363 and restart styal?");
+      assert.include(h.messages[0]!, "1 thread will be interrupted");
+      assert.equal(h.checks(), 4);
+      assert.equal(h.exchanges(), 1);
+    }).pipe(Effect.provide(h.layer));
+  });
+  it.effect("signs in with the current rotating token long after launch", () => {
+    const h = harness({ secret: "synthetic-secret" });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      yield* TestClock.setTime(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS * 2 + 1);
+      assert.deepEqual(
+        yield* guard.inspect,
+        [idle, idle].map((activity, index) => ({
+          ...activity,
+          hostLabel: index === 0 ? "primary" : "wsl",
+        })),
+      );
+      assert.equal(h.exchanges(), 1);
+      // Two windows on, the bearer has expired and the first token is no longer accepted.
+      yield* TestClock.adjust(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS * 2);
+      assert.isTrue(yield* guard.confirm("quit"));
+      assert.equal(h.exchanges(), 2);
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("allows explicit confirmation for waiting agents and terminal work", () => {
+    const h = harness({
+      activity: () =>
+        Effect.succeed({ ...idle, waitingSessions: 1, terminalsRequiringConfirmation: 1 }),
+      dialog: Effect.succeed(1),
+    });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isTrue(yield* guard.confirm("restart"));
+      assert.include(h.messages[0]!, "2 threads and 2 terminal sessions will be interrupted");
+    }).pipe(Effect.provide(h.layer));
+  });
+  it.effect.each(["http", "invalid", "defect"] as const)(
+    "requires confirmation on %s failure",
+    (failure) => {
+      const h = harness({
+        status: failure === "http" ? 404 : 200,
+        activity: () =>
+          failure === "defect"
+            ? Effect.die("unavailable")
+            : Effect.succeed(failure === "invalid" ? {} : idle),
+      });
+      return Effect.gen(function* () {
+        const guard = yield* Guard.DesktopShutdownGuard;
+        assert.isFalse(yield* guard.confirm("quit"));
+        assert.include(h.messages[0]!, "Could not check every local environment");
+      }).pipe(Effect.provide(h.layer));
+    },
+  );
+  it.effect("does not treat deliberately stopped backends as unavailable", () => {
+    const h = harness({ stopped: true });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      assert.isTrue(yield* guard.confirm("quit"));
+      assert.equal(h.checks(), 0);
+      assert.lengthOf(h.messages, 0);
+    }).pipe(Effect.provide(h.layer));
+  });
+  it.effect("times out checks and suppresses duplicate requests while confirmation is open", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const dialogOpened = yield* Deferred.make<void>();
+      const answer = yield* Deferred.make<number>();
+      const h = harness({
+        activity: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+        dialog: Deferred.succeed(dialogOpened, undefined).pipe(
+          Effect.andThen(Deferred.await(answer)),
+        ),
+      });
+      yield* Effect.gen(function* () {
+        const guard = yield* Guard.DesktopShutdownGuard;
+        const first = yield* guard.confirm("quit").pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("3 seconds");
+        yield* Deferred.await(dialogOpened);
+        assert.isFalse(yield* guard.confirm("restart"));
+        yield* Deferred.succeed(answer, 0);
+        assert.isFalse(yield* Fiber.join(first));
+        assert.lengthOf(h.messages, 1);
+      }).pipe(Effect.provide(h.layer));
+    }),
+  );
+});
+
+describe("shutdown confirmation copy", () => {
+  it("states known work directly without an inspection warning", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [{ ...idle, activeSessions: 1, terminalsRequiringConfirmation: 1 }],
+        "quit",
+      ),
+      {
+        message: "Quit with running work?",
+        detail:
+          "1 thread and 1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
+        confirmLabel: "Quit",
+      },
+    );
+  });
+  it("separates busy terminals from failed inspections across environments", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [
+          { ...idle, terminalsRequiringConfirmation: 2, terminalsWithUnknownActivity: 1 },
+          { ...idle, terminalsRequiringConfirmation: 1 },
+        ],
+        "restart",
+      ),
+      {
+        message: "Restart with running work?",
+        detail:
+          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app. Make sure you're ready before continuing.",
+        confirmLabel: "Restart",
+      },
+    );
+  });
+  it("does not claim running work when only inspection failed", () => {
+    assert.deepEqual(
+      Guard.shutdownConfirmation(
+        [{ ...idle, terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 }],
+        "quit",
+      ),
+      {
+        message: "Quit?",
+        detail:
+          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app. Make sure you're ready before continuing.",
+        confirmLabel: "Quit",
+      },
+    );
+  });
+  const thread = (id: string, continuable: boolean) => ({
+    threadId: ThreadId.make(id),
+    title: id,
+    reasons: ["running" as const],
+    continuable,
+  });
+  it("lists threads that continue apart from interrupted ones", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 2,
+          continuableSessions: 1,
+          threads: [thread("resumes", true), thread("stops", false)],
+        },
+      ],
+      "restart",
+    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
+    assert.deepEqual(
+      confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
+      [true, false],
+    );
+  });
+  it("skips restart confirmation when every thread continues, and says when for quit", () => {
+    const check = {
+      ...idle,
+      activeSessions: 1,
+      continuableSessions: 1,
+      threads: [thread("resumes", true)],
+    };
+    const quit = Guard.shutdownConfirmation([check], "quit");
+    assert.strictEqual(quit?.message, "Quit with running work?");
+    assert.strictEqual(quit?.detail, "1 thread will continue when styal next starts.");
+    assert.isNull(Guard.shutdownConfirmation([check], "restart"));
+  });
+  it("keeps the warning when a continuing thread shares the restart with a waiting one", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          waitingSessions: 1,
+          threads: [
+            thread("resumes", true),
+            { ...thread("asks", false), reasons: ["approval" as const] },
+          ],
+        },
+      ],
+      "restart",
+    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
+  });
+  it("reports every thread as interrupted when the restart replaces a backend", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          threads: [thread("resumes", true)],
+        },
+      ],
+      "restart",
+      { continueThreads: false },
+    );
+    assert.strictEqual(confirmation?.detail, "Make sure you're ready before continuing.");
+    assert.deepEqual(
+      confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
+      [false],
+    );
+  });
+  it("asks about waiting threads in the title", () => {
+    assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
+      message: "Restart with waiting threads?",
+      detail:
+        "1 thread will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
+      confirmLabel: "Restart",
+    });
+  });
+});
+
+it.effect("only an explicit quit can consume the failed-presentation escape", () => {
+  const h = harness({
+    quitOverride: true,
+    activity: () => Effect.succeed({ ...idle, activeSessions: 1 }),
+  });
+  return Effect.gen(function* () {
+    const guard = yield* Guard.DesktopShutdownGuard;
+    assert.isFalse(
+      yield* guard.confirm("restart", { title: "Install update 9.0.363 and restart styal?" }),
+    );
+    assert.isFalse(yield* guard.confirm("restart"));
+    assert.equal(h.overrideChecks(), 0);
+    assert.lengthOf(h.messages, 2);
+    const checks = h.checks();
+    assert.isTrue(yield* guard.confirm("quit"));
+    assert.equal(h.overrideChecks(), 1);
+    assert.equal(h.checks(), checks);
+    assert.lengthOf(h.messages, 2);
+  }).pipe(Effect.provide(h.layer));
+});

@@ -1,4 +1,7 @@
-import { msg, useMessages } from "gt-react";
+import { describeHostActivity } from "@t3tools/shared/hostActivityCopy";
+import { useServerUpdateCheck } from "../ServerUpdateAction";
+import { serverUpdateKey, type UpdateEverythingConfirmation } from "./updateEverything.logic";
+import { msg, useMessages, useLocale } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionErrorText } from "@t3tools/client-runtime/connection";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
@@ -58,6 +61,7 @@ export function useUpdateEverything(
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const resolve = useMessages();
+  const locale = useLocale();
   const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
   const sessionStates = useAtomValue(environmentSessionStatesAtom(environmentIds));
   const updateStates = useAtomValue(environmentUpdateStatesAtom(environmentIds));
@@ -82,6 +86,7 @@ export function useUpdateEverything(
   // A track switch moves app and servers only; provider updates stay a separate choice.
   const providers = channelSwitch ? { machines: [], updateAll: async () => [] } : providerUpdates;
   const updateServer = useServerUpdate();
+  const checkServers = useServerUpdateCheck();
   const stageServerUpdate = useAtomCommand(serverEnvironment.stageServerUpdate, {
     reportFailure: false,
   });
@@ -103,18 +108,98 @@ export function useUpdateEverything(
     resolve,
   );
 
+  const checkLocalActivity = async (): Promise<Omit<UpdateEverythingConfirmation, "servers">> => {
+    if (localUpdateVersion === null) {
+      return { lines: [], threadActivity: [], localVersion: null, interrupts: false };
+    }
+    const inspect = window.desktopBridge?.getLocalHostActivity;
+    if (!inspect) {
+      // An older desktop bridge cannot inspect itself or pin the confirmed version,
+      // so ask the servers it hosts and let its installer check again.
+      const hosted = await checkServers(
+        collectRestartingMachines(machines, [], true).map((machine) => ({
+          environmentId: machine.environmentId,
+          serverLabel:
+            machines.find((item) => item.environmentId === machine.environmentId)?.label ??
+            resolve(msg("This app")),
+          selfUpdate: null,
+          targetVersion,
+          threadContinuation: machine.continuesThreads,
+        })),
+      );
+      return { ...hosted, localVersion: null };
+    }
+    const checks = await inspect().catch(() => [null]);
+    const activity =
+      checks.length === 0
+        ? { lines: [], threadActivity: [], interrupts: false }
+        : describeHostActivity(
+            checks.map(
+              (check) =>
+                check && { ...check, hostLabel: check.hostLabel ?? resolve(msg("This app")) },
+            ),
+            {
+              uncheckedHostsLine: resolve(msg("Could not check this app for running work.")),
+              continueRunningThreads: true,
+            },
+            resolve,
+          );
+    return { ...activity, localVersion: localUpdateVersion };
+  };
+
+  const checkActivity = async (): Promise<UpdateEverythingConfirmation> => {
+    const [remote, local] = await Promise.all([
+      checkServers(servers.filter((server) => server.trackOnly !== true)),
+      checkLocalActivity(),
+    ]);
+    return {
+      lines: [...local.lines, ...remote.lines],
+      threadActivity: [...local.threadActivity, ...remote.threadActivity],
+      localVersion: local.localVersion,
+      interrupts: local.interrupts || remote.interrupts,
+      servers: serverUpdateKey(servers),
+    };
+  };
+
+  // Shown when the check outlasts its grace period; confirming it is explicit consent.
+  const checkingActivity = (): UpdateEverythingConfirmation => {
+    const checked = [
+      ...(localUpdateVersion === null ? [] : [resolve(msg("this app"))]),
+      ...servers.filter((server) => server.trackOnly !== true).map((server) => server.serverLabel),
+    ];
+    return {
+      lines: [
+        resolve(
+          msg("Still checking {servers} for running work.", {
+            servers: new Intl.ListFormat(locale).format(checked),
+          }),
+        ),
+        resolve(msg("Updating now may interrupt running threads and terminals.")),
+      ],
+      threadActivity: [],
+      localVersion: window.desktopBridge?.getLocalHostActivity ? localUpdateVersion : null,
+      interrupts: true,
+      servers: serverUpdateKey(servers),
+    };
+  };
+
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
     machines,
     ...view,
     restarts,
+    checkActivity,
+    checkingActivity,
     run: async ({
       downloadLocal,
       installLocal,
+      confirmation,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
-      installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
+      installLocal?: (reportError: ReportLocalUpdateError, confirmed?: boolean) => Promise<boolean>;
+      confirmation?: UpdateEverythingConfirmation;
     }) => {
+      const confirmed = confirmation?.servers === serverUpdateKey(servers);
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
         localFailures.push(`${title}: ${description}`);
@@ -219,7 +304,7 @@ export function useUpdateEverything(
           updateServers: async (staged) => {
             const runs = servers.map(async (server) => {
               await staged.get(server.environmentId);
-              const serverOutcome = await updateServer(server, { quiet: true });
+              const serverOutcome = await updateServer(server, { quiet: true, confirmed });
               settleUpdateRunMachine(
                 server.environmentId,
                 serverOutcome.status === "failed"
@@ -255,7 +340,13 @@ export function useUpdateEverything(
               (run) => run && { ...run, phase: "installing", restartAt: null },
             );
             saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
-            if (await installLocal(reportLocalError)) return;
+            if (
+              await installLocal(
+                reportLocalError,
+                confirmation?.localVersion === localUpdateVersion,
+              )
+            )
+              return;
             clearSavedUpdateEverythingResult();
           }
         }

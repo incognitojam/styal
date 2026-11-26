@@ -1133,6 +1133,28 @@ describe("DesktopWindow", () => {
       }),
   );
 
+  it.effect("intercepts a Linux close only before shutdown is authorized", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = layerTest({ window: fake.window, createCount, mainWindow, platform: "linux" });
+      yield* Effect.gen(function* () {
+        const windows = yield* DesktopWindow.DesktopWindow;
+        const state = yield* DesktopState.DesktopState;
+        yield* windows.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        const close = fake.windowListeners.get("close");
+        if (!close) return yield* Effect.die("missing close listener");
+        const preventDefault = vi.fn();
+        close({ preventDefault });
+        assert.equal(preventDefault.mock.calls.length, 1);
+        yield* Ref.set(state.quitting, true);
+        close({ preventDefault });
+        assert.equal(preventDefault.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("persists normal bounds and state for a maximized window", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();

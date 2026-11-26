@@ -195,25 +195,6 @@ export function getDesktopUpdateButtonTooltip(
   return resolve(msg("Up to date"));
 }
 
-export function getDesktopUpdateInstallConfirmationMessage(
-  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
-  resolve: MessageResolver = m,
-): string {
-  const version = state.downloadedVersion ?? state.availableVersion;
-  return version
-    ? resolve(
-        msg(
-          "Install update {version} and restart styal?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
-          { version },
-        ),
-      )
-    : resolve(
-        msg(
-          "Install update and restart styal?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
-        ),
-      );
-}
-
 export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {
   if (!result.accepted || result.completed) return null;
   if (typeof result.state.message !== "string") return null;
@@ -228,6 +209,7 @@ export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): 
 export async function installDesktopUpdate(
   bridge: Pick<DesktopBridge, "installUpdate" | "onUpdateState">,
   expectedVersion?: string,
+  confirmed = false,
 ): Promise<DesktopUpdateActionResult> {
   let awaitingFailure = false;
   let reportFailure: (state: DesktopUpdateState) => void = () => {};
@@ -238,7 +220,9 @@ export async function installDesktopUpdate(
     if (awaitingFailure && state.errorContext === "install") reportFailure(state);
   });
   try {
-    const result = await bridge.installUpdate(expectedVersion);
+    const result = await bridge.installUpdate(
+      expectedVersion === undefined ? undefined : { expectedVersion, confirmed },
+    );
     if (!result.accepted || result.completed || getDesktopUpdateActionError(result) !== null) {
       return result;
     }

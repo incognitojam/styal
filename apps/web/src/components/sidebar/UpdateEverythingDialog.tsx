@@ -1,11 +1,14 @@
-import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { msg, T, useMessages } from "gt-react";
+import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
+import { useEnvironmentMachines } from "~/state/environments";
+import { CONTENT_UPDATE_CLICK_GUARD_MS } from "../../confirmDialog";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
+import { HostActivityThreadList } from "../HostActivityThreadList";
+import { StableLabel } from "../StableLabel";
+import { Spinner } from "../ui/spinner";
 import { ChevronRightIcon } from "lucide-react";
-import { msg, T, useGT, useMessages } from "gt-react";
 import { Fragment, type RefObject, useRef } from "react";
 
-import { environmentThreadShells } from "~/state/threads";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -19,26 +22,7 @@ import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { ScrollArea } from "../ui/scroll-area";
-import type { RestartingMachine, UpdateEverythingRow } from "./updateEverything.logic";
-
-const isRunning = (status: string) =>
-  status === "preparing" || status === "starting" || status === "running";
-
-const runningThreadCountAtom = Atom.family((environmentIds: string) =>
-  Atom.make((get) =>
-    environmentIds
-      .split("\n")
-      .filter((id) => id !== "")
-      .reduce(
-        (count, id) =>
-          count +
-          get(environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(id))).filter(
-            (thread) => isRunning(thread.status),
-          ).length,
-        0,
-      ),
-  ).pipe(Atom.withLabel(`update-everything-running-threads:${environmentIds}`)),
-);
+import type { UpdateEverythingConfirmation, UpdateEverythingRow } from "./updateEverything.logic";
 
 interface UpdateEverythingDialogProps {
   readonly open: boolean;
@@ -46,18 +30,20 @@ interface UpdateEverythingDialogProps {
   readonly version: string | null;
   readonly providerCount: number;
   readonly rows: ReadonlyArray<UpdateEverythingRow>;
-  readonly restarts: ReadonlyArray<RestartingMachine>;
+  readonly activity: UpdateEverythingConfirmation;
+  readonly checking: boolean;
+  readonly contentUpdatedAt?: number | null;
   readonly onConfirm: () => void;
-  /** Overrides the "Update N machines?" title, for an update-track switch. */
+  /** Overrides the default title, for an update-track switch. */
   readonly title?: string;
   readonly confirmLabel?: string;
   readonly notes?: ReadonlyArray<string>;
-  /** Shown in place of running-thread counts; disables the confirm button. */
+  /** Disables the confirm button and says why. */
   readonly disabledReason?: string | null;
   /** The confirmed work is starting; it cannot be cancelled from here. */
   readonly busy?: boolean;
   /** Machines are still looking for provider updates, so more rows can appear. */
-  readonly checking?: boolean;
+  readonly checkingProviders?: boolean;
 }
 
 type UpdateEverythingDialogContentProps = Omit<
@@ -74,30 +60,42 @@ export function UpdateEverythingDialog({
 }: UpdateEverythingDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        onOpenChange(nextOpen);
+      }}
+    >
       {/* Refocusing the trigger after a pointer close shows its focus ring and opens its tooltip. */}
       <AlertDialogPopup
         className="sm:max-w-xl"
         initialFocus={cancelRef}
         finalFocus={(closeType) => closeType === "keyboard"}
       >
-        <UpdateEverythingDialogContent {...content} cancelRef={cancelRef} />
+        <UpdateEverythingDialogContent
+          {...content}
+          cancelRef={cancelRef}
+          onConfirm={() => {
+            if (
+              content.contentUpdatedAt != null &&
+              Date.now() - content.contentUpdatedAt < CONTENT_UPDATE_CLICK_GUARD_MS
+            )
+              return;
+            content.onConfirm();
+          }}
+        />
       </AlertDialogPopup>
     </AlertDialog>
   );
 }
 
-const APP_LABELS = {
-  "this-app": msg("This app"),
-  server: msg("Server"),
-  "desktop-app": msg("Desktop app"),
-} as const;
-
 function UpdateEverythingDialogContent({
   version,
   providerCount,
   rows,
-  restarts,
+  activity,
+  checking,
+  contentUpdatedAt = null,
   onConfirm,
   cancelRef,
   title,
@@ -105,39 +103,42 @@ function UpdateEverythingDialogContent({
   notes = [],
   disabledReason = null,
   busy = false,
-  checking = false,
+  checkingProviders = false,
 }: UpdateEverythingDialogContentProps) {
-  const gt = useGT();
   const m = useMessages();
-  const stopped = useAtomValue(
-    runningThreadCountAtom(
-      restarts
-        .filter((machine) => !machine.continuesThreads)
-        .map((machine) => machine.environmentId)
-        .join("\n"),
-    ),
-  );
-  const continuing = useAtomValue(
-    runningThreadCountAtom(
-      restarts
-        .filter((machine) => machine.continuesThreads)
-        .map((machine) => machine.environmentId)
-        .join("\n"),
-    ),
-  );
-  const running = stopped + continuing;
-  const restarting = new Set(restarts.map((machine) => machine.environmentId));
-  const updating = rows.filter((row) => row.app !== null || row.providers.length > 0);
+  const machines = useEnvironmentMachines();
+  const updating = rows
+    .filter((row) => row.app !== null || row.providers.length > 0)
+    .toSorted((a, b) => Number(a.app === "this-app") - Number(b.app === "this-app"));
   const skipped = rows.filter((row) => row.skipped !== null);
+  const restartsAll = updating.length > 0 && updating.every((row) => row.app !== null);
+  // Provider installs and server handoffs run in no fixed order; only this app waits for the rest.
+  const othersUpdate = updating.some((row) => row.app !== "this-app");
+  // Older servers report no environment id, only the label this client gave their check.
+  const belongsTo = (item: ConfirmDialogThreadActivity, row: UpdateEverythingRow) =>
+    item.environmentId === undefined
+      ? item.hostLabel === row.label
+      : item.environmentId === row.environmentId;
+  const otherActivity = activity.threadActivity.filter(
+    (item) => !updating.some((row) => belongsTo(item, row)),
+  );
 
   return (
     <>
       <AlertDialogHeader className="shrink-0">
         <AlertDialogTitle>
           {title ??
-            gt("{count, plural, one {Update {count} machine?} other {Update {count} machines?}}", {
-              count: updating.length,
-            })}
+            m(
+              restartsAll
+                ? msg(
+                    "{count, plural, one {Update and restart {count} machine?} other {Update and restart {count} machines?}}",
+                    { count: updating.length },
+                  )
+                : msg(
+                    "{count, plural, one {Update {count} machine?} other {Update {count} machines?}}",
+                    { count: updating.length },
+                  ),
+            )}
         </AlertDialogTitle>
         <AlertDialogDescription>
           {version !== null ? (
@@ -147,87 +148,85 @@ function UpdateEverythingDialogContent({
           ) : null}
           {version !== null && providerCount > 0 ? " · " : null}
           {providerCount > 0
-            ? gt(
-                "{count, plural, one {{count} provider update} other {{count} provider updates}}",
-                { count: providerCount },
+            ? m(
+                msg(
+                  "{count, plural, one {{count} provider update} other {{count} provider updates}}",
+                  { count: providerCount },
+                ),
               )
             : null}
-          {checking
-            ? `${version !== null || providerCount > 0 ? " · " : ""}${gt("Checking for more…")}`
+          {checkingProviders
+            ? `${version !== null || providerCount > 0 ? " · " : ""}${m(msg("Checking for more…"))}`
             : null}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <ScrollArea scrollFade>
-        <div className="flex flex-col gap-3 px-6 pb-4">
+        <div className="flex flex-col gap-6 px-6 pb-4">
           {notes.map((note) => (
             <p key={note} className="text-muted-foreground text-sm">
               {note}
             </p>
           ))}
-          {/* Machine names truncate first. Provider lists wrap between names, never inside one. */}
-          <div
-            role="table"
-            className="grid grid-cols-[minmax(4rem,max-content)_max-content_minmax(min-content,1fr)_max-content] gap-x-4 text-sm"
-          >
-            <div
-              role="row"
-              className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs"
-            >
-              <span role="columnheader">
-                <T>Machine</T>
-              </span>
-              <span role="columnheader">styal</span>
-              <span role="columnheader">
-                <T>Providers</T>
-              </span>
-              <span role="columnheader" />
-            </div>
-            {updating.map((row) => (
-              <div
+          {updating.map((row) => {
+            const note =
+              row.app === "this-app" && othersUpdate
+                ? m(msg("Restarts last"))
+                : row.app !== null
+                  ? null
+                  : row.skipped !== null
+                    ? m(msg("styal skipped"))
+                    : m(msg("No restart"));
+            return (
+              <section
+                aria-label={row.label}
                 key={row.environmentId ?? "this-app"}
-                role="row"
-                className="col-span-full grid grid-cols-subgrid border-b border-border/50 py-1.5 last:border-b-0"
+                className="min-w-0 text-sm"
               >
-                <span role="cell" className="max-w-32 min-w-0">
-                  <span className="sr-only">{row.label}</span>
-                  <MiddleTruncate value={row.label} aria-hidden />
-                </span>
-                <span role="cell">
-                  {row.app !== null ? m(APP_LABELS[row.app]) : null}
-                  {row.app === null && row.skipped !== null ? (
-                    <span className="text-muted-foreground">
-                      <T>Skipped</T>
-                    </span>
+                <div className="flex items-center gap-2">
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={
+                      (row.environmentId && machines.get(row.environmentId)) ||
+                      (row.app === "this-app" ? "desktop" : "server")
+                    }
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                  <h3 className="flex min-w-0 font-semibold text-foreground">
+                    <MiddleTruncate value={row.label} />
+                  </h3>
+                  {note !== null ? (
+                    <span className="ms-auto shrink-0 text-muted-foreground text-xs">{note}</span>
                   ) : null}
-                  {row.app === "this-app" ? (
-                    <span className="block text-muted-foreground text-xs">
-                      <T>restarts last</T>
-                    </span>
-                  ) : null}
-                </span>
-                <span role="cell">
-                  {row.providers.map((provider, index) => (
-                    <Fragment key={provider}>
-                      <span className="whitespace-nowrap">{provider}</span>
-                      {index < row.providers.length - 1 ? ", " : null}
-                    </Fragment>
-                  ))}
-                </span>
-                <span role="cell" className="text-right">
-                  {row.environmentId !== null && restarting.has(row.environmentId) ? (
-                    <RunningThreads environmentId={row.environmentId} />
-                  ) : null}
-                </span>
-              </div>
-            ))}
-          </div>
+                </div>
+                {row.providers.length > 0 ? (
+                  <p className="mt-1 text-muted-foreground text-xs">
+                    <T>Updates</T>{" "}
+                    {row.providers.map((provider, index) => (
+                      <Fragment key={provider}>
+                        <span className="whitespace-nowrap">{provider}</span>
+                        {index < row.providers.length - 1 ? ", " : null}
+                      </Fragment>
+                    ))}
+                  </p>
+                ) : null}
+                {activity.threadActivity.some((item) => belongsTo(item, row)) ? (
+                  <HostActivityThreadList
+                    withinMachine
+                    activity={activity.threadActivity.filter((item) => belongsTo(item, row))}
+                  />
+                ) : null}
+              </section>
+            );
+          })}
           {skipped.length > 0 ? (
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground data-panel-open:[&_svg]:rotate-90">
                 <ChevronRightIcon className="size-3.5 transition-transform" aria-hidden />
-                {gt("{count, plural, one {{count} skipped} other {{count} skipped}}", {
-                  count: skipped.length,
-                })}
+                {m(
+                  msg("{count, plural, one {{count} skipped} other {{count} skipped}}", {
+                    count: skipped.length,
+                  }),
+                )}
               </CollapsibleTrigger>
               <CollapsiblePanel>
                 <div className="grid grid-cols-[minmax(0,max-content)_1fr] gap-x-3 gap-y-0.5 pt-1.5 ps-4.5 text-muted-foreground text-xs">
@@ -244,50 +243,38 @@ function UpdateEverythingDialogContent({
             </Collapsible>
           ) : null}
         </div>
+        {activity.lines.length > 0 ? (
+          <div className="flex items-start gap-2 px-6 pb-3">
+            {checking ? <Spinner size="sm" tone="muted" aria-label={m(msg("Checking"))} /> : null}
+            <p className="whitespace-pre-line text-sm">{activity.lines.join("\n")}</p>
+          </div>
+        ) : null}
+        {otherActivity.length > 0 ? <HostActivityThreadList activity={otherActivity} /> : null}
       </ScrollArea>
       <AlertDialogFooter>
         {disabledReason !== null ? (
           <p className="self-center text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
             {disabledReason}
           </p>
-        ) : running > 0 ? (
-          <p className="self-center text-muted-foreground text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
-            {stopped === 0
-              ? gt(
-                  "{count, plural, one {{count} running thread will be interrupted and can resume after the restart.} other {{count} running threads will be interrupted and can resume after the restart.}}",
-                  { count: running },
-                )
-              : continuing === 0
-                ? gt(
-                    "{count, plural, one {{count} running thread will be interrupted.} other {{count} running threads will be interrupted.}}",
-                    { count: running },
-                  )
-                : `${gt(
-                    "{count, plural, one {{count} running thread will be interrupted.} other {{count} running threads will be interrupted.}}",
-                    { count: running },
-                  )} ${gt(
-                    "{count, plural, one {{count} can resume after the restart.} other {{count} can resume after the restart.}}",
-                    { count: continuing },
-                  )}`}
-          </p>
         ) : null}
         <AlertDialogClose ref={cancelRef} render={<Button variant="outline" disabled={busy} />}>
           <T>Cancel</T>
         </AlertDialogClose>
         <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
-          {confirmLabel ?? gt("Update", { $context: "verb, confirms the update" })}
+          {confirmLabel ?? (
+            <StableLabel
+              label={
+                checking
+                  ? m(msg("Update anyway"))
+                  : restartsAll
+                    ? m(msg("Update and restart"))
+                    : m(msg("Update"))
+              }
+              previous={contentUpdatedAt === null ? undefined : m(msg("Update anyway"))}
+            />
+          )}
         </Button>
       </AlertDialogFooter>
     </>
   );
-}
-
-function RunningThreads({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const count = useAtomValue(runningThreadCountAtom(environmentId));
-  const gt = useGT();
-  return count > 0 ? (
-    <span className="whitespace-nowrap text-warning">
-      {gt("{count, plural, one {{count} running} other {{count} running}}", { count })}
-    </span>
-  ) : null;
 }

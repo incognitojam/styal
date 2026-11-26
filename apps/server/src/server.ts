@@ -1,3 +1,5 @@
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
+import { hostActivityHttpApiLayer, inspectHostActivity } from "./environment/HostActivity.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as DatabaseMigrationProgress from "./persistence/DatabaseMigrationProgress.ts";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
@@ -906,6 +908,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(PeerClientPairingHttp.layer.pipe(Layer.provide(PeerClientPairing.layerIssuer))),
       Layer.provide(CloudHttp.layer),
       Layer.provide(OrchestrationHttp.layer),
+      Layer.provide(hostActivityHttpApiLayer.pipe(Layer.provide(ProjectionStoreV2.layer))),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
@@ -924,7 +927,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerBrowserStream.routeLayer,
     PreviewTunnel.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
-    Ws.layer,
+    Ws.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
     speechStreamRouteLayer,
   ),
   McpHttpServer.layer.pipe(
@@ -971,7 +974,11 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(CloudSpeech.layer.pipe(Layer.provide(SecretResolver.layer))),
   Layer.provide(layerServerSettings),
   Layer.provide(PreviewAutomationBroker.layer),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  Layer.provide(
+    ServerSelfUpdate.layer(inspectHostActivity).pipe(Layer.provide(ProjectionStoreV2.layer)),
+  ),
+  Layer.provide(layerDesktopAppUpdate),
+  Layer.provide(EffectOutbox.layer),
   Layer.provide(ProviderMaintenanceRunner.layer),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),

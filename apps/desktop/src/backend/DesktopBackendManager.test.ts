@@ -187,6 +187,8 @@ function makeTestInstance(input: MakeInstanceInput) {
       encoded: input.desktopTelemetryStream ?? Stream.empty,
       handleControlForSource: () => Effect.void,
       removeControlSource: () => Effect.void,
+      publishUpdateActivity: () => Effect.void,
+      updateActivityRequests: Stream.empty,
       publishUpdateReport: () => Effect.void,
       updateRequests: Stream.empty,
       updateCommits: Stream.empty,

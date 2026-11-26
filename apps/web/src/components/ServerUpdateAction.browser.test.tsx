@@ -11,6 +11,8 @@ import { act, render, type Screen } from "../../test/render";
 type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
+  hostActivity: vi.fn(),
+  desktopActivity: vi.fn(),
   toast: vi.fn(),
   clipboard: vi.fn(),
   sessionAtom: null as unknown,
@@ -49,7 +51,12 @@ vi.mock(import("~/state/entities"), async (original) => ({
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
-  useAtomCommand: (() => testState.updateServer) as never,
+  useAtomCommand: ((command: unknown) =>
+    command === serverEnvironment.hostActivity
+      ? testState.hostActivity
+      : command === serverEnvironment.desktopHostActivity
+        ? testState.desktopActivity
+        : testState.updateServer) as never,
 }));
 vi.mock(import("./ui/toast"), async (original) => {
   const actual = await original();
@@ -57,6 +64,7 @@ vi.mock(import("./ui/toast"), async (original) => {
 });
 
 import { resetConfirmDialogForTests } from "~/confirmDialog";
+import { serverEnvironment } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
   ServerUpdateAction,
@@ -93,6 +101,17 @@ function setSession(session: SessionResult) {
 
 function setup(): Disposable {
   testState.updateServer.mockReset();
+  testState.hostActivity.mockResolvedValue(
+    AsyncResult.success({
+      activeSessions: 0,
+      continuableSessions: 0,
+      waitingSessions: 0,
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+      threads: [],
+    }),
+  );
+  testState.desktopActivity.mockResolvedValue(AsyncResult.success([]));
   testState.toast.mockReset();
   testState.clipboard.mockReset();
   testState.serverVersions.clear();

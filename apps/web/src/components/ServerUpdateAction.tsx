@@ -1,3 +1,11 @@
+import type { ConfirmDialogOptions } from "@t3tools/contracts";
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
+import {
+  serverUpdateActivity,
+  serverUpdateConfirmation,
+  serverUpdateCheckingMessage,
+  serverUpdateSafeMessage,
+} from "./ServerUpdateAction.logic";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -102,6 +110,7 @@ export interface ServerUpdateTarget {
   readonly selfUpdate: ServerSelfUpdateCapability | null;
   readonly installation?: ServerInstallation | undefined;
   readonly desktopAppUpdate?: boolean;
+  readonly threadContinuation?: boolean;
   readonly targetVersion: string;
   /** Set only by a track switch; the host's desktop app moves to this track. */
   readonly channel?: DesktopUpdateChannel;
@@ -116,16 +125,89 @@ type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" 
   readonly appearance?: "button" | "icon";
 };
 
+function continuesRunningThreads(target: ServerUpdateTarget): boolean {
+  return target.threadContinuation === true;
+}
+
+/** What one server's update did. "skipped" covers a missing permission, an
+    update already in flight, a cancelled confirmation, and an interrupted request. */
 export type ServerUpdateOutcome =
   | { readonly status: "updated" | "skipped" }
   | { readonly status: "failed"; readonly message: string };
 
-/** Toasts its success or failure unless `quiet`; never rejects. */
-export function useServerUpdate() {
+function serverUpdateHost(target: ServerUpdateTarget) {
+  return {
+    serverLabel: target.serverLabel,
+    desktopApp: target.selfUpdate === "desktop-managed",
+    continueRunningThreads: continuesRunningThreads(target),
+  };
+}
+
+function useReadHostActivity() {
+  return {
+    host: useAtomCommand(serverEnvironment.hostActivity, { reportFailure: false }),
+    desktop: useAtomCommand(serverEnvironment.desktopHostActivity, { reportFailure: false }),
+  };
+}
+
+/** Reads each server's running work and describes what its update would interrupt. */
+async function checkServerUpdateHosts(
+  readHostActivity: ReturnType<typeof useReadHostActivity>,
+  targets: ReadonlyArray<ServerUpdateTarget>,
+) {
+  const hosts = await Promise.all(
+    targets.map(async (target) => {
+      const request = { environmentId: target.environmentId, input: {} };
+      const [result, desktopResult] = await Promise.all([
+        readHostActivity.host(request),
+        target.selfUpdate === "desktop-managed" ? readHostActivity.desktop(request) : null,
+      ]);
+      return {
+        ...serverUpdateHost(target),
+        activity: result._tag === "Success" ? result.value : null,
+        ...(target.selfUpdate === "desktop-managed"
+          ? {
+              desktopActivity: desktopResult?._tag === "Success" ? desktopResult.value : null,
+            }
+          : {}),
+      };
+    }),
+  );
+  const activity = serverUpdateActivity(hosts, true);
+  return { activity, confirmation: serverUpdateConfirmation(hosts, activity) };
+}
+
+/**
+ * Checks servers for running work ahead of a confirmation the caller shows
+ * itself, then passes `confirmed` to `useServerUpdates`.
+ */
+export function useServerUpdateCheck() {
+  const readHostActivity = useReadHostActivity();
+  return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
+    const checked =
+      targets.length === 0 ? null : await checkServerUpdateHosts(readHostActivity, targets);
+    // The first line repeats the question the caller's own confirmation asks.
+    return {
+      lines: checked?.confirmation?.message.split("\n").slice(1) ?? checked?.activity.lines ?? [],
+      threadActivity: checked?.activity.threadActivity ?? [],
+      interrupts: checked?.activity.interrupts ?? false,
+    };
+  };
+}
+
+/**
+ * Updates servers after one confirmation covering all of them. Servers with an
+ * update already in flight are skipped. Each server toasts its own result unless
+ * `quiet`, and `onSettled` hears each outcome as it lands. The returned promise
+ * settles once every update has finished, with one outcome per target.
+ */
+function useServerUpdates() {
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
-  return async (
+  const readHostActivity = useReadHostActivity();
+  const updateOne = async (
     target: ServerUpdateTarget,
-    { quiet = false }: { readonly quiet?: boolean } = {},
+    quiet: boolean,
+    confirmed: boolean,
   ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     const denial = readUpdatesDenial(environmentId);
@@ -139,23 +221,20 @@ export function useServerUpdate() {
       }
       return { status: "failed", message: denial };
     }
-    if (
-      !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
-      pendingUpdateEnvironmentIds.has(environmentId)
-    )
+    if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
       return { status: "skipped" };
-    pendingUpdateEnvironmentIds.add(environmentId);
     const result = await updateServer({
       environmentId,
       input: {
         targetVersion,
+        confirmed,
+        ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
         ...(target.channel === undefined ? {} : { channel: target.channel }),
         ...(target.targetDatabaseMigration === undefined
           ? {}
           : { targetDatabaseMigration: target.targetDatabaseMigration }),
       },
     });
-    pendingUpdateEnvironmentIds.delete(environmentId);
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) return { status: "skipped" };
       const message = updateFailureMessage(squashAtomCommandFailure(result));
@@ -184,6 +263,98 @@ export function useServerUpdate() {
     }
     return { status: "updated" };
   };
+  return async (
+    targets: ReadonlyArray<ServerUpdateTarget>,
+    {
+      quiet = false,
+      confirmed = false,
+      onSettled,
+    }: {
+      readonly quiet?: boolean;
+      /** The caller already confirmed, after showing `useServerUpdateCheck`'s result. */
+      readonly confirmed?: boolean;
+      readonly onSettled?: (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => void;
+    } = {},
+  ): Promise<ReadonlyArray<{ target: ServerUpdateTarget; outcome: ServerUpdateOutcome }>> => {
+    const claimed = targets.filter(
+      (target) =>
+        canUpdateServer(
+          appAtomRegistry.get(environmentSession.sessionStateAtom(target.environmentId)),
+        ) && !pendingUpdateEnvironmentIds.has(target.environmentId),
+    );
+    const settle = (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => {
+      onSettled?.(target, outcome);
+      return { target, outcome };
+    };
+    const skipAll = (skipped: ReadonlyArray<ServerUpdateTarget>) =>
+      skipped.map((target) => settle(target, { status: "skipped" }));
+    const unclaimed = targets.filter((target) => !claimed.includes(target));
+    if (claimed.length === 0) return skipAll(unclaimed);
+    for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
+    const result = await settlePromise(async () => {
+      let explicitConsent = confirmed;
+      if (!confirmed) {
+        // The remote machines restart without asking anyone there, so work
+        // started from any client counts.
+        const check = checkServerUpdateHosts(readHostActivity, claimed);
+        const early = await settleWithinGrace(check);
+        if (early !== null) {
+          const { confirmation } = early.value;
+          // Without a dialog host (undefined), only a safe check can proceed.
+          if (
+            confirmation !== null &&
+            !(await requestConfirmDialog(confirmation.message, {
+              confirmLabel: m(msg("Update")),
+              threadActivity: confirmation.threadActivity,
+            }))
+          ) {
+            return skipAll(targets);
+          }
+          explicitConsent = confirmation !== null;
+        } else {
+          const hosts = claimed.map(serverUpdateHost);
+          let showResult: ((message: string, options?: ConfirmDialogOptions) => void) | undefined;
+          const answer = requestConfirmDialog(
+            serverUpdateCheckingMessage(hosts),
+            { confirmLabel: m(msg("Update anyway")) },
+            { checking: true, bindContentUpdate: (update) => (showResult = update) },
+          );
+          if (answer === undefined) {
+            if ((await check).confirmation !== null) return skipAll(targets);
+          } else {
+            void check.then(({ confirmation }) =>
+              showResult?.(
+                confirmation?.message ?? serverUpdateSafeMessage(hosts),
+                confirmation === null
+                  ? { confirmLabel: m(msg("Update")) }
+                  : { confirmLabel: m(msg("Update")), threadActivity: confirmation.threadActivity },
+              ),
+            );
+            if (!(await answer)) return skipAll(targets);
+            explicitConsent = true;
+          }
+        }
+      }
+      const updated = await Promise.all(
+        claimed.map(async (target) =>
+          settle(target, await updateOne(target, quiet, explicitConsent)),
+        ),
+      );
+      return [...skipAll(unclaimed), ...updated];
+    });
+    for (const target of claimed) pendingUpdateEnvironmentIds.delete(target.environmentId);
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    return result.value;
+  };
+}
+
+export function useServerUpdate() {
+  const update = useServerUpdates();
+  return async (
+    target: ServerUpdateTarget,
+    options?: { readonly quiet?: boolean; readonly confirmed?: boolean },
+  ): Promise<ServerUpdateOutcome> =>
+    (await update([target], options))[0]?.outcome ?? { status: "skipped" };
 }
 
 export function ServerUpdatesAction({
@@ -197,7 +368,7 @@ export function ServerUpdatesAction({
 }) {
   const gt = useGT();
   const messages = useMessages();
-  const update = useServerUpdate();
+  const update = useServerUpdates();
   const serverConfigs = useServerConfigs();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
@@ -213,24 +384,7 @@ export function ServerUpdatesAction({
     if (pending.current) return;
     pending.current = true;
     setIsPending(true);
-    await settlePromise(async () => {
-      const available = eligible.filter(
-        (target) => !pendingUpdateEnvironmentIds.has(target.environmentId),
-      );
-      const desktopTargets = available.filter((target) => target.selfUpdate === "desktop-managed");
-      if (desktopTargets.length > 0) {
-        const confirmed =
-          (await requestConfirmDialog(
-            gt(
-              "Update the styal desktop apps on {servers}? They will close and relaunch on those machines.",
-              { servers: desktopTargets.map((target) => target.serverLabel).join(", ") },
-            ),
-            { initialFocus: "confirm" },
-          )) ?? true;
-        if (!confirmed) return;
-      }
-      await Promise.all(available.map((target) => update(target)));
-    });
+    await settlePromise(() => update(eligible));
     pending.current = false;
     setIsPending(false);
   };
@@ -300,7 +454,6 @@ export function ServerUpdateAction({
 }: ServerUpdateTarget & UpdateButtonProps) {
   const gt = useGT();
   const messages = useMessages();
-  const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
@@ -350,19 +503,6 @@ export function ServerUpdateAction({
       pendingUpdateEnvironmentIds.has(environmentId)
     ) {
       return;
-    }
-    if (isDesktopAppUpdate) {
-      const confirmed =
-        (await requestConfirmDialog(
-          gt(
-            "Update the styal desktop app that runs the {serverLabel}? It will close and relaunch on that machine.",
-            { serverLabel },
-          ),
-          { initialFocus: "confirm" },
-        )) ?? true;
-      if (!confirmed) {
-        return;
-      }
     }
     if (!canUpdateServer(appAtomRegistry.get(sessionStateAtom))) return;
     await update({
@@ -464,10 +604,19 @@ export function OutdatedServerUpdateAction({
   const update = useAtomCommand(updateOutdatedServer, { reportFailure: false });
   const handleUpdate = async () => {
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
+    const confirmed = await requestConfirmDialog(
+      m(
+        msg("Update the {serverLabel}? Running threads and terminals may be interrupted.", {
+          serverLabel,
+        }),
+      ),
+      { confirmLabel: m(msg("Update", { $context: "verb, updates the server" })) },
+    );
+    if (confirmed !== true) return;
     pendingUpdateEnvironmentIds.add(environmentId);
     const result = await update({
       environmentId,
-      input: { targetVersion },
+      input: { targetVersion, confirmed },
       ...(fromVersion === undefined ? {} : { fromVersion }),
     });
     pendingUpdateEnvironmentIds.delete(environmentId);

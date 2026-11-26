@@ -1,7 +1,12 @@
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
+import {
+  describeServerUpdate,
+  describeServerUpdateCheck,
+  requestServerUpdateConfirmation,
+} from "./serverUpdateConfirmation";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { serverUpdateFailureText } from "@t3tools/client-runtime/state/server";
 import { T, useGT, useMessages, Var } from "gt-react-native";
-import * as Dialog from "../../components/ui/Dialog";
 import { useAtom, useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
@@ -73,6 +78,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const outdated =
     useAtomValue(environmentPresentations.presentationAtom(environmentId))?.entry
       .serverUpdateRequired === true;
+  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, { reportFailure: false });
+  const readDesktopHostActivity = useAtomCommand(serverEnvironment.desktopHostActivity, {
+    reportFailure: false,
+  });
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
@@ -130,45 +139,57 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     const targetVersion = checkedRelease?.targetVersion;
     if (disabled || !targetVersion || !capabilities || !supportsEnvironmentUpdate(capabilities))
       return;
-    Dialog.alert(
-      environment
-        ? gt("Update {environment}?", { environment: environment.environmentLabel })
-        : gt("Update environment?"),
-      capabilities.serverSelfUpdate === "desktop-managed"
-        ? gt(
-            "Install {product} {version}. The desktop app will close and relaunch. Running threads may be interrupted.",
-            { product: "styal", version: targetVersion },
-          )
-        : gt(
-            "Install {product} {version}. The server will restart and reconnect. Running threads may be interrupted.",
-            { product: "styal", version: targetVersion },
-          ),
-      [
-        { text: gt("Cancel"), style: "cancel" },
-        {
-          text: gt("Update", { $context: "verb, install an update" }),
-          onPress: () =>
-            void run("server", async () => {
-              if (
-                AsyncResult.isFailure(
-                  appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
-                ) ||
-                !canMaintainEnvironment(
-                  appAtomRegistry.get(environmentSession.sessionStateValueAtom(environmentId)),
-                  connected,
-                )
-              )
-                return;
-              const result = await updateServer({
-                environmentId,
-                input: { targetVersion },
-              });
-              if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-              setNotice(gt("Updated to {version}.", { version: result.value.targetVersion }));
-            }),
+    // The server applies each project's continuation setting to its activity report.
+    const continueRunningThreads = capabilities.threadRestartContinuation === true;
+    void run("server", async () => {
+      const desktopManaged = capabilities.serverSelfUpdate === "desktop-managed";
+      const serverLabel = environment?.environmentLabel ?? gt("environment");
+      const check = Promise.all([
+        readHostActivity({ environmentId, input: {} }),
+        desktopManaged ? readDesktopHostActivity({ environmentId, input: {} }) : null,
+      ]).then(([activity, desktopActivity]) =>
+        describeServerUpdate({
+          serverLabel,
+          targetVersion,
+          desktopManaged,
+          activity: AsyncResult.isSuccess(activity) ? activity.value : null,
+          desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
+          continueRunningThreads,
+        }),
+      );
+      const early = await settleWithinGrace(check);
+      const present = (requestId: string) =>
+        navigation.navigate("SettingsServerUpdateConfirm", { environmentId, requestId });
+      const proceed = early
+        ? await requestServerUpdateConfirmation(early.value, present)
+        : await requestServerUpdateConfirmation(
+            describeServerUpdateCheck({ serverLabel, targetVersion, desktopManaged }),
+            present,
+            check,
+          );
+      if (!proceed) return;
+      if (
+        AsyncResult.isFailure(
+          appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
+        ) ||
+        !canMaintainEnvironment(
+          appAtomRegistry.get(environmentSession.sessionStateValueAtom(environmentId)),
+          connected,
+        )
+      )
+        return;
+      const result = await updateServer({
+        environmentId,
+        input: {
+          targetVersion,
+          // A safe update without a confirmation is rechecked before its handoff.
+          confirmed: early ? early.value.requiresConfirmation : true,
+          ...(continueRunningThreads ? { continueRunningThreads } : {}),
         },
-      ],
-    );
+      });
+      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+      setNotice(gt("Updated to {version}.", { version: result.value.targetVersion }));
+    });
   }
 
   function requestProviderUpdate(provider: ServerProvider) {

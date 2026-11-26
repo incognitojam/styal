@@ -63,7 +63,13 @@ export const setWslBackendEnabled = makeIpcMethod({
       : previousSettings.wslBackendEnabled && previousSettings.wslOnly;
     if (changedWslOnlyPrimary && change.changed) {
       const state = yield* readWslState;
-      yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`);
+      if (
+        !(yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`, { continueThreads: false }))
+      ) {
+        yield* appSettings.setWslBackendEnabled(previousSettings.wslBackendEnabled);
+        yield* appSettings.setWslOnly(previousSettings.wslOnly);
+        return yield* readWslState;
+      }
       return state;
     }
     // Reconcile never fails, so no rollback is needed.
@@ -80,12 +86,18 @@ export const setWslDistro = makeIpcMethod({
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+    const previousSettings = yield* appSettings.get;
     const change = yield* appSettings.setWslDistro(distro);
     const settings = yield* appSettings.get;
     // WSL-only primary backends capture their distro at startup; relaunch to change it.
     if (settings.wslBackendEnabled && settings.wslOnly && change.changed) {
       const state = yield* readWslState;
-      yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`);
+      if (
+        !(yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`, { continueThreads: false }))
+      ) {
+        yield* appSettings.setWslDistro(previousSettings.wslDistro);
+        return yield* readWslState;
+      }
       return state;
     }
     yield* wslBackend.reconcile;
@@ -101,10 +113,14 @@ export const setWslOnly = makeIpcMethod({
     // The pool captures its primary at initialization; disabled WSL can stage mode changes until enable.
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+    const previousSettings = yield* appSettings.get;
     const change = yield* appSettings.setWslOnly(enabled);
     const state = yield* readWslState;
     if (state.enabled && change.changed) {
-      yield* lifecycle.relaunch(`wslOnly=${enabled}`);
+      if (!(yield* lifecycle.relaunch(`wslOnly=${enabled}`, { continueThreads: false }))) {
+        yield* appSettings.setWslOnly(previousSettings.wslOnly);
+        return yield* readWslState;
+      }
     }
     return state;
   }),

@@ -4,6 +4,7 @@ import {
   markedTextEnglish,
   resolveMarkedText,
   thrownErrorMessage,
+  translatableMessage,
   withI18nMessage,
 } from "../errors/translatable.ts";
 import {
@@ -58,6 +59,7 @@ import { runCachePersistence } from "./cachePersistence.ts";
 import { workflowRunRefreshKey } from "../workflows.ts";
 import {
   currentSession,
+  EnvironmentRpcUnavailableError,
   isRpcClientError,
   request,
   requestGuarded,
@@ -1848,6 +1850,58 @@ export function createServerEnvironmentAtoms<R, E>(
     stageServerUpdate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:stage-update",
       tag: WS_METHODS.serverUpdateServer,
+    }),
+    desktopHostActivity: createEnvironmentRpcCommand(runtime, {
+      tag: WS_METHODS.serverGetDesktopHostActivity,
+      label: "environment-data:server:desktop-host-activity",
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+      execute: (
+        input: EnvironmentRpcInput<typeof WS_METHODS.serverGetDesktopHostActivity>,
+        _registry,
+        environmentId,
+      ) =>
+        requestGuarded(WS_METHODS.serverGetDesktopHostActivity, input).pipe(
+          Effect.timeoutOrElse({
+            duration: "5 seconds",
+            orElse: () =>
+              Effect.fail(
+                new EnvironmentRpcUnavailableError({
+                  environmentId,
+                  ...translatableMessage(msg("Could not check the server for running work.")),
+                }),
+              ),
+          }),
+        ),
+    }),
+    // Point-in-time check before a restart; a stalled host is treated as unknown activity.
+    // The dialog opens after two seconds; keep waiting for a busy host to fill it in.
+    hostActivity: createEnvironmentRpcCommand(runtime, {
+      tag: WS_METHODS.serverGetHostActivity,
+      label: "environment-data:server:host-activity",
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+      execute: (
+        input: EnvironmentRpcInput<typeof WS_METHODS.serverGetHostActivity>,
+        _registry,
+        environmentId,
+      ) =>
+        requestGuarded(WS_METHODS.serverGetHostActivity, input).pipe(
+          Effect.timeoutOrElse({
+            duration: "1 minute",
+            orElse: () =>
+              Effect.fail(
+                new EnvironmentRpcUnavailableError({
+                  environmentId,
+                  ...translatableMessage(msg("Could not check the server for running work.")),
+                }),
+              ),
+          }),
+        ),
     }),
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",

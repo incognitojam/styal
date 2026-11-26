@@ -156,10 +156,10 @@ describe("desktop update UI helpers", () => {
     "falls back to upstream for an invalid configured repository: %s",
     (repository) => {
       expect(getDesktopUpdateReleaseHistoryUrl(repository)).toBe(
-        "https://updates.styal.invalid/releases",
+        "https://github.com/incognitojam/styal/releases",
       );
       expect(getDesktopUpdateReleaseUrl("1.2.3", repository)).toBe(
-        "https://updates.styal.invalid/releases/tag/v1.2.3",
+        "https://github.com/incognitojam/styal/releases/tag/v1.2.3",
       );
     },
   );

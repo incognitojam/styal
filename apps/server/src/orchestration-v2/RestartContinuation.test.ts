@@ -1515,3 +1515,195 @@ it("does not continue a settled run whose only open subagent is a remote delegat
     assert.isUndefined(restartContinuationRun(projection, now), status);
   }
 });
+
+it.effect("skips recovery reads when no displayed project continues after restarts", () =>
+  Effect.gen(function* () {
+    const projection = makeProjection();
+    const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([projection.thread]);
+    assert.equal(eligible.size, 0);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
+        // Missing mock methods fail if the disabled path touches recovery state.
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+        Layer.mock(EffectOutbox.EffectOutboxV2)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect.each([false, true])(
+  "reads continuation state only for enabled projects (environment %s)",
+  (environmentEnabled) => {
+    const projection = makeProjection();
+    const disabledThreadId = ThreadId.make("thread:disabled-continuation");
+    const disabledProjectId = ProjectId.make("disabled-project");
+    const readIds: ThreadId[] = [];
+    return Effect.gen(function* () {
+      const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([
+        projection.thread,
+        { id: disabledThreadId, projectId: disabledProjectId },
+      ]);
+      assert.deepEqual([...eligible], [threadId]);
+      assert.deepEqual(readIds, [threadId]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({
+            continueThreadsAfterServerUpdate: environmentEnabled,
+            projectSettingsOverrides: {
+              [projection.thread.projectId]: { continueThreadsAfterServerUpdate: true },
+              [disabledProjectId]: { continueThreadsAfterServerUpdate: false },
+            },
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // The busy snapshot supplies candidates; a global recovery scan can stall it.
+            getRecoveryThreadIds: () => Effect.die("unexpected whole-server recovery scan"),
+            getRuntimeRecoveryProjection: (id) =>
+              Effect.sync(() => {
+                readIds.push(id);
+                return projection;
+              }),
+            getThreadRecords: () => Effect.succeed(projection),
+          }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({}),
+        ),
+      ),
+    );
+  },
+);
+
+it.effect("lists the runs that delivery after a planned restart continues or sends again", () => {
+  const base = makeProjection();
+  const userMessageId = MessageId.make("message:user");
+  const running = {
+    ...base,
+    runs: [{ ...base.runs[0]!, userMessageId }],
+  } as unknown as OrchestrationV2ThreadProjection;
+  // Three recent continuations in a row. A planned restart records no process loss, so it continues.
+  const chain = [0, 1, 2].map((index) => ({
+    ...base.runs[0]!,
+    id: RunId.make(`run:chain-${index}`),
+    ordinal: index - 3,
+    status: "cancelled",
+    ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
+  }));
+  // Marked running, but the provider never accepted the prompt.
+  const unaccepted = {
+    ...running,
+    providerTurns: [],
+    runs: [{ ...running.runs[0]!, startedAt: now }],
+  };
+  const variants = [
+    {
+      expected: [threadId],
+      projection: {
+        ...running,
+        runs: [
+          ...chain,
+          {
+            ...running.runs[0]!,
+            ordinal: 1,
+            restartContinuationOfRunId: RunId.make("run:chain-2"),
+          },
+        ],
+      },
+    },
+    { expected: [threadId], projection: running },
+    {
+      expected: [],
+      projection: {
+        ...running,
+        messages: [
+          {
+            id: userMessageId,
+            role: "user",
+            text: "/compact",
+            attachments: [],
+            idleCompaction: "beforeCacheExpires",
+          },
+        ],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...running,
+        turnItems: [{ id: "turn-item:interrupt", runId, type: "run_interrupt_request" }],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...running,
+        messages: [{ id: userMessageId, role: "user", text: "/compact", attachments: [] }],
+      },
+    },
+    ...(["launched_thread", "delegated_task"] as const).map((kind) => ({
+      expected: [],
+      projection: {
+        ...unaccepted,
+        messages: [
+          {
+            id: userMessageId,
+            createdBy: "agent",
+            creationSource: "server",
+            notification: {
+              source: {
+                kind,
+                childThreadId: ThreadId.make("thread:report-child"),
+                ...(kind === "delegated_task"
+                  ? { taskIds: [NodeId.make("task:report-child")] }
+                  : {}),
+              },
+              outcome: "completed",
+            },
+          },
+        ],
+      },
+    })),
+    // An agent's prompt is sent again; a person's waits in the held queue.
+    {
+      expected: [threadId],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "agent", creationSource: "mcp" }],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...unaccepted,
+        messages: [{ id: userMessageId, createdBy: "user", creationSource: "web" }],
+      },
+    },
+  ] as unknown as ReadonlyArray<{
+    expected: ThreadId[];
+    projection: OrchestrationV2ThreadProjection;
+  }>;
+  return Effect.forEach(variants, ({ expected, projection }) =>
+    ProviderRuntimeRecovery.listContinuableThreadIds([projection.thread]).pipe(
+      Effect.map((eligible) => assert.deepEqual([...eligible], expected)),
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () => Effect.succeed([threadId]),
+            getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+            getThreadRecords: () => Effect.succeed(projection),
+            getMessagesById: (_threadId, messageIds) =>
+              Effect.succeed(
+                new Map(
+                  projection.messages
+                    .filter((message) => messageIds.includes(message.id))
+                    .map((message) => [message.id, message]),
+                ),
+              ),
+          }),
+          Layer.mock(EffectOutbox.EffectOutboxV2)({ listByCommandId: () => Effect.succeed([]) }),
+        ),
+      ),
+    ),
+  ).pipe(Effect.asVoid);
+});

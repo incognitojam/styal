@@ -3,6 +3,8 @@ import {
   CommandId,
   isProviderNativeSubagentThread,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ThreadShell,
   type ProviderThreadId,
   type RunAttemptId,
   type OrchestrationV2RestartCancelledBackgroundWork,
@@ -26,6 +28,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   restartContinuationBlocked,
+  restartContinuationDeclined,
   restartContinuationRun,
   restartStopRequested,
 } from "./RestartContinuation.ts";
@@ -173,6 +176,210 @@ const cancelledItem = (
         updatedAt: now,
       };
 
+/**
+ * A run is marked running before its provider accepts the prompt, so only a provider turn of
+ * one of its attempts proves the prompt arrived. Recovery treats the others as never started.
+ */
+const rewindUnacceptedRuns = Effect.fn("ProviderRuntimeRecoveryService.rewindUnacceptedRuns")(
+  function* (
+    projections: Pick<ProjectionStore.ProjectionStoreV2Shape, "getThreadRecords">,
+    projection: ProjectionStore.ProjectionRuntimeRecoveryState,
+  ) {
+    const runIdByAttempt = new Map(
+      projection.runs.flatMap((run) =>
+        (run.status === "running" || (run.status === "starting" && run.startedAt !== null)) &&
+        run.activeAttemptId !== null
+          ? [[run.activeAttemptId, run.id] as const]
+          : [],
+      ),
+    );
+    if (runIdByAttempt.size === 0) return projection;
+    const unaccepted = new Set(runIdByAttempt.values());
+    const accept = (turns: ReadonlyArray<{ readonly runAttemptId: RunAttemptId | null }>) => {
+      for (const turn of turns) {
+        const runId =
+          turn.runAttemptId === null ? undefined : runIdByAttempt.get(turn.runAttemptId);
+        if (runId !== undefined) unaccepted.delete(runId);
+      }
+    };
+    accept(projection.providerTurns);
+    if (unaccepted.size === 0) return projection;
+    for (const attempt of projection.attempts) {
+      if (unaccepted.has(attempt.runId)) runIdByAttempt.set(attempt.id, attempt.runId);
+    }
+    // The recovery projection omits ended provider turns, such as one a steer replaced.
+    accept(
+      (yield* projections
+        .getThreadRecords(projection.thread.id, ["providerTurns"], {
+          providerTurnAttemptIds: [...runIdByAttempt].flatMap(([attemptId, runId]) =>
+            unaccepted.has(runId) ? [attemptId] : [],
+          ),
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderRuntimeRecoveryError({
+                operation: "read-projections",
+                threadId: projection.thread.id,
+                cause,
+              }),
+          ),
+        )).providerTurns,
+    );
+    return {
+      ...projection,
+      runs: projection.runs.map((run) =>
+        unaccepted.has(run.id) ? { ...run, status: "starting" as const, startedAt: null } : run,
+      ),
+    };
+  },
+);
+
+function runsNeverStarted(
+  projection: ProjectionStore.ProjectionRuntimeRecoveryState,
+  runs: ReadonlyArray<OrchestrationV2ThreadProjection["runs"][number]>,
+) {
+  return runs.filter(
+    (run) =>
+      run.status === "starting" &&
+      neverStarted(run) &&
+      !projection.providerTurns.some((turn) => turn.runAttemptId === run.activeAttemptId) &&
+      !projection.runtimeRequests.some(
+        (request) =>
+          request.status === "pending" &&
+          projection.nodes.some((node) => node.id === request.nodeId && node.runId === run.id),
+      ),
+  );
+}
+
+function isHeldAfterRestart(message: OrchestrationV2ConversationMessage) {
+  return (
+    message.createdBy === "user" &&
+    message.scheduledTaskId === undefined &&
+    message.notification === undefined &&
+    message.delegatedCompletion === undefined
+  );
+}
+
+function isResentAfterRestart(message: OrchestrationV2ConversationMessage) {
+  return (
+    !isHeldAfterRestart(message) &&
+    message.notification === undefined &&
+    message.delegatedCompletion === undefined &&
+    (message.scheduledTaskId !== undefined || message.creationSource === "mcp")
+  );
+}
+
+const admitRestartResends = Effect.fn("ProviderRuntimeRecoveryService.admitRestartResends")(
+  function* (
+    services: {
+      readonly projections: ProjectionStore.ProjectionStoreV2Shape;
+      readonly outbox: Pick<EffectOutbox.EffectOutboxV2Shape, "listByCommandId">;
+    },
+    projection: ProjectionStore.ProjectionRuntimeRecoveryState,
+    runs: ReadonlyArray<OrchestrationV2ThreadProjection["runs"][number]>,
+    now: DateTime.Utc,
+  ) {
+    const admitted: Array<OrchestrationV2ThreadProjection["runs"][number]> = [];
+    for (const run of runs) {
+      if (
+        restartContinuationBlocked(projection, run, now, false) ||
+        (yield* restartStopRequested(
+          services.projections.getThreadRecords,
+          projection.thread,
+          run,
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderRuntimeRecoveryError({
+                operation: "read-projections",
+                threadId: projection.thread.id,
+                cause,
+              }),
+          ),
+        ))
+      )
+        continue;
+      const resendCommandId = CommandId.make(`command:restart-resend:${run.id}`);
+      const earlierResends = yield* services.outbox.listByCommandId(resendCommandId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderRuntimeRecoveryError({
+              operation: "reconcile",
+              threadId: projection.thread.id,
+              cause,
+            }),
+        ),
+      );
+      // A prompt whose start keeps crashing the server would otherwise be sent forever.
+      if (earlierResends.filter((effect) => effect.attemptCount > 0).length >= MAX_RESENDS) {
+        yield* Effect.logWarning("Not resending a prompt that restarts cut too many times", {
+          threadId: projection.thread.id,
+          runId: run.id,
+        });
+        continue;
+      }
+      admitted.push(run);
+    }
+    return admitted;
+  },
+);
+
+const shutdownContinuation = Effect.fn("ProviderRuntimeRecoveryService.shutdownContinuation")(
+  function* (
+    projections: ProjectionStore.ProjectionStoreV2Shape,
+    stored: ProjectionStore.ProjectionRuntimeRecoveryState,
+  ) {
+    const projection = yield* rewindUnacceptedRuns(projections, stored);
+    return { projection, run: restartContinuationRun(projection, yield* DateTime.now) };
+  },
+);
+
+export const listContinuableThreadIds = Effect.fn(
+  "ProviderRuntimeRecoveryService.listContinuableThreadIds",
+)(function* (threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id" | "projectId">>) {
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const outbox = yield* EffectOutbox.EffectOutboxV2;
+  const current = yield* (yield* ServerSettings.ServerSettingsService).getSettings;
+  const eligible = new Set<ThreadId>();
+  for (const thread of threads) {
+    if (
+      !resolveProjectSettings(current, thread.projectId).settings.continueThreadsAfterServerUpdate
+    )
+      continue;
+    const stored = yield* projections.getRuntimeRecoveryProjection(thread.id);
+    if (
+      !resolveProjectSettings(current, stored.thread.projectId).settings
+        .continueThreadsAfterServerUpdate
+    )
+      continue;
+    const now = yield* DateTime.now;
+    const { projection, run } = yield* shutdownContinuation(projections, stored);
+    if (run !== undefined) {
+      if (
+        !(yield* restartContinuationDeclined(projections.getThreadRecords, projection.thread, run))
+      )
+        eligible.add(thread.id);
+      continue;
+    }
+    const unstarted = runsNeverStarted(projection, nonterminalRuns(projection));
+    if (unstarted.length === 0) continue;
+    const messages = yield* projections.getMessagesById(
+      thread.id,
+      unstarted.map((candidate) => candidate.userMessageId),
+    );
+    const unattended = unstarted.filter((candidate) => {
+      const message = messages.get(candidate.userMessageId);
+      return message !== undefined && isResentAfterRestart(message);
+    });
+    if (
+      (yield* admitRestartResends({ projections, outbox }, projection, unattended, now)).length > 0
+    )
+      eligible.add(thread.id);
+  }
+  return eligible;
+});
+
 export const make = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -196,62 +403,6 @@ export const make = Effect.gen(function* () {
     return [...sessions.values()];
   };
 
-  /**
-   * A run is marked running before its provider accepts the prompt, so only a provider turn of
-   * one of its attempts proves the prompt arrived. Recovery treats the others as never started.
-   */
-  const rewindUnacceptedRuns = Effect.fn("ProviderRuntimeRecoveryService.rewindUnacceptedRuns")(
-    function* (projection: ProjectionStore.ProjectionRuntimeRecoveryState) {
-      const runIdByAttempt = new Map(
-        projection.runs.flatMap((run) =>
-          (run.status === "running" || (run.status === "starting" && run.startedAt !== null)) &&
-          run.activeAttemptId !== null
-            ? [[run.activeAttemptId, run.id] as const]
-            : [],
-        ),
-      );
-      if (runIdByAttempt.size === 0) return projection;
-      const unaccepted = new Set(runIdByAttempt.values());
-      const accept = (turns: ReadonlyArray<{ readonly runAttemptId: RunAttemptId | null }>) => {
-        for (const turn of turns) {
-          const runId =
-            turn.runAttemptId === null ? undefined : runIdByAttempt.get(turn.runAttemptId);
-          if (runId !== undefined) unaccepted.delete(runId);
-        }
-      };
-      accept(projection.providerTurns);
-      if (unaccepted.size === 0) return projection;
-      for (const attempt of projection.attempts) {
-        if (unaccepted.has(attempt.runId)) runIdByAttempt.set(attempt.id, attempt.runId);
-      }
-      // The recovery projection omits ended provider turns, such as one a steer replaced.
-      accept(
-        (yield* projections
-          .getThreadRecords(projection.thread.id, ["providerTurns"], {
-            providerTurnAttemptIds: [...runIdByAttempt].flatMap(([attemptId, runId]) =>
-              unaccepted.has(runId) ? [attemptId] : [],
-            ),
-          })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProviderRuntimeRecoveryError({
-                  operation: "read-projections",
-                  threadId: projection.thread.id,
-                  cause,
-                }),
-            ),
-          )).providerTurns,
-      );
-      return {
-        ...projection,
-        runs: projection.runs.map((run) =>
-          unaccepted.has(run.id) ? { ...run, status: "starting" as const, startedAt: null } : run,
-        ),
-      };
-    },
-  );
-
   const reconcileProjection = Effect.fn("ProviderRuntimeRecoveryService.reconcileProjection")(
     function* (
       stored: ProjectionStore.ProjectionRuntimeRecoveryState,
@@ -260,7 +411,7 @@ export const make = Effect.gen(function* () {
       stoppedThisPass: ReadonlyMap<string, RecoverySession> = new Map(),
     ) {
       const now = yield* DateTime.now;
-      const projection = yield* rewindUnacceptedRuns(stored);
+      const projection = yield* rewindUnacceptedRuns(projections, stored);
       let runs = [] as Array<OrchestrationV2ThreadProjection["runs"][number]>;
       for (const run of nonterminalRuns(projection)) {
         if (run.status === "waiting") {
@@ -376,17 +527,7 @@ export const make = Effect.gen(function* () {
           cancelledBackgroundNativeIds.add(item.nativeItemRef.nativeId);
         }
       };
-      const unstartedRuns = runs.filter(
-        (run) =>
-          run.status === "starting" &&
-          neverStarted(run) &&
-          !projection.providerTurns.some((turn) => turn.runAttemptId === run.activeAttemptId) &&
-          !projection.runtimeRequests.some(
-            (request) =>
-              request.status === "pending" &&
-              projection.nodes.some((node) => node.id === request.nodeId && node.runId === run.id),
-          ),
-      );
+      const unstartedRuns = runsNeverStarted(projection, runs);
       const queuedRuns = projection.runs.filter((run) => run.status === "queued");
       const pendingRuns = [...unstartedRuns, ...queuedRuns];
       const queuedMessages =
@@ -413,15 +554,7 @@ export const make = Effect.gen(function* () {
         queuedMessages.filter(isBufferedProviderNotification).map((message) => message.id),
       );
       const retryableMessageIds = new Set(
-        queuedMessages
-          .filter(
-            (message) =>
-              message.createdBy === "user" &&
-              message.scheduledTaskId === undefined &&
-              message.notification === undefined &&
-              message.delegatedCompletion === undefined,
-          )
-          .map((message) => message.id),
+        queuedMessages.filter(isHeldAfterRestart).map((message) => message.id),
       );
       // A saved user message the provider never accepted stays available through the held queue.
       const retryableRuns = unstartedRuns.filter((run) =>
@@ -431,51 +564,19 @@ export const make = Effect.gen(function* () {
       const unattendedRuns = continueAfterRestart
         ? unstartedRuns.filter((run) =>
             queuedMessages.some(
-              (message) =>
-                message.id === run.userMessageId &&
-                !retryableMessageIds.has(message.id) &&
-                message.notification === undefined &&
-                message.delegatedCompletion === undefined &&
-                (message.scheduledTaskId !== undefined || message.creationSource === "mcp"),
+              (message) => message.id === run.userMessageId && isResentAfterRestart(message),
             ),
           )
         : [];
       const resentRuns: Array<OrchestrationV2ThreadProjection["runs"][number]> = [];
       const resends: Array<EffectOutbox.PendingOrchestrationEffectV2> = [];
-      for (const run of unattendedRuns) {
-        if (
-          restartContinuationBlocked(projection, run, now, false) ||
-          (yield* restartStopRequested(projections.getThreadRecords, projection.thread, run).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProviderRuntimeRecoveryError({
-                  operation: "read-projections",
-                  threadId: projection.thread.id,
-                  cause,
-                }),
-            ),
-          ))
-        )
-          continue;
+      for (const run of yield* admitRestartResends(
+        { projections, outbox },
+        projection,
+        unattendedRuns,
+        now,
+      )) {
         const resendCommandId = CommandId.make(`command:restart-resend:${run.id}`);
-        const earlierResends = yield* outbox.listByCommandId(resendCommandId).pipe(
-          Effect.mapError(
-            (cause) =>
-              new ProviderRuntimeRecoveryError({
-                operation: "reconcile",
-                threadId: projection.thread.id,
-                cause,
-              }),
-          ),
-        );
-        // A prompt whose start keeps crashing the server would otherwise be sent forever.
-        if (earlierResends.filter((effect) => effect.attemptCount > 0).length >= MAX_RESENDS) {
-          yield* Effect.logWarning("Not resending a prompt that restarts cut too many times", {
-            threadId: projection.thread.id,
-            runId: run.id,
-          });
-          continue;
-        }
         resentRuns.push(run);
         resends.push({
           id: `effect:restart-resend:${run.id}:${commandId}`,
@@ -1204,10 +1305,7 @@ export const make = Effect.gen(function* () {
               .continueThreadsAfterServerUpdate
           )
             return;
-          const run = restartContinuationRun(
-            yield* rewindUnacceptedRuns(projection),
-            yield* DateTime.now,
-          );
+          const { run } = yield* shutdownContinuation(projections, projection);
           if (!run) return;
           const commandId = CommandId.make(`command:restart-prepare:${run.id}`);
           yield* eventSink.writeWithEffects({

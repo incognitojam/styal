@@ -1,3 +1,5 @@
+import { settleWithinGrace } from "@t3tools/shared/hostActivity";
+import type { UpdateEverythingConfirmation } from "./updateEverything.logic";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { managedUpdatesDenial } from "@t3tools/client-runtime/contract-labels";
 import { type DesktopBridge, type DesktopUpdateState } from "@t3tools/contracts";
@@ -10,7 +12,6 @@ import { isElectron } from "../../env";
 import { m } from "../../i18n/messages";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
-import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -21,7 +22,6 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
   installDesktopUpdate,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -175,9 +175,10 @@ export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
   expectedVersion?: string,
+  confirmed = false,
 ): Promise<boolean> {
   try {
-    const result = await installDesktopUpdate(bridge, expectedVersion);
+    const result = await installDesktopUpdate(bridge, expectedVersion, confirmed);
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;
@@ -211,6 +212,10 @@ function SidebarUpdateControl() {
   const [providerCheck, setProviderCheck] = useState<"button" | "dialog" | null>(null);
   const isCheckingProviders = providerCheck === "button";
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
+  const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
+  const [isCheckingActivity, setIsCheckingActivity] = useState(false);
+  const [activityUpdatedAt, setActivityUpdatedAt] = useState<number | null>(null);
+  const latestActivityCheck = useRef(0);
   const [checkAnimationKey, setCheckAnimationKey] = useState(0);
   const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
   const suppressReleaseNotesFocusOpen = useRef(false);
@@ -290,18 +295,54 @@ function SidebarUpdateControl() {
     setReleaseNotesOpen(showReleaseNotesPopover && releaseNotesTriggerFocusVisible);
   }
 
+  // Machines that still cache an older latest version add their rows while the dialog is open.
+  const openConfirmation = () => {
+    setIsConfirmingEverything(true);
+    setProviderCheck("dialog");
+    void checkProviderUpdates({ quiet: true }).finally(() => setProviderCheck(null));
+  };
+
   const handleAction = async () => {
     const bridge = window.desktopBridge;
     if (isInteractionDisabled) return;
 
     if (runsEverything) {
-      setIsConfirmingEverything(true);
-      // Machines that still cache an older latest version add their rows while the dialog is open.
-      setProviderCheck("dialog");
-      void checkProviderUpdates({ quiet: true }).finally(() => setProviderCheck(null));
+      // The button shows the check in progress; a dialog opens only when something needs consent.
+      setIsActionPending(true);
+      const check = everything.checkActivity().catch((): UpdateEverythingConfirmation => ({
+        lines: [gt("Could not check the servers for running work.")],
+        threadActivity: [],
+        localVersion: null,
+        interrupts: true,
+        servers: "",
+      }));
+      const early = await settleWithinGrace(check);
+      setIsActionPending(false);
+      if (early !== null) {
+        if (!early.value.interrupts) return runEverything(early.value, false);
+        setActivityCheck(early.value);
+        setIsCheckingActivity(false);
+        setActivityUpdatedAt(null);
+        openConfirmation();
+        return;
+      }
+      const checkId = ++latestActivityCheck.current;
+      setActivityCheck(everything.checkingActivity());
+      setIsCheckingActivity(true);
+      setActivityUpdatedAt(null);
+      openConfirmation();
+      void check.then((activity) => {
+        if (latestActivityCheck.current !== checkId) return;
+        setActivityCheck(
+          activity.interrupts
+            ? activity
+            : { ...activity, lines: [gt("Nothing running will be interrupted.")] },
+        );
+        setIsCheckingActivity(false);
+        setActivityUpdatedAt(Date.now());
+      });
       return;
     }
-
     if (!bridge || !state) return;
     setIsActionPending(true);
 
@@ -313,27 +354,6 @@ function SidebarUpdateControl() {
     }
 
     if (action === "install") {
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(state),
-          { initialFocus: "confirm" },
-        );
-      } catch (error) {
-        setIsActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: gt("Could not confirm update"),
-            description: thrownErrorMessage(error, m) ?? gt("Update confirmation failed."),
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsActionPending(false);
-        return;
-      }
       void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
       return;
     }
@@ -371,12 +391,18 @@ function SidebarUpdateControl() {
     void Promise.allSettled([appCheck, providersChecked]).then(() => setIsActionPending(false));
   };
 
-  const runEverything = async () => {
-    const bridge = window.desktopBridge;
+  const closeConfirmation = () => {
+    latestActivityCheck.current += 1;
     setIsConfirmingEverything(false);
+  };
+
+  const runEverything = async (activity: UpdateEverythingConfirmation, confirmed: boolean) => {
+    const bridge = window.desktopBridge;
+    closeConfirmation();
     setIsActionPending(true);
     const result = await settlePromise(() =>
       everything.run({
+        ...(confirmed ? { confirmation: activity } : {}),
         ...(bridge && action === "download"
           ? {
               downloadLocal: (reportError) =>
@@ -384,7 +410,19 @@ function SidebarUpdateControl() {
             }
           : {}),
         ...(bridge && action !== "none"
-          ? { installLocal: (reportError) => installLocalUpdate(bridge, reportError) }
+          ? {
+              installLocal: async (reportError) => {
+                const downloadedVersion = (await bridge.getUpdateState()).downloadedVersion;
+                if (downloadedVersion === null) return false;
+                const sameVersion = downloadedVersion === activity.localVersion;
+                return installLocalUpdate(
+                  bridge,
+                  reportError,
+                  sameVersion ? downloadedVersion : undefined,
+                  sameVersion && confirmed,
+                );
+              },
+            }
           : {}),
       }),
     );
@@ -421,18 +459,20 @@ function SidebarUpdateControl() {
       status={iconStatus}
     />
   );
-  const confirmDialog = (
+  const confirmDialog = activityCheck ? (
     <UpdateEverythingDialog
       open={isConfirmingEverything}
-      onOpenChange={setIsConfirmingEverything}
+      onOpenChange={(open) => (open ? setIsConfirmingEverything(true) : closeConfirmation())}
+      checking={isCheckingActivity}
+      checkingProviders={providerCheck === "dialog"}
+      contentUpdatedAt={activityUpdatedAt}
       version={everything.version}
       providerCount={everything.providerCount}
       rows={everything.rows}
-      restarts={everything.restarts}
-      checking={providerCheck === "dialog"}
-      onConfirm={() => void runEverything()}
+      activity={activityCheck}
+      onConfirm={() => void runEverything(activityCheck, true)}
     />
-  );
+  ) : null;
 
   if (run !== null) {
     const local: UpdateRunLocalState =

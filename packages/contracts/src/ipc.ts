@@ -1,3 +1,4 @@
+import { HostActivity, HostActivityThread } from "./environmentHttp.ts";
 import * as Schema from "effect/Schema";
 import type { DatabaseMigrationProgress } from "./server.ts";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
@@ -1109,7 +1110,45 @@ export const DesktopAppleSpeechTranscribeInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const ConfirmDialogThreadActivitySchema = Schema.Struct({
+  thread: HostActivityThread,
+  environmentId: Schema.optionalKey(EnvironmentId),
+  hostLabel: Schema.NullOr(Schema.String),
+  continuesAfterRestart: Schema.Boolean,
+});
+export type ConfirmDialogThreadActivity = typeof ConfirmDialogThreadActivitySchema.Type;
+
+export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
+  requestId: Schema.Int,
+  message: Schema.String,
+  confirmLabel: Schema.optional(Schema.String),
+  threadActivity: Schema.optionalKey(Schema.Array(ConfirmDialogThreadActivitySchema)),
+});
+export type DesktopShutdownConfirmationRequest =
+  typeof DesktopShutdownConfirmationRequestSchema.Type;
+
+export const DesktopHostActivitySchema = Schema.Struct({
+  ...HostActivity.fields,
+  hostLabel: Schema.optionalKey(Schema.String),
+});
+export type DesktopHostActivity = typeof DesktopHostActivitySchema.Type;
+
+export const DesktopUpdateInstallInputSchema = Schema.Struct({
+  expectedVersion: TrimmedNonEmptyString,
+  confirmed: Schema.optionalKey(Schema.Boolean),
+});
+export type DesktopUpdateInstallInput = typeof DesktopUpdateInstallInputSchema.Type;
+
 export interface DesktopBridge {
+  acknowledgeShutdownConfirmation: (requestId: number) => Promise<void>;
+  shutdownRendererReady: () => Promise<void>;
+  onShutdownConfirmationExpired: (listener: (requestId: number) => void) => () => void;
+  getShutdownConfirmation: () => Promise<DesktopShutdownConfirmationRequest | null>;
+  onShutdownConfirmation: (
+    listener: (request: DesktopShutdownConfirmationRequest) => void,
+  ) => () => void;
+  resolveShutdownConfirmation: (requestId: number, confirmed: boolean) => Promise<void>;
+
   getAppBranding: () => DesktopAppBranding | null;
   getDatabaseMigrationProgress?: () => Promise<DatabaseMigrationProgress | null>;
   /** `null` until the desktop host has read the login shell's environment; ask again later. */
@@ -1229,7 +1268,8 @@ export interface DesktopBridge {
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   /** With a version, installs only that downloaded build. */
-  installUpdate: (expectedVersion?: string) => Promise<DesktopUpdateActionResult>;
+  getLocalHostActivity?: () => Promise<ReadonlyArray<DesktopHostActivity | null>>;
+  installUpdate: (input?: DesktopUpdateInstallInput) => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   cliCommand: {
     getState: () => Promise<DesktopCliCommandState>;
@@ -1428,6 +1468,8 @@ export type ConfirmDialogVariant = "default" | "destructive";
 
 export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
+  readonly confirmLabel?: string;
+  readonly threadActivity?: ReadonlyArray<ConfirmDialogThreadActivity>;
   /** Which button takes focus on open. Defaults to Cancel; destructive confirms always keep Cancel. */
   readonly initialFocus?: "confirm" | "cancel";
 }

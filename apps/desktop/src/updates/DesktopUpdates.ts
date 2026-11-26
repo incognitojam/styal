@@ -1,3 +1,6 @@
+import { msg } from "gt-i18n";
+import { m } from "../i18n/messages.ts";
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import {
   DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
@@ -68,8 +71,11 @@ const UPDATE_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
+export type DesktopInstallConsent = "ask" | "confirmed" | "require-safe";
+
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
+  readonly reason?: string;
 }
 
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
@@ -222,6 +228,7 @@ export class DesktopUpdates extends Context.Service<
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
     readonly installPrepared: (
       expectedVersion: string,
+      consent?: DesktopInstallConsent,
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
@@ -383,6 +390,7 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
   const config = yield* DesktopConfig.DesktopConfig;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
@@ -894,7 +902,10 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const installDownloadedUpdate = (expectedVersion?: string) =>
+  const installDownloadedUpdate = (
+    expectedVersion?: string,
+    consent: DesktopInstallConsent = "ask",
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const admission = yield* admitAfterCheck(
@@ -930,6 +941,28 @@ export const make = Effect.gen(function* () {
           return { accepted: false, completed: false, failed: false };
         }
 
+        if (consent === "require-safe") {
+          const checks = yield* guard.inspect.pipe(Effect.catchCause(() => Effect.succeed([null])));
+          if (DesktopShutdownGuard.shutdownConfirmation(checks, "restart") !== null) {
+            yield* finishUpdateAction("install");
+            return {
+              accepted: false,
+              completed: false,
+              failed: false,
+              reason:
+                "Activity changed while the desktop update was preparing. Try updating again to review and confirm any running work. The downloaded update is ready to retry.",
+            };
+          }
+        }
+        if (
+          consent === "ask" &&
+          !(yield* guard.confirm("restart", {
+            title: m(msg("Install the downloaded update and restart styal?")),
+          }))
+        ) {
+          yield* finishUpdateAction("install");
+          return { accepted: false, completed: false, failed: false };
+        }
         yield* Ref.set(desktopState.quitting, true);
         yield* Ref.set(installRunningBackendsRef, []);
 
@@ -1013,6 +1046,7 @@ export const make = Effect.gen(function* () {
 
   const installWithExpectedVersion = Effect.fn("desktop.updates.install")(function* (
     expectedVersion?: string,
+    consent: DesktopInstallConsent = "ask",
   ) {
     if (yield* Ref.get(desktopState.quitting)) {
       return {
@@ -1078,11 +1112,12 @@ export const make = Effect.gen(function* () {
         }
       }
     }
-    const result = yield* installDownloadedUpdate(installVersion);
+    const result = yield* installDownloadedUpdate(installVersion, consent);
     return {
       accepted: result.accepted,
       completed: result.completed,
       failed: result.failed,
+      ...("reason" in result && typeof result.reason === "string" ? { reason: result.reason } : {}),
       state: yield* Ref.get(updateStateRef),
     };
   });
@@ -1498,9 +1533,11 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(function (expectedVersion) {
-      return installWithExpectedVersion(expectedVersion);
-    }),
+    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(
+      function (expectedVersion, consent) {
+        return installWithExpectedVersion(expectedVersion, consent);
+      },
+    ),
   });
 });
 

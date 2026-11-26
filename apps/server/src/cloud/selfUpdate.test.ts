@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import { EnvironmentId, type HostActivity, type ManagedPolicyDocument } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -35,6 +35,7 @@ interface HarnessOptions {
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
   readonly policy?: ManagedPolicyDocument;
+  readonly inspectActivity?: Effect.Effect<HostActivity, Error>;
 }
 
 const archiveBytes = new TextEncoder().encode("not really a tarball");
@@ -152,13 +153,26 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const config = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
-  const selfUpdate = yield* ServerSelfUpdate.make().pipe(
+  const selfUpdate = yield* ServerSelfUpdate.make(
+    options.inspectActivity ??
+      Effect.succeed({
+        environmentId: EnvironmentId.make("synthetic-host"),
+        activeSessions: 0,
+        continuableSessions: 0,
+        waitingSessions: 0,
+        terminalsRequiringConfirmation: 0,
+        terminalsWithUnknownActivity: 0,
+        threads: [],
+      }),
+  ).pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
     Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, launcher),
     Effect.provideService(
       DesktopAppUpdate.DesktopAppUpdate,
       options.desktopAppUpdate ?? {
         available: false,
+        inspectActivity: Effect.succeed([null]),
+        commit: () => Effect.never,
         run: () => Effect.die("unexpected desktop app update run"),
       },
     ),
@@ -222,6 +236,42 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
+  it.effect("rechecks work started during preparation before handing off", () =>
+    Effect.gen(function* () {
+      let busy = false;
+      const { selfUpdate, order } = yield* makeHarness({
+        beforeDownload: Effect.sync(() => {
+          busy = true;
+        }),
+        inspectActivity: Effect.sync(() => ({
+          environmentId: EnvironmentId.make("synthetic-host"),
+          activeSessions: busy ? 1 : 0,
+          continuableSessions: 0,
+          waitingSessions: 0,
+          terminalsRequiringConfirmation: 0,
+          terminalsWithUnknownActivity: 0,
+          threads: [],
+        })),
+      });
+      const error = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip);
+      expect(error.reason).toContain("running work");
+      expect(order).not.toContain("accept");
+      yield* selfUpdate.update({ targetVersion: "1.1.0", confirmed: true });
+      expect(order.at(-1)).toBe("accept");
+    }),
+  );
+
+  it.effect("failed inspection cannot authorize the update handoff", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order } = yield* makeHarness({
+        inspectActivity: Effect.die("inspection unavailable"),
+      });
+      const error = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip);
+      expect(error.reason).toContain("Could not check");
+      expect(order).not.toContain("accept");
+    }),
+  );
+
   // regression: #34502 a remote update never replaces the launcher, so it can be older than the server
   it.effect("names its launcher's protocol to the staged preflight, not its own", () =>
     Effect.gen(function* () {
@@ -270,6 +320,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         policy,
         desktopAppUpdate: {
           available: true,
+          inspectActivity: Effect.succeed([null]),
           run: () => Effect.die("unexpected desktop app update run"),
           commit: () => Effect.never,
         },
@@ -322,6 +373,7 @@ it.layer(NodeServices.layer)("server self update", (it) => {
         mode: "desktop",
         desktopAppUpdate: {
           available: true,
+          inspectActivity: Effect.succeed([null]),
           run: (reportProgress) =>
             reportProgress("downloading").pipe(
               Effect.andThen(reportProgress("installing")),

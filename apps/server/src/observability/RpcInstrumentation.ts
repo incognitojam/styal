@@ -94,6 +94,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverCheckSecretSource]: "server",
   [WS_METHODS.serverGetTraceDiagnostics]: "server",
   [WS_METHODS.serverGetProcessDiagnostics]: "server",
+  [WS_METHODS.serverGetDesktopHostActivity]: "server",
+  [WS_METHODS.serverGetHostActivity]: "server",
   [WS_METHODS.serverGetHostResources]: "server",
   [WS_METHODS.serverGetProcessResourceHistory]: "server",
   [WS_METHODS.serverGetResourceTelemetryHistory]: "server",

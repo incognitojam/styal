@@ -1,3 +1,5 @@
+import * as DesktopShutdownGuard from "./app/DesktopShutdownGuard.ts";
+import * as DesktopShutdownConfirmation from "./app/DesktopShutdownConfirmation.ts";
 import * as MacPermissions from "./permissions/MacPermissions.ts";
 import { handleStdioError } from "./app/stdioErrors.ts";
 
@@ -225,6 +227,9 @@ const layerDesktopApplication = Layer.mergeAll(
       // The same layer as the foundation's, so the policy is still read once.
       Layer.provide(DesktopManagedPolicy.layer),
     ),
+  ),
+  Layer.provideMerge(
+    DesktopShutdownGuard.layer.pipe(Layer.provideMerge(DesktopShutdownConfirmation.layer)),
   ),
   // Updates closes the same tunnels the SSH IPC opens before quitAndInstall.
   Layer.provideMerge(layerDesktopSsh),

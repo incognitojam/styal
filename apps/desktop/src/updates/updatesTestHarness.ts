@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
@@ -21,6 +22,8 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 export const flushCallbacks = Effect.yieldNow;
 
 export interface UpdatesHarnessOptions {
+  readonly activityChecks?: ReadonlyArray<DesktopShutdownGuard.ActivityCheck>;
+  readonly shutdownConfirmed?: boolean;
   readonly checkForUpdates?: Effect.Effect<
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
@@ -293,6 +296,22 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   });
 
   const layer = DesktopUpdates.layer.pipe(
+    Layer.provideMerge(
+      Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+        confirm: () => Effect.succeed(options.shutdownConfirmed ?? true),
+        inspect: Effect.succeed(
+          options.activityChecks ?? [
+            {
+              activeSessions: 0,
+              continuableSessions: 0,
+              waitingSessions: 0,
+              terminalsRequiringConfirmation: 0,
+              terminalsWithUnknownActivity: 0,
+            },
+          ],
+        ),
+      }),
+    ),
     Layer.provide(layerFileSystem),
     Layer.provide(DesktopUpdatePolicy.layerTest(options.policy)),
     Layer.provideMerge(layerUpdater),

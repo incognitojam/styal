@@ -1,3 +1,4 @@
+import type { HostActivity } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto digest is effectful; a sync hash keeps historyPath a plain function.
 import * as NodeCrypto from "node:crypto";
 
@@ -229,6 +230,11 @@ export class TerminalManager extends Context.Service<
       input: TerminalWriteInput,
       viewerId?: string,
     ) => Effect.Effect<void, TerminalError>;
+
+    readonly shutdownPreflight: Effect.Effect<
+      Pick<HostActivity, "terminalsRequiringConfirmation" | "terminalsWithUnknownActivity">,
+      TerminalError
+    >;
 
     readonly resize: (
       input: TerminalResizeInput,
@@ -1935,6 +1941,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const customSubprocessInspector = options.subprocessInspector;
   const acquireSubprocessInspector = (
     fallbackTimeout: Duration.Input,
+    requireRoot = false,
   ): Effect.Effect<{
     readonly inspector: Result.Result<TerminalSubprocessInspector, TerminalSubprocessCheckError>;
     readonly snapshotSucceeded: boolean;
@@ -1953,6 +1960,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               snapshot,
               (table): TerminalSubprocessInspector =>
                 (terminalPid, shell) => {
+                  if (requireRoot && !table.commandById.has(terminalPid))
+                    return Effect.fail(new TerminalSubprocessCheckError({ command: "ps" }));
                   const result = deriveSubprocessInspectResult(table, terminalPid, shell, platform);
                   // Only shell-named childless children are ambiguous; read the foreground group for those alone.
                   if (
@@ -4121,6 +4130,54 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     closeIdle,
     closeOnSettle,
     hasActiveSubprocess,
+    shutdownPreflight: Effect.gen(function* () {
+      const state = yield* readManagerState;
+      const sessions = [...state.sessions.values()].filter(
+        (session) => session.status !== "exited" && session.status !== "error",
+      );
+      if (sessions.length === 0)
+        return {
+          terminalsRequiringConfirmation: 0,
+          terminalsWithUnknownActivity: 0,
+        };
+      const results = yield* Effect.forEach(sessions, (session) =>
+        withThreadLock(
+          session.threadId,
+          Effect.gen(function* () {
+            const { inspector } = yield* acquireSubprocessInspector(
+              platform === "win32"
+                ? CLOSE_IDLE_QUERY_TIMEOUT.win32
+                : CLOSE_IDLE_QUERY_TIMEOUT.posix,
+              true,
+            );
+            const live = yield* getSession(session.threadId, session.terminalId);
+            if (
+              Option.isNone(live) ||
+              live.value.status === "exited" ||
+              live.value.status === "error"
+            )
+              return "idle" as const;
+            if (
+              live.value.status !== "running" ||
+              !live.value.process ||
+              !Number.isInteger(live.value.pid)
+            )
+              return "unknown" as const;
+            return yield* Effect.fromResult(inspector).pipe(
+              Effect.flatMap((inspect) => inspect(live.value.pid!, live.value.shell)),
+              Effect.map((result) =>
+                result.hasRunningSubprocess ? ("busy" as const) : ("idle" as const),
+              ),
+              Effect.orElseSucceed(() => "unknown" as const),
+            );
+          }),
+        ),
+      );
+      return {
+        terminalsRequiringConfirmation: results.filter((result) => result !== "idle").length,
+        terminalsWithUnknownActivity: results.filter((result) => result === "unknown").length,
+      };
+    }),
     subscribe,
     subscribeMetadata,
   });

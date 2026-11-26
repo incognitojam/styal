@@ -1,3 +1,4 @@
+import type { DesktopShutdownConfirmationRequest } from "@t3tools/contracts";
 import type {
   DesktopBridge,
   DesktopPreviewAnnotationVoiceEvent,
@@ -106,6 +107,26 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 contextBridge.exposeInMainWorld("desktopBridge", {
   getDatabaseMigrationProgress: () =>
     ipcRenderer.invoke(IpcChannels.GET_DATABASE_MIGRATION_PROGRESS_CHANNEL),
+  acknowledgeShutdownConfirmation: (requestId) =>
+    ipcRenderer.invoke(IpcChannels.ACKNOWLEDGE_SHUTDOWN_CONFIRMATION_CHANNEL, requestId),
+  shutdownRendererReady: () => ipcRenderer.invoke(IpcChannels.SHUTDOWN_RENDERER_READY_CHANNEL),
+  onShutdownConfirmationExpired: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, requestId: number) => listener(requestId);
+    ipcRenderer.on(IpcChannels.SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL, wrapped);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL, wrapped);
+  },
+  getShutdownConfirmation: () => ipcRenderer.invoke(IpcChannels.GET_SHUTDOWN_CONFIRMATION_CHANNEL),
+  onShutdownConfirmation: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      request: DesktopShutdownConfirmationRequest,
+    ) => listener(request);
+    ipcRenderer.on(IpcChannels.SHUTDOWN_CONFIRMATION_CHANNEL, wrapped);
+    return () => ipcRenderer.removeListener(IpcChannels.SHUTDOWN_CONFIRMATION_CHANNEL, wrapped);
+  },
+  resolveShutdownConfirmation: (requestId, confirmed) =>
+    ipcRenderer.invoke(IpcChannels.RESOLVE_SHUTDOWN_CONFIRMATION_CHANNEL, { requestId, confirmed }),
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
     if (typeof result !== "object" || result === null) {
@@ -338,8 +359,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, { channel, minimumVersion }),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_CHECK_CHANNEL),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannels.UPDATE_DOWNLOAD_CHANNEL),
-  installUpdate: (expectedVersion) =>
-    ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL, expectedVersion),
+  getLocalHostActivity: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_LOCAL_ACTIVITY_CHANNEL),
+  installUpdate: (input) => ipcRenderer.invoke(IpcChannels.UPDATE_INSTALL_CHANNEL, input),
   cliCommand: {
     getState: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_GET_STATE_CHANNEL),
     install: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_INSTALL_CHANNEL),

@@ -878,7 +878,12 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
+    window.on("close", (event) => {
+      if (environment.platform !== "darwin" && !Ref.getUnsafe(desktopState.quitting)) {
+        event.preventDefault();
+        void runPromise(electronApp.quit);
+        return;
+      }
       runFork(flushBoundsPersist);
     });
 

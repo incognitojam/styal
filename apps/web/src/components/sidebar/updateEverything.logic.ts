@@ -4,6 +4,7 @@ import {
 } from "@t3tools/client-runtime/contract-labels";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
+  type ConfirmDialogThreadActivity,
   type DesktopUpdateChannel,
   type EnvironmentId,
   type ServerConfig,
@@ -42,6 +43,25 @@ export interface UpdateEverythingMachine {
 export interface RestartingMachine {
   readonly environmentId: EnvironmentId;
   readonly continuesThreads: boolean;
+}
+
+export interface UpdateEverythingConfirmation {
+  readonly lines: ReadonlyArray<string>;
+  readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  readonly interrupts: boolean;
+  /** The local version whose restart activity was included in this confirmation. */
+  readonly localVersion: string | null;
+  /** The servers and versions whose activity was included, from `serverUpdateKey`. */
+  readonly servers: string;
+}
+
+export function serverUpdateKey(
+  servers: ReadonlyArray<Pick<ServerUpdateTarget, "environmentId" | "targetVersion">>,
+) {
+  return servers
+    .map((server) => `${server.environmentId}@${server.targetVersion}`)
+    .toSorted()
+    .join("\n");
 }
 
 export function collectRestartingMachines(
@@ -142,6 +162,7 @@ export function collectServerUpdateTargets(
       selfUpdate,
       installation: config.environment.capabilities.serverInstallation,
       desktopAppUpdate,
+      threadContinuation: config.environment.capabilities.threadRestartContinuation === true,
       targetVersion,
     };
     targets.push(target);

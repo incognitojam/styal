@@ -1,3 +1,5 @@
+import { getLocalHostActivity } from "./methods/updates.ts";
+import * as ShutdownConfirmation from "./methods/shutdownConfirmation.ts";
 import { startFileDrag } from "./methods/fileDrag.ts";
 import * as Effect from "effect/Effect";
 
@@ -99,6 +101,10 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* installNotificationBadge();
   yield* PreviewIpc.installPreviewEventForwarding();
 
+  yield* ipc.handle(ShutdownConfirmation.getShutdownConfirmation);
+  yield* ipc.handle(ShutdownConfirmation.resolveShutdownConfirmation);
+  yield* ipc.handle(ShutdownConfirmation.acknowledgeShutdownConfirmation);
+  yield* ipc.handle(ShutdownConfirmation.shutdownRendererReady);
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);
   yield* ipc.handle(WebLinksIpc.setReady);
@@ -179,6 +185,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
+  yield* ipc.handle(getLocalHostActivity);
   yield* ipc.handle(checkForUpdate);
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);

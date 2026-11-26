@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "../../app/DesktopShutdownGuard.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -20,6 +21,10 @@ import {
 } from "./localEnvironment.ts";
 
 const layerUnusedLifecycleRuntime = Layer.mergeAll(
+  Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({
+    confirm: () => Effect.succeed(true),
+    inspect: Effect.succeed([]),
+  }),
   DesktopShutdown.layer,
   DesktopState.layer,
   Layer.succeed(
@@ -65,6 +70,7 @@ describe("local environment IPC", () => {
         relaunch: (reason) =>
           Effect.sync(() => {
             relaunchReasons.push(reason);
+            return true;
           }),
       }),
       layerUnusedLifecycleRuntime,
@@ -83,6 +89,19 @@ describe("local environment IPC", () => {
         "localEnvironmentEnabled=false",
         "localEnvironmentEnabled=true",
       ]);
+    }).pipe(Effect.provide(layer));
+  });
+  it.effect("keeps the current setting when the restart is declined", () => {
+    const layer = Layer.mergeAll(
+      DesktopAppSettings.layerTest(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS),
+      Layer.mock(DesktopLifecycle.DesktopLifecycle, {
+        relaunch: () => Effect.succeed(false),
+      }),
+      layerUnusedLifecycleRuntime,
+    );
+    return Effect.gen(function* () {
+      yield* setLocalEnvironmentEnabled.handler(false);
+      assert.isTrue(yield* getLocalEnvironmentEnabled.handler());
     }).pipe(Effect.provide(layer));
   });
 });

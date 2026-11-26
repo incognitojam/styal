@@ -327,6 +327,8 @@ function ConnectionsSettingsContent({
           selfUpdate,
           installation: environment.serverConfig?.environment.capabilities.serverInstallation,
           desktopAppUpdate,
+          threadContinuation:
+            environment.serverConfig?.environment.capabilities.threadRestartContinuation === true,
           targetVersion: mismatch.clientVersion,
         },
       ];

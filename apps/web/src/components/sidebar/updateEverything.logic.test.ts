@@ -539,6 +539,7 @@ describe("resolveRestoredRetry", () => {
       selfUpdate: "boot-service",
       installation: undefined,
       desktopAppUpdate: false,
+      threadContinuation: false,
       targetVersion: "0.1.12",
     });
     const run = { localVersion: null, phase: "servers" as const, restartAt: null, machines: [] };

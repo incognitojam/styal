@@ -155,3 +155,14 @@ export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-lo
 export const RESTART_AUDIO_SERVICE_CHANNEL = "desktop:restart-audio-service";
 
 export const START_FILE_DRAG_CHANNEL = "desktop:start-file-drag";
+
+export const SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:shutdown-confirmation";
+export const GET_SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:get-shutdown-confirmation";
+export const RESOLVE_SHUTDOWN_CONFIRMATION_CHANNEL = "desktop:resolve-shutdown-confirmation";
+
+export const ACKNOWLEDGE_SHUTDOWN_CONFIRMATION_CHANNEL =
+  "desktop:acknowledge-shutdown-confirmation";
+export const SHUTDOWN_RENDERER_READY_CHANNEL = "desktop:shutdown-renderer-ready";
+export const SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL = "desktop:shutdown-confirmation-expired";
+
+export const UPDATE_GET_LOCAL_ACTIVITY_CHANNEL = "desktop:update-get-local-activity";

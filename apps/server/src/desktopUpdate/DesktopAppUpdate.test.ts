@@ -1,3 +1,5 @@
+import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
+import { EnvironmentId } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -92,6 +94,9 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   );
 
   const service = yield* DesktopAppUpdate.make().pipe(
+    Effect.provideService(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("synthetic-host")),
+    }),
     Effect.provide(
       Layer.mergeAll(
         DesktopTelemetryReceiver.layerTest({
@@ -170,7 +175,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("desktop app upda
       });
       const trackSwitch = { channel: "latest" as const, targetVersion: "1.2.3" };
 
-      expect(yield* service.run(() => Effect.void, trackSwitch)).toEqual({
+      expect(yield* service.run(() => Effect.void, false, trackSwitch)).toEqual({
         targetVersion: "1.2.3",
         method: "desktop-app",
       });

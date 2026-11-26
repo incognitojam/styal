@@ -1,3 +1,5 @@
+import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
+import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -135,7 +137,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
         } as unknown as DesktopAppSettings.DesktopAppSettings["Service"]),
         Effect.provideService(DesktopLifecycle.DesktopLifecycle, {
           register: Effect.void,
-          relaunch: () => Effect.void,
+          relaunch: () => Effect.succeed(true),
         }),
         Effect.provideService(DesktopClerk.DesktopClerk, {
           configure: Effect.void,
@@ -327,7 +329,15 @@ it.effect.each([false, true])(
       assert.equal(Exit.isFailure(result), stopDefect);
       assert.isTrue(yield* shutdown.isComplete);
       assert.isTrue(yield* Deferred.isDone(registrationStopped));
-    }).pipe(Effect.provide(DesktopShutdown.layer)),
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          DesktopShutdown.layer,
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({}),
+          Layer.mock(DesktopShutdownConfirmation.DesktopShutdownConfirmation)({}),
+        ),
+      ),
+    ),
 );
 
 it.effect(
@@ -385,5 +395,14 @@ it.effect(
         yield* Deferred.isDone(activationStarted),
         "startup left the t3 <dir> control socket closed",
       );
-    }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          DesktopShutdown.layer,
+          NodeServices.layer,
+          Layer.mock(DesktopShutdownGuard.DesktopShutdownGuard)({}),
+          Layer.mock(DesktopShutdownConfirmation.DesktopShutdownConfirmation)({}),
+        ),
+      ),
+    ),
 );

@@ -1,3 +1,4 @@
+import * as DesktopShutdownGuard from "./DesktopShutdownGuard.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -36,6 +37,7 @@ export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLif
 }
 
 export type DesktopLifecycleRuntimeServices =
+  | DesktopShutdownGuard.DesktopShutdownGuard
   | DesktopEnvironment.DesktopEnvironment
   | DesktopShutdown.DesktopShutdown
   | DesktopState.DesktopState
@@ -48,14 +50,15 @@ type DesktopLifecycleRegistrationServices =
   | ElectronWindow.ElectronWindow;
 
 /**
- * @effect-expect-leaking DesktopEnvironment | DesktopShutdown | DesktopState | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
+ * @effect-expect-leaking DesktopShutdownGuard | DesktopEnvironment | DesktopShutdown | DesktopState | DesktopWindow | ElectronApp | ElectronTheme | ElectronWindow
  */
 export class DesktopLifecycle extends Context.Service<
   DesktopLifecycle,
   {
     readonly relaunch: (
       reason: string,
-    ) => Effect.Effect<void, never, DesktopLifecycleRuntimeServices>;
+      options?: { readonly continueThreads?: boolean },
+    ) => Effect.Effect<boolean, never, DesktopLifecycleRuntimeServices>;
     readonly register: Effect.Effect<
       void,
       never,
@@ -218,14 +221,17 @@ function quitFromSignal(
 
 /** @public */
 export const make = DesktopLifecycle.of({
-  relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason) {
+  relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason, options) {
     const electronApp = yield* ElectronApp.ElectronApp;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const state = yield* DesktopState.DesktopState;
+    if (yield* Ref.get(state.quitting)) return false;
+    const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+    if (!(yield* guard.confirm("restart", options))) return false;
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
-    yield* Effect.gen(function* () {
+    yield* Ref.set(state.quitting, true);
+    return yield* Effect.gen(function* () {
       yield* Effect.yieldNow;
-      yield* Ref.set(state.quitting, true);
       yield* requestDesktopShutdownAndWait();
       if (environment.isDevelopment) {
         yield* electronApp.exit(75);
@@ -245,7 +251,7 @@ export const make = DesktopLifecycle.of({
         return logLifecycleError(error.message, { error });
       }),
       Effect.forkDetach,
-      Effect.asVoid,
+      Effect.as(true),
     );
   }),
   register: Effect.gen(function* () {
@@ -257,6 +263,7 @@ export const make = DesktopLifecycle.of({
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
     const quit: QuitState = { phase: "running", waitingSinceNanos: 0n };
+    let quitCheckPending = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
@@ -282,7 +289,30 @@ export const make = DesktopLifecycle.of({
       );
     });
     yield* electronApp.on("before-quit", (event: Electron.Event) => {
-      handleBeforeQuit(event, runEffect, quit);
+      if (quit.phase !== "running") {
+        handleBeforeQuit(event, runEffect, quit);
+        return;
+      }
+      event.preventDefault();
+      if (quitCheckPending) return;
+      quitCheckPending = true;
+      void runEffect(
+        Effect.gen(function* () {
+          const state = yield* DesktopState.DesktopState;
+          if (yield* Ref.get(state.quitting)) {
+            quitCheckPending = false;
+            return;
+          }
+          const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+          if (!(yield* guard.confirm("quit"))) {
+            quitCheckPending = false;
+            return;
+          }
+          handleBeforeQuit(event, runEffect, quit);
+        }),
+      ).catch(() => {
+        quitCheckPending = false;
+      });
     });
     yield* electronApp.on("activate", () => {
       void runEffect(

@@ -43,6 +43,20 @@ vi.mock("./useUpdateEverything", () => ({
     providerCount: 0,
     rows: mocks.rows,
     restarts: [],
+    checkActivity: async () => ({
+      lines: [],
+      threadActivity: [],
+      interrupts: true,
+      localVersion: null,
+      servers: "",
+    }),
+    checkingActivity: () => ({
+      lines: [],
+      threadActivity: [],
+      interrupts: true,
+      localVersion: null,
+      servers: "",
+    }),
   }),
 }));
 
@@ -150,7 +164,7 @@ describe("SidebarUpdatePill update everything", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(button.element()));
   });
 
-  it("exposes the machines as a table with each value in its column", async () => {
+  it("groups updates under their machine heading", async () => {
     const label = "DESKTOP-WORKSTATION-UPSTAIRS";
     setup(null, {
       hasUpdates: true,
@@ -159,12 +173,9 @@ describe("SidebarUpdatePill update everything", () => {
     await using screen = await render(<SidebarUpdatePill />);
     await userEvent.click(screen.getByRole("button", { name: "Update everything" }));
 
-    const table = page.getByRole("table");
-    await expect.element(table.getByRole("columnheader", { name: "Machine" })).toBeVisible();
-    await expect.element(table.getByRole("columnheader", { name: "styal" })).toBeVisible();
-    await expect.element(table.getByRole("columnheader", { name: "Providers" })).toBeVisible();
-    const row = table.getByRole("row", { name: new RegExp(label) });
-    await expect.element(row.getByRole("cell", { name: label, exact: true })).toBeVisible();
-    await expect.element(row.getByRole("cell", { name: "Claude", exact: true })).toBeVisible();
+    const machine = page.getByRole("region", { name: label });
+    await expect.element(machine).toBeVisible();
+    await expect.element(machine.getByRole("heading")).toBeVisible();
+    await expect.element(machine.getByText("Claude", { exact: true })).toBeVisible();
   });
 });

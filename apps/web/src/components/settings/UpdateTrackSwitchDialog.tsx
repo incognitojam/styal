@@ -1,3 +1,4 @@
+import type { UpdateEverythingConfirmation } from "../sidebar/updateEverything.logic";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
@@ -6,7 +7,7 @@ import type { DesktopUpdateChannel } from "@t3tools/contracts";
 import { acceptsTrackSwitchRelease, desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { T, useGT, useMessages, Var } from "gt-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AsyncResult } from "effect/reactivity";
 
 import { APP_VERSION } from "~/branding";
@@ -105,6 +106,41 @@ function SwitchPlan({
   const [checking, setChecking] = useState(false);
   const everything = useUpdateEverything(switchesLocal ? release.version : null, release);
   const label = channelSwitchLabel(release.channel, m);
+  // This dialog always asks, so a click after the running work it shows is explicit consent.
+  const [checkedActivity, setCheckedActivity] = useState<UpdateEverythingConfirmation | null>(null);
+  const [activityUpdatedAt, setActivityUpdatedAt] = useState<number | null>(null);
+  const restartsSomething = everything.restarts.length > 0 || switchesLocal;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the machines this switch restarts for their running work while the dialog is open
+  useEffect(() => {
+    let current = true;
+    void everything
+      .checkActivity()
+      .catch((): UpdateEverythingConfirmation => ({
+        lines: [gt("Could not check the servers for running work.")],
+        threadActivity: [],
+        localVersion: null,
+        interrupts: true,
+        servers: "",
+      }))
+      .then((activity) => {
+        if (!current) return;
+        setCheckedActivity(
+          activity.interrupts || !restartsSomething
+            ? activity
+            : { ...activity, lines: [gt("Nothing running will be interrupted.")] },
+        );
+        setActivityUpdatedAt(Date.now());
+      });
+    return () => {
+      current = false;
+    };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- One check per opening; a server still changing is re-checked when the switch runs.
+  }, []);
+  const activity =
+    checkedActivity ??
+    (restartsSomething
+      ? everything.checkingActivity()
+      : { lines: [], threadActivity: [], interrupts: false, localVersion: null, servers: "" });
   const idle = nothingToMove(
     {
       label,
@@ -155,8 +191,9 @@ function SwitchPlan({
     }
     const { local } = prepared;
     const result = await settlePromise(() =>
-      everything.run(
-        local === null
+      everything.run({
+        confirmation: activity,
+        ...(local === null
           ? {}
           : {
               ...(local.status === "available"
@@ -185,10 +222,10 @@ function SwitchPlan({
                   );
                   return false;
                 }
-                return installLocalUpdate(bridge, reportError, downloadedVersion);
+                return installLocalUpdate(bridge, reportError, downloadedVersion, true);
               },
-            },
-      ),
+            }),
+      }),
     );
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -217,7 +254,9 @@ function SwitchPlan({
           ? [gt("If styal does not reopen after it restarts, open it again.")]
           : []),
       ]}
-      restarts={everything.restarts}
+      activity={activity}
+      checking={checkedActivity === null && restartsSomething}
+      contentUpdatedAt={activityUpdatedAt}
       confirmLabel={checking ? gt("Checking…") : gt("Switch to {label}", { label })}
       busy={checking}
       disabledReason={switchesLocal && localBlocked !== null ? localBlocked : idle.disabledReason}
