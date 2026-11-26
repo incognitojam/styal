@@ -51,6 +51,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           >
             <ChatMarkdown
               text={messageText}
+              timeReference={row.message.createdAt}
               renderInsights
               cwd={ctx.markdownCwd}
               agentDirectories={() =>

@@ -1,3 +1,5 @@
+import { renderMentionedTimes } from "./chat/MentionedTimeChip";
+import { mentionedTimes } from "./chat/mentionedTimes";
 import { m } from "../i18n/messages";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useGT, useMessages } from "gt-react";
@@ -249,6 +251,7 @@ interface ChatMarkdownProps {
   environmentId?: EnvironmentId | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
+  timeReference?: string | undefined;
   skills?: ReadonlyArray<ServerProviderSkill>;
   className?: string;
   lineBreaks?: boolean;
@@ -581,6 +584,7 @@ function useChatMarkdownState(
     environmentId: explicitEnvironmentId,
     onTaskListChange,
     isStreaming = false,
+    timeReference,
     skills = EMPTY_MARKDOWN_SKILLS,
     onUseArtifactTemplate,
     onRunShellCommand,
@@ -1081,6 +1085,7 @@ function useChatMarkdownState(
   };
 
   const componentState = {
+    timeReference,
     canOperateHost,
     canOperatePreview,
     cwd,
@@ -1179,10 +1184,15 @@ const CHAT_MARKDOWN_COMPONENTS = {
     return <div {...props}>{children}</div>;
   },
   p: function MarkdownParagraph({ node: _node, children, ...props }) {
-    const { skills, threadRef, environmentId } = use(ChatMarkdownRendererContext);
+    const { skills, threadRef, environmentId, timeReference } = use(ChatMarkdownRendererContext);
     return (
       <p {...props}>
-        {renderSkillInlineMarkdownChildren(children, skills, threadRef, environmentId)}
+        {renderSkillInlineMarkdownChildren(
+          timeReference ? renderMentionedTimes(children, new Date(timeReference)) : children,
+          skills,
+          threadRef,
+          environmentId,
+        )}
       </p>
     );
   },
@@ -1223,12 +1233,17 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   li: function MarkdownListItem({ node, children, ...props }) {
-    const { skills, threadRef, environmentId } = use(ChatMarkdownRendererContext);
+    const { skills, threadRef, environmentId, timeReference } = use(ChatMarkdownRendererContext);
     // Resolve checkbox markers by offset to avoid rerendering list items on every streamed token.
     const isTaskItem = String(props.className ?? "").includes("task-list-item");
     return (
       <li {...props} data-list-item-offset={isTaskItem ? node?.position?.start.offset : undefined}>
-        {renderSkillInlineMarkdownChildren(children, skills, threadRef, environmentId)}
+        {renderSkillInlineMarkdownChildren(
+          timeReference ? renderMentionedTimes(children, new Date(timeReference)) : children,
+          skills,
+          threadRef,
+          environmentId,
+        )}
       </li>
     );
   },
@@ -1950,7 +1965,8 @@ function hastTextHasChip(node: HastElement, skills: ReadonlyArray<ServerProvider
   return node.children.some((child) =>
     child.type === "text"
       ? (skills.length > 0 && !matchInlineSkills(child.value, skills).next().done) ||
-        collectComposerModelMentions(child.value).length > 0
+        collectComposerModelMentions(child.value).length > 0 ||
+        mentionedTimes(child.value, new Date()).length > 0
       : child.type === "element" &&
         child.tagName !== "code" &&
         child.tagName !== "a" &&
