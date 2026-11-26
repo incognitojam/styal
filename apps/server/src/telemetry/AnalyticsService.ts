@@ -1,4 +1,4 @@
-// T3 ingest retains events and forwards to PostHog; UUIDs deduplicate retries there.
+// UUIDs let PostHog deduplicate retried events.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isCiEnvironment, isDoNotTrackSet } from "@t3tools/shared/otelEnvironment";
 import type { ClientOs } from "@t3tools/contracts";
@@ -69,9 +69,7 @@ function retryDelayMs(failures: number, random: number): number {
 
 const TelemetryEnvConfig = Config.all({
   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(Config.withDefault("")),
-  posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
-    Config.withDefault("https://ingest.restart.styal.invalid"),
-  ),
+  posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(Config.withDefault("")),
   enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.option),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
@@ -132,7 +130,7 @@ export const make = Effect.gen(function* () {
     ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined;
   // A cached PATH does not establish consent from the current login shell.
   const telemetryEnabled = Effect.suspend(() => {
-    if (!telemetryConfig.posthogKey || telemetryConfig.posthogHost.includes(".invalid"))
+    if (!telemetryConfig.posthogKey.trim() || !telemetryConfig.posthogHost.trim())
       return Effect.succeed(false);
     if (!enabledAtStartup || !policyAllows || isDoNotTrackSet(hostEnvironment))
       return Effect.succeed(false);

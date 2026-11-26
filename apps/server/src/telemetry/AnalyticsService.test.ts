@@ -117,7 +117,11 @@ const recordTwentyEvents = Effect.gen(function* () {
 const analyticsLayerWith = (
   client: HttpClient.HttpClient,
   policy?: ManagedPolicyDocument,
-  telemetryEnv: { readonly T3CODE_TELEMETRY_ENABLED?: boolean } = {
+  telemetryEnv: {
+    readonly T3CODE_TELEMETRY_ENABLED?: boolean;
+    readonly T3CODE_POSTHOG_KEY?: string | undefined;
+    readonly T3CODE_POSTHOG_HOST?: string | undefined;
+  } = {
     T3CODE_TELEMETRY_ENABLED: true,
   },
 ) =>
@@ -128,9 +132,9 @@ const analyticsLayerWith = (
     Layer.provide(
       ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          ...telemetryEnv,
           T3CODE_POSTHOG_KEY: "phc_test_key",
           T3CODE_POSTHOG_HOST: "http://localhost",
+          ...telemetryEnv,
         }),
       ),
     ),
@@ -185,6 +189,38 @@ const sendFor = (
   });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService test", (it) => {
+  it.effect("does not queue or send without a complete destination", () =>
+    Effect.gen(function* () {
+      for (const destination of [
+        { T3CODE_POSTHOG_KEY: undefined, T3CODE_POSTHOG_HOST: undefined },
+        { T3CODE_POSTHOG_KEY: "phc_synthetic", T3CODE_POSTHOG_HOST: undefined },
+        { T3CODE_POSTHOG_KEY: undefined, T3CODE_POSTHOG_HOST: "http://localhost" },
+        { T3CODE_POSTHOG_KEY: "phc_synthetic", T3CODE_POSTHOG_HOST: "" },
+        { T3CODE_POSTHOG_KEY: " ", T3CODE_POSTHOG_HOST: "http://localhost" },
+      ]) {
+        let requests = 0;
+        const client = HttpClient.make((request) => {
+          requests += 1;
+          return respondWithStatus(204)(request);
+        });
+        yield* Effect.gen(function* () {
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          assert.isFalse(yield* analytics.record("test.unconfigured"));
+          yield* analytics.flush;
+          yield* TestClock.adjust("20 seconds");
+        }).pipe(
+          Effect.provide(
+            analyticsLayerWith(client, undefined, {
+              T3CODE_TELEMETRY_ENABLED: true,
+              ...destination,
+            }),
+          ),
+        );
+        assert.strictEqual(requests, 0);
+      }
+    }),
+  );
+
   it.effect("waits for desktop shell consent and honors a late telemetry opt-out", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1" };
