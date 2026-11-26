@@ -48,7 +48,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 
 it.effect.each([
-  "disabled-codex",
+  "disabled-claude",
   "disabled-default",
   "launch-failure",
   "project-failure",
@@ -57,7 +57,7 @@ it.effect.each([
   Effect.gen(function* () {
     const projectId = ProjectId.make("bootstrap-project");
     const instanceId = ProviderInstanceId.make(
-      scenario === "disabled-default" ? "custom" : "codex",
+      scenario === "disabled-default" ? "custom" : "claudeAgent",
     );
     const events: ServerLifecycleStreamEvent[] = [];
     const recovery = {
@@ -135,7 +135,7 @@ it.effect.each([
             scenario === "disabled-default" ? { instanceId, model: "custom-model" } : null,
           providerInstances: {
             [instanceId]: {
-              driver: ProviderDriverKind.make("codex"),
+              driver: ProviderDriverKind.make("claudeAgent"),
               enabled: false,
               config: {},
             },
@@ -186,6 +186,10 @@ it.effect.each([
       Layer.mock(ThreadLaunch.ThreadLaunchService)({
         launch: (input) => {
           assert.equal(input.modelSelection.instanceId, instanceId);
+          assert.equal(
+            input.modelSelection.model,
+            scenario === "disabled-default" ? "custom-model" : "claude-opus-5-5",
+          );
           return scenario === "launch-failure"
             ? Effect.fail(
                 new ThreadLaunch.ThreadLaunchError({

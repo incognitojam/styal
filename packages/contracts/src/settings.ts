@@ -424,7 +424,7 @@ export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination
 
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("off" as const)),
+    Schema.withDecodingDefault(Effect.succeed("sound" as const)),
   ),
   completionSound: NotificationSound.pipe(
     Schema.withDecodingDefault(Effect.succeed("t3-completion" as const)),

@@ -8,7 +8,11 @@ import {
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
 
-import { hydrateCachedProvider, isCachedProviderCorrelated } from "./providerStatusCache.ts";
+import {
+  orderProviderSnapshots,
+  hydrateCachedProvider,
+  isCachedProviderCorrelated,
+} from "./providerStatusCache.ts";
 
 const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
@@ -208,4 +212,14 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
       fallbackCodex,
     );
   });
+});
+
+it("orders fresh provider snapshots with Claude first and preserves same-driver order", () => {
+  const codex = makeProvider(CODEX_DRIVER);
+  const claude = makeProvider(ProviderDriverKind.make("claudeAgent"));
+  const otherClaude = { ...claude, instanceId: ProviderInstanceId.make("work") };
+  assert.deepStrictEqual(
+    orderProviderSnapshots([codex, claude, otherClaude]).map((p) => p.instanceId),
+    [claude.instanceId, otherClaude.instanceId, codex.instanceId],
+  );
 });
