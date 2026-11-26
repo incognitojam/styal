@@ -49,7 +49,7 @@ export function ComposerCommandMenuLayer(props: {
       const rootFontSizePx =
         Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
       const drawerInsetRem = Number.parseFloat(
-        window.getComputedStyle(form ?? anchor).getPropertyValue("--chat-composer-drawer-inset"),
+        window.getComputedStyle(form ?? anchor).getPropertyValue("--chat-composer-menu-inset"),
       );
       const drawerInset = drawerInsetRem * rootFontSizePx;
       const width = rect.width - drawerInset * 2;

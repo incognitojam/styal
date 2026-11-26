@@ -3929,6 +3929,7 @@ export default function ChatView(props: ChatViewProps) {
                                     : undefined
                                 }
                                 environmentUnavailable={activeEnvironmentUnavailableState}
+                                onRespondToApproval={onRespondToApprovalStable}
                                 activePendingApproval={activePendingApproval}
                                 pendingApprovals={pendingApprovals}
                                 onHeldRequestIdsChange={onHeldRequestIdsChange}

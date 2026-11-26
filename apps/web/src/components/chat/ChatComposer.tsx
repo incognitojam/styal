@@ -1,3 +1,5 @@
+import { ComposerPendingApprovalBanner } from "./ComposerPendingApprovalBanner";
+import type { ProviderApprovalDecision } from "@t3tools/contracts";
 import { copySnapshot } from "./copySnapshot";
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
@@ -418,6 +420,10 @@ export interface ChatComposerProps {
     readonly connection: EnvironmentConnectionPresentation;
   } | null;
 
+  onRespondToApproval: (
+    requestId: RuntimeRequestId,
+    decision: ProviderApprovalDecision,
+  ) => Promise<unknown>;
   activePendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
   onHeldRequestIdsChange: (requestIds: ReadonlySet<string>) => void;
@@ -555,6 +561,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isPreparingWorktree,
     canSteer,
     environmentUnavailable,
+    onRespondToApproval,
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
     onHeldRequestIdsChange,
@@ -2650,7 +2657,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
   });
-  const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
+  const hasBlockingComposerTopDrawer =
+    pendingUserInputs.length > 0 || activePendingApproval !== null;
   const composerControlsCollapsed = isComposerCollapsedMobile;
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -3695,6 +3703,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ComposerBanner.Dock>
         <ComposerBanner.Column>
           <ComposerBannerStack items={shelfItems} />
+          {activePendingApproval ? (
+            <ComposerPendingApprovalBanner
+              key={activePendingApproval.requestId}
+              approval={activePendingApproval}
+              pendingCount={
+                pendingApprovals.filter((request) => !heldRequestIds.has(request.requestId)).length
+              }
+              isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
+              disabled={!canOperateThread}
+              onRespondToApproval={onRespondToApproval}
+            />
+          ) : null}
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
               <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
