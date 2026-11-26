@@ -80,7 +80,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
-import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "~/hooks/useTerminalCloseConfirmation";
 import { useClientSettings } from "../hooks/useSettings";
 import { getFileMetadataQueryAtom } from "../hooks/useFileMetadata";
 import { FileMetadataThreadContext } from "../hooks/FileMetadataThreadProvider";
@@ -1060,6 +1060,7 @@ function TerminalSessionViewport({
         if (navigationData !== null) {
           event.preventDefault();
           event.stopPropagation();
+          if (!terminal.isAtBottom()) terminal.scrollToBottom();
           void sendTerminalInput(navigationData, m(msg("Failed to move cursor")));
           return false;
         }
@@ -1068,6 +1069,7 @@ function TerminalSessionViewport({
         if (deleteData !== null) {
           event.preventDefault();
           event.stopPropagation();
+          if (!terminal.isAtBottom()) terminal.scrollToBottom();
           void sendTerminalInput(deleteData, m(msg("Failed to delete terminal input")));
           return false;
         }
@@ -1075,6 +1077,7 @@ function TerminalSessionViewport({
         if (!isTerminalClearShortcut(event)) return true;
         event.preventDefault();
         event.stopPropagation();
+        if (!terminal.isAtBottom()) terminal.scrollToBottom();
         void sendTerminalInput("\u000c", m(msg("Failed to clear terminal")));
         return false;
       }
@@ -1715,10 +1718,15 @@ export default function ThreadTerminalDrawer({
     if (!canOperateTerminal) return;
     onNewTerminal();
   };
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const confirmCloseTerminal = (terminalId: string) => {
     if (!canOperateTerminal) return;
     const label = terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId, m);
-    void confirmTerminalClose([label]).then((confirmed) => {
+    void requestTerminalCloseConfirmation({
+      environmentId: threadRef.environmentId,
+      threadId: threadRef.threadId,
+      targets: [{ terminalId, label }],
+    }).then((confirmed) => {
       if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
         onCloseTerminal(terminalId, threadRef);
       }

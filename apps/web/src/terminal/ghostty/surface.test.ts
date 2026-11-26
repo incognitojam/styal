@@ -775,6 +775,30 @@ describe("GhosttyTerminalSurface visibility", () => {
     }
   });
 
+  it("returns to the live screen when the user types, but not for VT replies or scrolling", async () => {
+    const harness = createHarness();
+    const surface = await harness.create();
+    surface.focus();
+    surface.write(Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\r\n"));
+    harness.flushFrame();
+    const wheel = (deltaY: number) =>
+      harness.canvas.dispatchEvent(
+        Object.assign(new Event("wheel", { cancelable: true }), { deltaY, deltaMode: 1 }),
+      );
+    wheel(-5);
+    expect(surface.isAtBottom()).toBe(false);
+    surface.write("\x1b[5n");
+    wheel(2);
+    expect(harness.onData.mock.calls).toEqual([["\x1b[0n"]]);
+    expect(surface.isAtBottom()).toBe(false);
+    surface.input.value = "x";
+    surface.input.dispatchEvent(
+      Object.assign(new Event("input"), { data: "x", isComposing: false }),
+    );
+    expect(harness.onData).toHaveBeenLastCalledWith("x");
+    expect(surface.isAtBottom()).toBe(true);
+  });
+
   it.each([false, true])(
     "uses visibility %s if it changes while WASM initializes",
     async (visible) => {

@@ -10,7 +10,7 @@ import { agentControlledBrowserCloseConfirmation } from "../components/ChatView.
 import { closePreviewSession } from "../components/preview/closePreviewSession";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
 import { m } from "../i18n/messages";
-import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "~/hooks/useTerminalCloseConfirmation";
 import { focusPanelTerminalAfterClose } from "../lib/terminalFocus";
 import { readLocalApi } from "../localApi";
 import { setActivePreviewTab, useThreadPreviewState } from "../previewStateStore";
@@ -125,22 +125,28 @@ export function useRightPanelSurfaceClose(input: {
     }
     focusPanelTerminalAfterClose(threadRef, activeId);
   };
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const labelFor = (terminalId: string) =>
     terminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId, m);
   const closeSurfaces = (toClose: readonly RightPanelSurface[]) => {
     if (!threadRef) return;
     closeAfterAgentBrowserConfirmation(toClose, () => {
-      const labels = readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)
-        ? toClose.flatMap((surface) =>
-            surface.kind === "terminal" ? surface.terminalIds.map(labelFor) : [],
-          )
+      const terminalIds = readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)
+        ? toClose.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : []))
         : [];
-      const [first, ...rest] = labels;
+      const [first, ...rest] = terminalIds;
       if (first === undefined) {
         finishClose(toClose);
         return;
       }
-      void confirmTerminalClose([first, ...rest]).then((confirmed) => {
+      void requestTerminalCloseConfirmation({
+        environmentId: threadRef.environmentId,
+        threadId: threadRef.threadId,
+        targets: [
+          { terminalId: first, label: labelFor(first) },
+          ...rest.map((terminalId) => ({ terminalId, label: labelFor(terminalId) })),
+        ],
+      }).then((confirmed) => {
         if (confirmed) finishClose(toClose);
       });
     });
@@ -159,14 +165,19 @@ export function useRightPanelSurfaceClose(input: {
       finishClose([surface]);
       return;
     }
-    const otherLabels = surface.terminalIds
+    const otherTargets = surface.terminalIds
       .filter((terminalId) => terminalId !== surface.activeTerminalId)
-      .map(labelFor);
-    void confirmTerminalClose([labelFor(surface.activeTerminalId), ...otherLabels]).then(
-      (confirmed) => {
-        if (confirmed) finishClose([surface]);
-      },
-    );
+      .map((terminalId) => ({ terminalId, label: labelFor(terminalId) }));
+    void requestTerminalCloseConfirmation({
+      environmentId: threadRef.environmentId,
+      threadId: threadRef.threadId,
+      targets: [
+        { terminalId: surface.activeTerminalId, label: labelFor(surface.activeTerminalId) },
+        ...otherTargets,
+      ],
+    }).then((confirmed) => {
+      if (confirmed) finishClose([surface]);
+    });
   });
   const closeOtherSurfaces = useStableCallback((surface: RightPanelSurface) =>
     closeSurfaces(surfaces.filter((entry) => entry.id !== surface.id)),

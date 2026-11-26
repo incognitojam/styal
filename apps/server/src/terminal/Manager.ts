@@ -25,6 +25,8 @@ import {
   type TerminalAttachStreamEvent,
   type TerminalClearInput,
   type TerminalCloseInput,
+  type TerminalClosePreflightInput,
+  type TerminalClosePreflightResult,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
@@ -234,6 +236,10 @@ export class TerminalManager extends Context.Service<
     ) => Effect.Effect<void, TerminalError>;
 
     readonly clear: (input: TerminalClearInput) => Effect.Effect<void, TerminalError>;
+
+    readonly closePreflight: (
+      input: TerminalClosePreflightInput,
+    ) => Effect.Effect<TerminalClosePreflightResult, TerminalError>;
 
     /** Omit terminalId to close all sessions for the thread. */
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
@@ -3100,6 +3106,92 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       : STEADY_SUBPROCESS_SNAPSHOT_EVERY_TICKS;
   };
 
+  const closePreflightLocked = Effect.fn("terminal.closePreflightLocked")(function* (
+    requestedInput: TerminalClosePreflightInput,
+  ): Effect.fn.Return<TerminalClosePreflightResult> {
+    const terminalIds = [...new Set(requestedInput.terminalIds)];
+    const confirmationTerminalIds = new Set<string>();
+    const inspectableSessions: Array<TerminalSessionState & { pid: number }> = [];
+
+    for (const terminalId of terminalIds) {
+      const session = yield* getSession(requestedInput.threadId, terminalId);
+      if (Option.isNone(session)) {
+        confirmationTerminalIds.add(terminalId);
+        continue;
+      }
+
+      const current = session.value;
+      if (current.status === "exited" || current.status === "error") continue;
+
+      if (current.status !== "running" || !current.process || !Number.isInteger(current.pid)) {
+        confirmationTerminalIds.add(terminalId);
+        continue;
+      }
+
+      inspectableSessions.push(current as TerminalSessionState & { pid: number });
+    }
+
+    if (inspectableSessions.length > 0) {
+      const subprocessInspector = yield* acquireSubprocessInspector(
+        platform === "win32" ? CLOSE_IDLE_QUERY_TIMEOUT.win32 : CLOSE_IDLE_QUERY_TIMEOUT.posix,
+      ).pipe(
+        Effect.flatMap(({ inspector }) => Effect.fromResult(inspector)),
+        Effect.asSome,
+        Effect.catch((reason) =>
+          Effect.logWarning("failed to inspect terminal close liveness", { reason }).pipe(
+            Effect.as(Option.none<TerminalSubprocessInspector>()),
+          ),
+        ),
+      );
+
+      if (Option.isNone(subprocessInspector)) {
+        for (const session of inspectableSessions) {
+          confirmationTerminalIds.add(session.terminalId);
+        }
+      } else {
+        yield* Effect.forEach(
+          inspectableSessions,
+          (session) =>
+            subprocessInspector.value(session.pid, session.shell).pipe(
+              Effect.tap((result) =>
+                Effect.sync(() => {
+                  if (result.hasRunningSubprocess) {
+                    confirmationTerminalIds.add(session.terminalId);
+                  }
+                }),
+              ),
+              Effect.catch((reason) =>
+                Effect.logWarning("failed to inspect terminal close liveness", {
+                  threadId: session.threadId,
+                  terminalId: session.terminalId,
+                  terminalPid: session.pid,
+                  reason,
+                }).pipe(
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      confirmationTerminalIds.add(session.terminalId);
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded", discard: true },
+        );
+      }
+    }
+
+    return {
+      confirmationTerminalIds: terminalIds.filter((terminalId) =>
+        confirmationTerminalIds.has(terminalId),
+      ),
+    };
+  });
+
+  const closePreflight: TerminalManager["Service"]["closePreflight"] = (requestedInput) =>
+    withThreadLock(requestedInput.threadId, closePreflightLocked(requestedInput)).pipe(
+      Effect.map(({ confirmationTerminalIds }) => ({ confirmationTerminalIds })),
+    );
+
   const pollSubprocessActivity = Effect.fn("terminal.pollSubprocessActivity")(function* () {
     const state = yield* readManagerState;
     const runningSessions = [...state.sessions.values()]
@@ -4024,6 +4116,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     write,
     resize,
     clear,
+    closePreflight,
     close,
     closeIdle,
     closeOnSettle,

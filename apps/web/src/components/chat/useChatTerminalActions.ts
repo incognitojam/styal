@@ -36,7 +36,7 @@ import { isPreviewAvailableFor } from "../../browser/previewRuntime";
 import { resolveDiscoveredServerUrl } from "../../browser/browserTargetResolver";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { cycleThreadTerminal } from "../../lib/cycleThreadTerminal";
-import { confirmTerminalClose } from "../../lib/terminalCloseConfirm";
+import { useTerminalCloseConfirmation } from "~/hooks/useTerminalCloseConfirmation";
 import { findReusableProjectScriptTerminal } from "../../lib/projectScriptTerminal";
 import { closingTerminalIds } from "../terminal/closingTerminals";
 import { type TerminalContextSelection } from "../../lib/terminalContext";
@@ -199,11 +199,11 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     void launched.result;
   };
   const createNewTerminalStable = useStableCallback(createNewTerminal);
-  const closeTerminal = (terminalId: string) => {
-    if (!hasTerminalWriteAccess() || !activeThreadRef) return;
-    terminalActions.closeTerminalSession(terminalId, activeThreadRef);
-    storeCloseTerminal(activeThreadRef, terminalId);
-    focusActiveDrawerTerminal(activeThreadRef);
+  const closeTerminal = (terminalId: string, target = activeThreadRef) => {
+    if (!target || !readEnvironmentScope(target.environmentId, AuthTerminalOperateScope)) return;
+    terminalActions.closeTerminalSession(terminalId, target);
+    storeCloseTerminal(target, terminalId);
+    focusActiveDrawerTerminal(target);
   };
   const runProjectScript = async (
     script: ProjectScript,
@@ -393,12 +393,19 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     focusActivePanelTerminal(target);
   };
   const closePanelTerminalStable = useStableCallback(closePanelTerminal);
+  const requestTerminalCloseConfirmation = useTerminalCloseConfirmation();
   const requestCloseTerminal = (terminalId: string) => {
     if (!hasTerminalWriteAccess()) return;
     const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId, m);
-    void confirmTerminalClose([label]).then((confirmed) => {
+    if (!activeThreadRef) return;
+    const target = activeThreadRef;
+    void requestTerminalCloseConfirmation({
+      environmentId: target.environmentId,
+      threadId: target.threadId,
+      targets: [{ terminalId, label }],
+    }).then((confirmed) => {
       if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
-        closeTerminal(terminalId);
+        closeTerminal(terminalId, target);
       }
     });
   };
@@ -406,9 +413,15 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   const requestClosePanelTerminal = (terminalId: string) => {
     if (!hasTerminalWriteAccess()) return;
     const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId, m);
-    void confirmTerminalClose([label]).then((confirmed) => {
+    if (!activeThreadRef) return;
+    const target = activeThreadRef;
+    void requestTerminalCloseConfirmation({
+      environmentId: target.environmentId,
+      threadId: target.threadId,
+      targets: [{ terminalId, label }],
+    }).then((confirmed) => {
       if (confirmed && readEnvironmentScope(environmentId, AuthTerminalOperateScope)) {
-        closePanelTerminal(terminalId);
+        closePanelTerminal(terminalId, target);
       }
     });
   };

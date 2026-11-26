@@ -12,8 +12,9 @@ const fixture = vi.hoisted(() => ({
   sessions: new Map<string, string>(),
   failClose: false,
 }));
-vi.mock("../lib/terminalCloseConfirm", () => ({
-  confirmTerminalClose: (labels: readonly string[]) => fixture.confirm(labels),
+vi.mock("./useTerminalCloseConfirmation", () => ({
+  useTerminalCloseConfirmation: () => (input: { targets: readonly { label: string }[] }) =>
+    fixture.confirm(input.targets.map((target) => target.label)),
 }));
 vi.mock("../components/ChatView.logic", () => ({
   agentControlledBrowserCloseConfirmation: () => null,
