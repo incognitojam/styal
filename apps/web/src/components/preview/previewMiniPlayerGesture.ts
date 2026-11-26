@@ -4,6 +4,7 @@ import type { PreviewMiniPlayerPosition, PreviewMiniPlayerSize } from "~/preview
 import {
   clampPreviewMiniPlayerPosition,
   type PreviewMiniPlayerFrame,
+  type PreviewMiniPlayerObstacles,
   resizePreviewMiniPlayer,
 } from "./previewMiniPlayerLayout";
 
@@ -40,6 +41,7 @@ export function stepPreviewMiniPlayerGesture(
   gesture: PreviewMiniPlayerGesture,
   pointer: GesturePointer,
   container: PreviewMiniPlayerSize,
+  obstacles?: PreviewMiniPlayerObstacles,
 ): PreviewMiniPlayerGestureStep {
   if (pointer.pointerId !== gesture.pointerId) return { kind: "ignore" };
   // A release the handle never saw (over a native view, another window) leaves only this trace.
@@ -66,6 +68,7 @@ export function stepPreviewMiniPlayerGesture(
       delta,
       source: gesture.source,
       container,
+      ...(obstacles ? { obstacles } : {}),
     }),
   };
 }

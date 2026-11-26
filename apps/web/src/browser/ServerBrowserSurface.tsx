@@ -154,6 +154,7 @@ export function ServerBrowserSurface(props: {
   readonly visible: boolean;
   readonly followSize?: boolean;
   readonly controlPosition?: "top" | "bottom";
+  readonly viewOnly?: boolean;
   readonly onFirstFrame?: () => void;
   readonly onNoFrames?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
@@ -170,6 +171,7 @@ export function ServerBrowserSurface(props: {
     visible,
     followSize = true,
     controlPosition = "top",
+    viewOnly = false,
     onFirstFrame,
     onNoFrames,
     onViewport,
@@ -782,7 +784,7 @@ export function ServerBrowserSurface(props: {
     >
       <div
         className={cn(
-          "visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
+          "pointer-events-auto visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
           controlPosition === "bottom" ? "order-last border-t" : "border-b",
         )}
       >
@@ -802,7 +804,10 @@ export function ServerBrowserSurface(props: {
           </Button>
         ) : null}
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div
+        inert={viewOnly}
+        className={cn("relative min-h-0 flex-1", viewOnly && "pointer-events-none")}
+      >
         {pdfUrl ? (
           <embed
             src={pdfUrl}

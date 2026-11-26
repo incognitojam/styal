@@ -42,7 +42,7 @@ import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
-import { useThreadPreviewState } from "~/previewStateStore";
+import { setActivePreviewTab, useThreadPreviewState } from "~/previewStateStore";
 import {
   type PreviewMiniPlayerSize,
   type PreviewMiniPlayerSource,
@@ -81,7 +81,8 @@ interface Props {
   readonly miniPlayer: PreviewMiniPlayerState;
 }
 
-const frameCornerRadius = () => PREVIEW_MINI_PLAYER_CORNER_RADIUS;
+const MINI_PLAYER_CONTENT_RADIUS = 13;
+const frameCornerRadius = () => 14;
 
 const RESIZE_HANDLES: ReadonlyArray<{
   readonly direction: BrowserViewportResizeDirection;
@@ -112,6 +113,8 @@ const useHeldSourceSize = create<{
   readonly key: string;
   readonly source: PreviewMiniPlayerSize;
 } | null>(() => null);
+
+const useDraggedMiniPlayer = create<string | null>(() => null);
 
 const NO_DEVICE_SCREEN_ATOM = Atom.make<DeviceScreenSize | null>(null).pipe(
   Atom.withLabel("device-stream-screen:none"),
@@ -181,6 +184,12 @@ export function useThreadPreviewCanvasSource(
       ? deviceStreamScreenAtom(miniPlayerDeviceViewId(threadRef, source))
       : NO_DEVICE_SCREEN_ATOM,
   );
+  const dragging = useDraggedMiniPlayer(
+    (dragged) =>
+      threadRef !== null &&
+      sourceKey !== null &&
+      dragged === streamedSourceKey(threadRef, sourceKey),
+  );
   const heldSource = useHeldSourceSize((state) =>
     threadRef && sourceKey !== null && state?.key === streamedSourceKey(threadRef, sourceKey)
       ? state.source
@@ -193,6 +202,7 @@ export function useThreadPreviewCanvasSource(
     width: miniPlayer.width,
     position: miniPlayer.position,
     lastInteraction: miniPlayer.lastInteraction,
+    dragging,
     source:
       heldSource ??
       (source.kind === "browser"
@@ -239,6 +249,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
   );
 
   const openInPanel = () => {
+    setActivePreviewTab(threadRef, tabId);
     usePreviewMiniPlayerStore.getState().close(threadRef);
     useRightPanelStore.getState().openBrowser(threadRef, tabId);
   };
@@ -319,8 +330,10 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
     >
       {(frame) =>
         serverTab ? (
+          // Like the native webview, the page is view-only; the right panel takes input.
+          // Its control bar stays usable above the drag layer.
           <div
-            className="pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]"
+            className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
             style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
           >
             <ServerBrowserSurface
@@ -332,6 +345,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
               visible
               followSize={false}
               controlPosition="bottom"
+              viewOnly
               onViewport={(viewport) =>
                 useStreamedSourceSize.setState(
                   (state) =>
@@ -352,11 +366,11 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
             <BrowserSurfaceSlot
               tabId={runtimeTabId}
               visible={Boolean(desktopOverlay?.hasWebContents) && !loadFailed}
-              cornerRadius={PREVIEW_MINI_PLAYER_CORNER_RADIUS}
+              cornerRadius={MINI_PLAYER_CONTENT_RADIUS}
               zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
               fitSourceContent
               layoutVersion={`${frame.x}:${frame.y}`}
-              className="absolute inset-0"
+              className="absolute inset-px"
             />
             {loadFailed ? (
               <div className="pointer-events-auto absolute inset-0 z-[48] overflow-hidden rounded-[inherit]">
@@ -418,7 +432,8 @@ function DeviceMiniPlayer({
     >
       {() => (
         <div
-          className="pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]"
+          inert
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
           style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
         >
           <DeviceStreamView
@@ -495,6 +510,7 @@ function MiniPlayerShell({
     const gesture = gestureRef.current;
     if (!gesture) return null;
     gestureRef.current = null;
+    useDraggedMiniPlayer.setState(null, true);
     handleTappedRef.current = false;
     const handle = captureRef.current;
     captureRef.current = null;
@@ -529,6 +545,8 @@ function MiniPlayerShell({
     return () => {
       window.removeEventListener("blur", endInterruptedGesture);
       useHeldSourceSize.setState((state) => (state?.key === heldSourceKey ? null : state), true);
+      if (useDraggedMiniPlayer.getState() === heldSourceKey)
+        useDraggedMiniPlayer.setState(null, true);
     };
   }, [heldSourceKey]);
 
@@ -560,7 +578,12 @@ function MiniPlayerShell({
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current;
     if (!gesture || !container) return;
-    const step = stepPreviewMiniPlayerGesture(gesture, event, container);
+    const step = stepPreviewMiniPlayerGesture(
+      gesture,
+      event,
+      container,
+      canvas?.layout.resizeObstacles,
+    );
     if (step.kind === "ignore") return;
     if (step.kind === "end") {
       finishGesture();
@@ -569,6 +592,7 @@ function MiniPlayerShell({
     if (!gesture.moved) gestureRef.current = { ...gesture, moved: true };
     const store = usePreviewMiniPlayerStore.getState();
     if (step.kind === "move") {
+      useDraggedMiniPlayer.setState(heldSourceKey, true);
       store.move(threadRef, sourceKey, step.position);
       return;
     }
@@ -610,6 +634,20 @@ function MiniPlayerShell({
             borderRadius: radius,
           }}
         >
+          {/* The source is view-only: its full surface moves the frame, and
+              double-clicking it opens the source in the right panel. Sources paint
+              above it at the same z-index and pass the pointer through, except for
+              their own controls. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-auto absolute inset-0 z-[48] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
+            onDoubleClick={onOpenInPanel}
+            onPointerDown={(event) => beginGesture(event, null)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+            onLostPointerCapture={handleLostCapture}
+          />
           <div
             ref={handleRef}
             data-pill-open={pillOpen ? "" : undefined}

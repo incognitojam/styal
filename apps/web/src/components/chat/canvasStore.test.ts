@@ -45,13 +45,14 @@ describe("chat canvas model", () => {
     expect(resolve(1400, 900)).toBe("popover");
   });
 
-  it("moves the card into a popover when a preview below it leaves too little height", () => {
+  // A dropped preview avoids the card, so only a resize can leave the card too little height.
+  it("moves the card into a popover when a preview resized below it leaves too little height", () => {
     const resolve = (fullContentHeight: number) =>
       resolveChatCanvasModel({
         measurements: measurements(1100, 300),
         detailsCardMeasurement: { threadRef, width: 280, fullContentHeight },
         threadRef,
-        preview: { ...preview, position: { x: 760, y: 150 }, lastInteraction: "drag" },
+        preview: { ...preview, position: { x: 760, y: 150 }, lastInteraction: "resize" },
         detailsCardInlineOpen: true,
       });
     const model = resolve(400);
