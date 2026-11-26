@@ -1,9 +1,36 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { ClientSettings } from "@t3tools/contracts/settings";
+import type { ClientSettings, NotificationSound } from "@t3tools/contracts/settings";
 import { msg } from "gt-react";
 
 import completionUrl from "./assets/notification-completion.mp3";
 import inputUrl from "./assets/notification-input.mp3";
+
+import departuresUrl from "./assets/notification-departures.mp3";
+import avantiUrl from "./assets/notification-avanti.mp3";
+
+export const NOTIFICATION_SOUND_LABELS = {
+  "t3-completion": msg("styal completion"),
+  "t3-input": msg("styal attention"),
+  avanti: "Avanti",
+  departures: "Departures",
+  none: msg("None"),
+} satisfies Record<NotificationSound, string>;
+const NOTIFICATION_SOUND_URLS = {
+  "t3-completion": completionUrl,
+  "t3-input": inputUrl,
+  avanti: avantiUrl,
+  departures: departuresUrl,
+} satisfies Record<Exclude<NotificationSound, "none">, string>;
+export function notificationSoundForEvent(
+  settings: Pick<ClientSettings, "completionSound" | "inputSound" | "approvalSound">,
+  event: "completion" | "input" | "approval",
+) {
+  return event === "completion"
+    ? settings.completionSound
+    : event === "approval"
+      ? settings.approvalSound
+      : settings.inputSound;
+}
 
 type NotificationMode = ClientSettings["notificationMode"];
 export const NOTIFICATION_MODE_LABELS = {
@@ -19,6 +46,16 @@ export function hasNotificationSound(mode: NotificationMode) {
 
 export function hasDesktopNotifications(mode: NotificationMode) {
   return mode === "notifications" || mode === "notifications-and-sound";
+}
+
+export function notificationModeFor(notifications: boolean, sound: boolean): NotificationMode {
+  return notifications
+    ? sound
+      ? "notifications-and-sound"
+      : "notifications"
+    : sound
+      ? "sound"
+      : "off";
 }
 
 const TAG_HASH_OFFSET_BASIS = 0xcbf29ce484222325n;
@@ -85,6 +122,24 @@ let audioContext: AudioContext | undefined;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 /** When each sound's current playback ends, on the audio context's clock. */
 const playingUntil = new Map<string, number>();
+let activeSounds = 0;
+/** A gesture has started audio, so later contexts may start without one. */
+let unlocked = false;
+
+// The context stays suspended between sounds. A running context renders silence nonstop and holds
+// the output device, and Chromium can leave it attached to a device that has gone away (a
+// Bluetooth headset switching in). Each resume opens a fresh stream on the current default device.
+function releaseOutputWhenIdle(context: AudioContext) {
+  if (activeSounds === 0) void context.suspend().catch(() => undefined);
+}
+
+function discardContext(context: AudioContext) {
+  if (audioContext !== context) return;
+  audioContext = undefined;
+  activeSounds = 0;
+  playingUntil.clear();
+  void context.close().catch(() => undefined);
+}
 
 function loadNotificationBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
   let buffer = buffers.get(url);
@@ -102,35 +157,81 @@ function loadNotificationBuffer(context: AudioContext, url: string): Promise<Aud
 }
 
 /** Called from a gesture so browsers allow later background playback. */
-export function unlockNotificationAudio() {
-  const firstUnlock = audioContext === undefined;
+export async function unlockNotificationAudio() {
+  if (unlocked) return;
   audioContext ??= new AudioContext();
-  void audioContext.resume().catch(() => undefined);
-  if (!firstUnlock) return;
+  const context = audioContext;
+  try {
+    await context.resume();
+    unlocked = true;
+    releaseOutputWhenIdle(context);
+  } catch (error) {
+    console.warn("Notification audio could not start", error);
+    discardContext(context);
+    return;
+  }
   // Fetch and decode during interaction so the first alert is ready when the thread finishes.
-  for (const url of [completionUrl, inputUrl]) {
-    void loadNotificationBuffer(audioContext, url).catch(() => undefined);
+  for (const sound of ["t3-completion", "t3-input"] as const) {
+    void loadNotificationBuffer(context, NOTIFICATION_SOUND_URLS[sound]).catch(() => undefined);
   }
 }
 
 export async function playNotificationSound(
   kind: "completion" | "input",
   shouldPlay: () => boolean,
+  sound: NotificationSound = kind === "completion" ? "t3-completion" : "t3-input",
 ) {
-  if (!audioContext || audioContext.state !== "running") return;
+  if (!unlocked || sound === "none") return;
+  // A context discarded after a failed resume is replaced here, so one bad device does not
+  // silence alerts until the next click.
+  audioContext ??= new AudioContext();
   const context = audioContext;
-  const url = kind === "completion" ? completionUrl : inputUrl;
+  const url = NOTIFICATION_SOUND_URLS[sound];
+  let decoded: AudioBuffer;
   try {
-    const decoded = await loadNotificationBuffer(context, url);
-    if (!shouldPlay() || context.state !== "running") return;
-    // Coalesce same-sound bursts after decode to avoid clipping; input and completion alerts keep separate slots.
-    if (context.currentTime < (playingUntil.get(url) ?? 0)) return;
-    const source = context.createBufferSource();
-    source.buffer = decoded;
-    source.connect(context.destination);
-    source.start();
-    playingUntil.set(url, context.currentTime + decoded.duration);
-  } catch {
+    decoded = await loadNotificationBuffer(context, url);
+  } catch (error) {
     // A failed load is retried on the next alert.
+    console.warn("Notification sound could not load", url, error);
+    return;
   }
+  if (audioContext !== context) return;
+  if (!shouldPlay()) {
+    releaseOutputWhenIdle(context);
+    return;
+  }
+  // Threads that finish together each ask for this sound, and full-volume copies sum into
+  // clipping. One playback stands for the burst, claimed before resuming so concurrent callers
+  // see it. The other kind keeps its own slot, so an input alert is still heard over a completion.
+  const slot = `${kind}:${url}`;
+  if (context.currentTime < (playingUntil.get(slot) ?? 0)) return;
+  playingUntil.set(slot, context.currentTime + decoded.duration);
+  activeSounds += 1;
+  try {
+    await context.resume();
+    if (context.state !== "running") throw new Error(`AudioContext is ${context.state}`);
+  } catch (error) {
+    activeSounds -= 1;
+    console.warn("Notification audio could not resume", error);
+    discardContext(context);
+    return;
+  }
+  if (!shouldPlay()) {
+    activeSounds -= 1;
+    playingUntil.delete(slot);
+    releaseOutputWhenIdle(context);
+    return;
+  }
+  const source = context.createBufferSource();
+  source.buffer = decoded;
+  const gain = context.createGain();
+  gain.gain.value = sound === "avanti" ? 0.28 : 1;
+  source.connect(gain);
+  gain.connect(context.destination);
+  source.addEventListener("ended", () => {
+    if (audioContext !== context) return;
+    activeSounds -= 1;
+    releaseOutputWhenIdle(context);
+  });
+  source.start();
 }

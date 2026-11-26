@@ -860,22 +860,6 @@ export function GeneralSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="notifications" title={gt("Notifications")}>
         <NotificationSettings />
-        <SettingsRow
-          {...setting("in-app-notifications")}
-          description={
-            <T>
-              Show a toast when another thread finishes, fails, or needs input or approval while
-              this app has focus.
-            </T>
-          }
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label={gt("In-app notifications")}
-            />
-          }
-        />
       </SettingsSection>
 
       <SettingsSection id="sidebar" title={gt("Sidebar")}>
