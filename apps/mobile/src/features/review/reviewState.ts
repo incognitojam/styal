@@ -1,3 +1,4 @@
+import { compareReviewPaths } from "@t3tools/client-runtime/review-path-order";
 import { useAtomValue } from "@effect/atom-react";
 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -177,8 +178,14 @@ export function getCachedReviewParsedDiff(input: {
   readonly locale: string;
 }): ReviewParsedDiff {
   const resolve = input.resolve ?? m;
+  const parseForReview = () => {
+    const parsed = buildReviewParsedDiff(input.diff, input.sectionId ?? "mobile-review", resolve);
+    return parsed.kind === "files"
+      ? { ...parsed, files: [...parsed.files].sort((a, b) => compareReviewPaths(a.path, b.path)) }
+      : parsed;
+  };
   if (!input.threadKey || !input.sectionId) {
-    return buildReviewParsedDiff(input.diff, input.sectionId ?? "mobile-review", resolve);
+    return parseForReview();
   }
 
   const cacheKey = buildSectionCacheKey(input.threadKey, input.sectionId);
@@ -191,7 +198,7 @@ export function getCachedReviewParsedDiff(input: {
     return cached.parsed;
   }
 
-  const parsed = buildReviewParsedDiff(input.diff, input.sectionId, resolve);
+  const parsed = parseForReview();
   if (cached) {
     cache.entries.delete(cacheKey);
     cache.sourceCharacterCount -= cached.sourceCharacterCount;

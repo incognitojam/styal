@@ -1,6 +1,7 @@
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { CheckpointRef, CheckpointScopeId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { getCachedReviewParsedDiff } from "./reviewState";
 
 import {
   applyReviewDiffMetadata,
@@ -151,6 +152,20 @@ describe("buildReviewParsedDiff", () => {
     expect(repeated.files[0]!.rows.map((row) => row.id)).toEqual(
       parsed.files[0]!.rows.map((row) => row.id),
     );
+
+    const diff = patch.replaceAll("a.ts", "z.ts") + patch;
+    const original = buildReviewParsedDiff(diff, scope);
+    const input = { threadKey: "review-order", sectionId: scope, diff, locale: "en" };
+    const ordered = getCachedReviewParsedDiff(input);
+    if (original.kind !== "files" || ordered.kind !== "files")
+      throw new Error("Expected structured diffs");
+    expect(original.files.map((file) => file.path)).toEqual(["z.ts", "a.ts"]);
+    expect(ordered.files.map((file) => file.path)).toEqual(["a.ts", "z.ts"]);
+    expect(ordered.files.map((file) => file.id)).toEqual([
+      original.files[1]!.id,
+      original.files[0]!.id,
+    ]);
+    expect(getCachedReviewParsedDiff(input)).toBe(ordered);
   });
 
   it.each(["", "\n\n[truncated]"])(

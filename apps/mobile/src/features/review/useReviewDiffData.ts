@@ -1,3 +1,4 @@
+import { compareReviewPaths } from "@t3tools/client-runtime/review-path-order";
 import { msg, useLocale, useMessages } from "gt-react-native";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
@@ -159,7 +160,13 @@ export function useReviewDiffData(input: {
   const locale = useLocale();
   const selectedSectionId = selectedSection?.id ?? null;
   const source = selectedSection?.source;
-  const lazySource = source?.truncated && source.files ? source : null;
+  const lazySource = useMemo(
+    () =>
+      source?.truncated && source.files
+        ? { ...source, files: [...source.files].sort((a, b) => compareReviewPaths(a.path, b.path)) }
+        : null,
+    [source],
+  );
   const sectionDiff: ReviewParsedDiff = lazySource
     ? { kind: "empty" }
     : getCachedReviewParsedDiff({

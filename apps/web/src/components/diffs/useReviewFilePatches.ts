@@ -1,3 +1,4 @@
+import { compareReviewPaths } from "@t3tools/client-runtime/review-path-order";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type {
@@ -13,10 +14,6 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { getRenderablePatch, resolveFileDiffPath, type RenderablePatch } from "~/lib/diffRendering";
 import { reviewEnvironment } from "~/state/review";
 
-const filePathCollator = new Intl.Collator(undefined, {
-  numeric: true,
-  sensitivity: "base",
-});
 const INITIAL_FILE_COUNT = 4;
 
 export function useReviewFilePatches({
@@ -131,7 +128,7 @@ export function useReviewFilePatches({
         ];
       })
     : (preview?.kind === "files" ? preview.files : []).toSorted((a, b) =>
-        filePathCollator.compare(resolveFileDiffPath(a), resolveFileDiffPath(b)),
+        compareReviewPaths(resolveFileDiffPath(a), resolveFileDiffPath(b)),
       );
   const fileStates = new Map(
     files.map((file, index) => {
@@ -218,7 +215,7 @@ function reviewFileQueries({
 }
 
 function sortedReviewFiles(source: ReviewDiffPreviewSource | null) {
-  return source?.files?.toSorted((a, b) => filePathCollator.compare(a.path, b.path)) ?? [];
+  return source?.files?.toSorted((a, b) => compareReviewPaths(a.path, b.path)) ?? [];
 }
 
 type ReviewPatchTarget = Parameters<typeof reviewEnvironment.diffFilePatch>[0];

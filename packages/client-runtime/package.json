@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./review-path-order": "./src/reviewPathOrder.ts",
     "./pull-request-diff-fold": {
       "types": "./src/pullRequestDiffFold.ts",
       "default": "./src/pullRequestDiffFold.ts"

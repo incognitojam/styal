@@ -1,3 +1,5 @@
+import { DiffFileTierChip } from "../diffs/DiffFileTierChip";
+import { compareReviewPaths } from "@t3tools/client-runtime/review-path-order";
 import {
   EMPTY_PULL_REQUEST_DIFF_FOLDS,
   foldAllPullRequestDiffs,
@@ -82,7 +84,6 @@ import {
 } from "@t3tools/client-runtime/pull-request-editing";
 import { fileDiffRows } from "@t3tools/client-runtime/review-guide-tour";
 import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
-import { orderDiffFilesForReview } from "@t3tools/client-runtime/diff-file-order";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
 import {
   buildFileDiffContentVersion,
@@ -263,10 +264,9 @@ function diffModel(
   });
   const model: DiffModel = {
     parsedSlices,
-    loadedFiles: orderDiffFilesForReview(
-      parsedSlices.flatMap((parsed) => (parsed?.kind === "files" ? parsed.files : [])),
-      resolveFileDiffPath,
-    ),
+    loadedFiles: parsedSlices
+      .flatMap((parsed) => (parsed?.kind === "files" ? parsed.files : []))
+      .toSorted((a, b) => compareReviewPaths(resolveFileDiffPath(a), resolveFileDiffPath(b))),
     sourceFileStats: new Map(
       parsedSlices.flatMap((parsed) =>
         parsed?.kind === "files"
@@ -2070,6 +2070,11 @@ function PullRequestCodeTab({
               options={diffViewOptions}
               renderCodeViewFooter={renderCodeViewFooter}
               renderHeaderPrefix={renderHeaderPrefix}
+              renderHeaderFilenameSuffix={(item) =>
+                item.type === "diff" ? (
+                  <DiffFileTierChip path={resolveFileDiffPath(item.fileDiff)} />
+                ) : null
+              }
               renderHeaderMetadata={renderHeaderMetadata}
               renderAnnotation={renderAnnotation}
               unsafeCSSExtra={`${REPLACE_FILE_COUNTS_CSS}\n${CUT_LINES_CSS}`}
