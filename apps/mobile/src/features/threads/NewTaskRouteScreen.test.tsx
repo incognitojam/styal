@@ -2,9 +2,14 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type {
+  EnvironmentProject,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import type { IncomingShareDraft } from "../sharing/incoming-share-model";
+import { makeThreadShellFixture } from "../../test-fixtures";
 import { retargetSavedNewTaskDraft } from "../../state/use-composer-drafts";
 
 const environmentId = EnvironmentId.make("env-1");
@@ -28,6 +33,8 @@ const regular = project("app", "/repo/app");
 const scratch = project("scratch", "/scratch");
 
 const harness = vi.hoisted(() => ({
+  share: null as IncomingShareDraft | null,
+  threads: [] as EnvironmentThreadShell[],
   setProject: vi.fn(),
   openScratch: vi.fn(),
   selectDetail: vi.fn(),
@@ -45,8 +52,26 @@ const harness = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("../sharing/ShareToThreadSection", () => ({
+  ShareToThreadSection: ({
+    targets,
+    showNewThreadHeading,
+  }: {
+    targets: ReadonlyArray<{ thread: { title: string } }>;
+    showNewThreadHeading: boolean;
+  }) => (
+    <>
+      {targets.map(({ thread }) => (
+        <span key={thread.title}>{thread.title}</span>
+      ))}
+      {showNewThreadHeading ? <span>Start a new thread</span> : null}
+    </>
+  ),
+  useShareToThreadSubtitle: () => null,
+}));
+
 vi.mock("react-native", () => ({
-  Platform: { OS: "ios" },
+  Platform: { OS: process.env.T3_MOBILE_TEST_PLATFORM === "android" ? "android" : "ios" },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Pressable: (props: {
     accessibilityLabel: string;
@@ -83,14 +108,35 @@ vi.mock("../../components/ui/NavigationRow", () => ({
 }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/AppActivityIndicator", () => ({ AppActivityIndicator: () => null }));
-vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
+vi.mock("../../components/ui/AppBar", () => ({
+  AppBar: ({ search }: { search: { value: string; onChangeText: (text: string) => void } }) => (
+    <input
+      aria-label="Project search"
+      value={search.value}
+      onInput={(event) => search.onChangeText(event.currentTarget.value)}
+    />
+  ),
+}));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../components/ui/Button", () => ({ Button: () => null }));
 vi.mock("../../components/ui/ScreenContent", () => ({
   ScreenContent: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({
-  ScreenScrollView: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  ScreenScrollView: ({
+    children,
+    contentContainerStyle,
+  }: {
+    children?: ReactNode;
+    contentContainerStyle?: { justifyContent?: string };
+  }) => (
+    <div
+      data-testid="project-list"
+      style={{ justifyContent: contentContainerStyle?.justifyContent }}
+    >
+      {children}
+    </div>
+  ),
 }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -99,6 +145,7 @@ vi.mock("../../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }
 vi.mock("../connection/environmentStatusText", () => ({ runtimeConnectionErrorText: () => null }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [regular, scratch],
+  useVisibleThreadShells: () => harness.threads,
   useServerConfigs: () => new Map([[environmentId, { scratchWorkspaceRoot: "/scratch" }]]),
 }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { openScratch: {} } }));
@@ -113,7 +160,7 @@ vi.mock("../../state/workspace", () => ({
   useWorkspaceState: () => ({ state: { hasReadyEnvironment: true } }),
 }));
 vi.mock("../sharing/IncomingShareProvider", () => ({
-  useIncomingShare: () => ({ getShare: () => null, releaseShareReservation: vi.fn() }),
+  useIncomingShare: () => ({ getShare: () => harness.share, releaseShareReservation: vi.fn() }),
 }));
 vi.mock("../layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => harness.selectDetail,
@@ -221,4 +268,112 @@ it("cancels the No project draft retarget when another project is picked", async
   await act(async () => screen.retargeting.resolve(true));
 
   expect(harness.selectDetail.mock.calls).toEqual(appDraftSelection);
+});
+
+it("shows the project search empty state only when no thread or project matches", () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  harness.share = {
+    schemaVersion: 1,
+    id: "share-search",
+    createdAt: "2026-06-02T00:00:00Z",
+    text: "Shared note",
+    attachments: [],
+    warnings: [],
+  };
+  harness.threads = [
+    makeThreadShellFixture({
+      id: ThreadId.make("thread-search"),
+      environmentId,
+      projectId: regular.id,
+      title: "Layout review",
+    }),
+  ];
+  using _fixture = {
+    [Symbol.dispose]: () => {
+      harness.share = null;
+      harness.threads = [];
+    },
+  };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  using _root = { [Symbol.dispose]: () => act(() => root.unmount()) };
+  act(() =>
+    root.render(
+      <NewTaskRouteScreen route={{ params: { incomingShareId: "share-search" } } as never} />,
+    ),
+  );
+  const search = container.querySelector<HTMLInputElement>('input[aria-label="Project search"]')!;
+  const type = (query: string) =>
+    act(() => {
+      search.value = query;
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  type("layout");
+  expect(container.textContent).toContain("Layout review");
+  expect(container.textContent).not.toContain("No matching projects");
+  type("app");
+  expect(container.querySelector('[aria-label="app"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("No matching projects");
+  type("missing");
+  expect(container.textContent).toContain("No matching projects");
+  expect(container.textContent).not.toContain("Layout review");
+});
+
+it.each([false, true])("filters No project by its title in the chooser (share: %s)", (sharing) => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  harness.share = sharing
+    ? {
+        schemaVersion: 1,
+        id: "share-scratch-search",
+        createdAt: "2026-06-02T00:00:00Z",
+        text: "Shared note",
+        attachments: [],
+        warnings: [],
+      }
+    : null;
+  using _fixture = {
+    [Symbol.dispose]: () => {
+      harness.share = null;
+    },
+  };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  using _root = { [Symbol.dispose]: () => act(() => root.unmount()) };
+  act(() =>
+    root.render(
+      <NewTaskRouteScreen
+        route={
+          { params: sharing ? { incomingShareId: "share-scratch-search" } : undefined } as never
+        }
+      />,
+    ),
+  );
+  const search = container.querySelector<HTMLInputElement>('input[aria-label="Project search"]')!;
+  const type = (query: string) =>
+    act(() => {
+      search.value = query;
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const noProject = () => container.querySelector('[aria-label="No project"]');
+  const list = container.querySelector<HTMLElement>('[data-testid="project-list"]')!;
+  expect(noProject()).not.toBeNull();
+  type("app");
+  expect(noProject()).toBeNull();
+  expect(container.querySelector('[aria-label="app"]')).not.toBeNull();
+  type("  NO pRo  ");
+  expect(noProject()).not.toBeNull();
+  if (process.env.T3_MOBILE_TEST_PLATFORM === "android") {
+    expect(list.style.justifyContent).not.toBe("center");
+  }
+  expect(container.textContent).not.toContain("No matching projects");
+  if (sharing) expect(container.textContent).toContain("Start a new thread");
+  type("missing");
+  expect(noProject()).toBeNull();
+  expect(container.textContent).toContain("No matching projects");
+  expect(container.textContent).not.toContain("Start a new thread");
+  if (process.env.T3_MOBILE_TEST_PLATFORM === "android") {
+    expect(list.style.justifyContent).toBe("center");
+  }
+  type("");
+  expect(noProject()).not.toBeNull();
 });

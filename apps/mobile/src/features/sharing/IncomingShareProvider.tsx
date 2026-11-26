@@ -15,7 +15,7 @@ import { msg } from "gt-react-native";
 import { Atom } from "effect/reactivity";
 import { useSyncExternalStore } from "react";
 import { Platform } from "react-native";
-import { CommonActions } from "@react-navigation/native";
+import { CommonActions, StackActions } from "@react-navigation/native";
 
 import {
   buildIncomingShareDraft,
@@ -30,7 +30,6 @@ import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import { subscribeAppActive } from "../../lib/appState";
 import { coalescedRun } from "../../lib/coalescedRun";
 import { rootNavigationRef } from "../../lib/rootNavigation";
-import { selectWorkspaceDetail } from "../layout/workspace/workspace-detail-selection";
 import { isDraftThreadRoute } from "../threads/thread-route-state";
 import { makeIncomingShareImports } from "../threads/incomingShareImport";
 import { liveNewTaskFlowKeys, newTaskFlowKey } from "../threads/new-task-flow-state";
@@ -304,7 +303,7 @@ const refreshIncomingShares = coalescedRun(async () => {
 });
 
 /**
- * Opens the oldest pending share as a new-task draft unless the user already
+ * Opens the oldest pending share in the destination chooser unless the user already
  * dismissed it. Runs whenever the inbox or the root navigation state changes.
  */
 export function presentPendingIncomingShare(): void {
@@ -314,16 +313,16 @@ export function presentPendingIncomingShare(): void {
   const route = state.routes[state.index];
   if (route && isDraftThreadRoute(route)) handPendingShareToOpenDraft(route);
   const transition = transitionIncomingSharePresentation(presentation, {
-    isShareSheetPresented: isDraftThreadRoute(state.routes[state.index]),
+    isShareSheetPresented:
+      isDraftThreadRoute(route) ||
+      (route?.name === "NewTaskProject" &&
+        Boolean((route.params as { incomingShareId?: unknown } | undefined)?.incomingShareId)),
     pendingShareId: snapshot.drafts[0]?.id ?? null,
   });
   presentation = transition.state;
   if (!transition.shareIdToPresent) return;
   rootNavigationRef.dispatch(
-    selectWorkspaceDetail({
-      name: "Thread",
-      params: { draft: { incomingShareId: transition.shareIdToPresent } },
-    }),
+    StackActions.push("NewTaskProject", { incomingShareId: transition.shareIdToPresent }),
   );
 }
 
@@ -335,7 +334,7 @@ export function startIncomingShareInbox(): () => void {
     : () => {};
 }
 
-async function consumeShare(shareId: string) {
+export async function consumeShare(shareId: string) {
   publish(await incomingShareInbox.consume(shareId));
 }
 

@@ -30,7 +30,7 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs, useVisibleThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { retargetSavedNewTaskDraft } from "../../state/use-composer-drafts";
@@ -40,6 +40,8 @@ import type { MessageResolver } from "../../i18n/messages";
 import { useWorkspaceState } from "../../state/workspace";
 
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { shareThreadTargets } from "../sharing/incoming-share-thread";
+import { ShareToThreadSection, useShareToThreadSubtitle } from "../sharing/ShareToThreadSection";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import {
   filterProjectScopes,
@@ -129,6 +131,7 @@ function NewTaskHeader(props: {
   readonly title: string;
   readonly subtitle: string | null;
   readonly canAddProject: boolean;
+  readonly searchPlaceholder: string;
   readonly searchText: string;
   readonly onSearchTextChange: (text: string) => void;
 }) {
@@ -159,7 +162,7 @@ function NewTaskHeader(props: {
         search={{
           value: props.searchText,
           onChangeText: props.onSearchTextChange,
-          placeholder: gt("Search projects"),
+          placeholder: props.searchPlaceholder,
         }}
       />
     </>
@@ -170,6 +173,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const gt = useGT();
   const m = useMessages();
   const projects = useProjects();
+  const threads = useVisibleThreadShells();
   const [searchText, setSearchText] = useState("");
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
@@ -182,25 +186,15 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     ? route.params.incomingShareId[0]
     : route.params?.incomingShareId;
   const incomingShare = routeShareId ? getShare(routeShareId) : null;
+  // A share already headed into a project draft finishes there.
+  const canShareToThread = incomingShare !== null && !incomingShare.destination;
+  const threadTargets = canShareToThread
+    ? shareThreadTargets({ threads, projects, searchText })
+    : [];
   const routeDraftId = Array.isArray(route.params?.draftId)
     ? route.params.draftId[0]
     : route.params?.draftId;
-  const incomingShareSubtitle = incomingShare
-    ? incomingShare.attachments.length === 0
-      ? gt("Choose a project for what you shared")
-      : incomingShare.attachments.length === 1
-        ? incomingShare.attachments[0]?.type === "image"
-          ? gt("Choose a project for the image you shared")
-          : gt("Choose a project for the file you shared")
-        : incomingShare.attachments.every((attachment) => attachment.type === "image")
-          ? gt("{count, plural, other {Choose a project for the {count} images you shared}}", {
-              count: incomingShare.attachments.length,
-            })
-          : gt("{count, plural, other {Choose a project for the {count} files you shared}}", {
-              count: incomingShare.attachments.length,
-            })
-    : null;
-  const screenTitle = incomingShare ? gt("Start a task") : gt("Choose project");
+  const incomingShareSubtitle = useShareToThreadSubtitle(incomingShare);
   const projectEmptyState = deriveProjectEmptyState(catalogState, m);
   const serverConfigs = useServerConfigs();
   const listScopes = pickableProjectGroups(projectScopes).filter(
@@ -236,6 +230,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         })
       : null;
   const canStartScratch = scratchOption?.ready === true;
+  const showScratchOption =
+    scratchOption !== null &&
+    listScopes.length > 0 &&
+    gt("No project").toLowerCase().includes(searchText.trim().toLowerCase());
   const pendingScratchRef = useRef<AbortController | null>(null);
   const cancelPendingScratch = useCallback(() => {
     pendingScratchRef.current?.abort();
@@ -366,9 +364,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       <NewTaskHeader
-        title={screenTitle}
+        title={gt("Choose project")}
         subtitle={incomingShareSubtitle}
         canAddProject={catalogState.hasReadyEnvironment}
+        searchPlaceholder={
+          canShareToThread ? gt("Search threads and projects") : gt("Search projects")
+        }
         searchText={searchText}
         onSearchTextChange={setSearchText}
       />
@@ -385,12 +386,22 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             paddingBottom: Math.max(insets.bottom, 18) + 18,
             paddingHorizontal: Platform.OS === "android" ? 16 : 20,
             paddingTop: Platform.OS === "android" ? 16 : 8,
-            ...(Platform.OS === "android" && visibleScopes.length === 0
+            ...(Platform.OS === "android" &&
+            visibleScopes.length === 0 &&
+            threadTargets.length === 0 &&
+            !showScratchOption
               ? { flexGrow: 1, justifyContent: "center" as const }
               : {}),
           }}
         >
-          {scratchOption !== null && listScopes.length > 0 ? (
+          {canShareToThread ? (
+            <ShareToThreadSection
+              share={incomingShare}
+              targets={threadTargets}
+              showNewThreadHeading={visibleScopes.length > 0 || showScratchOption}
+            />
+          ) : null}
+          {showScratchOption ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
                 <NavigationRow
@@ -521,14 +532,16 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               )}
             </View>
           ) : visibleScopes.length === 0 ? (
-            <View className="items-center gap-2 px-6 py-8">
-              <Text className="text-center text-lg font-t3-bold text-foreground">
-                <T>No matching projects</T>
-              </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
-                <T>Try a different project name or workspace path.</T>
-              </Text>
-            </View>
+            threadTargets.length > 0 || showScratchOption ? null : (
+              <View className="items-center gap-2 px-6 py-8">
+                <Text className="text-center text-lg font-t3-bold text-foreground">
+                  <T>No matching projects</T>
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  <T>Try a different project name or workspace path.</T>
+                </Text>
+              </View>
+            )
           ) : (
             <View
               collapsable={false}
