@@ -10,6 +10,7 @@ import * as OtlpExporter from "effect/observability/OtlpExporter";
 import * as OtlpLogger from "effect/observability/OtlpLogger";
 
 import * as ServerConfig from "./config.ts";
+import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 import * as OtlpExportFailures from "./observability/OtlpExportFailures.ts";
 
 // HTTP errors logged with --log-ws-events carry the request URL and its connection ticket.
@@ -54,6 +55,9 @@ export const layer = Effect.gen(function* () {
   const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
+  const errorReportSink = ErrorReporting.makeErrorReportSink();
+  const errorReportLogger = redactingCredentials(ErrorReporting.errorReportLogger(errorReportSink));
+
   const logs = config.otlpLogsExport;
   const otlpLogger =
     config.otlpLogsUrl === undefined
@@ -69,8 +73,8 @@ export const layer = Effect.gen(function* () {
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
   const layerLogger = Logger.layer(
     otlpLogger === undefined
-      ? [consolePretty(), Logger.tracerLogger]
-      : [consolePretty(), otlpLogger],
+      ? [consolePretty(), Logger.tracerLogger, errorReportLogger]
+      : [consolePretty(), otlpLogger, errorReportLogger],
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),
@@ -78,5 +82,9 @@ export const layer = Effect.gen(function* () {
     Layer.provide(SharedObservability.layerOtlpSerialization(logs.protocol)),
   );
 
-  return Layer.mergeAll(layerLogger, layerMinimumLogLevel);
+  return Layer.mergeAll(
+    layerLogger,
+    layerMinimumLogLevel,
+    Layer.succeed(ErrorReporting.ErrorReportSink, errorReportSink),
+  );
 }).pipe(Layer.unwrap);

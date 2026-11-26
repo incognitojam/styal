@@ -66,6 +66,23 @@ data is turned off, saved reports stay there and are not sent. `t3 feedback list
 reports, the thread each came from, and a line for each outline; `t3 feedback list --json` shows
 exactly what each one holds.
 
+## Error reports
+
+Release builds also report server errors so maintainers can find and fix bugs. A report contains
+the error type and message, the stack trace, and the operation that failed, with the same
+identifier and version details as usage events. Before sending, the server replaces your home
+directory and user names in paths, replaces folder and file names in paths under your home
+directory, mounted volumes, temporary folders, network shares, and Windows drives (keeping file
+extensions and known layout folders such as `.styal`), and removes email addresses,
+credentials in URLs, query strings, and long token-like values. An error message can still quote
+part of what the failing operation was handling, such as a relative file path or a line of command
+or provider output. Other details the server logs alongside an error are not sent.
+
+To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
+Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
+
+Development servers report errors only when `T3CODE_ERROR_REPORTING_ENABLED=true`.
+
 ## Relay connection diagnostics
 
 T3 Code sends relay connection traces to Axiom to diagnose T3 Connect connectivity. These are
