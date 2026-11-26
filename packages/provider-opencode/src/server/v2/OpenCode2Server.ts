@@ -9,6 +9,8 @@ import * as P from "effect/Predicate";
 import * as PubSub from "effect/PubSub";
 import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
+import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as HttpClientError from "effect/http/HttpClientError";
 
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
@@ -124,6 +126,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   readonly serverPassword: string;
   readonly directory: string;
   readonly environment: NodeJS.ProcessEnv;
+  readonly skillDirectory?: string | undefined;
 }) {
   const opencode = yield* OpenCode2Client.OpenCode2Client;
   const connectTo = Effect.fn("OpenCode2Server.connectTo")(function* (
@@ -169,7 +172,10 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   const owner = yield* OpenCodeServerOwner.make({
     binaryPath: input.binaryPath,
     directory: input.directory,
-    environment: serverEnvironment(input.environment, password),
+    environment: serverEnvironment(
+      withSkillDirectory(input.environment, input.skillDirectory),
+      password,
+    ),
     verify: (url) => connectTo(url, password, false).pipe(Effect.flatMap(remember)),
   });
   return OpenCode2Server.of({
@@ -184,3 +190,23 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     connections,
   });
 });
+
+const decodeConfig = Schema.decodeUnknownSync(
+  fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
+);
+
+function withSkillDirectory(environment: NodeJS.ProcessEnv, directory: string | undefined) {
+  if (directory === undefined) return environment;
+  const config = decodeConfig(environment.OPENCODE_CONFIG_CONTENT ?? "{}");
+  const skills = "skills" in config ? config.skills : [];
+  if (!Array.isArray(skills) || !skills.every((entry) => typeof entry === "string")) {
+    throw new Error("OpenCode 2 skills must be an array of paths");
+  }
+  return {
+    ...environment,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      ...config,
+      skills: [...skills, directory + "/skills"],
+    }),
+  };
+}

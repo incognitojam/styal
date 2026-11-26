@@ -3,6 +3,8 @@ import "vite-plus/test/config";
 import * as NodePath from "node:path";
 import { defineConfig, mergeConfig } from "vite-plus";
 
+import { skillFiles } from "./agent-skills/files.ts";
+
 import baseConfig from "../../vite.config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import { resolveTaggedSourceVersion } from "../../scripts/lib/tagged-source-version.ts";
@@ -98,6 +100,19 @@ export default mergeConfig(
     },
     pack: {
       plugins: [
+        {
+          name: "styal:agent-skills",
+          load(id) {
+            if (
+              NodePath.resolve(id) !== NodePath.join(import.meta.dirname, "agent-skills/files.ts")
+            )
+              return;
+            return {
+              code: `export const skillFiles = ${JSON.stringify(skillFiles)};`,
+              moduleType: "js",
+            };
+          },
+        },
         {
           // Every server module reads its version from this manifest import.
           name: "t3code:build-version",

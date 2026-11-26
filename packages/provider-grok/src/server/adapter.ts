@@ -162,6 +162,7 @@ const grokSteering: NonNullable<AcpAdapterV2Flavor["steering"]> = {
 };
 
 export interface GrokAdapterV2Options {
+  readonly skillDirectory?: string | undefined;
   readonly instanceId: Parameters<typeof makeAcpAdapterV2>[0]["instanceId"];
   readonly settings: GrokSettings;
   readonly environment: NodeJS.ProcessEnv;
@@ -423,6 +424,7 @@ export function makeGrokAcpAdapterFlavor(
           ...input,
           interruptPromptOnCancel: input.interruptPromptOnCancel ?? false,
           grokSettings: options.settings,
+          skillDirectory: options.skillDirectory,
           environment: options.environment,
           runtimeMode: grokLaunchRuntimeMode(runtimePolicy),
         })),
@@ -471,9 +473,15 @@ export function makeGrokAcpAdapterFlavor(
 export const makeGrokAdapterV2 = Effect.fn("makeGrokAdapterV2")(function* (
   options: GrokAdapterV2Options,
 ) {
+  const host = yield* Effect.serviceOption(ProviderHost.ProviderHost);
+  const skillDirectory =
+    options.skillDirectory ?? (host._tag === "Some" ? host.value.paths.skillDirectory : undefined);
   return yield* makeAcpAdapterV2({
     instanceId: options.instanceId,
-    flavor: makeGrokAcpAdapterFlavor(options, yield* HostProcess.HomeDirectory),
+    flavor: makeGrokAcpAdapterFlavor(
+      { ...options, skillDirectory },
+      yield* HostProcess.HomeDirectory,
+    ),
     selfInvocation: options.selfInvocation,
     ...(options.nativeLogging === undefined ? {} : { nativeLogging: options.nativeLogging }),
     ...(options.continuationRequests === undefined

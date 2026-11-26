@@ -543,7 +543,12 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         const connectionScope = yield* Scope.fork(scope, "sequential");
         return yield* Effect.gen(function* () {
           const launch = buildPiRpcLaunch({
-            launchArgs: resolvedLaunchArgs.args,
+            launchArgs: [
+              ...resolvedLaunchArgs.args,
+              ...(host.paths.skillDirectory === undefined
+                ? []
+                : ["--skill", host.paths.skillDirectory + "/skills"]),
+            ],
             // PortScanner.AGENT_THREAD_ENV, as a literal because this package cannot reach apps/server.
             environment: { ...options.environment, T3CODE_THREAD_ID: input.threadId },
             mcpSession,

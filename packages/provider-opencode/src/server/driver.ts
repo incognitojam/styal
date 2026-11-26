@@ -382,6 +382,7 @@ export const OpenCodeDriver: ProviderDriver<
       ),
     );
     const openCode2Server = yield* OpenCode2Server.make({
+      skillDirectory: host.paths.skillDirectory,
       binaryPath: effectiveConfig.binaryPath,
       serverUrl: effectiveConfig.serverUrl,
       serverPassword: effectiveConfig.serverPassword,
@@ -807,7 +808,13 @@ export const OpenCodeDriver: ProviderDriver<
                     Effect.map(([machineSnapshot, cwdModels, { skills, commands }]) => ({
                       ...machineSnapshot,
                       ...workspaceModelsFor(machineSnapshot.models, cwdModels),
-                      skills: openCode2SkillsToServerProviderSkills(skills),
+                      skills: openCode2SkillsToServerProviderSkills(skills).filter(
+                        (skill) =>
+                          host.paths.skillDirectory === undefined ||
+                          !skill.path
+                            .replaceAll("\\", "/")
+                            .startsWith(host.paths.skillDirectory.replaceAll("\\", "/") + "/"),
+                      ),
                       slashCommands: openCode2CommandsToServerProviderSlashCommands(commands),
                       // A finished scan lists at least the built-ins. None means it
                       // timed out, so the registry decides from the provider's health.

@@ -20,6 +20,7 @@ export interface ProviderHostPaths {
   readonly providerStatusCacheDir: string;
   /** Where chat attachments are stored; agents that sandbox file reads must be granted it. */
   readonly attachmentsDir: string;
+  readonly skillDirectory?: string | undefined;
 }
 
 export interface ProviderCredentials {

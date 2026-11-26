@@ -1177,17 +1177,51 @@ describe("CodexAdapterV2 session initialize", () => {
     transcript: CodexReplay.CodexAppServerReplayTranscript,
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
     compatibility?: CodexAdapterV2.CodexAdapterV2Options["compatibility"],
+    skillDirectory?: string,
+    onSkills?: () => Effect.Effect<void>,
   ) =>
     Effect.gen(function* () {
+      const configured = withConfigReads(transcript);
+      const entries =
+        skillDirectory === undefined
+          ? configured.entries
+          : configured.entries.flatMap((entry): CodexReplay.CodexAppServerReplayEntry[] => {
+              if (entry.type === "runtime_exit" || !Predicate.isObject(entry.frame)) return [entry];
+              if (entry.label === "initialized")
+                return [
+                  entry,
+                  {
+                    type: "expect_outbound",
+                    label: "skills/extraRoots/set",
+                    frame: {
+                      id: 2,
+                      method: "skills/extraRoots/set",
+                      params: { extraRoots: [skillDirectory + "/skills"] },
+                    },
+                  },
+                  {
+                    type: "emit_inbound",
+                    label: "skills/extraRoots/set",
+                    frame: { id: 2, result: {} },
+                  },
+                ];
+              return [
+                typeof entry.frame.id === "number" && entry.frame.id >= 2
+                  ? withReplayRequestId(entry, entry.frame.id + 1)
+                  : entry,
+              ];
+            });
       const driver = yield* CodexReplay.makeReplayDriver(
-        withConfigReads(transcript),
+        { ...configured, entries },
         beforeEmitInbound === undefined ? {} : { beforeEmitInbound },
       );
       let initializeRequests = 0;
+      const skillRequests: unknown[] = [];
       const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
         environment: {},
+        skillDirectory,
         ...(compatibility === undefined ? {} : { compatibility }),
         clientFactory: {
           open: (openInput) =>
@@ -1202,7 +1236,15 @@ describe("CodexAdapterV2 session initialize", () => {
                     request: (method, params) =>
                       Effect.sync(() => {
                         if (method === "initialize") initializeRequests++;
-                      }).pipe(Effect.andThen(client.request(method, params))),
+                        if (method === "skills/extraRoots/set") skillRequests.push(params);
+                      }).pipe(
+                        Effect.andThen(
+                          method === "skills/extraRoots/set"
+                            ? (onSkills?.() ?? Effect.void)
+                            : Effect.void,
+                        ),
+                        Effect.andThen(client.request(method, params)),
+                      ),
                   }) satisfies CodexClient.CodexAppServerClient["Service"],
               ),
               Effect.mapError(
@@ -1236,6 +1278,7 @@ describe("CodexAdapterV2 session initialize", () => {
             runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           }),
         initializeRequests: () => initializeRequests,
+        skillRequests,
         runtime,
         events: runtime.events,
       };
@@ -1280,6 +1323,8 @@ describe("CodexAdapterV2 session initialize", () => {
                 Effect.andThen(Deferred.await(releaseInitialize)),
               )
             : Effect.void,
+        undefined,
+        "/synthetic/styal",
       );
 
       const first = yield* session
@@ -1293,6 +1338,7 @@ describe("CodexAdapterV2 session initialize", () => {
 
       const providerThreads = [yield* Fiber.join(first), yield* Fiber.join(second)];
       assert.equal(session.initializeRequests(), 1);
+      assert.deepEqual(session.skillRequests, [{ extraRoots: ["/synthetic/styal/skills"] }]);
       assert.sameMembers(
         providerThreads.map((providerThread) => providerThread.nativeThreadRef?.nativeId),
         ["concurrent-first", "concurrent-second"],
@@ -1387,6 +1433,35 @@ describe("CodexAdapterV2 session initialize", () => {
         failure.cause.message,
         "Codex 0.144.3 does not work with this styal release. Update Codex to >=0.159.0, then retry.",
       );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("fails the open when skill registration never answers", () =>
+    Effect.gen(function* () {
+      const written = yield* Deferred.make<void>();
+      const opened = yield* openReplaySession(
+        makeCodexReplayTranscript({
+          scenario: "skills-hung-open",
+          entries: replayPreamble("skills-hung-open").slice(0, 3),
+        }),
+        undefined,
+        () => Effect.undefined,
+        "/synthetic/styal",
+        () => Deferred.succeed(written, undefined).pipe(Effect.andThen(Effect.never)),
+      ).pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(written);
+      yield* TestClock.adjust("30 seconds");
+      assert.instanceOf(yield* Fiber.join(opened), ProviderAdapter.ProviderAdapterOpenSessionError);
     }).pipe(
       Effect.scoped,
       Effect.provide(

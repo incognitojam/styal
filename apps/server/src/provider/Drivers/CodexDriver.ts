@@ -255,6 +255,7 @@ export const CodexDriver: ProviderDriver<
           Effect.map((value) => value.models),
         ),
         compatibility: installation.compatibility,
+        skillDirectory: (yield* ProviderHost.ProviderHost).paths.skillDirectory,
       },
     ).pipe(
       Effect.mapError(

@@ -24,6 +24,9 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -204,6 +207,69 @@ const writesPerSelection = (
     }
     return writes;
   }).pipe(Effect.scoped, Effect.provide(layerTest));
+
+it.live("captures bundled skills before the Grok adapter leaves its host context", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const host = yield* ProviderHost.ProviderHost;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "styal-grok-skills-" });
+    const log = path.join(directory, "requests.ndjson");
+    yield* fs.writeFileString(log, "");
+    const agentPath = yield* path.fromFileUrl(
+      new URL("./testFixtures/grok-model-selection-agent.mjs", import.meta.url),
+    );
+    const launches: string[][] = [];
+    const adapter = yield* makeGrokAdapterV2({
+      instanceId,
+      settings: { ...DEFAULT_GROK_SETTINGS, binaryPath: process.execPath },
+      environment: {},
+      hostPlatform: yield* HostProcess.Platform,
+      selfInvocation: yield* resolveSelfInvocation(),
+    }).pipe(
+      Effect.provideService(ProviderHost.ProviderHost, {
+        ...host,
+        paths: { ...host.paths, skillDirectory: "/synthetic/styal" },
+      }),
+      Effect.provideService(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) => {
+          if (!ChildProcess.isStandardCommand(command))
+            return Effect.die("Expected a simple Grok launch");
+          launches.push(command.args.map(String));
+          return spawner.spawn(
+            ChildProcess.make(process.execPath, [agentPath], {
+              ...command.options,
+              env: { ...command.options.env, T3_ACP_REQUEST_LOG_PATH: log },
+            }),
+          );
+        }),
+      ),
+    );
+    const modelSelection = select("grok-build");
+    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: directory,
+    });
+    const runtime = yield* adapter.openSession({
+      threadId: ThreadId.make("grok-skills"),
+      providerSessionId: ProviderSessionId.make("grok-skills"),
+      modelSelection,
+      runtimePolicy,
+    });
+    yield* runtime.ensureThread({
+      threadId: ThreadId.make("grok-skills"),
+      modelSelection,
+      runtimePolicy,
+    });
+    assert.deepEqual(
+      launches.map((args) => args.slice(args.indexOf("--plugin-dir"))),
+      [["--plugin-dir", "/synthetic/styal", "agent", "--always-approve", "stdio"]],
+    );
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
 
 describe("Grok reasoning effort", () => {
   // Grok's session starts at xhigh on grok-4.6. grok-4.6-fast offers only

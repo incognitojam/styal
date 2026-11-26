@@ -654,6 +654,29 @@ const startTurn = Effect.fnUntraced(function* (
   });
 });
 
+it.effect("passes bundled skills alongside user skill flags to Pi", () =>
+  Effect.gen(function* () {
+    const host = yield* ProviderHost.ProviderHost;
+    const fake = yield* makeFakePi;
+    const adapter = yield* makeAdapter(fake, "--skill /team/skills").pipe(
+      Effect.provideService(ProviderHost.ProviderHost, {
+        ...host,
+        paths: { ...host.paths, skillDirectory: "/synthetic/styal" },
+      }),
+    );
+    yield* adapter.openSession({
+      threadId: THREAD_ID,
+      providerSessionId: SESSION_ID,
+      modelSelection: modelSelection("default"),
+      runtimePolicy,
+    });
+    assert.includeMembers(
+      [...fake.lastSpawn()!.args],
+      ["--skill", "/team/skills", "/synthetic/styal/skills"],
+    );
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
 describe("PiAdapterV2", () => {
   it.effect(
     "replaces keyed extension statuses while idle without producing conversation items",

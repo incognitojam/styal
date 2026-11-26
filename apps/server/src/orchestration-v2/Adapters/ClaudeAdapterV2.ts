@@ -2531,6 +2531,7 @@ export function makeClaudeQueryOptions(input: {
   /** The thread's other folders: listed in the system prompt and granted as directories. */
   readonly workspace?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["workspace"];
   readonly attachmentsDir?: string;
+  readonly skillDirectory?: string | undefined;
   readonly settings?: ClaudeSettings;
   readonly promptSuggestions?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
@@ -2582,8 +2583,12 @@ export function makeClaudeQueryOptions(input: {
   if (requestThinkingSummaries && extraArgs["thinking-display"] === undefined) {
     extraArgs["thinking-display"] = "summarized";
   }
-  const pluginDirectories =
-    input.settings === undefined ? [] : claudeLaunchArgPluginDirectories(input.settings.launchArgs);
+  const pluginDirectories = [
+    ...(input.settings === undefined
+      ? []
+      : claudeLaunchArgPluginDirectories(input.settings.launchArgs)),
+    ...(input.skillDirectory === undefined ? [] : [input.skillDirectory]),
+  ];
   // A bare --plugin-dir still reaches Claude, which reports the missing path.
   if (launchArgPluginDir === null) extraArgs["plugin-dir"] = null;
   const threadIdentity: ClaudeAgentSdkThreadIdentity = input.resume
@@ -5966,6 +5971,7 @@ function claudeProposedPlan(input: unknown): string | null {
 }
 
 export interface ClaudeAdapterV2Options {
+  readonly skillDirectory?: string | undefined;
   readonly instanceId: ProviderInstanceId;
   readonly settings: ClaudeSettings;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
@@ -13711,6 +13717,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { workspace: turnInput.runtimePolicy.workspace }),
             attachmentsDir,
+            skillDirectory: adapterOptions.skillDirectory,
             settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:
@@ -15567,7 +15574,12 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<
       ClaudeAdapterV2Options,
-      "scopedLimitNames" | "onUsageLimits" | "onSessionInit" | "modelCatalog" | "routeModelCatalog"
+      | "scopedLimitNames"
+      | "onUsageLimits"
+      | "onSessionInit"
+      | "modelCatalog"
+      | "routeModelCatalog"
+      | "skillDirectory"
     > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;

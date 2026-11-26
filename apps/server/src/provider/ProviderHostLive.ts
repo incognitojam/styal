@@ -6,6 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import { materialize } from "../agentSkills/materialize.ts";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
@@ -48,6 +49,7 @@ export const layer = Layer.effect(
         stateDir: config.stateDir,
         providerStatusCacheDir: config.providerStatusCacheDir,
         attachmentsDir: config.attachmentsDir,
+        skillDirectory: yield* materialize(config.stateDir).pipe(Effect.orDie),
       },
       settings: {
         get: serverSettings.getSettings,

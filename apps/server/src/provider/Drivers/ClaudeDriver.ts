@@ -187,6 +187,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       },
       {
         scopedLimitNames,
+        skillDirectory: (yield* ProviderHost.ProviderHost).paths.skillDirectory,
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         onSessionInit: (cwd) => Queue.offer(workspaceRescans, cwd).pipe(Effect.asVoid),
         modelCatalog,

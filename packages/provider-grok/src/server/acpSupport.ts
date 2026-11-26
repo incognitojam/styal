@@ -34,6 +34,7 @@ interface GrokAcpRuntimeInput extends Omit<
   readonly grokSettings: GrokAcpRuntimeGrokSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
   readonly runtimeMode?: RuntimeMode;
+  readonly skillDirectory?: string | undefined;
 }
 
 // grok agent treats settings-only acceptEdits as ask; it has no Auto-accept edits launch mode.
@@ -44,16 +45,20 @@ export const GROK_SUPPORTED_RUNTIME_MODES = [
 ] as const satisfies ReadonlyArray<RuntimeMode>;
 
 // argv overrides Grok config so Supervised cannot inherit always-approve.
-export function grokAcpSpawnArgs(runtimeMode?: RuntimeMode): ReadonlyArray<string> {
+export function grokAcpSpawnArgs(
+  runtimeMode?: RuntimeMode,
+  skillDirectory?: string,
+): ReadonlyArray<string> {
+  const plugins = skillDirectory === undefined ? [] : ["--plugin-dir", skillDirectory];
   switch (runtimeMode) {
     case undefined:
-      return ["agent", "stdio"];
+      return [...plugins, "agent", "stdio"];
     case "auto":
-      return ["--permission-mode", "auto", "agent", "stdio"];
+      return [...plugins, "--permission-mode", "auto", "agent", "stdio"];
     case "full-access":
-      return ["agent", "--always-approve", "stdio"];
+      return [...plugins, "agent", "--always-approve", "stdio"];
     default:
-      return ["--permission-mode", "default", "agent", "stdio"];
+      return [...plugins, "--permission-mode", "default", "agent", "stdio"];
   }
 }
 
@@ -62,10 +67,11 @@ function buildGrokAcpSpawnInput(
   cwd: string,
   environment?: NodeJS.ProcessEnv,
   runtimeMode?: RuntimeMode,
+  skillDirectory?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
   return {
     command: grokSettings?.binaryPath || "grok",
-    args: [...grokAcpSpawnArgs(runtimeMode)],
+    args: grokAcpSpawnArgs(runtimeMode, skillDirectory),
     cwd,
     env: {
       ...environment,
@@ -137,6 +143,7 @@ export const makeGrokAcpRuntime = Effect.fn("GrokAcpSupport.makeGrokAcpRuntime")
         input.cwd,
         input.environment,
         input.runtimeMode,
+        input.skillDirectory,
       ),
       authMethodId: resolveGrokAuthMethodId(input.environment),
       cancelMeta: { ...input.cancelMeta, ...GROK_ACP_CANCEL_META },

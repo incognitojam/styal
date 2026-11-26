@@ -122,6 +122,7 @@ import {
   makeProviderFailure,
   PROVIDER_RETRY_BUDGET_MS,
 } from "@t3tools/provider-core/server/failure";
+import { materialize } from "../../agentSkills/materialize.ts";
 import * as ClaudeAdapterV2 from "./ClaudeAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
@@ -3385,6 +3386,7 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
   const openWith = (
     cli: ReturnType<typeof makeFakeClaudeCli>,
     native?: ProviderEventLoggers.EventNdjsonLogger,
+    skillDirectory?: string,
   ) =>
     Effect.gen(function* () {
       const runner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner;
@@ -3398,7 +3400,11 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
             title: "Existing T3 title",
             resume: false,
             cwd: null,
-            environment: { PATH: "/usr/bin" },
+            environment: {
+              PATH: "/usr/bin",
+              ...(skillDirectory === undefined ? {} : { HOME: skillDirectory }),
+            },
+            skillDirectory,
             mcpServers: { "t3-code": t3McpServer },
           }),
           pathToClaudeCodeExecutable: "/opt/claude/cli.js",
@@ -3413,6 +3419,27 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
       }),
       Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
+
+  it.effect("passes the shipped skill plugin to a Claude CLI session", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const state = yield* fs.makeTempDirectoryScoped({ prefix: "styal-skill-session-" });
+      const directory = yield* materialize(state);
+      const cli = makeFakeClaudeCli();
+      const session = yield* openWith(cli, undefined, directory);
+      yield* session.close;
+      assert.include(cli.spawns[0]!.args, `--plugin-dir=${directory}`);
+      assert.equal(cli.spawns[0]!.env.HOME, directory);
+      assert.include(
+        yield* fs.readFileString(directory + "/skills/styal-guides/SKILL.md"),
+        "name: styal-guides",
+      );
+      assert.include(
+        yield* fs.readFileString(directory + "/skills/review-pr/SKILL.md"),
+        "watch_pull_request",
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 
   it.effect("commits queued delivery before interruptible protocol logging", () =>
     Effect.gen(function* () {

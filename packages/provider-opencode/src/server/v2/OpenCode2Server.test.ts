@@ -206,6 +206,8 @@ describe("OpenCode2Server passwords", () => {
 });
 
 const FAKE_SERVER = `import { createServer } from "node:http";
+const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);
+if (JSON.stringify(config.skills) !== JSON.stringify(["/team/skills", "/synthetic/styal/skills"]) || config.model !== "test-model") process.exit(2);
 const expected = "Basic " + Buffer.from("opencode:" + process.env.OPENCODE_PASSWORD).toString("base64");
 const server = createServer((request, response) => {
   if (request.headers.authorization !== expected) {
@@ -246,7 +248,14 @@ describe("OpenCode2Server spawned server", () => {
         serverUrl: "",
         serverPassword: "",
         directory,
-        environment: { ...(yield* HostProcess.Environment), OPENCODE_SERVER_PASSWORD: "ambient" },
+        skillDirectory: "/synthetic/styal",
+        environment: {
+          PATH: (yield* HostProcess.Environment).PATH,
+          HOME: directory,
+          OPENCODE_SERVER_PASSWORD: "ambient",
+          OPENCODE_CONFIG_CONTENT:
+            '{ /* team config */ "model": "test-model", "skills": ["/team/skills"], }',
+        },
       });
       const first = yield* server.withConnection((connection) => Effect.succeed(connection));
       const second = yield* server.withConnection((connection) => Effect.succeed(connection));

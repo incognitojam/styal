@@ -2037,7 +2037,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
   hooks: Pick<
     CodexAdapterV2Options,
-    "onUsageLimits" | "resolveRuntime" | "compatibility" | "models"
+    "onUsageLimits" | "resolveRuntime" | "compatibility" | "models" | "skillDirectory"
   > = {},
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
@@ -2086,6 +2086,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 });
 
 export interface CodexAdapterV2Options {
+  readonly skillDirectory?: string | undefined;
   readonly instanceId: ProviderInstanceId;
   readonly settings: CodexSettings;
   readonly environment: NodeJS.ProcessEnv;
@@ -2228,23 +2229,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       ? Effect.succeed(null)
                       : Effect.fail(error),
                 }),
-                // A hung app-server never answers, and every thread on this shared
-                // session waits behind the permit. Failing the event stream retires
-                // the session, so the next turn spawns a fresh app-server.
-                Effect.timeoutOrElse({
-                  duration: CODEX_INITIALIZE_TIMEOUT,
-                  orElse: () => {
-                    const error = new ProviderAdapter.ProviderAdapterEventStreamError({
-                      driver: CODEX_PROVIDER,
-                      providerSessionId: input.providerSessionId,
-                      cause: `Codex app-server did not answer initialize within ${CODEX_INITIALIZE_TIMEOUT}.`,
-                    });
-                    return Ref.set(initializeTimeout, error).pipe(
-                      Effect.andThen(Queue.fail(events, error)),
-                      Effect.andThen(Effect.fail(error)),
-                    );
-                  },
-                }),
               );
             const version = userAgent && /\/(\S+)/u.exec(userAgent)?.[1];
             const advisory =
@@ -2261,8 +2245,29 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               });
             if (refused) return yield* refused;
             yield* client.notify("initialized", undefined);
+            if (adapterOptions.skillDirectory !== undefined) {
+              yield* client.request("skills/extraRoots/set", {
+                extraRoots: [adapterOptions.skillDirectory + "/skills"],
+              });
+            }
             yield* Ref.set(initialized, true);
-          }),
+          }).pipe(
+            // A hung app-server holds every thread behind the initialization permit.
+            Effect.timeoutOrElse({
+              duration: CODEX_INITIALIZE_TIMEOUT,
+              orElse: () => {
+                const error = new ProviderAdapter.ProviderAdapterEventStreamError({
+                  driver: CODEX_PROVIDER,
+                  providerSessionId: input.providerSessionId,
+                  cause: `Codex app-server did not finish initialization within ${CODEX_INITIALIZE_TIMEOUT}.`,
+                });
+                return Ref.set(initializeTimeout, error).pipe(
+                  Effect.andThen(Queue.fail(events, error)),
+                  Effect.andThen(Effect.fail(error)),
+                );
+              },
+            }),
+          ),
         );
         // A failed open is discarded, so the next turn spawns the updated binary.
         if (adapterOptions.compatibility !== undefined) yield* ensureInitialized;
