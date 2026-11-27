@@ -5,7 +5,6 @@ import * as Result from "effect/Result";
 
 import {
   hostedAppUrlConfig,
-  makeCloudCliOAuthConfig,
   makeRelayUrlConfig,
   resolveRelayClientTracingConfig,
 } from "./publicConfig.ts";
@@ -34,24 +33,6 @@ it.effect("rejects malformed or insecure hosted app URLs", () =>
       );
       assert.isTrue(Result.isFailure(result), value);
     }
-  }),
-);
-
-it.effect("derives direct Clerk OAuth endpoints from statically injected public config", () =>
-  Effect.gen(function* () {
-    const config = yield* makeCloudCliOAuthConfig({
-      clerkPublishableKeyFallback: "pk_test_Y2xlcmsuZXhhbXBsZS50ZXN0JA==",
-      clerkCliOAuthClientIdFallback: "oauth_client_embedded",
-    }).pipe(provideEnv({}));
-
-    assert.deepEqual(config, {
-      tokenEndpoint: "https://clerk.example.test/oauth/token",
-      deviceAuthorizationEndpoint: "https://clerk.example.test/oauth/device_authorization",
-      clientId: "oauth_client_embedded",
-      loopbackPort: 34338,
-      redirectUri: "http://127.0.0.1:34338/callback",
-      scopes: ["openid", "profile", "email", "offline_access"],
-    });
   }),
 );
 

@@ -30,7 +30,7 @@ import {
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { CLOUD_CLI_DESIRED_LINK_SECRET } from "./CliState.ts";
-import * as CliTokenManager from "./CliTokenManager.ts";
+import * as CliSession from "./CliSession.ts";
 import {
   RelayEnvironmentLinkProofPayload,
   RelayManagedEndpointRecoveryRegistrationRequest,
@@ -110,12 +110,6 @@ describe("consumeCloudReplayGuards", () => {
 });
 
 describe("releaseManagedTunnelOnShutdown", () => {
-  const cliToken: CliTokenManager.PersistedToken = {
-    accessToken: "cli-access-token",
-    refreshToken: "cli-refresh-token",
-    expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
-  };
-
   function makeMemorySecretStore(initial: Iterable<readonly [string, string]> = []) {
     const values = new Map<string, Uint8Array>(
       Array.from(initial, ([name, value]) => [name, new TextEncoder().encode(value)] as const),
@@ -147,7 +141,6 @@ describe("releaseManagedTunnelOnShutdown", () => {
     readonly respond?: () => Response;
     readonly address?: HttpServer.HttpServer["Service"]["address"];
     readonly respondEffect?: Effect.Effect<Response>;
-    readonly getExisting?: CliTokenManager.CloudCliTokenManager["Service"]["getExisting"];
     readonly latestReachability?: ConnectReachability.ConnectReachability["Service"]["latest"];
     readonly connector?: ManagedEndpointRuntime.ConnectorFacts;
   }
@@ -233,13 +226,16 @@ describe("releaseManagedTunnelOnShutdown", () => {
           EnvironmentAuth.EnvironmentAuth.of({} as EnvironmentAuth.EnvironmentAuth["Service"]),
         ),
         Effect.provideService(
-          CliTokenManager.CloudCliTokenManager,
-          CliTokenManager.CloudCliTokenManager.of({
-            get: unusedSecretStoreOperation(),
-            getExisting: harness.getExisting ?? Effect.succeedSome(cliToken),
+          CliSession.CloudCliSession,
+          CliSession.CloudCliSession.of({
+            startEmailSignIn: () => unusedSecretStoreOperation(),
+            verifyEmailSignIn: () => unusedSecretStoreOperation(),
+            currentIdentity: unusedSecretStoreOperation(),
+            storedIdentity: unusedSecretStoreOperation(),
             hasCredential: unusedSecretStoreOperation(),
-            store: () => unusedSecretStoreOperation(),
-            clear: unusedSecretStoreOperation(),
+            authorize: () =>
+              Effect.succeedSome({ authorization: "DPoP cli-access-token", dpop: "test-proof" }),
+            signOut: unusedSecretStoreOperation(),
           }),
         ),
         Effect.provideService(
@@ -373,7 +369,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
       expect(request.url).toBe(
         "https://relay.example.test/v1/client/environment-links/env_123/tunnel",
       );
-      expect(request.headers.authorization).toBe("Bearer cli-access-token");
+      expect(request.headers.authorization).toBe("DPoP cli-access-token");
       expect(values.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(false);
       expect(values.has(CLOUD_ENDPOINT_CONFIRMED_ORIGIN)).toBe(false);
     }).pipe(provideReleaseHarness({ store, applyConfigCalls, requests }));

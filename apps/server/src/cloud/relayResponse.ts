@@ -28,7 +28,7 @@ export function relayRequestError(cause: unknown): RelayRequestError {
     ? cause
     : new RelayRequestError({
         rejection: "unavailable",
-        description: `Could not complete the T3 Connect relay request. ${isHttpClientError(cause) ? `The relay request failed (${cause.reason._tag}).` : "The relay returned an unexpected response."} Check this machine's network connection and relay availability, then retry.`,
+        description: `Could not complete the styal Link relay request. ${isHttpClientError(cause) ? `The relay request failed (${cause.reason._tag}).` : "The relay returned an unexpected response."} Check this machine's network connection and relay availability, then retry.`,
       });
 }
 
@@ -62,12 +62,12 @@ export function relayRetryAfterMillis(error: unknown): number | undefined {
 function recoveryHint(error: RelayProtectedError): string {
   switch (error._tag) {
     case "RelayEnvironmentLinkLimitExceededError":
-      return "Unlink an unused environment in T3 Connect, then restart styal on this machine.";
+      return "Unlink an unused environment in styal Link, then restart styal on this machine.";
     case "RelayAuthInvalidError":
-      return "Run `styal connect login` to check this machine's authorization. If the stored credential was revoked, sign out with `styal connect logout`, then run `styal connect` again. Restart styal after signing in.";
+      return "Run `styal link login` to check this machine's authorization. If the stored credential was revoked, sign out with `styal link logout`, then run `styal link` again. Restart styal after signing in.";
     case "RelayEnvironmentLinkProofInvalidError":
       if (error.reason === "environment_key_mismatch") {
-        return "T3 Connect already has this environment linked with a different key. Unlink it in T3 Connect, then restart styal on this machine.";
+        return "styal Link already has this environment linked with a different key. Unlink it in styal Link, then restart styal on this machine.";
       }
       return "Check this machine's date and time, update styal, then restart it.";
     case "RelayEnvironmentLinkProofExpiredError":
@@ -87,8 +87,8 @@ export const filterRelayResponse = Effect.fn("cloud.filter_relay_response")(func
   const ray = response.headers["cf-ray"];
   const requestId = ray && /^[a-zA-Z0-9-]{1,128}$/.test(ray) ? ` Cloudflare Ray ID: ${ray}.` : "";
   const description = Option.isSome(decoded)
-    ? `T3 Connect: ${decoded.value.message}. ${recoveryHint(decoded.value)} Trace ID: ${decoded.value.traceId}.`
-    : `T3 Connect relay returned HTTP ${response.status} without a recognized error response. Check relay access and any proxy or firewall restrictions, then restart styal.${requestId}`;
+    ? `styal Link: ${decoded.value.message}. ${recoveryHint(decoded.value)} Trace ID: ${decoded.value.traceId}.`
+    : `styal Link relay returned HTTP ${response.status} without a recognized error response. Check relay access and any proxy or firewall restrictions, then restart styal.${requestId}`;
 
   // Only a schema-decoded expired-proof 401 is retryable for clock skew; every other 401 is permanent.
   if (

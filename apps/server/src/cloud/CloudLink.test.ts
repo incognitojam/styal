@@ -20,7 +20,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
-import * as CliTokenManager from "./CliTokenManager.ts";
+import * as CliSession from "./CliSession.ts";
 import * as CloudLink from "./CloudLink.ts";
 import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
@@ -132,7 +132,7 @@ const withService = <A, E>(
             return { credential: "pairing-credential", expiresAt: DateTime.makeUnsafe(120_000) };
           }),
       }),
-      Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
+      Layer.mock(CliSession.CloudCliSession)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
       }),
@@ -296,7 +296,7 @@ it.effect("an update the client walks away from still finishes", () => {
   );
 });
 
-it.effect("mints a T3 Connect credential under the host's device approval setting", () =>
+it.effect("mints a styal Link credential under the host's device approval setting", () =>
   withService({}, ({ mintCredential, connectCredentialRequests, stored }) =>
     Effect.gen(function* () {
       const before = new Set(stored.keys());
@@ -361,7 +361,7 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
       }),
       Layer.mock(ConnectReachability.ConnectReachability)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
-      Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
+      Layer.mock(CliSession.CloudCliSession)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
       }),
@@ -380,7 +380,7 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
 
       const applyError = yield* link.applyRelayConfig({} as never).pipe(Effect.flip);
       const mintError = yield* link.mintCredential({} as never).pipe(Effect.flip);
-      assert.equal(applyError.message, "Example Corp's policy does not allow T3 Connect.");
+      assert.equal(applyError.message, "Example Corp's policy does not allow styal Link.");
       assert.equal(mintError._tag, "ManagedPolicyRefusedError");
     }).pipe(
       Effect.provide(

@@ -15,7 +15,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
 import { upCommand } from "./up.ts";
 
-// T3 Connect's flows run only in builds with its public config, and they call
+// styal Link's flows run only in builds with its public config, and they call
 // the relay; this file swaps in the link and unlink steps.
 const events = vi.hoisted((): Array<string> => []);
 // The CLI link marker, kept in memory instead of the secret store.
@@ -46,7 +46,13 @@ vi.mock("./connect.ts", async (importOriginal) => {
         events.push("link");
         link.desired = true;
         link.mode = "managed";
-        return { identity: "me@example.com" } as const;
+        return {
+          identity: {
+            userId: "user_1",
+            email: "ada@example.test",
+            relayUrl: "https://relay.example.test",
+          },
+        } as const;
       }),
     disconnectCloud: () =>
       Effect.sync(() => {
@@ -58,7 +64,7 @@ vi.mock("./connect.ts", async (importOriginal) => {
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "styal up with T3 Connect",
+  "styal up with styal Link",
   (it) => {
     it.effect.each([
       { label: "no link", prior: null, events: ["link", "restart", "unlink", "restart"] },
@@ -103,7 +109,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
         const exit = yield* Command.runWith(upCommand, { version: packageJson.version })([
           "--base-dir",
           baseDir,
-          "--connect",
+          "--link",
         ]).pipe(
           Effect.provideService(HostProcess.Environment, {}),
           Effect.provide(
@@ -159,7 +165,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
         const error = yield* Command.runWith(upCommand, { version: packageJson.version })([
           "--base-dir",
           baseDir,
-          "--connect",
+          "--link",
         ]).pipe(
           Effect.provideService(HostProcess.Environment, {}),
           Effect.provide(

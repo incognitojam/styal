@@ -1060,15 +1060,6 @@ importers:
       '@betteroffice/xlsx':
         specifier: 0.5.1
         version: 0.5.1
-      '@clerk/clerk-js':
-        specifier: 6.47.0
-        version: 6.47.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@clerk/electron':
-        specifier: 0.1.20
-        version: 0.1.20(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@44.10.1(supports-color@8.1.1))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@clerk/react':
-        specifier: 6.19.6
-        version: 6.19.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@daypicker/react':
         specifier: ^10.0.1
         version: 10.0.1(@types/react@19.3.0)(react@19.3.0)

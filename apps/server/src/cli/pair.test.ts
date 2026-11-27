@@ -424,7 +424,7 @@ describe("styal pair", () => {
           typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
         );
         assert.include(rendered, "No running styal server found.");
-        for (const subcommand of ["serve", "connect"]) {
+        for (const subcommand of ["serve", "link"]) {
           const { command } = yield* resolveHostCliCommand(subcommand, ["--base-dir", baseDir]);
           assert.include(rendered, `\`${command}\``);
         }

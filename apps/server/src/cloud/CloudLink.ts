@@ -74,7 +74,7 @@ import {
   readCliDesiredLinkMode,
   setCliDesiredCloudLink,
 } from "./CliState.ts";
-import * as CliTokenManager from "./CliTokenManager.ts";
+import * as CliSession from "./CliSession.ts";
 import {
   CLOUD_ENDPOINT_CONFIRMED_ORIGIN,
   CLOUD_ENDPOINT_RUNTIME_CONFIG,
@@ -168,7 +168,7 @@ export class CloudLinkNotLinkedError extends Schema.TaggedError<CloudLinkNotLink
   {},
 ) {
   override get message(): string {
-    return "Link this environment to T3 Connect first.";
+    return "Link this environment to styal Link first.";
   }
 }
 
@@ -186,7 +186,7 @@ export class CloudLinkAuthorizationMissingError extends Schema.TaggedError<Cloud
   {},
 ) {
   override get message(): string {
-    return "Run `styal connect link` to authorize this environment.";
+    return "Run `styal link` to authorize this environment.";
   }
 }
 
@@ -240,15 +240,15 @@ const INTERNAL_OPERATION_MESSAGES = {
   "persist-relay-config": "Could not persist environment relay configuration.",
   "register-endpoint-origin": "Could not register the managed endpoint origin.",
   "resolve-server-origin": "Could not resolve the local server origin.",
-  "persist-desired-link": "Could not persist desired T3 Connect link state.",
+  "persist-desired-link": "Could not persist the desired styal Link state.",
   "sign-recovery-proof": "Could not sign the managed tunnel recovery request.",
   "unsupported-recovered-tunnel":
-    "T3 Connect returned an unsupported managed tunnel configuration.",
+    "styal Link returned an unsupported managed tunnel configuration.",
   "persist-recovered-tunnel": "Could not persist the recovered managed tunnel configuration.",
   "read-relay-config": "Could not read environment relay configuration.",
   "remove-relay-config": "Could not remove environment relay configuration.",
-  "update-live-activity-preference": "Could not update T3 Connect Live Activity preferences.",
-  "update-webhook-settings": "Could not update T3 Connect webhook settings.",
+  "update-live-activity-preference": "Could not update styal Link Live Activity preferences.",
+  "update-webhook-settings": "Could not update styal Link webhook settings.",
   "read-preferences": "Could not read environment cloud preferences.",
   "persist-preferences": "Could not persist environment cloud preferences.",
   "answer-health": "Could not answer cloud health request.",
@@ -290,13 +290,15 @@ const isPermanentLinkError = Schema.is(
   ]),
 );
 
+const isCliSessionError = Schema.is(CliSession.CloudCliSessionError);
+
 export const shouldRetryCloudLink = (error: unknown): boolean =>
   shouldRetryRelayRequest(error) &&
   !isPermanentLinkError(error) &&
-  !(CliTokenManager.isCloudCliCredentialRefreshError(error) && error.requiresLogin);
+  !(isCliSessionError(error) && !CliSession.canRetryCredentialRecovery(error));
 
 const rollbackFailed = (cause: unknown) =>
-  Effect.logWarning("Could not roll back a T3 Connect preference", { cause });
+  Effect.logWarning("Could not roll back a styal Link preference", { cause });
 
 const requireRelayUrl = relayUrlConfig.pipe(
   Effect.mapError(
@@ -481,7 +483,7 @@ export class CloudLink extends Context.Service<
       | CloudLinkAuthorizationMissingError
       | CloudLinkRelayConfigInvalidError
       | EnvironmentAuth.ServerAuthInternalError
-      | CliTokenManager.CloudCliTokenManagerError
+      | CliSession.CloudCliSessionError
     >;
     readonly registerManagedTunnelRecovery: (
       localOrigin: string,
@@ -503,9 +505,7 @@ export class CloudLink extends Context.Service<
     >;
     readonly releaseManagedTunnelOnShutdown: () => Effect.Effect<
       boolean,
-      | CloudLinkBackgroundError
-      | CliTokenManager.CloudCliTokenManagerError
-      | HttpClientError.HttpClientError
+      CloudLinkBackgroundError | CliSession.CloudCliSessionError | HttpClientError.HttpClientError
     >;
   }
 >()("t3/cloud/CloudLink") {}
@@ -517,7 +517,7 @@ const make = Effect.gen(function* () {
   const reachability = yield* ConnectReachability.ConnectReachability;
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const cliTokenManager = yield* CliTokenManager.CloudCliTokenManager;
+  const cliSession = yield* CliSession.CloudCliSession;
   const httpClient = yield* HttpClient.HttpClient;
   const httpServer = yield* HttpServer.HttpServer;
   const awarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
@@ -848,13 +848,13 @@ const make = Effect.gen(function* () {
 
   const relayClientRequest = <A>(input: {
     readonly url: string;
-    readonly token: string;
+    readonly headers: { readonly authorization: string; readonly dpop?: string };
     readonly payload: unknown;
     readonly schema: Schema.Decoder<A>;
     readonly timeout?: Duration.Input;
   }) =>
     HttpClientRequest.post(input.url).pipe(
-      HttpClientRequest.bearerToken(input.token),
+      HttpClientRequest.setHeaders({ ...input.headers }),
       HttpClientRequest.bodyJson(input.payload),
       Effect.flatMap(httpClient.execute),
       Effect.flatMap(filterRelayResponse),
@@ -870,20 +870,21 @@ const make = Effect.gen(function* () {
         try: () => parseManagedEndpointLocalOrigin(localOrigin),
         catch: () => new CloudLinkOriginInvalidError({ origin: "local" }),
       });
-      const token = yield* cliTokenManager.getExisting.pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () => Effect.fail(new CloudLinkAuthorizationMissingError({})),
-            onSome: Effect.succeed,
-          }),
-        ),
-      );
+      const authorizeCli = (url: string) =>
+        cliSession.authorize("POST", url).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.fail(new CloudLinkAuthorizationMissingError({})),
+              onSome: Effect.succeed,
+            }),
+          ),
+        );
       const mode = yield* readCliDesiredLinkMode.pipe(withSecrets);
       const managedTunnelsEnabled = mode !== "publish_only";
       const relayUrl = yield* requireRelayUrl;
       const challenge = yield* relayClientRequest({
         url: `${relayUrl}/v1/client/environment-link-challenges`,
-        token: token.accessToken,
+        headers: yield* authorizeCli(`${relayUrl}/v1/client/environment-link-challenges`),
         payload: {
           notificationsEnabled: true,
           liveActivitiesEnabled: true,
@@ -903,7 +904,7 @@ const make = Effect.gen(function* () {
       });
       const link = yield* relayClientRequest({
         url: `${relayUrl}/v1/client/environment-links`,
-        token: token.accessToken,
+        headers: yield* authorizeCli(`${relayUrl}/v1/client/environment-links`),
         payload: {
           proof,
           notificationsEnabled: true,
@@ -995,7 +996,7 @@ const make = Effect.gen(function* () {
           return false;
         }
         yield* Effect.logWarning(
-          "T3 Connect no longer accepts this environment's link. Link it again to restore remote access.",
+          "styal Link no longer accepts this environment's link. Link it again to restore remote access.",
           { cause },
         );
         yield* secrets.set(CLOUD_LINK_REVOKED, stringToBytes("true"));
@@ -1048,7 +1049,7 @@ const make = Effect.gen(function* () {
     const credential = bytesToString(environmentCredential.value);
     const registered = yield* relayClientRequest({
       url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel/recovery`,
-      token: credential,
+      headers: { authorization: `Bearer ${credential}` },
       payload: {
         cloudUserId: cloudUserIdValue,
         tunnelId: config.tunnelId,
@@ -1137,7 +1138,7 @@ const make = Effect.gen(function* () {
     const credential = bytesToString(environmentCredential.value);
     const recovered = yield* relayClientRequest({
       url: `${relayUrlValue}/v1/environments/${encodeURIComponent(environmentId)}/tunnel`,
-      token: credential,
+      headers: { authorization: `Bearer ${credential}` },
       payload: {
         cloudUserId: cloudUserIdValue,
         origin,
@@ -1260,16 +1261,13 @@ const make = Effect.gen(function* () {
     ) {
       return false;
     }
-    const token = yield* cliTokenManager.getExisting;
-    if (Option.isNone(token)) {
-      return false;
-    }
     const environmentId = yield* environment.getEnvironmentId;
+    const releaseUrl = `${relayUrl.value}/v1/client/environment-links/${encodeURIComponent(environmentId)}/tunnel`;
+    const authorization = yield* cliSession.authorize("DELETE", releaseUrl);
+    if (Option.isNone(authorization)) return false;
     yield* endpointRuntime.applyConfig(null);
-    const response = yield* HttpClientRequest.delete(
-      `${relayUrl.value}/v1/client/environment-links/${encodeURIComponent(environmentId)}/tunnel`,
-    ).pipe(
-      HttpClientRequest.bearerToken(token.value.accessToken),
+    const response = yield* HttpClientRequest.delete(releaseUrl).pipe(
+      HttpClientRequest.setHeaders({ ...authorization.value }),
       httpClient.execute,
       Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
       Effect.flatMap(filterRelayResponse),
@@ -1690,9 +1688,9 @@ const make = Effect.gen(function* () {
   if (!ManagedLimits.allowsConnect(managedPolicy)) {
     // Reading state and unlinking stay available so clients can show and leave the old link.
     yield* unlink().pipe(
-      Effect.tap(() => Effect.logInfo("T3 Connect is off by managed policy; unlinked.")),
+      Effect.tap(() => Effect.logInfo("styal Link is off by managed policy; unlinked.")),
       Effect.catch((cause) =>
-        Effect.logWarning("Failed to unlink T3 Connect turned off by managed policy", { cause }),
+        Effect.logWarning("Failed to unlink styal Link turned off by managed policy", { cause }),
       ),
     );
     const refused = Effect.fn("CloudLink.refusedByPolicy")(function* () {

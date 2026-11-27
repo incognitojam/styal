@@ -84,14 +84,14 @@ export function classifyReachability(
     fix: string,
     hint: string | null = null,
   ): Unreachable => ({ status: "unreachable", checkedAt, cause, reason, hint, fix });
-  const restart = "Restart styal. If it stays, run `styal connect` again.";
+  const restart = "Restart styal. If it stays, run `styal link` again.";
 
   if (!facts.managedTunnelConfigured) {
-    // A running server reads the link `styal connect` stores only at startup.
+    // A running server reads the link `styal link` stores only at startup.
     return fail(
       "not_linked",
-      "The server has not set up a T3 Connect tunnel.",
-      "Run `styal connect`, then restart styal so it applies the link.",
+      "The server has not set up a styal Link tunnel.",
+      "Run `styal link`, then restart styal so it applies the link.",
     );
   }
   if (connector === null) {
@@ -154,15 +154,15 @@ export function classifyReachability(
   if (status === 530 && cloudflareError === "1016") {
     return fail(
       "dns_failed",
-      "The T3 Connect address no longer points to this machine's tunnel (Cloudflare error 1016). T3 Connect may have removed this environment.",
-      "Link this environment again. Turn T3 Connect off and on in Settings > Sharing & access, or run `styal connect link` and then restart styal.",
+      "The styal Link address no longer points to this machine's tunnel (Cloudflare error 1016). styal Link may have removed this environment.",
+      "Link this environment again. Turn styal Link off and on in Settings > Sharing & access, or run `styal link` and then restart styal.",
     );
   }
   if (status !== null) {
     const code = cloudflareError === undefined ? "" : ` (Cloudflare error ${cloudflareError})`;
     return fail(
       "unexpected_response",
-      `The T3 Connect address answered with HTTP ${status}${code}.`,
+      `The styal Link address answered with HTTP ${status}${code}.`,
       restart,
     );
   }
@@ -172,7 +172,7 @@ export function classifyReachability(
     if (endpoint.existsPublicly === true) {
       return fail(
         "dns_failed",
-        "The T3 Connect address resolves in public DNS, but this network's DNS still has an old cached answer that it does not exist.",
+        "The styal Link address resolves in public DNS, but this network's DNS still has an old cached answer that it does not exist.",
         "Wait. The cached answer usually clears within about 30 minutes.",
         exitNodeHint(exitNode),
       );
@@ -180,20 +180,20 @@ export function classifyReachability(
     if (endpoint.existsPublicly === false) {
       return fail(
         "dns_failed",
-        "The T3 Connect address is missing from public DNS. The relay did not publish it.",
+        "The styal Link address is missing from public DNS. The relay did not publish it.",
         restart,
       );
     }
     return fail(
       "dns_failed",
-      "The T3 Connect address does not resolve from this machine.",
+      "The styal Link address does not resolve from this machine.",
       "Check the DNS settings on this machine or its VPN.",
       exitNodeHint(exitNode),
     );
   }
   return fail(
     "timeout",
-    "The T3 Connect address did not answer from this machine.",
+    "The styal Link address did not answer from this machine.",
     "Check the network, VPN, or proxy on this machine.",
     exitNodeHint(exitNode),
   );
@@ -202,7 +202,7 @@ export function classifyReachability(
 /** The loud diagnosis the CLI prints and the server logs. */
 export function formatReachabilityFailure(result: Unreachable): string {
   return [
-    "✕ T3 Connect is NOT reachable from other devices",
+    "✕ styal Link is NOT reachable from other devices",
     `  ${result.reason}`,
     ...(result.hint ? [`  ${result.hint}`] : []),
     `  Fix: ${result.fix}`,
@@ -475,7 +475,7 @@ const make = Effect.gen(function* () {
       );
     } else {
       yield* Effect.logInfo(
-        `T3 Connect is reachable from other devices. ${formatConnectReachable(result)}`,
+        `styal Link is reachable from other devices. ${formatConnectReachable(result)}`,
       );
     }
     return result;

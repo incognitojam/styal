@@ -41,12 +41,12 @@ import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
-import { connectCommand, statusCommand, upCommand } from "./cli/up.ts";
+import { linkCommand, connectCompatibilityCommand, statusCommand, upCommand } from "./cli/up.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+  "styal Link commands are unavailable: this build is missing styal Link public configuration.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -54,15 +54,16 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
   }
 }
 
-const connectUnavailableCommand = Command.make("connect", {
+const linkUnavailableCommand = Command.make("link", {
   command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  Command.withDescription("styal Link is unavailable in builds without public configuration."),
+  Command.withAlias("connect"),
   Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({
-        commandPath: ["styal", "connect"],
+        commandPath: ["styal", "link"],
         errors: [new ConnectPublicConfigMissingError({ cause: connectPublicConfigMissingMessage })],
       }),
     ),
@@ -117,7 +118,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       doctorCommand,
       policyCommand,
       triageCommand,
-      cloudEnabled ? connectCommand : connectUnavailableCommand,
+      cloudEnabled ? linkCommand : linkUnavailableCommand,
+      ...(cloudEnabled ? [connectCompatibilityCommand] : []),
     ]),
   );
 
