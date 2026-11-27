@@ -30,9 +30,7 @@ import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 
-const pruningEnabled = ConfigProvider.layer(
-  ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "1" } }),
-);
+const pruningEnabled = ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }));
 
 const database = SqlitePersistence.layerMemory;
 const eventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(database));
@@ -250,7 +248,7 @@ const remainingEventIds = (threadId: ThreadId) =>
     `,
   ).pipe(Effect.map((rows) => rows.map((row) => row.event_id)));
 
-it.effect("leaves events, receipts and marks unchanged when pruning is unset", () =>
+it.effect("leaves events, receipts and marks unchanged when pruning is disabled", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
     const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
@@ -283,7 +281,10 @@ it.effect("leaves events, receipts and marks unchanged when pruning is unset", (
     assert.deepEqual(yield* sql`SELECT * FROM orchestration_command_receipts`, receipts);
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(layerTest, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      Layer.mergeAll(
+        layerTest,
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_EVENT_PRUNING: "0" } })),
+      ),
     ),
   ),
 );

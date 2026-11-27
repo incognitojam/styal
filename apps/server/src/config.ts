@@ -30,8 +30,8 @@ export const telemetryChannel: ReleaseChannel =
 export const DEFAULT_PORT = 3773;
 
 export const eventPruningEnabled = Config.String("T3CODE_EVENT_PRUNING").pipe(
-  Config.withDefault(""),
-  Config.map((value) => value === "1"),
+  Config.withDefault("1"),
+  Config.map((value) => ["1", "true", "yes", "on", "y"].includes(value.trim().toLowerCase())),
 );
 
 export const RuntimeMode = Schema.Literals(["web", "desktop"]);
