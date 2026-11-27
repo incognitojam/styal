@@ -1,3 +1,4 @@
+import { CLI_RELEASES_PAGE_URL } from "@t3tools/shared/cliRelease";
 import type { DesktopAppBranding } from "@t3tools/contracts";
 import {
   formatAppDisplayName,
@@ -31,5 +32,7 @@ export const APP_DISPLAY_NAME =
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
 export const DESKTOP_DOWNLOAD_URL = "https://restart.styal.invalid/download";
-// Redirects to the App Store or Google Play to match the phone that opens it.
-export const MOBILE_APP_URL = "https://restart.styal.invalid/mobile";
+const androidUpdateRepository = import.meta.env.T3CODE_MOBILE_ANDROID_UPDATE_REPOSITORY;
+export const MOBILE_APP_URL = androidUpdateRepository
+  ? `https://github.com/${androidUpdateRepository}/releases?q=%22styal+for+Android%22`
+  : `${CLI_RELEASES_PAGE_URL}?q=%22styal+for+Android%22`;
