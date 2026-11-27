@@ -54,8 +54,6 @@
     "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
-    "@clerk/expo": "catalog:",
-    "@clerk/expo-native-components": "0.4.8",
     "@effect/atom-react": "catalog:",
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo/metro-runtime": "~58.0.17",
@@ -87,7 +85,6 @@
     "expo-application": "~58.1.2",
     "expo-asset": "~58.0.21",
     "expo-audio": "58.0.12",
-    "expo-auth-session": "~58.0.19",
     "expo-blur": "58.0.6",
     "expo-build-properties": "~58.0.12",
     "expo-camera": "~58.0.14",

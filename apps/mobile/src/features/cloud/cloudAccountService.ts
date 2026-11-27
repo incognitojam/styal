@@ -1,9 +1,10 @@
-import type { getClerkInstance } from "@clerk/expo";
+import { type CloudAccountSource, createCloudAccountService } from "@t3tools/client-runtime/relay";
 import {
-  createCloudAccountService,
   ManagedRelay,
+  managedRelayAuthLoadAtom,
+  type ManagedRelaySession,
   setManagedRelaySession,
-} from "@t3tools/client-runtime/relay";
+} from "@t3tools/client-runtime/relay-session";
 import {
   reportAtomCommandResult,
   runAtomCommand,
@@ -19,89 +20,112 @@ import {
   restoreCloudComposerDrafts,
 } from "../../state/use-composer-drafts";
 import {
-  releaseAgentAwarenessRelayTokenProvider,
-  setAgentAwarenessRelayTokenProvider,
-  unregisterAgentAwarenessDeviceForCurrentUser,
+  releaseAgentAwarenessRelayCredential,
+  setAgentAwarenessRelayCredential,
 } from "../agent-awareness/remoteRegistration";
 import { removeCloudEnvironments } from "./cloud-drafts";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
-
-type ClerkInstance = ReturnType<typeof getClerkInstance>;
+import { readRelaySignInSession, relaySignInAtom } from "./relaySessionStore";
 
 export function deactivateCloudRelayAccount(): void {
-  setAgentAwarenessRelayTokenProvider(null);
+  appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
+  setAgentAwarenessRelayCredential(null);
   setManagedRelaySession(appAtomRegistry, null);
 }
 
-export function activateCloudRelayAccount(
-  accountId: string,
-  tokenProvider: () => Promise<string | null>,
-): void {
-  setAgentAwarenessRelayTokenProvider(tokenProvider, accountId);
-  setManagedRelaySession(appAtomRegistry, {
-    accountId,
-    readClerkToken: tokenProvider,
-  });
+export function activateCloudRelayAccount(session: ManagedRelaySession): void {
+  appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
+  setAgentAwarenessRelayCredential(session.credential);
+  setManagedRelaySession(appAtomRegistry, session);
 }
 
-function clerkTokenReader(clerk: ClerkInstance): () => Promise<string | null> {
-  return async () =>
-    clerk.session ? await clerk.session.getToken(resolveRelayClerkTokenOptions()) : null;
-}
-
-const cleanUpCloudAccount = async (
-  clerk: ClerkInstance,
-  accountId: string | null,
-  wasActive: boolean,
-) => {
-  const removal = await runAtomCommand(appAtomRegistry, removeCloudEnvironments, accountId, {
-    reportFailure: false,
-    reportDefect: false,
-  });
-  if (removal._tag !== "Success") throw squashAtomCommandFailure(removal);
-  const results = await Promise.all([
-    settleAsyncResult(() =>
-      runtime.runPromiseExit(
-        ManagedRelay.ManagedRelayClient.pipe(Effect.flatMap((client) => client.resetTokenCache)),
-      ),
+function resetManagedRelayTokenCache() {
+  return settleAsyncResult(() =>
+    runtime.runPromiseExit(
+      ManagedRelay.ManagedRelayClient.pipe(Effect.flatMap((client) => client.resetTokenCache)),
     ),
-    ...(wasActive
-      ? [
-          settleAsyncResult(() =>
-            runtime.runPromiseExit(
-              unregisterAgentAwarenessDeviceForCurrentUser(clerkTokenReader(clerk)),
-            ),
-          ),
-        ]
-      : []),
-  ]);
-  for (const result of results) {
-    reportAtomCommandResult(result, { label: "cloud account cleanup" });
+  );
+}
+
+/**
+ * Credential cleanup must finish even when preserving local drafts fails. Sign-out itself
+ * removes the device's relay registration before the session ends.
+ */
+export async function cleanUpCloudRelayAccount(
+  removeEnvironments: () => Promise<void>,
+): Promise<void> {
+  try {
+    await removeEnvironments();
+  } finally {
+    reportAtomCommandResult(await resetManagedRelayTokenCache(), {
+      label: "cloud account cleanup",
+    });
   }
+}
+
+const cleanUpCloudAccount = (accountId: string | null) =>
+  cleanUpCloudRelayAccount(async () => {
+    const removal = await runAtomCommand(appAtomRegistry, removeCloudEnvironments, accountId, {
+      reportFailure: false,
+      reportDefect: false,
+    });
+    if (removal._tag !== "Success") throw squashAtomCommandFailure(removal);
+  });
+
+/**
+ * The styal Link sign-in as the account service sees it. Loading
+ * or a failed load is not a sign-out, so only a known sign-in state is reported.
+ */
+export const relaySignInSource: CloudAccountSource = {
+  initialSignOutIsAuthoritative: true,
+  addListener: (listener) =>
+    appAtomRegistry.subscribe(
+      relaySignInAtom,
+      (state) => {
+        if (state.status !== "ready") return;
+        const session = state.session;
+        const current = cloudAccountService.getState();
+        // A new sign-in of the active account keeps its data but needs the new credential.
+        if (
+          session !== null &&
+          current._tag === "Active" &&
+          current.accountId === session.accountId
+        ) {
+          activateCloudRelayAccount(session);
+        }
+        listener({ user: session === null ? null : { id: session.accountId } });
+      },
+      { immediate: true },
+    ),
 };
 
-export const cloudAccountService = createCloudAccountService<ClerkInstance>({
+export const cloudAccountService = createCloudAccountService<CloudAccountSource>({
   deactivate: deactivateCloudRelayAccount,
-  // Detaching is not a sign-out: the user is usually still signed in, so keep
-  // lock-screen activities and the persisted registration for the next attach.
+  // Detaching is not a sign-out: keep lock-screen activities and the persisted registration.
   detach: () => {
-    releaseAgentAwarenessRelayTokenProvider();
+    releaseAgentAwarenessRelayCredential();
     setManagedRelaySession(appAtomRegistry, null);
   },
   // A not-yet-presented onboarding request belongs to the account that left.
   onSignOutTransition: clearConnectOnboardingRequest,
-  cleanUp: ({ source, accountId, wasActive }) => cleanUpCloudAccount(source, accountId, wasActive),
-  prepare: async ({ source, accountId, isCurrent }) => {
-    const storedAccount = await getComposerCloudAccountId();
-    if (storedAccount !== null && storedAccount !== accountId) {
-      await cleanUpCloudAccount(source, storedAccount, false);
+  cleanUp: ({ accountId }) => cleanUpCloudAccount(accountId),
+  prepare: async ({ accountId, isCurrent }) => {
+    try {
+      const storedAccount = await getComposerCloudAccountId();
+      if (storedAccount !== null && storedAccount !== accountId) {
+        await cleanUpCloudAccount(storedAccount);
+      }
+      if (!isCurrent()) return;
+      await restoreCloudComposerDrafts(accountId);
+    } catch (error) {
+      if (isCurrent()) appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
+      throw error;
     }
-    if (!isCurrent()) return;
-    await restoreCloudComposerDrafts(accountId);
   },
-  activate: ({ source, accountId, isAccountTransition }) => {
-    activateCloudRelayAccount(accountId, clerkTokenReader(source));
+  activate: ({ accountId, isAccountTransition }) => {
+    const session = readRelaySignInSession();
+    if (session === null || session.accountId !== accountId) return;
+    activateCloudRelayAccount(session);
     // Issued after cleanup so the sheet never lists the previous account's environments.
     if (isAccountTransition) requestConnectOnboarding(accountId);
   },

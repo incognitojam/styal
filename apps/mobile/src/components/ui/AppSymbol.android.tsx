@@ -1,3 +1,4 @@
+import IconLogout from "@tabler/icons-react-native/IconLogout";
 import type { Icon } from "@tabler/icons-react-native/types";
 /* Package-root imports eagerly register the entire Tabler icon set in Metro. */
 import IconAdjustmentsHorizontal from "@tabler/icons-react-native/IconAdjustmentsHorizontal";
@@ -258,6 +259,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   minus: IconMinus,
   "slash.circle": IconBan,
   "qrcode.viewfinder": IconQrcode,
+  "rectangle.portrait.and.arrow.right": IconLogout,
   "point.3.connected.trianglepath.dotted": IconNetwork,
   flowchart: IconSitemap,
   "point.topleft.down.curvedto.point.bottomright.up": IconGitMerge,

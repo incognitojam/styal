@@ -5,7 +5,14 @@ import {
   Connectivity,
   Wakeups,
 } from "@t3tools/client-runtime/connection";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import {
+  ManagedRelay,
+  managedRelayAccountChanges,
+  managedRelayAuthLoadChanges,
+  managedRelayAuthLoadAtom,
+  managedRelayMissingSessionError,
+  managedRelaySessionAtom,
+} from "@t3tools/client-runtime/relay-session";
 import * as Clock from "effect/Clock";
 import { msg } from "gt-react-native";
 import { m } from "../i18n/messages";
@@ -137,9 +144,10 @@ const layerWakeups = Wakeups.layer({
           (subscription) => Effect.sync(() => subscription.remove()),
         ).pipe(Effect.asVoid),
       ),
-      managedRelayAccountChanges(appAtomRegistry).pipe(
-        Stream.map(() => "credentials-changed" as const),
-      ),
+      Stream.merge(
+        managedRelayAccountChanges(appAtomRegistry),
+        managedRelayAuthLoadChanges(appAtomRegistry),
+      ).pipe(Stream.map(() => "credentials-changed" as const)),
       networkPathChanges,
     ],
     { concurrency: "unbounded" },
@@ -148,6 +156,9 @@ const layerWakeups = Wakeups.layer({
 
 const layerCapabilities = Layer.effectContext(
   Effect.gen(function* () {
+    const sessionRelay = yield* Effect.promise(() =>
+      Runtime.runtime.runPromise(ManagedRelay.ManagedRelayClient),
+    );
     const storage = yield* MobileStorage.MobileStorage;
     return Context.make(
       ClientCapabilities.CloudSession,
@@ -155,33 +166,10 @@ const layerCapabilities = Layer.effectContext(
         identity: Effect.sync(() =>
           Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
         ),
-        clerkToken: Effect.gen(function* () {
-          const session = appAtomRegistry.get(managedRelaySessionAtom);
-          if (session === null) {
-            return yield* new ConnectionBlockedError({
-              reason: "authentication",
-              detail: m(
-                msg("Sign in to {product} to connect this environment.", { product: "T3 Connect" }),
-              ),
-            });
-          }
-          const token = yield* session.readClerkToken().pipe(
-            Effect.mapError(
-              (error) =>
-                new ConnectionTransientError({
-                  reason: "network",
-                  detail: error.message,
-                }),
-            ),
-          );
-          if (token === null) {
-            return yield* new ConnectionBlockedError({
-              reason: "authentication",
-              detail: m(msg("The {product} session is unavailable.", { product: "T3 Connect" })),
-            });
-          }
-          return token;
-        }),
+        sessionRelay,
+        clerkToken: Effect.failSync(() =>
+          managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom)),
+        ),
       }),
     ).pipe(
       Context.add(

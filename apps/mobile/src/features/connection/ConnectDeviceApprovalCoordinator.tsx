@@ -24,7 +24,7 @@ import {
 } from "./connectDeviceApproval";
 
 /**
- * Asks to approve T3 Connect devices waiting on hosts that require it and this phone manages,
+ * Asks to approve styal Link devices waiting on hosts that require it and this phone manages,
  * and tells it about devices that got in on hosts that do not.
  */
 export function ConnectDeviceApprovalCoordinator() {
@@ -103,13 +103,13 @@ const newDeviceNotices = createApprovalPromptQueue<NewDeviceNotice>((notice, ans
         ? m(
             msg(
               "{device} connected through {product}. If this was not you, remove it in Settings → Access in styal on that computer.",
-              { device: firstDevice, product: "T3 Connect" },
+              { device: firstDevice, product: "styal Link" },
             ),
           )
         : m(
             msg(
               "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in styal on that computer.",
-              { count: unseen.length, product: "T3 Connect" },
+              { count: unseen.length, product: "styal Link" },
             ),
           ),
       [

@@ -1,32 +1,45 @@
-import { ClerkProvider, getClerkInstance } from "@clerk/expo";
-import { tokenCache } from "@clerk/expo/token-cache";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
+import { AppState } from "react-native";
 
-import { cloudAccountService, deactivateCloudRelayAccount } from "./cloudAccountService";
+import { appAtomRegistry } from "../../state/atom-registry";
+import {
+  cloudAccountService,
+  deactivateCloudRelayAccount,
+  relaySignInSource,
+} from "./cloudAccountService";
 import { resolveCloudPublicConfig } from "./publicConfig";
+import { restoreRelaySession } from "./relaySession";
+import { publishRelaySignIn, relaySignInAtom } from "./relaySessionStore";
 
-const cloudConfig = resolveCloudPublicConfig();
-// Build-time constant: null when this build has no cloud config.
-const publishableKey = cloudConfig.relay.url ? cloudConfig.clerk.publishableKey : null;
-
-if (publishableKey) {
-  // The same native singleton ClerkProvider renders with, so the service
-  // observes it for the app's lifetime without a React subscription.
-  cloudAccountService.attach(getClerkInstance({ publishableKey }));
+const relayUrl = resolveCloudPublicConfig().relay.url;
+if (relayUrl) {
+  cloudAccountService.attach(relaySignInSource);
 } else {
-  // Without cloud config no account can ever activate, so drop anything a
-  // previous build with cloud enabled left registered.
   deactivateCloudRelayAccount();
+  publishRelaySignIn(null);
+}
+
+function RelaySessionRestore() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the saved sign-in on mount and retries on native app activation
+  useEffect(() => {
+    void restoreRelaySession();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      cloudAccountService.retry();
+      if (appAtomRegistry.get(relaySignInAtom).status === "failed") {
+        void restoreRelaySession();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+  return null;
 }
 
 export function CloudAuthProvider(props: { readonly children: ReactNode }) {
-  if (!publishableKey) {
-    return props.children;
-  }
-
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <>
+      {relayUrl ? <RelaySessionRestore /> : null}
       {props.children}
-    </ClerkProvider>
+    </>
   );
 }

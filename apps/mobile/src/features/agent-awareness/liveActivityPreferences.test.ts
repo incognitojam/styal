@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@t3tools/client-runtime/relay-session";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
 import {
@@ -50,7 +50,10 @@ const updateEnvironment = vi.fn<
 const linkEnvironment = vi.fn<
   (
     id: EnvironmentId,
-    input: { readonly clerkToken: string; readonly liveActivitiesEnabled: boolean },
+    input: {
+      readonly credential: ManagedRelay.ManagedRelayCredential;
+      readonly liveActivitiesEnabled: boolean;
+    },
   ) => Effect.Effect<void, CloudEnvironmentLinkError>
 >(() => Effect.void);
 
@@ -95,7 +98,7 @@ describe("liveActivityPreferences", () => {
           saveLocalPreference,
           enabled: false,
           previousEnabled: true,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
           connections: [connection, otherConnection],
           canConfigureEnvironment: () => false,
           canUpdateEnvironment: () => true,
@@ -133,7 +136,7 @@ describe("liveActivityPreferences", () => {
           saveLocalPreference,
           enabled: true,
           previousEnabled: false,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
           connections: [connection],
           canConfigureEnvironment: () => false,
           canUpdateEnvironment: () => true,
@@ -163,7 +166,7 @@ describe("liveActivityPreferences", () => {
           saveLocalPreference,
           enabled: true,
           previousEnabled: false,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
           connections: [connection],
           canConfigureEnvironment: () => true,
           canUpdateEnvironment: () => true,
@@ -204,7 +207,7 @@ describe("liveActivityPreferences", () => {
         saveLocalPreference,
         enabled: true,
         previousEnabled: false,
-        clerkToken: "clerk-token",
+        credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
         connections: [readOnlyConnection, dpopConnection],
         canUpdateEnvironment: (environmentId) => environmentId === connection.environmentId,
         canConfigureEnvironment: (environmentId) => environmentId === connection.environmentId,
@@ -214,7 +217,7 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: true,
       });
       expect(linkEnvironment).toHaveBeenCalledExactlyOnceWith(connection.environmentId, {
-        clerkToken: "clerk-token",
+        credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
         liveActivitiesEnabled: true,
       });
     }).pipe(withRelayClient);
@@ -234,7 +237,7 @@ describe("liveActivityPreferences", () => {
         saveLocalPreference,
         enabled: false,
         previousEnabled: true,
-        clerkToken: "clerk-token",
+        credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
         connections: [dpopConnection],
         canConfigureEnvironment: () => false,
         canUpdateEnvironment: () => true,
@@ -259,7 +262,7 @@ describe("liveActivityPreferences", () => {
         saveLocalPreference,
         enabled: false,
         previousEnabled: true,
-        clerkToken: "clerk-token",
+        credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
         connections: [connection],
         canConfigureEnvironment: () => canConfigureEnvironment,
         canUpdateEnvironment: () => canConfigureEnvironment,

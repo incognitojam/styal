@@ -14,7 +14,6 @@ import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
@@ -23,6 +22,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
@@ -112,14 +112,13 @@ interface SettingsListSection {
 function ConfiguredSettingsRouteScreen() {
   const gt = useGT();
   const navigation = useNavigation();
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { user } = useUser();
+  const { isLoaded, isSignedIn, email } = useRelayAuth();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const accountLabel = !isLoaded
     ? gt("Checking")
     : !isSignedIn
       ? gt("Sign in")
-      : (user?.primaryEmailAddress?.emailAddress ?? gt("Signed in"));
+      : (email ?? gt("Signed in"));
 
   return (
     <SettingsList
@@ -127,7 +126,7 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "account",
           icon: "person.crop.circle",
-          label: gt("T3 Account"),
+          label: gt("styal Account"),
           value: accountLabel,
           disabled: !isLoaded,
           onPress: () => navigation.navigate("SettingsAuth"),

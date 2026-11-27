@@ -1,3 +1,4 @@
+import { RELAY_KEYCHAIN_OPTIONS } from "./relayKeychain";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -10,7 +11,7 @@ import { msg } from "gt-react-native";
 
 import { m } from "../../i18n/messages";
 import * as SecureStore from "expo-secure-store";
-import { DpopProof } from "@t3tools/client-runtime/relay";
+import { DpopProof } from "@t3tools/client-runtime/relay-session";
 import { DpopPublicJwk } from "@t3tools/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
@@ -75,7 +76,7 @@ export interface DpopProofKeyPair {
   readonly publicJwk: DpopPublicJwk;
 }
 
-const DPOP_PROOF_KEY_STORAGE_KEY = "t3code.cloud.dpop-proof-key";
+const DPOP_PROOF_KEY_STORAGE_KEY = "styal.cloud.dpop-proof-key";
 
 interface NativeDpopKeys {
   /** A 32-byte private scalar followed by its 65-byte uncompressed public point. */
@@ -146,7 +147,7 @@ export const generateDpopProofKeyPair = Effect.fn("dpop.generateDpopProofKeyPair
 export const loadOrCreateDpopProofKeyPair = Effect.fn("dpop.loadOrCreateDpopProofKeyPair")(
   function* (): Effect.fn.Return<DpopProofKeyPair, CloudDpopError> {
     const stored = yield* Effect.tryPromise({
-      try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY),
+      try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, RELAY_KEYCHAIN_OPTIONS),
       catch: cloudDpopError(m(msg("Could not read the DPoP proof key."))),
     });
     if (stored) {
@@ -172,7 +173,12 @@ export const loadOrCreateDpopProofKeyPair = Effect.fn("dpop.loadOrCreateDpopProo
       Effect.mapError(cloudDpopError(m(msg("Could not encode the DPoP proof key.")))),
     );
     yield* Effect.tryPromise({
-      try: () => SecureStore.setItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, encodedPrivateJwk),
+      try: () =>
+        SecureStore.setItemAsync(
+          DPOP_PROOF_KEY_STORAGE_KEY,
+          encodedPrivateJwk,
+          RELAY_KEYCHAIN_OPTIONS,
+        ),
       catch: cloudDpopError(m(msg("Could not store the DPoP proof key."))),
     });
     return generated;

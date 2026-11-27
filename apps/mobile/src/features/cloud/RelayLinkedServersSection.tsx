@@ -1,25 +1,25 @@
-import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
-import { msg, T, useGT, useMessages } from "gt-react-native";
+import { T, useGT, msg, useMessages } from "gt-react-native";
+import { m } from "../../i18n/messages";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { type ReactNode, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { RefreshControl } from "../../components/ui/RefreshControl";
+import { Platform, Pressable, View } from "react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
 import { Menu } from "../../components/ui/Menu";
-import { m, type MessageResolver } from "../../i18n/messages";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { SettingsSection } from "../settings/components/SettingsSection";
 import {
   deregisterManagedRelayEnvironmentCommand,
   useManagedRelayEnvironments,
@@ -27,16 +27,16 @@ import {
 
 const linkedAtFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
-function linkedAtLabel(value: string, resolve: MessageResolver): string {
+function linkedAtLabel(value: string, resolve: ReturnType<typeof useMessages>): string {
   const linkedAt = new Date(value);
   return Number.isNaN(linkedAt.getTime())
     ? resolve(msg("Link date unavailable"))
-    : resolve(msg("Linked {date}", { date: linkedAtFormatter.format(linkedAt) }));
+    : resolve(msg("Linked {date}"), { date: linkedAtFormatter.format(linkedAt) });
 }
 
 function endpointLabel(
   environment: RelayClientEnvironmentRecord,
-  resolve: MessageResolver,
+  resolve: ReturnType<typeof useMessages>,
 ): string {
   return environment.endpoint.providerKind === "cloudflare_tunnel"
     ? resolve(msg("Managed tunnel"))
@@ -47,9 +47,9 @@ function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm:
   const title = m(msg("Deregister server?"));
   const message = m(
     msg(
-      "“{environment}” will be removed from this account. {product} access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.",
-      { environment: environment.label, product: "T3 Connect" },
+      "“{label}” will be removed from this account. styal Link access will be revoked, any managed tunnel will be removed, and a host space will become available. Local connections on your devices are not changed.",
     ),
+    { label: environment.label },
   );
   Dialog.confirm({
     title,
@@ -60,9 +60,14 @@ function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm:
   });
 }
 
-export function T3ConnectProfilePage() {
+/**
+ * Every server registered to the signed-in styal Link account, with
+ * account-level deregistration. Connections on this device are managed in
+ * Settings instead.
+ */
+export function RelayLinkedServersSection() {
   const gt = useGT();
-  const m = useMessages();
+  const resolveMessage = useMessages();
   const environmentsState = useManagedRelayEnvironments();
   const deregisterEnvironment = useAtomCommand(deregisterManagedRelayEnvironmentCommand, {
     reportFailure: false,
@@ -73,7 +78,8 @@ export function T3ConnectProfilePage() {
   const [deregisteringEnvironmentId, setDeregisteringEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const mutationPendingRef = useRef(false);
-  // Hide cached rows by linkedAt until refresh; re-linking changes linkedAt and restores visibility.
+  // Deregistered rows stay in the cached list until the refresh lands, so hide
+  // them by the linkedAt they had. A re-link produces a new linkedAt and shows again.
   const [removedEnvironments, setRemovedEnvironments] = useState<{
     readonly accountId: string | null;
     readonly linkedAtById: ReadonlyMap<EnvironmentId, string>;
@@ -105,10 +111,7 @@ export function T3ConnectProfilePage() {
     if (isAtomCommandInterrupted(result)) return;
 
     const cause = squashAtomCommandFailure(result);
-    const message =
-      cause instanceof Error
-        ? (errorDisplayMessage(cause, m) ?? cause.message)
-        : gt("Could not deregister the server.");
+    const message = cause instanceof Error ? cause.message : gt("Could not deregister the server.");
     const traceId = findErrorTraceId(cause);
     console.error("[t3-connect] Could not deregister environment", {
       environmentId: environment.environmentId,
@@ -142,76 +145,59 @@ export function T3ConnectProfilePage() {
   const isInitialLoad =
     !environmentsState.accountId || (environmentsState.data === null && !environmentsState.error);
   const errorTraceId = environmentsState.errorTraceId;
-  const environmentMenuActions = [
-    {
-      id: "deregister",
-      title: gt("Deregister"),
-      image: "trash",
-      attributes: { destructive: true },
-    },
-  ] satisfies MenuAction[];
 
   return (
-    <ScrollView
-      className="flex-1 bg-clerk-page"
-      contentContainerClassName="pb-8"
-      contentInsetAdjustmentBehavior="automatic"
-      refreshControl={
-        <RefreshControl
-          refreshing={environmentsState.isPending && environmentsState.data !== null}
-          onRefresh={environmentsState.refresh}
-        />
-      }
-    >
-      <ClerkSectionHeader>{gt("Registered servers")}</ClerkSectionHeader>
-
-      {environmentsState.error ? (
-        <>
-          <ClerkRow
-            title={gt("Could not load {product} environments", { product: "T3 Connect" })}
-            subtitle={environmentsState.error}
-          />
-          {errorTraceId ? (
-            <ClerkButtonRow
-              label={gt("Copy trace ID")}
-              onPress={() => {
-                copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
-              }}
+    <>
+      <SettingsSection title={gt("Registered servers")}>
+        {environmentsState.error ? (
+          <>
+            <ServerRow
+              title={gt("Could not load styal Link environments")}
+              subtitle={environmentsState.error}
             />
-          ) : null}
-        </>
-      ) : isInitialLoad ? (
-        <View className="flex-row items-center gap-3 px-6 py-4">
-          <AppActivityIndicator colorClassName={"accent-clerk-foreground-muted"} size="small" />
-          <Text className="text-base text-clerk-foreground-muted">
-            <T>Loading environments</T>
-          </Text>
-        </View>
-      ) : environments.length > 0 ? (
-        environments.map((environment) => (
-          <ClerkRow
-            key={environment.environmentId}
-            title={environment.label}
-            subtitle={`${linkedAtLabel(environment.linkedAt, m)} · ${endpointLabel(environment, m)}`}
-            accessory={
-              deregisteringEnvironmentId === environment.environmentId ? (
-                <AppActivityIndicator
-                  colorClassName={"accent-clerk-foreground-muted"}
-                  size="small"
-                />
-              ) : (
-                <View pointerEvents={deregisteringEnvironmentId === null ? "auto" : "none"}>
+            {errorTraceId ? (
+              <SettingsActionRow
+                icon="doc.on.doc"
+                label={gt("Copy trace ID")}
+                onPress={() => {
+                  copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
+                }}
+              />
+            ) : null}
+          </>
+        ) : isInitialLoad ? (
+          <View className="flex-row items-center gap-3 p-4">
+            <AppActivityIndicator colorClassName="accent-icon" size="small" />
+            <Text className="text-base text-foreground-muted">
+              <T>Loading environments</T>
+            </Text>
+          </View>
+        ) : environments.length > 0 ? (
+          environments.map((environment) => (
+            <ServerRow
+              key={environment.environmentId}
+              title={environment.label}
+              subtitle={`${linkedAtLabel(environment.linkedAt, resolveMessage)} · ${endpointLabel(environment, resolveMessage)}`}
+              accessory={
+                deregisteringEnvironmentId === environment.environmentId ? (
+                  <AppActivityIndicator colorClassName="accent-icon" size="small" />
+                ) : (
                   <Menu
-                    actions={environmentMenuActions}
+                    actions={[
+                      {
+                        id: "deregister",
+                        title: gt("Deregister"),
+                        image: "trash",
+                        attributes: { destructive: true },
+                      },
+                    ]}
                     isAnchoredToRight
                     onPressAction={() =>
                       confirmDeregister(environment, () => void handleDeregister(environment))
                     }
                   >
                     <Pressable
-                      accessibilityLabel={gt("Actions for {environment}", {
-                        environment: environment.label,
-                      })}
+                      accessibilityLabel={gt("Actions for {label}", { label: environment.label })}
                       accessibilityRole="button"
                       disabled={deregisteringEnvironmentId !== null}
                       className="size-[30px] items-center justify-center active:opacity-60 disabled:opacity-50"
@@ -220,72 +206,53 @@ export function T3ConnectProfilePage() {
                         <SymbolView
                           name="ellipsis"
                           size={18}
-                          tintColorClassName={"accent-clerk-foreground-muted"}
+                          tintColorClassName="accent-icon"
                           type="monochrome"
                         />
                       </View>
                     </Pressable>
                   </Menu>
-                </View>
-              )
-            }
+                )
+              }
+            />
+          ))
+        ) : (
+          <ServerRow
+            title={gt("No servers registered")}
+            subtitle={gt("Link a server from its local Settings to reach it through styal Link.")}
           />
-        ))
-      ) : (
-        <ClerkRow
-          title={gt("No servers registered")}
-          subtitle={gt("Link a server from its local Settings to reach it through {product}.", {
-            product: "T3 Connect",
-          })}
-        />
-      )}
-
-      <Text className="px-6 pt-6 text-xs leading-normal text-clerk-foreground-muted">
+        )}
+      </SettingsSection>
+      <Text className="px-2 text-sm text-foreground-muted">
         <T>Connections on this device are managed in Settings.</T>
       </Text>
-    </ScrollView>
+    </>
   );
 }
 
-function ClerkSectionHeader(props: { readonly children: string }) {
-  return (
-    <Text className="min-h-4 border-b border-clerk-border px-6 pt-8 pb-4 text-xs font-medium tracking-[0.3px] text-clerk-foreground-muted uppercase">
-      {props.children}
-    </Text>
-  );
-}
-
-function ClerkRow(props: {
+function ServerRow(props: {
   readonly title: string;
   readonly subtitle: string;
   readonly accessory?: ReactNode;
 }) {
   return (
-    <View
-      collapsable={false}
-      className="flex-row items-center gap-3 border-b border-clerk-border px-6 py-4"
-    >
+    <View collapsable={false} className="flex-row items-center gap-4 p-4">
+      <SymbolView
+        name="server.rack"
+        size={Platform.OS === "android" ? 24 : 22}
+        tintColorClassName="accent-icon"
+        type="monochrome"
+        weight="regular"
+      />
       <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="min-h-[22px] text-base text-clerk-foreground" numberOfLines={1}>
+        <Text className="text-lg text-foreground android:text-base" numberOfLines={1}>
           {props.title}
         </Text>
-        <Text className="min-h-5 text-sm text-clerk-foreground-muted" numberOfLines={2}>
+        <Text className="text-sm text-foreground-muted" numberOfLines={2}>
           {props.subtitle}
         </Text>
       </View>
       {props.accessory}
     </View>
-  );
-}
-
-function ClerkButtonRow(props: { readonly label: string; readonly onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={props.onPress}
-      className="border-b border-clerk-border px-6 py-4 active:opacity-60"
-    >
-      <Text className="text-base font-semibold text-clerk-foreground">{props.label}</Text>
-    </Pressable>
   );
 }

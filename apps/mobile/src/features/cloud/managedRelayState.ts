@@ -1,10 +1,10 @@
+import { readManagedRelaySnapshotState } from "@t3tools/client-runtime/relay";
 import { useAtomValue } from "@effect/atom-react";
 import {
   createManagedRelayQueryManager,
   deregisterManagedRelayEnvironment,
   managedRelaySessionAtom,
-  readManagedRelaySnapshotState,
-} from "@t3tools/client-runtime/relay";
+} from "@t3tools/client-runtime/relay-session";
 import {
   createAtomCommandScheduler,
   createRuntimeCommand,

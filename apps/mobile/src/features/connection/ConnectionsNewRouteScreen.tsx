@@ -3,7 +3,6 @@ import { T, useGT } from "gt-react-native";
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useAuth } from "@clerk/expo";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import {
@@ -28,6 +27,7 @@ import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { linkedEnvironmentPrefillAtom } from "./linkedEnvironmentPrefill";
@@ -390,7 +390,7 @@ function PairingScanCard(props: {
 
 function T3ConnectSection() {
   const gt = useGT();
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn } = useRelayAuth();
   const navigation = useNavigation();
   const { connectedEnvironments, onSetEnvironmentEnabled, onRemoveEnvironmentPress } =
     useRemoteConnections();
@@ -413,7 +413,7 @@ function T3ConnectSection() {
         />
       ) : (
         <ListRow
-          label={gt("Sign in to {product}", { product: "T3 Connect" })}
+          label={gt("Sign in to {product}", { product: "styal Link" })}
           description={gt("Reach your machines from anywhere, no network setup.")}
           disabled={!isLoaded}
           onPress={() => navigation.navigate("SettingsAuth")}

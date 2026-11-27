@@ -7,7 +7,6 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import { findErrorTraceId } from "../errors/errorTrace.ts";
@@ -177,16 +176,6 @@ export function setManagedRelaySession(
     }
   }
   registry.set(managedRelaySessionAtom, createManagedRelaySession(input));
-}
-
-export function managedRelayAccountChanges(
-  registry: AtomRegistry.AtomRegistry,
-): Stream.Stream<string | null> {
-  return AtomRegistry.toStream(registry, managedRelaySessionAtom).pipe(
-    Stream.map((session) => session?.accountId ?? null),
-    Stream.changes,
-    Stream.drop(1),
-  );
 }
 
 function readSessionClerkToken(

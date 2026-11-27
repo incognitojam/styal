@@ -6,6 +6,8 @@ import { reportAtomCommandResult, settlePromise } from "../state/runtime.ts";
  * dedupes emissions down to account changes.
  */
 export interface CloudAccountSource {
+  /** A local session store can confirm sign-out without a Clerk API response. */
+  readonly initialSignOutIsAuthoritative?: boolean;
   readonly addListener: (
     listener: (resources: {
       readonly client?: { readonly id?: string | null | undefined } | null | undefined;
@@ -113,6 +115,7 @@ export interface CloudAccountService<S extends CloudAccountSource> {
    */
   readonly attach: (source: S) => () => void;
   readonly getState: () => CloudAccountState;
+  readonly retry: () => void;
 }
 
 export function createCloudAccountService<S extends CloudAccountSource>(
@@ -219,6 +222,7 @@ export function createCloudAccountService<S extends CloudAccountSource>(
           if (
             next === null &&
             state._tag === "Unobserved" &&
+            !source.initialSignOutIsAuthoritative &&
             !isClientFromClerkApi(resources.client)
           ) {
             return;
@@ -232,5 +236,8 @@ export function createCloudAccountService<S extends CloudAccountSource>(
       };
     },
     getState: () => state,
+    retry: () => {
+      if (attached !== null && state._tag === "Failed") observe(attached.source, state.accountId);
+    },
   };
 }

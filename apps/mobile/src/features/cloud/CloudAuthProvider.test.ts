@@ -1,34 +1,36 @@
-import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import * as Exit from "effect/Exit";
+import { runtime } from "../../lib/runtime";
+import {
+  managedRelayAuthLoadAtom,
+  managedRelaySessionAtom,
+} from "@t3tools/client-runtime/relay-session";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   activateCloudRelayAccount,
+  cleanUpCloudRelayAccount,
   cloudAccountService,
   deactivateCloudRelayAccount,
+  relaySignInSource,
 } from "./cloudAccountService";
-import { setAgentAwarenessRelayTokenProvider } from "../agent-awareness/remoteRegistration";
+import { setAgentAwarenessRelayCredential } from "../agent-awareness/remoteRegistration";
 import { requestConnectOnboarding } from "./connectOnboarding";
+import { publishRelaySignIn, relaySignInAtom } from "./relaySessionStore";
 import { restoreCloudComposerDrafts } from "../../state/use-composer-drafts";
 
-vi.mock("@clerk/expo", () => ({
-  ClerkProvider: vi.fn(),
-  useAuth: vi.fn(),
+vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
 }));
 
-vi.mock("@clerk/expo/token-cache", () => ({
-  tokenCache: {},
+vi.mock("@t3tools/client-runtime/state/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/runtime")>()),
+  runAtomCommand: vi.fn(async () => ({ _tag: "Success", value: undefined })),
 }));
 
 vi.mock("../../lib/runtime", () => ({
   runtime: {
     runPromiseExit: vi.fn(),
-  },
-}));
-
-vi.mock("../../connection/catalog", () => ({
-  environmentCatalog: {
-    removeRelayEnvironments: {},
   },
 }));
 
@@ -42,85 +44,131 @@ vi.mock("../../state/use-composer-drafts", () => ({
   restoreCloudComposerDrafts: vi.fn(async () => undefined),
 }));
 
-vi.mock("./publicConfig", () => ({
-  resolveCloudPublicConfig: vi.fn(() => ({
-    clerk: { publishableKey: null },
-    relay: { url: null },
-  })),
-  resolveRelayClerkTokenOptions: vi.fn(),
-}));
-
 vi.mock("../agent-awareness/remoteRegistration", () => ({
-  releaseAgentAwarenessRelayTokenProvider: vi.fn(),
-  setAgentAwarenessRelayTokenProvider: vi.fn(),
-  unregisterAgentAwarenessDeviceForCurrentUser: vi.fn(),
+  releaseAgentAwarenessRelayCredential: vi.fn(),
+  setAgentAwarenessRelayCredential: vi.fn(),
 }));
 
-type ClerkListener = (resources: { readonly user: { readonly id: string } | null }) => void;
+const session = {
+  accountId: "account-1",
+  email: "someone@example.com",
+  credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
+};
 
-function fakeClerk() {
-  const listeners = new Set<ClerkListener>();
-  const clerk = {
-    session: null,
-    addListener: (listener: ClerkListener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  } as unknown as Parameters<typeof cloudAccountService.attach>[0];
-  const emit = (userId: string | null) => {
-    for (const listener of listeners) listener({ user: userId === null ? null : { id: userId } });
-  };
-  return { clerk, emit };
+function publish(next: typeof session | null) {
+  publishRelaySignIn(
+    next === null
+      ? null
+      : {
+          version: 1,
+          relayUrl: "https://relay.example.test",
+          thumbprint: "test-key",
+          accountId: next.accountId,
+          email: next.email,
+          refreshToken: next.credential.refreshToken,
+        },
+  );
 }
 
 afterEach(() => {
+  appAtomRegistry.set(relaySignInAtom, { status: "loading" });
   deactivateCloudRelayAccount();
   vi.clearAllMocks();
 });
 
 describe("CloudAuthProvider relay account isolation", () => {
-  it("clears relay and agent-awareness credentials before cleanup can fail", async () => {
-    const tokenProvider = async () => "account-1-token";
-    activateCloudRelayAccount("account-1", tokenProvider);
-    expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1");
+  it("resets cached relay access tokens even if the draft archive fails", async () => {
+    vi.mocked(runtime.runPromiseExit).mockResolvedValue(Exit.succeed(undefined));
+    const archiveError = new Error("Draft archive is unreadable");
+    await expect(
+      cleanUpCloudRelayAccount(async () => {
+        throw archiveError;
+      }),
+    ).rejects.toBe(archiveError);
+    expect(runtime.runPromiseExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes the session to relay requests and device registration, and clears both", () => {
+    activateCloudRelayAccount(session);
+    expect(appAtomRegistry.get(managedRelaySessionAtom)).toEqual(session);
+    expect(vi.mocked(setAgentAwarenessRelayCredential)).toHaveBeenLastCalledWith(
+      session.credential,
+    );
 
     deactivateCloudRelayAccount();
-    const cleanup = Promise.reject(new Error("Persistence removal failed.")).catch(() => undefined);
 
     expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
-    expect(vi.mocked(setAgentAwarenessRelayTokenProvider)).toHaveBeenLastCalledWith(null);
-    await cleanup;
+    expect(vi.mocked(setAgentAwarenessRelayCredential)).toHaveBeenLastCalledWith(null);
   });
 });
 
 describe("cloudAccountService", () => {
-  it("activates the signed-in account once its drafts are restored", async () => {
-    const { clerk, emit } = fakeClerk();
-    using _detach = { [Symbol.dispose]: cloudAccountService.attach(clerk) };
-
-    emit("account-1");
+  it("cleans up an authoritative signed-out restore before a fresh sign-in", async () => {
+    vi.mocked(runtime.runPromiseExit).mockResolvedValue(Exit.succeed(undefined));
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "loading");
+    using _detach = { [Symbol.dispose]: cloudAccountService.attach(relaySignInSource) };
+    publish(null);
+    await vi.waitFor(() => expect(cloudAccountService.getState()._tag).toBe("SignedOut"));
+    expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("loaded");
     expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
+    await vi.waitFor(() => expect(runtime.runPromiseExit).toHaveBeenCalled());
+    publish(session);
+    await vi.waitFor(() => expect(cloudAccountService.getState()._tag).toBe("Active"));
+    expect(requestConnectOnboarding).toHaveBeenCalledWith(session.accountId);
+  });
 
-    await vi.waitFor(() =>
-      expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1"),
-    );
+  it("activates the signed-in account once its drafts are restored", async () => {
+    publish(session);
+    using _detach = { [Symbol.dispose]: cloudAccountService.attach(relaySignInSource) };
+
+    expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
+    await vi.waitFor(() => expect(appAtomRegistry.get(managedRelaySessionAtom)).toEqual(session));
     expect(vi.mocked(restoreCloudComposerDrafts)).toHaveBeenCalledWith("account-1");
-    // Clerk already had this account on its first emission, so this is not a fresh sign-in.
+    // The account was already signed in when observation started, so this is not a fresh sign-in.
     expect(vi.mocked(requestConnectOnboarding)).not.toHaveBeenCalled();
   });
 
-  it("retries an activation whose draft restore failed on the next emission", async () => {
-    const { clerk, emit } = fakeClerk();
-    using _detach = { [Symbol.dispose]: cloudAccountService.attach(clerk) };
-    vi.mocked(restoreCloudComposerDrafts).mockRejectedValueOnce(new Error("Storage busy."));
+  it("does not treat loading the saved sign-in as a sign-out", async () => {
+    using _detach = { [Symbol.dispose]: cloudAccountService.attach(relaySignInSource) };
 
-    emit("account-1");
+    expect(cloudAccountService.getState()._tag).toBe("Unobserved");
+    publish(session);
+    await vi.waitFor(() => expect(cloudAccountService.getState()._tag).toBe("Active"));
+    expect(runtime.runPromiseExit).not.toHaveBeenCalled();
+  });
+
+  it("uses a new sign-in of the active account without cleaning up its data", async () => {
+    vi.mocked(runtime.runPromiseExit).mockResolvedValue(Exit.succeed(undefined));
+    publish(session);
+    using _detach = { [Symbol.dispose]: cloudAccountService.attach(relaySignInSource) };
+    await vi.waitFor(() => expect(cloudAccountService.getState()._tag).toBe("Active"));
+
+    const nextSession = {
+      ...session,
+      credential: { accountId: "account-1", refreshToken: "styal_rt_second_session" },
+    };
+    publish(nextSession);
+
+    expect(appAtomRegistry.get(managedRelaySessionAtom)).toEqual(nextSession);
+    expect(vi.mocked(setAgentAwarenessRelayCredential)).toHaveBeenLastCalledWith(
+      nextSession.credential,
+    );
+    expect(runtime.runPromiseExit).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed activation on foreground without a new saved-session emission", async () => {
+    vi.mocked(restoreCloudComposerDrafts).mockRejectedValueOnce(new Error("Storage busy."));
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "loading");
+    publish(session);
+    using _detach = { [Symbol.dispose]: cloudAccountService.attach(relaySignInSource) };
+
     await vi.waitFor(() => expect(cloudAccountService.getState()._tag).toBe("Failed"));
+    expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("loaded");
     expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
 
-    emit("account-1");
-    await vi.waitFor(() =>
-      expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1"),
-    );
+    publish(session);
+    expect(cloudAccountService.getState()._tag).toBe("Failed");
+    cloudAccountService.retry();
+    await vi.waitFor(() => expect(appAtomRegistry.get(managedRelaySessionAtom)).toEqual(session));
   });
 });

@@ -4,7 +4,8 @@ import * as NodeCrypto from "node:crypto";
 
 import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
-import { DpopProof } from "@t3tools/client-runtime/relay";
+import { DpopProof } from "@t3tools/client-runtime/relay-session";
+import * as SecureStore from "expo-secure-store";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -34,11 +35,12 @@ vi.mock("expo-crypto", () => ({
 
 const secureStore = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: (key: string) => Promise.resolve(secureStore.get(key) ?? null),
-  setItemAsync: (key: string, value: string) => {
+  setItemAsync: vi.fn((key: string, value: string) => {
     secureStore.set(key, value);
     return Promise.resolve();
-  },
+  }),
 }));
 
 vi.mock("expo", async () => {
@@ -64,12 +66,18 @@ describe("mobile DPoP", () => {
       const second = yield* loadOrCreateDpopProofKeyPair();
 
       expect(second.privateJwk).toEqual(first.privateJwk);
+      // Live Activity token reports can need the key while the phone is locked.
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+        "styal.cloud.dpop-proof-key",
+        expect.any(String),
+        { keychainAccessible: "after-first-unlock-this-device-only" },
+      );
     }).pipe(Effect.provide(Dpop.layer)),
   );
 
   it.effect("rejects malformed persisted proof keys", () =>
     Effect.gen(function* () {
-      secureStore.set("t3code.cloud.dpop-proof-key", `{"kty":"EC","crv":"P-256","d":42}`);
+      secureStore.set("styal.cloud.dpop-proof-key", `{"kty":"EC","crv":"P-256","d":42}`);
 
       const error = yield* loadOrCreateDpopProofKeyPair().pipe(Effect.flip);
 
@@ -84,7 +92,7 @@ describe("mobile DPoP", () => {
       secureStore.clear();
       const other = yield* loadOrCreateDpopProofKeyPair();
       secureStore.set(
-        "t3code.cloud.dpop-proof-key",
+        "styal.cloud.dpop-proof-key",
         JSON.stringify({ ...privateJwk, x: other.publicJwk.x, y: other.publicJwk.y }),
       );
 
@@ -110,7 +118,7 @@ describe("mobile DPoP", () => {
   ])("rejects a persisted key with a $length coordinate", ({ x }) =>
     Effect.gen(function* () {
       secureStore.set(
-        "t3code.cloud.dpop-proof-key",
+        "styal.cloud.dpop-proof-key",
         JSON.stringify({ ...privateJwkWithZeroEndedX, x: x.toString("base64url") }),
       );
 
@@ -124,7 +132,7 @@ describe("mobile DPoP", () => {
     Effect.gen(function* () {
       secureStore.clear();
       const key = yield* loadOrCreateProofKey();
-      const url = "https://relay.restart.styal.invalid/v1/environments";
+      const url = "https://relay.t3.codes/v1/environments";
       const proof = yield* DpopProof.createProof({
         method: "GET",
         url,

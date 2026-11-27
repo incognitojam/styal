@@ -1,3 +1,4 @@
+import type { ManagedRelay } from "@t3tools/client-runtime/relay-session";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { msg, useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
@@ -11,7 +12,6 @@ import { readEnvironmentScope } from "../../state/session";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { serverEnvironment } from "../../state/server";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useAuth } from "@clerk/expo";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Notifications from "expo-notifications";
 import { useNavigation } from "@react-navigation/native";
@@ -57,7 +57,8 @@ import {
   updateLinkedEnvironmentLiveActivityPreference,
 } from "../cloud/linkEnvironment";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
-import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
@@ -106,7 +107,10 @@ const saveLocalPreference = (liveActivitiesEnabled: boolean) =>
 
 const linkEnvironmentWithPreference = Effect.fn("linkEnvironmentWithPreference")(function* (
   environmentId: EnvironmentId,
-  input: { readonly clerkToken: string; readonly liveActivitiesEnabled: boolean },
+  input: {
+    readonly credential: ManagedRelay.ManagedRelayCredential;
+    readonly liveActivitiesEnabled: boolean;
+  },
 ) {
   const exit = yield* Effect.exit(
     linkLiveActivityEnvironment.run(appAtomRegistry, { environmentId, input }),
@@ -197,7 +201,7 @@ export function SettingsNotificationsRouteScreen() {
           contentContainerClassName="px-5 pt-4"
         >
           <Text className="text-base text-foreground-muted">
-            {gt("Notifications require {product} in this app build.", { product: "T3 Connect" })}
+            {gt("Notifications require {product} in this app build.", { product: "styal Link" })}
           </Text>
         </ScrollView>
       </SettingsScreen>
@@ -219,7 +223,8 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       : agentAwarenessPlatform.subtitle;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn, session } = useRelayAuth();
+  const credential = session?.credential ?? null;
   const { savedConnectionsById } = useSavedRemoteConnections();
   const notificationStatus = useAtomValue(notificationStatusAtom);
   const setNotificationStatus = useAtomSet(notificationStatusAtom);
@@ -281,7 +286,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           gt("Couldn't finish enabling notifications"),
           gt(
             "Notification access was granted, but this device could not be registered with {product}. Notifications will start once registration succeeds.",
-            { product: "T3 Connect" },
+            { product: "styal Link" },
           ),
         );
       }
@@ -312,9 +317,9 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   const promptSignIn = () => {
     Dialog.alert(
-      gt("Sign in to {product}", { product: "T3 Connect" }),
+      gt("Sign in to {product}", { product: "styal Link" }),
       gt("Live Activity updates require {product} so relay can deliver updates to this device.", {
-        product: "T3 Connect",
+        product: "styal Link",
       }),
       [
         { text: gt("Cancel"), style: "cancel" },
@@ -362,21 +367,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       }
       setNotificationStatus("enabled");
     }
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-    if (tokenResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      const error = squashAtomCommandFailure(tokenResult);
-      Dialog.alert(
-        Platform.OS === "android"
-          ? gt("Ongoing activity unavailable")
-          : gt("Live Activities unavailable"),
-        error instanceof Error
-          ? (errorDisplayMessage(error, resolveMessage) ?? error.message)
-          : gt("Could not enable agent activity updates."),
-      );
-      return;
-    }
-    if (!tokenResult.value) {
+    if (!credential) {
       promptSignIn();
       setLiveActivityStatus("signed-out");
       return;
@@ -394,7 +385,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           canUpdateEnvironment: (id) => canManageConnect(id, AuthRelayWriteScope),
           enabled: true,
           previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: tokenResult.value,
+          credential,
           connections,
         }),
       ),
@@ -440,7 +431,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         gt("Couldn't finish enabling activity updates"),
         gt(
           "This device could not be registered with {product}, so activity updates won't appear yet. They'll start once registration succeeds.",
-          { product: "T3 Connect" },
+          { product: "styal Link" },
         ),
       );
     }
@@ -467,19 +458,6 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   };
 
   async function disableLiveActivities() {
-    let token: string | null = null;
-    if (isSignedIn) {
-      const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-      if (tokenResult._tag === "Failure") {
-        setLiveActivityStatus("enabled");
-        reportAtomCommandResult(tokenResult, {
-          label: "live activity disable token lookup",
-        });
-        return;
-      }
-      token = tokenResult.value;
-    }
-
     const updateResult = await settleAsyncResult(() =>
       runtime.runPromiseExit(
         setLiveActivityUpdatesEnabled({
@@ -492,7 +470,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           canUpdateEnvironment: (id) => canManageConnect(id, AuthRelayWriteScope),
           enabled: false,
           previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: token,
+          credential,
           connections,
         }),
       ),

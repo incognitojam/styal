@@ -2,7 +2,7 @@ import { useGT } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
-import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay-session";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 import { RefreshControl } from "../../components/ui/RefreshControl";
