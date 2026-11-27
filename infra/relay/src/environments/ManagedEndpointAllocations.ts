@@ -7,11 +7,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as SqlError from "effect/sql/SqlError";
 
+import { TunnelOperationExecution } from "../persistence/TunnelOperationPersistence.ts";
 import * as RelayDb from "../db.ts";
 import { isManagedEndpointHostname, managedEndpointForHostname } from "../deploymentConfig.ts";
-import { relayEnvironmentLinks, relayManagedEndpointAllocations } from "../persistence/schema.ts";
+import {
+  relayEnvironmentLinks,
+  relayManagedEndpointAllocations,
+  relayTunnelOperations,
+} from "../persistence/schema.ts";
 
 export interface ManagedEndpointAllocation {
   readonly userId: string;
@@ -194,6 +198,23 @@ const whereAllocation = (input: ManagedEndpointAllocationKey) =>
   and(
     eq(relayManagedEndpointAllocations.userId, input.userId),
     eq(relayManagedEndpointAllocations.environmentId, input.environmentId),
+  );
+
+export const pendingTunnelOperation = (exceptOperationId?: string) =>
+  exists(
+    new QueryBuilder()
+      .select({ id: relayTunnelOperations.operationId })
+      .from(relayTunnelOperations)
+      .where(
+        and(
+          eq(relayTunnelOperations.userId, relayManagedEndpointAllocations.userId),
+          eq(relayTunnelOperations.environmentId, relayManagedEndpointAllocations.environmentId),
+          sql`${relayTunnelOperations.phase} <> 'complete'`,
+          exceptOperationId === undefined
+            ? undefined
+            : sql`${relayTunnelOperations.operationId} <> ${exceptOperationId}`,
+        ),
+      ),
   );
 
 const make = Effect.gen(function* () {
@@ -471,7 +492,12 @@ const make = Effect.gen(function* () {
                   isNull(relayEnvironmentLinks.revokedAt),
                 ),
               )
-              .where(inArray(relayManagedEndpointAllocations.tunnelName, batch))
+              .where(
+                and(
+                  inArray(relayManagedEndpointAllocations.tunnelName, batch),
+                  sql`not (${pendingTunnelOperation()})`,
+                ),
+              )
               .pipe(
                 Effect.map((rows) =>
                   rows.map(
@@ -508,6 +534,7 @@ const make = Effect.gen(function* () {
     claimRelease: Effect.fn("relay.managed_endpoint_allocations.claim_release")(function* (
       input: ClaimManagedEndpointReleaseInput,
     ) {
+      const operation = yield* Effect.serviceOption(TunnelOperationExecution);
       const now = DateTime.formatIso(yield* DateTime.now);
       const claimed = yield* db
         .update(relayManagedEndpointAllocations)
@@ -518,6 +545,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            sql`not (${pendingTunnelOperation(Option.isSome(operation) ? operation.value.operationId : undefined)})`,
             eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
@@ -553,35 +581,27 @@ const make = Effect.gen(function* () {
             tunnelId: input.tunnelId,
             cause,
           });
-        return yield* db.$client
-          .withTransaction(
-            db
-              .select({ generation: relayManagedEndpointAllocations.generation })
-              .from(relayManagedEndpointAllocations)
-              .where(
-                and(
-                  whereAllocation(input),
-                  eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
-                  eq(relayManagedEndpointAllocations.generation, input.generation),
-                ),
-              )
-              .limit(1)
-              .for("update")
-              .pipe(
-                Effect.mapError(lockError),
-                Effect.flatMap((rows) =>
-                  rows.length === 0 ? Effect.succeedNone : Effect.asSome(effect),
-                ),
-              ),
+        const operation = yield* Effect.serviceOption(TunnelOperationExecution);
+        const rows = yield* db
+          .select({ generation: relayManagedEndpointAllocations.generation })
+          .from(relayManagedEndpointAllocations)
+          .where(
+            and(
+              whereAllocation(input),
+              eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
+              eq(relayManagedEndpointAllocations.generation, input.generation),
+              sql`not (${pendingTunnelOperation(Option.isSome(operation) ? operation.value.operationId : undefined)})`,
+            ),
           )
-          .pipe(
-            Effect.mapError((cause) => (SqlError.isSqlError(cause) ? lockError(cause) : cause)),
-          );
+          .limit(1)
+          .pipe(Effect.mapError(lockError));
+        return rows.length === 0 ? Option.none<A>() : yield* Effect.asSome(effect);
       },
     ),
     claimDeprovision: Effect.fn("relay.managed_endpoint_allocations.claim_deprovision")(function* (
       input: ClaimManagedEndpointDeprovisionInput,
     ) {
+      const operation = yield* Effect.serviceOption(TunnelOperationExecution);
       const claimed = yield* db
         .update(relayManagedEndpointAllocations)
         // Claims move only the generation: the tunnel limit reads updatedAt as the last provisioning write.
@@ -589,6 +609,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            sql`not (${pendingTunnelOperation(Option.isSome(operation) ? operation.value.operationId : undefined)})`,
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
         )

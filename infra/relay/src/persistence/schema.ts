@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
@@ -113,6 +114,29 @@ export const relayManagedEndpointAllocations = pgTable(
     primaryKey({ columns: [table.userId, table.environmentId] }),
     uniqueIndex("idx_relay_managed_endpoint_allocations_hostname").on(table.hostname),
     uniqueIndex("idx_relay_managed_endpoint_allocations_tunnel_name").on(table.tunnelName),
+  ],
+);
+
+export const relayTunnelOperations = pgTable(
+  "relay_tunnel_operations",
+  {
+    userId: varchar("user_id", { length: 191 }).notNull(),
+    environmentId: varchar("environment_id", { length: 191 }).notNull(),
+    operationId: varchar("operation_id", { length: 64 }).notNull().unique(),
+    hostname: text("hostname").notNull(),
+    tunnelName: text("tunnel_name").notNull(),
+    desired: jsonb("desired")
+      .$type<import("./TunnelOperationPersistence.ts").TunnelOperationDesired>()
+      .notNull(),
+    phase: text("phase").notNull(),
+    resources: jsonb("resources").$type<Readonly<Record<string, string>>>().notNull(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.environmentId] }),
+    index("idx_relay_tunnel_operations_pending")
+      .on(table.updatedAt)
+      .where(sql`${table.phase} <> 'complete'`),
   ],
 );
 

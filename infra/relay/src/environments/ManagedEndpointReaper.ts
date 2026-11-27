@@ -1,3 +1,7 @@
+import {
+  TunnelOperationPersistence,
+  TunnelOperationResume,
+} from "../persistence/TunnelOperationPersistence.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -24,7 +28,7 @@ const MANAGED_ENDPOINT_LEGACY_AGE_BUCKET_DAYS = [7, 30, 90] as const;
 // returning host that has updated recovers the tunnel at the same hostname;
 // one that has not sees the client's "update styal" message instead.
 const MANAGED_ENDPOINT_LEGACY_GRACE_PERIOD_DAYS = 7;
-// Each delete holds a Hyperdrive connection for ~2s; stay below the fork's shared 20-connection limit.
+// Bound parallel Cloudflare requests within the cron budget.
 const MANAGED_ENDPOINT_SWEEP_DELETE_CONCURRENCY = 8;
 // Leave time under the cron's two-minute limit to finish deletions and record counters.
 const MANAGED_ENDPOINT_SWEEP_DELETE_BUDGET_MS = 90_000;
@@ -154,8 +158,30 @@ const make = Effect.gen(function* () {
   const tunnels = yield* ManagedEndpointProvider.ManagedEndpointTunnelClient;
   const allocations = yield* ManagedEndpointAllocations.ManagedEndpointAllocations;
   const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+  const journal = yield* TunnelOperationPersistence;
 
   const sweep = Effect.gen(function* () {
+    const pending = yield* journal.pending(10).pipe(Effect.orElseSucceed(() => []));
+    for (const operation of pending) {
+      const key = { userId: operation.userId, environmentId: operation.environmentId };
+      const desired = operation.desired;
+      yield* Effect.gen(function* () {
+        if (desired.kind === "provision")
+          yield* provider.provision({ ...key, origin: desired.origin });
+        else {
+          const completed =
+            desired.kind === "release"
+              ? yield* provider.release({ ...key, ...desired })
+              : yield* provider.deprovision(key);
+          if (completed) yield* journal.complete(operation.operationId);
+        }
+      }).pipe(
+        Effect.provideService(TunnelOperationResume, operation.operationId),
+        Effect.catch((cause) =>
+          Effect.logWarning("Tunnel operation reconciliation failed", { cause }),
+        ),
+      );
+    }
     const mode = config.managedEndpointCleanupMode ?? "off";
     const legacyMode = config.legacyManagedEndpointCleanupMode ?? "off";
     const namespace = config.managedEndpointNamespace;

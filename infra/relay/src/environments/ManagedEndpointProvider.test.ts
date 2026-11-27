@@ -1,3 +1,4 @@
+import { layerMemoryTunnelOperations } from "../test/tunnelOperations.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
@@ -397,6 +398,7 @@ function layerProvider(
   tunnelLimits = makeTunnelLimits(),
 ) {
   return ManagedEndpointProvider.layer.pipe(
+    Layer.provide(layerMemoryTunnelOperations),
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provide(RelayConfiguration.layer(config)),
     Layer.provide(ManagedEndpointProvider.layerTunnelClient(tunnelClient)),
@@ -783,6 +785,7 @@ describe("ManagedEndpointProvider", () => {
         {} as Cloudflare.DNS.ReadWriteDnsClient,
         {} as Alchemy.BaseRuntimeContext,
       ).pipe(
+        Layer.provide(layerMemoryTunnelOperations),
         Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         Layer.provide(RelayConfiguration.layer(config)),
         Layer.provide(
@@ -833,6 +836,7 @@ describe("ManagedEndpointProvider", () => {
       {} as Cloudflare.DNS.ReadWriteDnsClient,
       {} as Alchemy.BaseRuntimeContext,
     ).pipe(
+      Layer.provide(layerMemoryTunnelOperations),
       Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.provide(RelayConfiguration.layer(config)),
       Layer.provide(

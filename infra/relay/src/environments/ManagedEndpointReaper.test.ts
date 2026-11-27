@@ -1,3 +1,4 @@
+import { layerMemoryTunnelOperations } from "../test/tunnelOperations.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -250,6 +251,7 @@ function harness(input?: {
     deleted,
     releases,
     layer: ManagedEndpointReaper.layer.pipe(
+      Layer.provide(layerMemoryTunnelOperations),
       Layer.provide(
         Layer.mergeAll(
           RelayConfiguration.layer(config),
