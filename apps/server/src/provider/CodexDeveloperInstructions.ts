@@ -43,9 +43,35 @@ export interface CodexRuntimeInfo {
 export function buildCodexAdditionalContext(
   runtime: CodexRuntimeInfo,
   toolsAvailable: boolean | T3CodeToolAvailability = true,
+  additionalInstructions?: string,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
   // Split values to fit per-entry caps; number keys because Codex emits them in key order.
+  const projectContext: Record<string, V2TurnStartParams__AdditionalContextEntry> = {};
+  // Project instructions allow 32,000 characters, but Codex truncates entries at 1,000 tokens.
+  // Split at Unicode boundaries so the entire project instruction survives that per-entry cap.
+  if (additionalInstructions) {
+    let value = "";
+    let bytes = 0;
+    let part = 1;
+    const addPart = () => {
+      const key =
+        part === 1
+          ? "additional_instructions"
+          : `additional_instructions_${String(part).padStart(2, "0")}`;
+      projectContext[key] = { kind: "application", value };
+      part += 1;
+      value = "";
+      bytes = 0;
+    };
+    for (const character of additionalInstructions) {
+      const size = Buffer.byteLength(character);
+      if (bytes + size > 3_900) addPart();
+      value += character;
+      bytes += size;
+    }
+    if (value) addPart();
+  }
   return {
     ...Object.fromEntries(
       T3_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [
@@ -58,5 +84,6 @@ export function buildCodexAdditionalContext(
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
     },
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
+    ...projectContext,
   };
 }

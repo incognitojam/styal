@@ -20,6 +20,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerOwnership from "../serverOwnership.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
+import { runAllMigrations } from "./ForkMigrations.ts";
 import * as SqlitePersistence from "./Sqlite.ts";
 
 const workerData = vi.hoisted((): Array<unknown> => []);
@@ -195,9 +196,11 @@ const ownT3Home = Effect.fn(function* () {
 const migrateTo = (toMigrationInclusive?: number) =>
   Effect.gen(function* () {
     const { dbPath } = yield* ServerConfig.ServerConfig;
-    yield* runMigrations({ toMigrationInclusive }).pipe(
-      Effect.provide(NodeSqliteClient.layer({ filename: dbPath })),
-    );
+    yield* (
+      toMigrationInclusive === undefined
+        ? runAllMigrations().pipe(Effect.asVoid)
+        : runMigrations({ toMigrationInclusive }).pipe(Effect.asVoid)
+    ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
   });
 
 const latestRecordedMigrationId = Effect.gen(function* () {
@@ -231,6 +234,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("layerCliConfig",
         assert.instanceOf(opened.failure, SqlitePersistence.ServerOwnsDatabaseError);
       }
     }).pipe(Effect.scoped, Effect.provide(layerT3Home)),
+  );
+
+  it.effect(
+    "does not apply pending project instruction migrations while a server owns the home",
+    () =>
+      Effect.gen(function* () {
+        const { dbPath } = yield* ServerConfig.ServerConfig;
+        yield* runMigrations().pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
+        yield* ownT3Home();
+        const opened = yield* Effect.void.pipe(
+          Effect.provide(SqlitePersistence.layerCliConfig),
+          Effect.result,
+        );
+        assert.equal(opened._tag, "Failure");
+        if (opened._tag === "Failure")
+          assert.instanceOf(opened.failure, SqlitePersistence.ServerOwnsDatabaseError);
+        const columns = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
+        assert.isFalse(columns.some((column) => column.name === "additional_instructions"));
+      }).pipe(Effect.scoped, Effect.provide(layerT3Home)),
   );
 
   it.effect("opens a current styal home while a running server owns it", () =>

@@ -1078,6 +1078,7 @@ describe("CursorAdapterV2", () => {
         nativeThreadHasTurns?: boolean,
         options?: {
           readonly model?: string;
+          readonly instructions?: string;
           readonly status?: "finished" | "error";
           readonly summaryCompleted?: { readonly failed?: boolean };
         },
@@ -1091,7 +1092,7 @@ describe("CursorAdapterV2", () => {
           threadId,
           providerThread,
           modelSelection: turnModelSelection,
-          runtimePolicy,
+          runtimePolicy: { ...runtimePolicy, additionalInstructions: options?.instructions },
           ...(nativeThreadHasTurns === undefined ? {} : { nativeThreadHasTurns }),
           runId: RunId.make(`cursor-device-run-${runOrdinal}`),
           runOrdinal,
@@ -1252,6 +1253,27 @@ describe("CursorAdapterV2", () => {
         yield* send(false, false, { model: "gemini-4-neon" }),
         told(true, true, true),
         "the fresh agent after a rollback has been told nothing",
+      );
+      yield* send(false, undefined, { instructions: "Use synthetic fixtures." });
+      assert.include(
+        sentMessages.at(-1)!,
+        "<additional_instructions>\nUse synthetic fixtures.\n</additional_instructions>",
+      );
+      yield* send(false, undefined, { instructions: "Use synthetic fixtures." });
+      assert.notInclude(sentMessages.at(-1)!, "<additional_instructions>");
+      yield* send(false, undefined, { instructions: "Run focused tests." });
+      assert.include(sentMessages.at(-1)!, "<additional_instructions>\nRun focused tests.");
+      yield* send();
+      assert.include(sentMessages.at(-1)!, "Earlier additional instructions no longer apply.");
+      yield* send(true, undefined, {
+        instructions: "Rules after failed compact.",
+        summaryCompleted: { failed: true },
+      });
+      assert.notInclude(sentMessages.at(-1)!, "<additional_instructions>");
+      yield* send(false, undefined, { instructions: "Rules after failed compact." });
+      assert.include(
+        sentMessages.at(-1)!,
+        "<additional_instructions>\nRules after failed compact.",
       );
     }).pipe(
       Effect.scoped,

@@ -972,7 +972,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       ]),
     );
     const t3Context =
-      input.hasT3Mcp === true
+      input.hasT3Mcp === true || input.runtimePolicy.additionalInstructions !== undefined
         ? buildCodexAdditionalContext(
             {
               model: input.modelSelection.model,
@@ -983,6 +983,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
             },
+            input.runtimePolicy.additionalInstructions,
           )
         : undefined;
     // Its own entry, so the folder list reaches the model without styal's MCP tools too.

@@ -1,3 +1,4 @@
+import { withGrokProjectInstructions } from "./projectInstructions.ts";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -31,6 +32,7 @@ interface GrokAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
   "authMethodId" | "clientCapabilities" | "spawn"
 > {
+  readonly additionalInstructions?: string;
   readonly grokSettings: GrokAcpRuntimeGrokSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
   readonly runtimeMode?: RuntimeMode;
@@ -63,13 +65,14 @@ export function grokAcpSpawnArgs(
 }
 
 function buildGrokAcpSpawnInput(
+  additionalInstructions: string | undefined,
   grokSettings: GrokAcpRuntimeGrokSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
   runtimeMode?: RuntimeMode,
   skillDirectory?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
-  return {
+  return withGrokProjectInstructions(additionalInstructions, {
     command: grokSettings?.binaryPath || "grok",
     args: grokAcpSpawnArgs(runtimeMode, skillDirectory),
     cwd,
@@ -77,7 +80,7 @@ function buildGrokAcpSpawnInput(
       ...environment,
       [GROK_OAUTH2_REFERRER_ENV]: T3_CODE_OAUTH_REFERRER,
     },
-  };
+  });
 }
 
 function resolveGrokAuthMethodId(environment: NodeJS.ProcessEnv | undefined): string {
@@ -139,6 +142,7 @@ export const makeGrokAcpRuntime = Effect.fn("GrokAcpSupport.makeGrokAcpRuntime")
     AcpSessionRuntime.layer({
       ...input,
       spawn: buildGrokAcpSpawnInput(
+        input.additionalInstructions,
         input.grokSettings,
         input.cwd,
         input.environment,

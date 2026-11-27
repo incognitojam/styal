@@ -74,6 +74,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly autoPull?: boolean;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly faviconPath?: string | null;
+  readonly additionalInstructions?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
   /** Replaces the whole list. Paths only mean something on the project's own environment. */
@@ -475,6 +476,9 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
     ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
     ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
+    ...(input.additionalInstructions === undefined
+      ? {}
+      : { additionalInstructions: input.additionalInstructions }),
     ...(input.defaultThreadEnvMode === undefined
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),

@@ -743,6 +743,7 @@ export interface AcpAdapterV2Flavor {
   readonly promptInactivityTimeout?: Duration.Input;
   /** Grok can retain task_already_running until process exit. */
   readonly restartRuntimeAfterInterrupt?: boolean;
+  readonly restartRuntimeWhenInstructionsChange?: boolean;
   /** Prompt failures after which the agent process keeps failing until replaced. */
   readonly restartRuntimeAfterPromptError?: (error: unknown) => boolean;
   readonly restartRuntimeOnEveryInterrupt?: boolean;
@@ -2311,6 +2312,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           });
         // Client terminals run with server privileges; apply turn policy and prior user approvals.
         const clientPolicyGrants = makeAcpClientPolicyGrants();
+        let spawnedInstructions = input.runtimePolicy.additionalInstructions;
         let latestRuntimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy =
           input.runtimePolicy;
         const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
@@ -3038,7 +3040,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ): AcpAdapterV2RuntimeInput => {
           return {
             cwd: input.runtimePolicy.cwd ?? process.cwd(),
-            runtimePolicy: input.runtimePolicy,
+            runtimePolicy: {
+              ...input.runtimePolicy,
+              additionalInstructions: latestRuntimePolicy.additionalInstructions,
+            },
             ...(input.runtimePolicy.workspace === undefined
               ? {}
               : { extraRoots: input.runtimePolicy.workspace.extraRoots }),
@@ -8025,6 +8030,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* Scope.close(runtimeScope, Exit.void);
           }
           runtimeScope = yield* Scope.make();
+          spawnedInstructions = latestRuntimePolicy.additionalInstructions;
           const mcpContext = yield* readMcpContext(threadId);
           runtimeMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, runtimeScope);
           const runtimeGeneration = yield* Ref.get(runtimeCallbackGeneration);
@@ -9760,6 +9766,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             useProviderThreadIdentity(turnInput.providerThread);
             // load/resume can invoke client methods; install the incoming policy before activation.
             latestRuntimePolicy = turnInput.runtimePolicy;
+            if (
+              flavor.restartRuntimeWhenInstructionsChange === true &&
+              turnInput.runtimePolicy.additionalInstructions !== spawnedInstructions
+            ) {
+              yield* Ref.set(runtimeRestartRequired, true);
+            }
             const requestedSessionId = yield* nativeThreadId(driver, turnInput.providerThread);
             const restartAfterInterrupt = yield* restartRuntimeAfterTeardownIfRequired(
               turnInput.threadId,

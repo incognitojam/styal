@@ -2551,6 +2551,7 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
+  readonly additionalInstructions?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -2714,6 +2715,7 @@ export function makeClaudeQueryOptions(input: {
               (deviceInstructions
                 ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
                 : "")),
+        ...(input.additionalInstructions === undefined ? [] : [input.additionalInstructions]),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
@@ -3939,9 +3941,11 @@ export function claudeEffectiveQueryPolicyKey(
   },
   // Folders are fixed when a query starts, so a changed list needs a new one.
   workspace?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["workspace"],
+  additionalInstructions?: string,
 ): string {
   return JSON.stringify({
     workspace,
+    additionalInstructions,
     runtimePolicy: claudeRuntimeQueryPolicyKey({
       ...queryPolicy,
       ...(mcpOverrides.allowedTools === undefined
@@ -13534,6 +13538,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             queryPolicy,
             mcpOverrides,
             turnInput.runtimePolicy.workspace,
+            turnInput.runtimePolicy.additionalInstructions,
           );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
@@ -13753,6 +13758,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             onStop,
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
+            ...(turnInput.runtimePolicy.additionalInstructions === undefined
+              ? {}
+              : { additionalInstructions: turnInput.runtimePolicy.additionalInstructions }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
           });
           const resolvedTurnCwd = yield* fileSystem

@@ -802,6 +802,15 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
         overrides,
         path === undefined ? undefined : workspace(path),
       );
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
+        queryPolicy,
+        overrides,
+        undefined,
+        "Use synthetic fixtures.",
+      ),
+      initialKey,
+    );
     assert.equal(keyFor(), initialKey);
     assert.notEqual(keyFor("/repos/api"), initialKey);
     assert.notEqual(keyFor("/repos/api"), keyFor("/repos/api-moved"));
@@ -903,6 +912,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         model: "claude-sonnet-4-6",
       },
+      additionalInstructions: "Use synthetic fixtures.",
       nativeThreadId: "native-thread-claude-mcp",
       resume: false,
       cwd: "/workspace",
@@ -918,6 +928,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     };
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
+    assert.include(systemPrompt.append ?? "", "\n\nUse synthetic fixtures.");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `t3_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## styal devices");

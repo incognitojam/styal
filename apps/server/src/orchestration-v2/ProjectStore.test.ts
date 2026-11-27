@@ -11,6 +11,57 @@ import * as ProjectStore from "./ProjectStore.ts";
 it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)))(
   "ProjectStoreV2",
   (it) => {
+    it.effect("replays project instructions, preserves omission, and clears with null", () =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const sql = yield* SqlClient.SqlClient;
+        const projectId = ProjectId.make("project-instructions");
+        const at = "2026-03-24T00:00:00.000Z";
+        const event = { aggregateKind: "project", aggregateId: projectId, occurredAt: at } as const;
+        const meta = { commandId: null, causationEventId: null, correlationId: null, metadata: {} };
+        yield* projects.apply({
+          ...event,
+          ...meta,
+          sequence: 1,
+          eventId: EventId.make("instructions-created"),
+          type: "project.created",
+          payload: {
+            projectId,
+            title: "Atlas",
+            workspaceRoot: "/workspace/atlas",
+            defaultModelSelection: null,
+            scripts: [],
+            additionalInstructions: "Use synthetic fixtures.",
+            createdAt: at,
+            updatedAt: at,
+          },
+        });
+        for (const [index, patch] of [
+          { title: "Atlas renamed" },
+          { additionalInstructions: "Run focused tests." },
+          { additionalInstructions: null },
+        ].entries()) {
+          yield* projects.apply({
+            ...event,
+            ...meta,
+            sequence: index + 2,
+            eventId: EventId.make(`instructions-${index}`),
+            type: "project.meta-updated",
+            payload: { projectId, ...patch, updatedAt: at },
+          });
+          const expected = ["Use synthetic fixtures.", "Run focused tests.", null][index];
+          assert.equal(
+            Option.getOrThrow(yield* projects.get(projectId)).additionalInstructions,
+            expected,
+          );
+          const rows = yield* sql<{
+            readonly additional_instructions: string | null;
+          }>`SELECT additional_instructions FROM projection_projects WHERE project_id = ${projectId}`;
+          assert.equal(rows[0]?.additional_instructions, expected);
+        }
+      }),
+    );
+
     it.effect("stores a model selection without options as JSON without an options key", () =>
       Effect.gen(function* () {
         const projects = yield* ProjectStore.ProjectStoreV2;

@@ -8,7 +8,10 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-import { hasPendingMigrations, runMigrations } from "./Migrations.ts";
+import {
+  hasPendingAllMigrations as hasPendingMigrations,
+  runAllMigrations as runMigrations,
+} from "./ForkMigrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerOwnership from "../serverOwnership.ts";

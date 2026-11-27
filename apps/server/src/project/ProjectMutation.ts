@@ -41,6 +41,9 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.autoPull === undefined ? {} : { autoPull: mutation.autoPull }),
         ...(mutation.projectIcon === undefined ? {} : { projectIcon: mutation.projectIcon }),
         ...(mutation.faviconPath === undefined ? {} : { faviconPath: mutation.faviconPath }),
+        ...(mutation.additionalInstructions === undefined
+          ? {}
+          : { additionalInstructions: mutation.additionalInstructions }),
         ...(mutation.defaultThreadEnvMode === undefined
           ? {}
           : { defaultThreadEnvMode: mutation.defaultThreadEnvMode }),

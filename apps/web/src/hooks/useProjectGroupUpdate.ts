@@ -22,6 +22,7 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 export type ProjectGroupUpdate = Partial<{
   title: string;
   faviconPath: string | null;
+  additionalInstructions: string | null;
   projectIcon: ProjectIconOverride | null;
   pinned: boolean;
   archived: boolean;

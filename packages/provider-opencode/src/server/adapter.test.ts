@@ -197,6 +197,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     readonly options?: ReadonlyArray<ProviderOptionSelection>;
     readonly interactionMode?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["interactionMode"];
     readonly attachments?: ProviderAdapter.ProviderAdapterV2TurnInput["message"]["attachments"];
+    readonly additionalInstructions?: string;
   } = {},
 ) {
   const instanceId = ProviderInstanceId.make(`opencode-${suffix}`);
@@ -209,6 +210,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   const policy = runtimePolicy("full-access", {
     cwd: "/workspace",
     interactionMode: turnSettings.interactionMode ?? "default",
+    additionalInstructions: turnSettings.additionalInstructions,
   });
   const adapter = yield* makeOpenCodeAdapterV2({
     instanceId,
@@ -3738,7 +3740,11 @@ describe("OpenCodeAdapterV2", () => {
           },
         },
         {},
-        { options: [{ id: "variant", value: "high" }], interactionMode: "plan" },
+        {
+          options: [{ id: "variant", value: "high" }],
+          interactionMode: "plan",
+          additionalInstructions: "Use synthetic fixtures.",
+        },
       );
       yield* harness.startTurn();
       const turn = yield* harness.awaitLatestTurn();
@@ -3760,6 +3766,7 @@ describe("OpenCodeAdapterV2", () => {
       assert.equal(start?.agent, "plan");
       assert.equal(start?.variant, "high");
       assert.include(start?.system ?? "", "OpenCode");
+      assert.include(start?.system ?? "", "Use synthetic fixtures.\n\n");
       assert.deepEqual(
         { agent: steer?.agent, variant: steer?.variant, system: steer?.system },
         { agent: start?.agent, variant: start?.variant, system: start?.system },

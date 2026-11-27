@@ -58,9 +58,14 @@ for await (const line of NodeReadline.createInterface({ input: process.stdin }))
   let result;
   switch (request.method) {
     case "initialize":
-      result = { protocolVersion, agentInfo: { name: "grok", version: "mock" } };
+      result = {
+        protocolVersion,
+        agentInfo: { name: "grok", version: "mock" },
+        agentCapabilities: { loadSession: true },
+      };
       break;
     case "session/new":
+    case "session/load":
       result = {
         sessionId,
         models: {

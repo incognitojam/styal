@@ -303,3 +303,10 @@ On mobile, use **Settings → Source control & issues** to change selected envir
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Give agents project instructions
+
+Use **Additional instructions** to provide guidance whenever T3 Code starts an agent session for
+the project. The instructions apply to every checkout in the project group and work with Codex,
+Claude, Cursor, Grok, and OpenCode. Clear the field or reset it to stop including them in future
+sessions.

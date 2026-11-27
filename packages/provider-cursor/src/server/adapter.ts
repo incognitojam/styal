@@ -1104,6 +1104,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           readonly device: boolean;
           readonly backgroundWait: boolean;
           readonly runtime: string | undefined;
+          readonly additionalInstructions: string | undefined | null;
         } | null>(null);
         // Cursor drops a run cancelled before its first checkpoint, so the next message carries its prompt.
         const interruptedPrompt = yield* Ref.make<{
@@ -2486,6 +2487,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   device: false,
                   backgroundWait: false,
                   runtime: undefined,
+                  additionalInstructions: null,
                 });
                 yield* Ref.update(interruptedPrompt, (current) =>
                   current?.agent === context.run.agentId
@@ -2877,6 +2879,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             readonly device: boolean;
             readonly backgroundWait: boolean;
             readonly runtime: string | undefined;
+            readonly additionalInstructions: string | undefined | null;
           },
           interrupted: string | undefined,
         ) {
@@ -2884,12 +2887,17 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           if (rawText.trim() === "/compress" && turnInput.message.attachments.length === 0) {
             return { message: "/compress", prompt: undefined, runtimeInstructions: undefined };
           }
+          const additionalInstructions = turnInput.runtimePolicy.additionalInstructions;
+          const instructionsPrefix =
+            additionalInstructions === delivered.additionalInstructions ||
+            (additionalInstructions === undefined && delivered.additionalInstructions === null)
+              ? ""
+              : `<additional_instructions>\n${additionalInstructions ?? "None. Earlier additional instructions no longer apply."}\n</additional_instructions>\n\n`;
           const newText = t3OrchestrationPrompt({
             prompt: yield* providerMessageTextWithAttachmentPaths({
-              text: yield* resolveCursorSkillText(
-                rawText,
-                turnInput.runtimePolicy.cwd ?? undefined,
-              ),
+              text:
+                instructionsPrefix +
+                (yield* resolveCursorSkillText(rawText, turnInput.runtimePolicy.cwd ?? undefined)),
               attachments: turnInput.message.attachments,
               resolveAttachmentPath: host.resolveAttachmentPath,
               resolveExtractedTextPath: host.resolveExtractedTextPath,
@@ -2993,6 +3001,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                     device: false,
                     backgroundWait: false,
                     runtime: undefined,
+                    additionalInstructions: null,
                   };
             const interrupted = yield* Ref.get(interruptedPrompt);
             const runCheckpointed = (runId?: string) =>
@@ -3098,6 +3107,11 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 backgroundWait:
                   !compacted && (delivered.backgroundWait || mcpServers !== undefined),
                 runtime: compacted ? undefined : delivered.runtime,
+                additionalInstructions: compacted
+                  ? null
+                  : prompt === undefined
+                    ? delivered.additionalInstructions
+                    : turnInput.runtimePolicy.additionalInstructions,
               });
             }
             if (!compacted && resume !== "native") {
@@ -3607,6 +3621,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                     device: false,
                     backgroundWait: false,
                     runtime: undefined,
+                    additionalInstructions: null,
                   }),
                   Ref.set(interruptedPrompt, null),
                   Ref.set(resumedAgent, null),

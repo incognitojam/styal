@@ -89,6 +89,10 @@ function modelWrites(requestLogPath: string): ReadonlyArray<string> {
 const writesPerSelection = (
   selections: ReadonlyArray<ModelSelection>,
   agentEnvironment: Readonly<Record<string, string>>,
+  instructions?: {
+    readonly steps: ReadonlyArray<string | undefined>;
+    readonly launches: Array<string | undefined>;
+  },
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -107,6 +111,7 @@ const writesPerSelection = (
       selfInvocation: yield* resolveSelfInvocation(),
       makeRuntime: (runtimeInput) =>
         Effect.gen(function* () {
+          instructions?.launches.push(runtimeInput.runtimePolicy.additionalInstructions);
           const context = yield* Layer.build(
             AcpSessionRuntime.layer({
               ...runtimeInput,
@@ -125,11 +130,14 @@ const writesPerSelection = (
         }),
     });
     const threadId = ThreadId.make("grok-effort-thread");
-    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      cwd: directory,
-    });
+    const policyAt = (step: number) =>
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: directory,
+        additionalInstructions: instructions?.steps[step],
+      });
+    const runtimePolicy = policyAt(0);
     const [first, ...rest] = selections;
     if (first === undefined) return [];
     const writes: Array<ReadonlyArray<string>> = [];
@@ -197,7 +205,7 @@ const writesPerSelection = (
             attachments: [],
           },
           modelSelection,
-          runtimePolicy,
+          runtimePolicy: policyAt(ordinal),
         }),
       );
       yield* runtime.events.pipe(
@@ -363,3 +371,26 @@ it.effect("a steer reaches Grok as an interjection that carries its images", () 
     assert.strictEqual(refused._tag, "AcpRequestError");
   }),
 );
+
+describe("Grok project instructions", () => {
+  it.live("relaunches only when the project instructions change or clear", () =>
+    Effect.gen(function* () {
+      const launches: Array<string | undefined> = [];
+      yield* writesPerSelection(
+        [
+          select("grok-4.6"),
+          select("grok-4.6"),
+          select("grok-4.6"),
+          select("grok-4.6"),
+          select("grok-4.6"),
+        ],
+        { T3_GROK_MOCK_PROTOCOL: "2" },
+        {
+          steps: ["Project rules", "Project rules", "Updated rules", "Updated rules", undefined],
+          launches,
+        },
+      );
+      assert.deepEqual(launches, ["Project rules", "Updated rules", undefined]);
+    }),
+  );
+});

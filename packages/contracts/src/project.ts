@@ -128,6 +128,11 @@ export const ProjectFaviconPath = TrimmedNonEmptyString.check(
 );
 export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
 
+export const ProjectAdditionalInstructions = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(32_000),
+);
+export type ProjectAdditionalInstructions = typeof ProjectAdditionalInstructions.Type;
+
 export const ProjectIconOverride = Schema.Union([
   ProjectLucideIcon,
   ProjectEmojiIcon,
@@ -184,6 +189,7 @@ export const Project = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -223,6 +229,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   trackedFolders: Schema.optional(

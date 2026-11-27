@@ -82,3 +82,21 @@ describe("Codex device context", () => {
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {
   return buildCodexAdditionalContext(runtime).t3_code_runtime!.value;
 }
+
+describe("project instruction context", () => {
+  it("adds no context when empty and splits long Unicode text without truncation", () => {
+    NodeAssert.deepEqual(
+      buildCodexAdditionalContext({ model: "synthetic" }, false),
+      buildCodexAdditionalContext({ model: "synthetic" }, false, ""),
+    );
+    const text = Array.from({ length: 32_000 }, (_, index) =>
+      String.fromCodePoint(0x4e00 + (index % 1000)),
+    ).join("");
+    const entries = Object.entries(buildCodexAdditionalContext({ model: "synthetic" }, false, text))
+      .filter(([key]) => key.startsWith("additional_instructions"))
+      .sort(([left], [right]) => left.localeCompare(right));
+    NodeAssert.ok(entries.length > 10);
+    NodeAssert.equal(entries.map(([, entry]) => entry.value).join(""), text);
+    for (const [, entry] of entries) NodeAssert.ok(Buffer.byteLength(entry.value) <= 3900);
+  });
+});

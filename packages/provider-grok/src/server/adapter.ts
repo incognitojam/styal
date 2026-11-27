@@ -375,6 +375,7 @@ export function makeGrokAcpAdapterFlavor(
     interruptPromptOnCancel: false,
     // User Stop restarts the process group; steering cancels softly to preserve background work.
     restartRuntimeAfterInterrupt: true,
+    restartRuntimeWhenInstructionsChange: true,
     terminateRuntimeProcessGroupOnInterrupt: true,
     // Settled Grok sessions accept concurrent prompts; skip cancel to preserve background subagents.
     preserveRuntimeOnSettledInterrupt: true,
@@ -427,6 +428,9 @@ export function makeGrokAcpAdapterFlavor(
           skillDirectory: options.skillDirectory,
           environment: options.environment,
           runtimeMode: grokLaunchRuntimeMode(runtimePolicy),
+          ...(runtimePolicy.additionalInstructions === undefined
+            ? {}
+            : { additionalInstructions: runtimePolicy.additionalInstructions }),
         })),
     // Auto prompts represent classifier refusals and must reach the user.
     permissionDisposition: (policy, request) =>

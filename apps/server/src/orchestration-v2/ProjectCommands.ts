@@ -37,6 +37,7 @@ export interface ProjectMetaUpdateCommand {
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
   readonly faviconPath?: string | null;
+  readonly additionalInstructions?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
@@ -214,6 +215,9 @@ export function planProjectCommand(input: {
             : { defaultThreadEnvMode: command.defaultThreadEnvMode }),
           ...(command.autoPull === undefined ? {} : { autoPull: command.autoPull }),
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
+          ...(command.additionalInstructions === undefined
+            ? {}
+            : { additionalInstructions: command.additionalInstructions }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
           ...(command.trackedFolders === undefined

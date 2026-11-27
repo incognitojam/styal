@@ -124,6 +124,7 @@ const layerWithPolicy = (
             hasCustomTitle: false,
             autoPull: false,
             faviconPath: null,
+            additionalInstructions: "Use synthetic fixtures.",
             projectIcon: null,
             scripts: [],
             trackedFolders: [],
@@ -214,6 +215,8 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       const resolve = (worktreePath: string | null) =>
         policy.resolve({ thread: makeThread({ now, worktreePath }), modelSelection });
 
+      assert.equal((yield* resolve(null)).additionalInstructions, "Use synthetic fixtures.");
+      assert.equal((yield* resolve("/work")).additionalInstructions, "Use synthetic fixtures.");
       assert.deepEqual((yield* resolve(null)).workspace, trackedWorkspace);
       assert.notProperty(yield* resolve("/work"), "workspace");
     }),

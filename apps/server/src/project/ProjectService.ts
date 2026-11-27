@@ -221,6 +221,7 @@ export const make = Effect.gen(function* () {
     workspaceRoot: row.workspaceRoot,
     repositoryIdentity: enrichment?.repositoryIdentity ?? null,
     faviconPath: row.faviconPath ?? enrichment?.faviconPath ?? null,
+    additionalInstructions: row.additionalInstructions ?? null,
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
@@ -647,6 +648,9 @@ export const make = Effect.gen(function* () {
         ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
         ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
         ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
+        ...(input.additionalInstructions === undefined
+          ? {}
+          : { additionalInstructions: input.additionalInstructions }),
         ...(input.defaultThreadEnvMode === undefined
           ? {}
           : { defaultThreadEnvMode: input.defaultThreadEnvMode }),

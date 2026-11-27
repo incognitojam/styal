@@ -45,6 +45,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import { v2Now, v2Projection, v2ThreadId } from "../state/orchestrationV2TestFixtures.ts";
 import {
   archiveThread,
+  updateProject,
   interruptThreadTurn,
   promoteQueuedRun,
   revertThreadCheckpoint,
@@ -148,6 +149,25 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("V2 environment commands", () => {
+  it.effect("forwards project instruction edits and resets without changing omitted values", () =>
+    Effect.gen(function* () {
+      const projects: ProjectMutation[] = [];
+      const supervisor = yield* makeSupervisor({ commands: [], projects });
+      for (const additionalInstructions of ["Use synthetic fixtures.", null, undefined]) {
+        yield* updateProject({
+          projectId: ProjectId.make("project-1"),
+          ...(additionalInstructions === undefined ? {} : { additionalInstructions }),
+        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      }
+      expect(
+        projects.map((project) =>
+          project.type === "project.update" ? project.additionalInstructions : undefined,
+        ),
+      ).toEqual(["Use synthetic fixtures.", null, undefined]);
+      expect(projects[2]).not.toHaveProperty("additionalInstructions");
+    }).pipe(Effect.provide(layerTestRandom)),
+  );
+
   it.effect("distinguishes sending a selected queued message from resuming queue order", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

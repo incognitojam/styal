@@ -14,7 +14,12 @@ import {
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
-import { ProjectScript, ProjectTrackedFolders, StoredProjectIcon } from "./project.ts";
+import {
+  ProjectAdditionalInstructions,
+  ProjectScript,
+  ProjectTrackedFolders,
+  StoredProjectIcon,
+} from "./project.ts";
 
 export const OrchestrationClientOrigin = Schema.Struct({
   surface: Schema.optional(ClientSurface),
@@ -41,6 +46,7 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.Array(ProjectScript),
   trackedFolders: Schema.optional(ProjectTrackedFolders),
@@ -59,6 +65,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   trackedFolders: Schema.optional(ProjectTrackedFolders),

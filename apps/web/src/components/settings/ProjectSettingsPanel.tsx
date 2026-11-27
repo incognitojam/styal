@@ -34,9 +34,11 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { refreshProjectFaviconUrl } from "../../state/assets";
 import { projectEnvironment } from "../../state/projects";
+import styalMarkUrl from "../../../../../assets/brand/mark.svg?url";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -291,6 +293,12 @@ function ProjectDetail({
   });
   const projectNameEditedRef = useRef(false);
 
+  const additionalInstructions = filePickerProject.additionalInstructions ?? null;
+  const setAdditionalInstructions = (instructions: string | null) =>
+    updateAllMembers(
+      { additionalInstructions: instructions },
+      gt("Failed to update additional instructions"),
+    );
   const faviconPath = group.faviconPath ?? null;
   const projectIcon = group.projectIcon ?? null;
   const pickProjectFavicon =
@@ -644,6 +652,70 @@ function ProjectDetail({
               </div>
             }
           />
+          <SettingsRow
+            title={
+              <span className="inline-flex items-center gap-1.5">
+                {gt("Additional instructions")}
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        tabIndex={0}
+                        aria-label={gt("styal feature")}
+                        className="inline-flex h-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      />
+                    }
+                  >
+                    <span
+                      className="size-3.5"
+                      aria-hidden
+                      style={{
+                        display: "inline-block",
+                        backgroundColor: "currentColor",
+                        maskImage: `url("${styalMarkUrl}")`,
+                        maskPosition: "center",
+                        maskRepeat: "no-repeat",
+                        maskSize: "contain",
+                      }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">{gt("Only in styal")}</TooltipPopup>
+                </Tooltip>
+              </span>
+            }
+            description={gt(
+              "Included when a new agent session starts for this project; applies to every checkout in this group.",
+            )}
+            resetAction={
+              additionalInstructions !== null ? (
+                <SettingResetButton
+                  ariaLabel={gt("Reset additional instructions to default")}
+                  disabled={!canEditGroup}
+                  onClick={() => setAdditionalInstructions(null)}
+                />
+              ) : null
+            }
+          >
+            <div className="mt-3 pb-3.5">
+              <Textarea
+                key={`${group.projectKey}:${filePickerProject.updatedAt}:additional-instructions`}
+                aria-label={gt("Additional instructions")}
+                disabled={!canEditGroup}
+                placeholder={gt("For example: Run focused tests after making changes.")}
+                rows={4}
+                resizable={false}
+                defaultValue={additionalInstructions ?? ""}
+                maxLength={32_000}
+                onBlur={(event) => {
+                  const nextValue = event.currentTarget.value.trim();
+                  const normalized = nextValue.length > 0 ? nextValue : null;
+                  if (normalized === additionalInstructions) return;
+                  event.currentTarget.value = nextValue;
+                  setAdditionalInstructions(normalized);
+                }}
+              />
+            </div>
+          </SettingsRow>
           {canOrganize ? (
             <>
               <SettingsRow

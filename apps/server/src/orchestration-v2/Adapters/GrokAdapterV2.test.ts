@@ -376,7 +376,7 @@ describe("Grok launch permission mode", () => {
             ),
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
-                get: () => Effect.die("the thread has a worktree"),
+                get: () => Effect.succeedNone,
               }),
             ),
             Layer.provide(
@@ -390,6 +390,7 @@ describe("Grok launch permission mode", () => {
           ),
         ),
       );
+      assert.equal(resolved.cwd, process.cwd());
       assert.equal(resolved.runtimeMode, "approval-required");
       assert.deepEqual(yield* launchArgs(resolved), [
         ["--permission-mode", "default", "agent", "stdio"],
