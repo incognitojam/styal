@@ -1495,25 +1495,7 @@ export const layer: Layer.Layer<
             runId: input.run.id,
             nodeId: input.rootNode.id,
             event: deliveredEvent,
-            ...(heldText
-              ? rootTerminalAlreadySeen
-                ? {
-                    writeIfProviderThreadOwner: {
-                      providerThreadId: input.providerThread.id,
-                      runId: input.run.id,
-                      activeAttemptId: input.attempt.id,
-                      expectedLastRunOrdinal: input.run.ordinal,
-                    },
-                  }
-                : {
-                    writeIfRunCurrent: {
-                      runId: input.run.id,
-                      activeAttemptId: input.attempt.id,
-                      expectedStatus: "running" as const,
-                    },
-                  }
-              : {}),
-            ...(isRootProviderThreadUpdate
+            ...(isRootProviderThreadUpdate || heldText
               ? rootTerminalAlreadySeen
                 ? {
                     writeIfProviderThreadOwner: {
@@ -1633,9 +1615,13 @@ export const layer: Layer.Layer<
             startedToolItems.add(event.turnItem.id);
           if (boundary !== null) {
             yield* flushAssistantText(DateTime.toEpochMillis(yield* DateTime.now), (held) =>
-              held.type === "turn_item.updated"
-                ? boundary.turnId !== null && held.turnItem.providerTurnId === boundary.turnId
-                : streamedThreadId(held) === boundary.threadId,
+              event.type === "turn.terminal" &&
+              event.status !== "completed" &&
+              !childTurnsContinue(event)
+                ? true
+                : held.type === "turn_item.updated"
+                  ? boundary.turnId !== null && held.turnItem.providerTurnId === boundary.turnId
+                  : streamedThreadId(held) === boundary.threadId,
             );
           }
           let storedEventCount = 0;

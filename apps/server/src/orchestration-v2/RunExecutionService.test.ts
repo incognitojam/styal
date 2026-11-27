@@ -23,6 +23,7 @@ import {
   ProviderThreadId,
   ProviderTurnId,
   RunAttemptId,
+  RuntimeRequestId,
   RunId,
   ServerSettingsError,
   ThreadId,
@@ -2245,7 +2246,7 @@ it.effect(
         id: TurnItemId.make("turn-item:subagent-interrupt-cascade:foreign-child"),
         runId: foreignSubagent.runId,
       };
-      const suppressedChildAssistantTurnItem = makeLinkedChildTurnItemFixture({
+      const heldChildAssistantTurnItem = makeLinkedChildTurnItemFixture({
         ids: {
           ...ids,
           childItemId: TurnItemId.make("turn-item:subagent-interrupt-cascade:suppressed-assistant"),
@@ -2311,7 +2312,7 @@ it.effect(
                 {
                   type: "turn_item.updated",
                   driver,
-                  turnItem: suppressedChildAssistantTurnItem,
+                  turnItem: heldChildAssistantTurnItem,
                 },
                 {
                   type: "turn_item.updated",
@@ -2509,14 +2510,18 @@ it.effect(
         ),
         "related but unlinked child turn items must not cascade",
       );
-      assert.isFalse(
-        events.some(
-          (event) =>
-            event.type === "turn-item.updated" &&
-            event.payload.id === suppressedChildAssistantTurnItem.id,
-        ),
-        "suppressed streaming child items must not be created by the cascade",
+      const childText = events.flatMap((event) =>
+        event.type === "turn-item.updated" && event.payload.id === heldChildAssistantTurnItem.id
+          ? [event.payload]
+          : [],
       );
+      assert.lengthOf(childText, 1);
+      assert.deepInclude(childText[0], {
+        type: "assistant_message",
+        text: heldChildAssistantTurnItem.text,
+        status: "interrupted",
+        streaming: false,
+      });
 
       assert.lengthOf(nodeEvents, 2);
       assert.isTrue(
@@ -4461,43 +4466,47 @@ const holdChildSnapshot = Effect.fn(function* (
   yield* Deferred.await(subagentIngested);
 });
 
-it.effect("settles a child message only an idle flush wrote when the root is interrupted", () =>
-  Effect.gen(function* () {
-    const ids = backgroundScenarioIds("idle-child-interrupt");
-    const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event, Cause.Done>();
-    const subagentIngested = yield* Deferred.make<void>();
-    const flushed = yield* Deferred.make<void>();
-    const finalized = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
-    const scenario = yield* runBackgroundItemScenario(
-      "idle-child-interrupt",
-      () => Stream.fromQueue(events),
-      {
-        onIngest: (event) =>
-          event.type === "subagent.updated"
-            ? Deferred.succeed(subagentIngested, undefined)
-            : isHeldChildSnapshot(event)
-              ? Deferred.succeed(flushed, undefined)
-              : Effect.void,
-        onFinalized: (written) => Ref.set(finalized, written),
-      },
-    ).pipe(Effect.forkChild);
+it.effect.each([false, true])(
+  "settles held child text on root interruption, after idle: %s",
+  (afterIdle) =>
+    Effect.gen(function* () {
+      const ids = backgroundScenarioIds("idle-child-interrupt");
+      const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event, Cause.Done>();
+      const subagentIngested = yield* Deferred.make<void>();
+      const flushed = yield* Deferred.make<void>();
+      const finalized = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
+      const scenario = yield* runBackgroundItemScenario(
+        "idle-child-interrupt",
+        () => Stream.fromQueue(events),
+        {
+          onIngest: (event) =>
+            event.type === "subagent.updated"
+              ? Deferred.succeed(subagentIngested, undefined)
+              : isHeldChildSnapshot(event)
+                ? Deferred.succeed(flushed, undefined)
+                : Effect.void,
+          onFinalized: (written) => Ref.set(finalized, written),
+        },
+      ).pipe(Effect.forkChild);
 
-    yield* holdChildSnapshot(ids, events, subagentIngested);
-    yield* TestClock.adjust("1 second");
-    yield* Deferred.await(flushed);
-    yield* Queue.offer(events, rootTerminalEvent(ids, "interrupted"));
-    yield* Fiber.join(scenario);
+      yield* holdChildSnapshot(ids, events, subagentIngested);
+      if (afterIdle) {
+        yield* TestClock.adjust("1 second");
+        yield* Deferred.await(flushed);
+      }
+      yield* Queue.offer(events, rootTerminalEvent(ids, "interrupted"));
+      yield* Fiber.join(scenario);
 
-    const settled = (yield* Ref.get(finalized)).flatMap((event) =>
-      event.type === "turn-item.updated" && event.payload.id === ids.childItemId
-        ? [event.payload]
-        : [],
-    );
-    assert.equal(settled.length, 1);
-    assert.equal(settled[0]?.status, "interrupted");
-    assert.equal("text" in settled[0]! ? settled[0].text : null, heldChildText);
-    assert.isFalse("streaming" in settled[0]! && settled[0].streaming);
-  }),
+      const settled = (yield* Ref.get(finalized)).flatMap((event) =>
+        event.type === "turn-item.updated" && event.payload.id === ids.childItemId
+          ? [event.payload]
+          : [],
+      );
+      assert.equal(settled.length, 1);
+      assert.equal(settled[0]?.status, "interrupted");
+      assert.equal("text" in settled[0]! ? settled[0].text : null, heldChildText);
+      assert.isFalse("streaming" in settled[0]! && settled[0].streaming);
+    }),
 );
 
 it.effect.each([
@@ -4681,7 +4690,7 @@ it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed
         ids,
         boundary === "failed" ? "failed" : boundary === "interrupted" ? "interrupted" : "completed",
       );
-      const control =
+      const control: ProviderAdapter.ProviderAdapterV2Event =
         boundary === "tool"
           ? {
               type: "turn_item.updated",
@@ -4699,11 +4708,11 @@ it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed
                 driver,
                 threadId: ids.threadId,
                 runtimeRequest: {
-                  id: `${key}:request`,
+                  id: RuntimeRequestId.make(`${key}:request`),
                   nodeId: ids.rootNodeId,
                   providerTurnId: ids.rootProviderTurnId,
                   nativeRequestRef: null,
-                  kind: boundary === "input" ? "user_input" : "command_execution",
+                  kind: boundary === "input" ? "user_input" : "command",
                   status: "pending",
                   responseCapability: { type: "message" },
                   createdAt: DateTime.makeUnsafe(0),
@@ -4721,7 +4730,7 @@ it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed
             driver,
             turnItem: { ...item, id: TurnItemId.make(`${key}:reasoning`), type: "reasoning" },
           },
-          control as ProviderAdapter.ProviderAdapterV2Event,
+          control,
           terminal,
         ],
         {
