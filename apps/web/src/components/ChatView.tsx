@@ -51,7 +51,7 @@ import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
-import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
+import { useProjectActions } from "../hooks/useProjectActions";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -127,7 +127,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
-import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -1224,7 +1224,12 @@ export default function ChatView(props: ChatViewProps) {
     activeProject?.id ?? null,
     activeProject ?? undefined,
   );
-  const activeProjectScripts = activeProject ? resolveProjectScripts(settings, activeProject) : [];
+  const actionQuery = useProjectActions(
+    environmentId,
+    activeProject?.id ?? null,
+    isServerThread ? activeThread?.id : undefined,
+  );
+  const activeProjectScripts = actionQuery.data?.actions ?? [];
   const { projectCloneBannerItem, projectCloneSendBlockReason } =
     useProjectCloneBanner(activeProjectRef);
   const activeProjectDefaultModelSelection =
@@ -2073,16 +2078,6 @@ export default function ChatView(props: ChatViewProps) {
     gitCwd,
     setTerminalUiLaunchContext,
     setThreadError,
-  });
-  const {
-    saveProjectScript: saveProjectScriptStable,
-    updateProjectScript: updateProjectScriptStable,
-    deleteProjectScript: deleteProjectScriptStable,
-  } = useProjectScriptEditing({
-    environmentId,
-    project: activeProject,
-    scripts: activeProjectScripts,
-    settings,
   });
   const canOperatePreview = useEnvironmentScope(
     activeThreadRef?.environmentId ?? null,
@@ -4185,9 +4180,6 @@ export default function ChatView(props: ChatViewProps) {
                     ? { onOpenChanges: openChangesFromThreadPanelStable }
                     : {})}
                   onRunProjectScript={runProjectScriptStable}
-                  onAddProjectScript={saveProjectScriptStable}
-                  onUpdateProjectScript={updateProjectScriptStable}
-                  onDeleteProjectScript={deleteProjectScriptStable}
                   usage={{
                     providerInstanceId: activeProviderInstanceId,
                     model: activeUsageModel,

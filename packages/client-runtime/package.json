@@ -672,7 +672,8 @@
     "./pull-request-references": {
       "types": "./src/pullRequestReferences.ts",
       "default": "./src/pullRequestReferences.ts"
-    }
+    },
+    "./state/projectActions": "./src/state/projectActions.ts"
   },
   "scripts": {
     "typecheck": "effect-tsgo tsrs --noEmit",

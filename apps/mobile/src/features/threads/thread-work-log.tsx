@@ -1,3 +1,4 @@
+import { approveProjectAction } from "./ProjectActionApproval";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { Button } from "../../components/ui/Button";
 import { ThreadSubagentGroup } from "./thread-subagent-group";
@@ -1035,6 +1036,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
         }
       : null;
   // Signed in, the notice is an ordinary row again.
+  const actionReview = notice.type === "system_notice" ? notice.actionReview : undefined;
   const opensMcpSignIn = mcpSignInTarget !== null && !mcpSignedIn;
   // A sign-in notice opens its sheet instead; a nested button would be out of VoiceOver's reach.
   const canExpand = row.canExpand && notifiedSubagentThreadId === undefined && !opensMcpSignIn;
@@ -1145,6 +1147,21 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
             });
             return;
           }
+          if (actionReview) {
+            void approveProjectAction({
+              environmentId: props.environmentId,
+              projectId: actionReview.projectId,
+              review: true,
+              action: {
+                id: actionReview.actionId,
+                name: actionReview.actionId,
+                command: actionReview.command,
+                icon: "play",
+                runOnWorktreeCreate: false,
+              },
+            });
+            return;
+          }
           if (opensMcpSignIn) {
             void Haptics.selectionAsync();
             setMcpSignInOpen(true);
@@ -1217,6 +1234,10 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           {props.copied ? (
             <Text className="pr-1 font-t3-medium text-3xs text-adaptive-emerald-600-400">
               <T>Copied</T>
+            </Text>
+          ) : actionReview ? (
+            <Text className="pr-1 font-t3-medium text-sm text-primary">
+              <T>Review</T>
             </Text>
           ) : mcpSignInTarget !== null ? (
             <Text

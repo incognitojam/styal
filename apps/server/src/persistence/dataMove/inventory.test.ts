@@ -316,7 +316,7 @@ describe("offline data inventory", () => {
                 .prepare("SELECT migration_id FROM yngatech_sql_migrations")
                 .all()
                 .map((row) => row.migration_id),
-            ).toEqual([3]);
+            ).toEqual([3, 17]);
           expect(
             Number(db.prepare("SELECT max(migration_id) AS n FROM effect_sql_migrations").get()!.n),
           ).toBeGreaterThanOrEqual(117);

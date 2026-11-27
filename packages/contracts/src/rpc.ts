@@ -294,6 +294,11 @@ import {
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
 import {
+  ProjectActionsInput,
+  ProjectActionsResult,
+  ProjectSetActionApprovalInput,
+  ProjectRunActionInput,
+  ProjectRunActionResult,
   ProjectCreateNewInput,
   ProjectCreateNewResult,
   ProjectCreateFromThreadInput,
@@ -509,6 +514,9 @@ export const WS_METHODS = {
   workspaceScanFolders: "workspace.scanFolders",
   workspaceTaskFolder: "workspace.taskFolder",
   workspaceAddTaskFolderRepository: "workspace.addTaskFolderRepository",
+  projectActions: "project.actions",
+  projectSetActionApproval: "project.setActionApproval",
+  projectRunAction: "project.runAction",
   workspaceLayoutCommands: "workspace.layoutCommands",
   workspaceApproveLayoutCommands: "workspace.approveLayoutCommands",
   filesystemGetMetadata: "filesystem.getMetadata",
@@ -1755,6 +1763,24 @@ const WsWorkspaceAddTaskFolderRepositoryRpc = Rpc.make(
   },
 );
 
+const WsProjectActionsRpc = Rpc.make(WS_METHODS.projectActions, {
+  payload: ProjectActionsInput,
+  success: ProjectActionsResult,
+  error: Schema.Union([TaskFolderError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectSetActionApprovalRpc = Rpc.make(WS_METHODS.projectSetActionApproval, {
+  payload: ProjectSetActionApprovalInput,
+  success: Schema.Void,
+  error: Schema.Union([TaskFolderError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectRunActionRpc = Rpc.make(WS_METHODS.projectRunAction, {
+  payload: ProjectRunActionInput,
+  success: ProjectRunActionResult,
+  error: Schema.Union([TaskFolderError, EnvironmentAuthorizationError]),
+});
+
 const WsWorkspaceLayoutCommandsRpc = Rpc.make(WS_METHODS.workspaceLayoutCommands, {
   payload: WorkspaceLayoutCommandsInput,
   success: WorkspaceLayoutCommandsResult,
@@ -2674,6 +2700,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkspaceScanFoldersRpc,
   WsWorkspaceTaskFolderRpc,
   WsWorkspaceAddTaskFolderRepositoryRpc,
+  WsProjectActionsRpc,
+  WsProjectSetActionApprovalRpc,
+  WsProjectRunActionRpc,
   WsWorkspaceLayoutCommandsRpc,
   WsWorkspaceApproveLayoutCommandsRpc,
   WsFilesystemGetMetadataRpc,

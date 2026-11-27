@@ -144,7 +144,6 @@ function Panel({
   onMachines?: boolean;
 }) {
   const noop = () => {};
-  const scriptResult = async () => ({ ok: true }) as never;
   return (
     <ChatCanvasContext
       value={{
@@ -188,9 +187,6 @@ function Panel({
         onStartFromOriginChange={noop}
         onComposerFocusRequest={noop}
         onRunProjectScript={noop}
-        onAddProjectScript={scriptResult}
-        onUpdateProjectScript={scriptResult}
-        onDeleteProjectScript={scriptResult}
         usage={{} as never}
       />
     </ChatCanvasContext>

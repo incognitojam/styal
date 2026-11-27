@@ -200,6 +200,19 @@ it.effect(
     ),
 );
 
+it.effect("ignores obsolete saved actions when checking a historical project", () =>
+  fixture((file) =>
+    Effect.gen(function* () {
+      edit(file, (db) =>
+        db.exec("UPDATE projection_projects SET scripts_json='obsolete not JSON'"),
+      );
+      const before = hash(file);
+      expect((yield* inspect(file)).verdict).toBe(fixtureVerdict);
+      expect(hash(file)).toBe(before);
+    }),
+  ),
+);
+
 it.effect("requires exact ledgers and schema definitions", () =>
   fixture((file) =>
     Effect.gen(function* () {
@@ -232,10 +245,6 @@ it.effect("requires exact ledgers and schema definitions", () =>
           "reader",
         ],
         [
-          `UPDATE projection_projects SET scripts_json='[{"id":"synthetic","name":"Synthetic","command":"synthetic","icon":["desktop"],"runOnWorktreeCreate":false}]'`,
-          "reader",
-        ],
-        [
           "UPDATE orchestration_events SET payload_json='{invalid' WHERE event_type='subagent.updated'",
           "reader",
         ],
@@ -244,7 +253,7 @@ it.effect("requires exact ledgers and schema definitions", () =>
           db.exec(sql);
         });
         const report = yield* inspect(file);
-        expect(report.verdict).toBe("unexpected");
+        expect(report.verdict, sql).toBe("unexpected");
         if (check === "schema") expect(Object.keys(report.schema).length).toBeGreaterThan(0);
         NodeFS.writeFileSync(
           file,

@@ -18,7 +18,6 @@ import {
   type PlanId,
   type ProjectId,
   type ProjectIconOverride,
-  type ProjectScript,
   type ProjectTrackedFolder,
   type ProviderApprovalDecision,
   type ProviderInteractionMode,
@@ -62,7 +61,6 @@ export interface CreateProjectInput extends CommandMetadata {
   readonly workspaceRoot: string;
   readonly createWorkspaceRootIfMissing?: boolean;
   readonly defaultModelSelection?: ModelSelection | null;
-  readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
 }
 
@@ -76,7 +74,6 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly faviconPath?: string | null;
   readonly additionalInstructions?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
-  readonly scripts?: ReadonlyArray<ProjectScript>;
   /** Replaces the whole list. Paths only mean something on the project's own environment. */
   readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
   /** Added to, and removed by path from, the list as the server has it. */
@@ -416,7 +413,6 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly workspaceRoot: string;
         readonly createWorkspaceRootIfMissing?: boolean;
         readonly defaultModelSelection?: ModelSelection | null;
-        readonly scripts?: ReadonlyArray<ProjectScript>;
         readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
       }
     | {
@@ -426,7 +422,6 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly title?: string;
         readonly workspaceRoot?: string;
         readonly defaultModelSelection?: ModelSelection | null;
-        readonly scripts?: ReadonlyArray<ProjectScript>;
         readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
         readonly trackFolders?: ReadonlyArray<ProjectTrackedFolder>;
         readonly untrackFolders?: ReadonlyArray<string>;
@@ -456,7 +451,6 @@ export const createProject = Effect.fn("EnvironmentCommands.createProject")(func
     ...(input.defaultModelSelection === undefined
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),
-    ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
     ...(input.trackedFolders === undefined ? {} : { trackedFolders: input.trackedFolders }),
   });
 });
@@ -482,7 +476,6 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.defaultThreadEnvMode === undefined
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
-    ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
     ...(input.trackedFolders === undefined ? {} : { trackedFolders: input.trackedFolders }),
     ...(input.trackFolders === undefined ? {} : { trackFolders: input.trackFolders }),
     ...(input.untrackFolders === undefined ? {} : { untrackFolders: input.untrackFolders }),
@@ -808,6 +801,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       prepareWorktree !== undefined
         ? {
             type: "worktree" as const,
+            ...(input.bootstrap?.runSetupScript === false ? { skipSetupAction: true } : {}),
             baseRef: prepareWorktree.baseBranch,
             ...(prepareWorktree.branch === undefined ? {} : { branch: prepareWorktree.branch }),
             ...(prepareWorktree.startFromOrigin === undefined

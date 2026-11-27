@@ -3,7 +3,7 @@ import {
   isPullRequestWatchTask,
   turnItemUpdateCanEndBackgroundWork,
 } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { resolveProjectScripts, settleProjectScript } from "@t3tools/shared/projectScripts";
+import * as ProjectActions from "../project/ProjectActions.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
@@ -22,7 +22,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
@@ -332,6 +331,7 @@ export const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
+  const actions = yield* ProjectActions.ProjectActions;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const git = yield* GitManager.GitManager;
   const pullRequests = yield* PullRequestService.PullRequestService;
@@ -801,10 +801,10 @@ export const make = Effect.gen(function* () {
       if (worktreePath === null) return;
       if (!(yield* fileSystem.exists(worktreePath))) {
         // A settle script that tears something down would otherwise be skipped with no trace.
-        const project = Option.getOrUndefined(yield* projectStore.getShell(settled.projectId));
         if (
-          project !== undefined &&
-          settleProjectScript(resolveProjectScripts(yield* settingsService.getSettings, project))
+          (yield* actions.read({ projectId: settled.projectId }, false)).actions.some(
+            (action) => action.runOnSettle,
+          )
         ) {
           yield* Effect.logWarning(
             "settle script skipped: the thread's worktree no longer exists",

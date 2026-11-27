@@ -1,224 +1,147 @@
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import { m } from "~/i18n/messages";
-import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
-import { AuthSettingsWriteScope } from "@t3tools/contracts";
-import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { ChevronDownIcon, PlusIcon } from "lucide-react";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { T, useGT } from "gt-react";
-import { useState } from "react";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
-import { useEnvironments } from "../../state/environments";
-import {
-  EMPTY_PROJECT_SCRIPT_INPUT,
-  editorRequestForScript,
-  ProjectScriptEditorDialog,
-  ScriptIcon,
-  type NewProjectScriptInput,
-  type ProjectScriptEditorRequest,
-} from "../projectScriptEditor";
+import { useEffect, useEffectEvent } from "react";
+import { useProjectActions } from "../../hooks/useProjectActions";
+import { projectActions } from "../../state/projectActions";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { approveProjectAction } from "../../projectActionApproval";
+import { ProjectActionSource } from "../ProjectActionSource";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "../ui/menu";
-import { ProjectActionsList } from "./ProjectActionsList";
-import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 export function ProjectActionsSettings() {
   const gt = useGT();
-  const { scope, targets, target } = useSettingsScope();
-  const { environments } = useEnvironments();
-  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
-  const representativeConfig = target
-    ? environments.find((environment) => environment.environmentId === target.environmentId)
-        ?.serverConfig
-    : undefined;
-  const scripts = target?.settings.defaultProjectScripts ?? [];
-  const keybindings = representativeConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
-  const mixed = targets.some(
-    (candidate) =>
-      JSON.stringify(candidate.settings.defaultProjectScripts) !== JSON.stringify(scripts),
-  );
-  const canWriteSettings = useScopedSettingsWriteAllowed();
-  const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  const memberById = new Map(
-    isProjectScope ? scope.members.map((member) => [member.id, member]) : [],
-  );
-  const { saving, persist, submit } = useProjectScriptSettings(
-    targets.flatMap((candidate) => {
-      const environment = environments.find(
-        (entry) => entry.environmentId === candidate.environmentId,
-      );
-      if (!environment?.serverConfig) return [];
-      const member = candidate.projectId ? memberById.get(candidate.projectId) : undefined;
-      return [
-        {
-          environmentId: candidate.environmentId,
-          settings: environment.serverConfig.settings,
-          keybindings: environment.serverConfig.keybindings,
-          ...(member ? { project: member } : {}),
-        },
-      ];
-    }),
-  );
+  const { scope } = useSettingsScope();
+  if (scope.kind !== "project" && scope.kind !== "checkout")
+    return (
+      <SettingsSection id="project-actions" title={gt("Actions")}>
+        <SettingsRow
+          title={gt("Actions belong to projects")}
+          description={gt(
+            "Choose a project to see actions from its default branch and commands approved on this machine.",
+          )}
+        />
+      </SettingsSection>
+    );
+  return scope.members.map((member) => (
+    <CheckoutActions
+      key={member.physicalProjectKey}
+      environmentId={member.environmentId}
+      projectId={member.id}
+      title={member.title}
+      environmentLabel={member.environmentLabel ?? gt("Environment")}
+    />
+  ));
+}
 
-  const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
-  const t3File = useT3ProjectFileState(
-    representativeMember?.environmentId ?? EnvironmentId.make("none"),
-    representativeMember?.workspaceRoot ?? null,
-  );
-  const importableScripts = t3File.scripts.filter(
-    (fileScript) =>
-      !scripts.some(
-        (script) =>
-          script.command === fileScript.command ||
-          script.name.toLowerCase() === fileScript.name.toLowerCase(),
-      ),
-  );
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
-    const payload: NewProjectScriptInput = {
-      name: fileScript.name,
-      command: fileScript.command,
-      icon: fileScript.icon ?? "play",
-      runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
-      waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
-      runOnSettle: fileScript.runOnSettle ?? false,
-      stopOnSettle: fileScript.stopOnSettle ?? false,
-      keybinding: null,
-      previewUrl: fileScript.previewUrl ?? null,
-      autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
-    };
-    const result = await submit(null, payload);
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setRequest({
-        scriptId: null,
-        initial: payload,
-        error:
-          error instanceof Error
-            ? (thrownErrorMessage(error, m) ?? error.message)
-            : gt("Failed to import action."),
-      });
-    }
-  };
-
+function CheckoutActions({
+  environmentId,
+  projectId,
+  title,
+  environmentLabel,
+}: {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  title: string;
+  environmentLabel: string;
+}) {
+  const gt = useGT();
+  const query = useProjectActions(environmentId, projectId);
+  const remove = useAtomCommand(projectActions.setApproval);
+  const permission = useAtomValue(projectActions.setApproval.permissionAtom(environmentId));
+  const fetchOnOpen = useEffectEvent(() => query.fetch());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the remote Git ref when settings opens while the cached query stays visible
+  useEffect(() => {
+    void fetchOnOpen();
+  }, []);
   return (
-    <SettingsSection id="project-actions" title={gt("Actions")}>
-      <SettingsRow
-        serverScoped
-        settingKeys={["defaultProjectScripts"]}
-        mixed={mixed}
-        title={gt("Actions")}
-        description={gt(
-          "Commands that run in this project's checkout or its worktree, with optional shortcuts.",
+    <>
+      <SettingsSection id="project-actions" title={`${gt("Actions")} · ${environmentLabel}`}>
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          {gt("Edit scripts in t3.json, then commit and merge them to the default branch.")}
+        </p>
+        {query.data && (
+          <div className="px-2">
+            <ProjectActionSource data={query.data} onFetch={() => void query.fetch()} />
+          </div>
         )}
-        onResetOverride={() => void persist(() => null)}
-        control={
-          <div className="flex flex-wrap items-center gap-1.5">
-            {importableScripts.length > 0 ? (
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button
-                      id="import-scripts"
-                      size="xs"
-                      variant="ghost"
-                      disabled={saving || !canWriteSettings}
-                      type="button"
-                    />
+        {query.error && (
+          <p role="alert" className="px-4 py-2 text-sm text-destructive">
+            {query.error}
+          </p>
+        )}
+        {query.data?.actions.map((action) => (
+          <SettingsRow
+            key={action.id}
+            title={
+              <span className="flex items-center gap-2">
+                {action.name}
+                <Badge size="sm" variant={action.approved ? "success" : "warning"}>
+                  {action.approved ? gt("Approved") : gt("Needs approval")}
+                </Badge>
+              </span>
+            }
+            control={
+              !action.approved && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={!permission || !query.data?.policyAllowed}
+                  onClick={() =>
+                    void approveProjectAction({
+                      environmentId,
+                      projectId,
+                      projectTitle: title,
+                      action,
+                      review: true,
+                    }).then(query.refresh)
                   }
                 >
-                  <T>Import scripts</T>
-                  <ChevronDownIcon className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                  <MenuGroup>
-                    <MenuGroupLabel>
-                      <T>Import from t3.json</T>
-                    </MenuGroupLabel>
-                    <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                      <T>Add actions declared by this checkout without editing them first.</T>
-                    </p>
-                  </MenuGroup>
-                  <MenuSeparator />
-                  {importableScripts.map((fileScript) => (
-                    <MenuItem
-                      key={`${fileScript.name} ${fileScript.command}`}
-                      onClick={() => void importFileScript(fileScript)}
-                    >
-                      <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{fileScript.name}</div>
-                        <div className="truncate font-mono text-muted-foreground">
-                          {fileScript.command}
-                        </div>
-                      </div>
-                    </MenuItem>
-                  ))}
-                </MenuPopup>
-              </Menu>
-            ) : null}
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={saving || !canWriteSettings || targets.length === 0}
-              onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
-            >
-              <PlusIcon className="size-3.5" />
-              <T>Add action</T>
-            </Button>
-          </div>
-        }
-      />
-      {mixed ? (
-        <SettingsRow
-          title={gt("Different actions across checkouts")}
-          description={gt(
-            "Narrow the selection above to one checkout to edit its list. Adding an action here adds it to every selected checkout.",
+                  <T>Review</T>
+                </Button>
+              )
+            }
+          >
+            <pre className="overflow-auto whitespace-pre-wrap font-mono text-xs">
+              {action.command}
+            </pre>
+          </SettingsRow>
+        ))}
+      </SettingsSection>
+      <SettingsSection
+        id="project-action-approvals"
+        title={`${gt("Allowed commands")} · ${environmentLabel}`}
+      >
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          {gt(
+            "Exact command texts approved for this project on this machine. Removing one asks for approval the next time it runs.",
           )}
-        />
-      ) : (
-        <ProjectActionsList
-          scripts={scripts}
-          keybindings={keybindings}
-          disabled={saving || !canWriteSettings}
-          onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
-        />
-      )}
-      {t3File.status === "invalid" ? (
-        <SettingsRow
-          title={gt("t3.json is invalid")}
-          description={gt(
-            "A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values.",
-          )}
-          className="text-warning"
-        />
-      ) : null}
-      {target && (
-        <ProjectScriptEditorDialog
-          environmentId={target.environmentId}
-          editScope={AuthSettingsWriteScope}
-          request={request}
-          scripts={scripts}
-          onSubmit={submit}
-          onDelete={(id) =>
-            void persist((current) => current.filter((script) => script.id !== id), id, null)
-          }
-          onClose={() => setRequest(null)}
-        />
-      )}
-    </SettingsSection>
+        </p>
+        {query.data?.approvedCommands.map((command) => (
+          <SettingsRow
+            key={command}
+            title={<code className="whitespace-pre-wrap wrap-anywhere">{command}</code>}
+            control={
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={!permission}
+                onClick={() =>
+                  void remove({
+                    environmentId,
+                    input: { projectId, command, approved: false },
+                  }).then(query.refresh)
+                }
+              >
+                <T>Remove</T>
+              </Button>
+            }
+          />
+        ))}
+      </SettingsSection>
+    </>
   );
 }

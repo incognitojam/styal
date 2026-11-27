@@ -20,7 +20,11 @@ export interface WorktreeLayoutApprovalRequest {
   readonly id: number;
   readonly projectTitle: string;
   /** The commands that need approval, with the exact text that will be approved. */
-  readonly commands: ReadonlyArray<WorktreeLayoutCommand>;
+  readonly commands: ReadonlyArray<
+    | WorktreeLayoutCommand
+    | { readonly kind: "action"; readonly command: string; readonly name: string }
+  >;
+  readonly mode?: "action" | "setup" | "review";
 }
 
 /** `open` goes false on an answer while `request` stays, so the closing dialog keeps its text. */
@@ -61,7 +65,7 @@ export function respondToWorktreeLayoutApproval(requestId: number, approved: boo
   resolve?.(approved);
 }
 
-function requestWorktreeLayoutApproval(
+export function requestWorktreeLayoutApproval(
   input: Omit<WorktreeLayoutApprovalRequest, "id">,
 ): Promise<boolean> {
   // No host to show the commands means nobody saw them.

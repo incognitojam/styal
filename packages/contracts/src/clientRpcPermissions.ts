@@ -76,6 +76,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.vcsRemoveWorktree]: AuthSourceControlWriteScope,
   [WS_METHODS.workspaceAddTaskFolderRepository]: AuthSourceControlWriteScope,
   // The server runs an approved layout command: approving one is running code there, as a terminal does.
+  [WS_METHODS.projectSetActionApproval]: AuthTerminalOperateScope,
+  [WS_METHODS.projectRunAction]: AuthTerminalOperateScope,
   [WS_METHODS.workspaceApproveLayoutCommands]: AuthTerminalOperateScope,
   [WS_METHODS.vcsCreateRef]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsSwitchRef]: AuthSourceControlWriteScope,

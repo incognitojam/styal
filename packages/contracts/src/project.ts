@@ -36,7 +36,7 @@ export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
-  command: TrimmedNonEmptyString,
+  command: Schema.NonEmptyString,
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
   runOnSettle: Schema.optional(Schema.Boolean),
@@ -46,6 +46,51 @@ export const ProjectScript = Schema.Struct({
   autoOpenPreview: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
+
+export const ProjectAction = Schema.Struct({ ...ProjectScript.fields, approved: Schema.Boolean });
+export type ProjectAction = typeof ProjectAction.Type;
+
+export const ProjectActionsInput = Schema.Struct({
+  projectId: ProjectId,
+  threadId: Schema.optional(ThreadId),
+  fetch: Schema.optional(Schema.Boolean),
+});
+export type ProjectActionsInput = typeof ProjectActionsInput.Type;
+
+export const ProjectActionsResult = Schema.Struct({
+  actions: Schema.Array(ProjectAction),
+  source: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("disk") }),
+    Schema.Struct({
+      kind: Schema.Literal("remote"),
+      ref: Schema.String,
+      commit: Schema.String,
+      fetchedAt: Schema.NullOr(IsoDateTime),
+    }),
+  ]),
+  unmerged: Schema.Boolean,
+  changedNames: Schema.Array(Schema.String),
+  approvedCommands: Schema.Array(Schema.String),
+  policyAllowed: Schema.Boolean,
+});
+export type ProjectActionsResult = typeof ProjectActionsResult.Type;
+
+export const ProjectSetActionApprovalInput = Schema.Struct({
+  projectId: ProjectId,
+  command: Schema.NonEmptyString,
+  approved: Schema.Boolean,
+});
+export type ProjectSetActionApprovalInput = typeof ProjectSetActionApprovalInput.Type;
+
+export const ProjectRunActionInput = Schema.Struct({
+  projectId: ProjectId,
+  threadId: ThreadId,
+  actionId: Schema.NonEmptyString,
+  expectedCommand: Schema.NonEmptyString,
+});
+export type ProjectRunActionInput = typeof ProjectRunActionInput.Type;
+export const ProjectRunActionResult = Schema.Struct({ terminalId: Schema.String });
+export type ProjectRunActionResult = typeof ProjectRunActionResult.Type;
 
 export const PROJECT_TRACKED_FOLDERS_MAX = 128;
 
@@ -217,7 +262,6 @@ export const ProjectCreatePayload = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
-  scripts: Schema.optional(Schema.Array(ProjectScript)),
   trackedFolders: Schema.optional(ProjectAddedFolders),
 });
 export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
@@ -231,7 +275,6 @@ export const ProjectUpdatePayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
-  scripts: Schema.optional(Schema.Array(ProjectScript)),
   trackedFolders: Schema.optional(
     ProjectAddedFolders.annotate({
       description: "Extra folders by absolute path. Replaces the whole list.",

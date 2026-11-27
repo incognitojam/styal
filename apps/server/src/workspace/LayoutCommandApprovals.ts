@@ -7,16 +7,24 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
+import { withWorkspaceLease } from "./workspaceLease.ts";
+
+export const withActionApprovalLease = <A, E, R>(
+  projectId: ProjectId,
+  effect: Effect.Effect<A, E, R>,
+) => withWorkspaceLease(`action-approval:${projectId}`, effect);
 
 /**
- * Which of a project's `worktreeLayout` commands a person approved, by the hash of the exact
- * text. This side only reads. Recording an approval is `LayoutCommandApprovalWrites`, which only
+ * Approvals of project actions and worktree layout commands use the hash of the exact text. This side only reads. Recording an approval is `LayoutCommandApprovalWrites`, which only
  * the client RPC that a person's session calls may import
  * (t3code/no-layout-command-approval-writes).
  */
 export class LayoutCommandApprovals extends Context.Service<
   LayoutCommandApprovals,
   {
+    readonly actionTexts: (
+      projectId: ProjectId,
+    ) => Effect.Effect<readonly string[], TaskFolderError>;
     readonly isApproved: (input: {
       readonly projectId: ProjectId;
       readonly kind: WorktreeLayoutCommandKind;
@@ -28,7 +36,7 @@ export class LayoutCommandApprovals extends Context.Service<
 export const failed = (cause: unknown) =>
   new TaskFolderError({
     operation: "approve",
-    detail: "Could not read the worktree layout command approvals.",
+    detail: "Could not read the project command approvals.",
     cause,
   });
 
@@ -52,6 +60,13 @@ const make = Effect.gen(function* () {
   });
 
   return LayoutCommandApprovals.of({
+    actionTexts: Effect.fn("LayoutCommandApprovals.actionTexts")(function* (projectId) {
+      const rows = yield* sql<{ command: string }>`
+        SELECT command_text AS command FROM layout_action_command_approvals
+        WHERE project_id = ${projectId} ORDER BY approved_at, command_hash
+      `.pipe(Effect.mapError(failed));
+      return rows.map((row) => row.command);
+    }),
     isApproved: Effect.fn("LayoutCommandApprovals.isApproved")(function* (input) {
       const approved = yield* findHash(input).pipe(Effect.mapError(failed));
       if (approved._tag === "None") return false;

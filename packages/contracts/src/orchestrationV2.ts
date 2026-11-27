@@ -794,6 +794,7 @@ export const OrchestrationV2ThreadLaunchWorkspaceStrategy = Schema.Union([
     baseRef: GitRefName,
     branch: Schema.optional(GitRefName),
     startFromOrigin: Schema.optional(Schema.Boolean),
+    skipSetupAction: Schema.optionalKey(Schema.Boolean),
     repositories: Schema.optional(
       Schema.Array(Schema.Struct({ path: TrimmedNonEmptyString }))
         .check(Schema.isMaxLength(PROJECT_TRACKED_FOLDERS_MAX))
@@ -2043,6 +2044,9 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("system_notice"),
+    actionReview: Schema.optionalKey(
+      Schema.Struct({ projectId: ProjectId, actionId: Schema.String, command: Schema.String }),
+    ),
     message: Schema.String,
     level: Schema.optional(OrchestrationV2SystemNoticeLevel),
     mcpSignIn: Schema.optional(OrchestrationV2McpSignIn),
@@ -2940,6 +2944,9 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("system_notice"),
+    actionReview: Schema.optionalKey(
+      Schema.Struct({ projectId: ProjectId, actionId: Schema.String, command: Schema.String }),
+    ),
     message: Schema.String,
     level: Schema.optional(OrchestrationV2SystemNoticeLevel),
     mcpSignIn: Schema.optional(OrchestrationV2McpSignIn),

@@ -9,8 +9,6 @@ import {
   ServerSettingsPatch,
   ProviderInstanceMutation,
   requiredScopesForServerSettingsPatch,
-  requiredScopesForProjectMutation,
-  ProjectMutation,
   SecretRequestAnswerInput,
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
@@ -191,6 +189,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.filesystemBrowse]: AuthFilesystemReadScope,
   [WS_METHODS.workspaceListFolders]: AuthFilesystemReadScope,
   // The command text comes out of a file in the project folder.
+  [WS_METHODS.projectActions]: AuthFilesystemReadScope,
   [WS_METHODS.workspaceLayoutCommands]: AuthFilesystemReadScope,
   [WS_METHODS.workspaceScanFolders]: AuthFilesystemReadScope,
   [WS_METHODS.workspaceTaskFolder]: AuthFilesystemReadScope,
@@ -287,7 +286,6 @@ const requiredScopesForSettingsUpdate = (payload: unknown) => {
     : [...new Set([...scopes, AuthProvidersManageScope])];
 };
 
-const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
 const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
 const decodeSecretRequestAnswer = Schema.decodeUnknownSync(SecretRequestAnswerInput);
 
@@ -352,9 +350,6 @@ const requiredScopesForRpcCall = (
     decodeSecretRequestAnswer(payload).answer.type === "reference"
   ) {
     return [AuthOrchestrationOperateScope, AuthProvidersManageScope];
-  }
-  if (method === WS_METHODS.projectsMutate) {
-    return requiredScopesForProjectMutation(decodeProjectMutation(payload));
   }
   const guarded = clientRpcRequiredScopes(method, payload);
   const scopes = guarded.length > 0 ? guarded : [requiredScopeForRpcMethod(method)];

@@ -13,6 +13,7 @@ import {
   RuntimeMode,
   ProviderInteractionMode,
   Project,
+  ProjectAction,
   ProjectCreatePayload,
   ProjectUpdatePayload,
   ProjectId,
@@ -32,6 +33,8 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as Struct from "effect/Struct";
+import * as ProjectActions from "../../../project/ProjectActions.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
@@ -40,8 +43,9 @@ import * as SourceControlRepositoryService from "../../../sourceControl/SourceCo
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
+const McpProject = Project.mapFields(Struct.omit(["scripts"]));
 const shared = {
-  success: Project,
+  success: McpProject,
   failure: OrchestratorMcpFailure,
   failureMode: "return" as const,
   dependencies: [
@@ -61,7 +65,7 @@ const ProjectListTool = Tool.make("t3_project_list", {
     limit: Schema.optional(clampedPositiveInt(100)),
   }),
   success: Schema.Struct({
-    projects: Schema.Array(Project),
+    projects: Schema.Array(McpProject),
     nextCursor: Schema.NullOr(NonNegativeInt),
   }),
 })
@@ -69,7 +73,9 @@ const ProjectListTool = Tool.make("t3_project_list", {
   .annotate(Tool.Destructive, false);
 const ProjectReadTool = Tool.make("t3_project_read", {
   ...shared,
-  description: "Read one project: workspace and saved scripts.",
+  description: "Read a project and its actions.",
+  success: Schema.Struct({ ...McpProject.fields, actions: Schema.Array(ProjectAction) }),
+  dependencies: [...shared.dependencies, ProjectActions.ProjectActions],
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
@@ -86,7 +92,7 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
     ...ProjectCreatePayload.fields,
     workspaceRoot: Schema.optional(ProjectCreatePayload.fields.workspaceRoot),
   }),
-  success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
+  success: Schema.Struct({ ...McpProject.fields, commitError: Schema.optional(Schema.String) }),
   dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
 }).annotate(Tool.Destructive, true);
 const ProjectUpdateTool = Tool.make("t3_project_update", {

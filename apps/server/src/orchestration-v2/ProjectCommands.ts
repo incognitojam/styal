@@ -1,13 +1,10 @@
 import {
   type CommandId,
   type EventId,
-  MAX_SCRIPT_ID_LENGTH,
   type ModelSelection,
   type ProjectIconOverride,
   ProjectId,
-  type ProjectScript,
   type ProjectTrackedFolder,
-  SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -23,7 +20,6 @@ export interface ProjectCreateCommand {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
-  readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
 }
 
@@ -39,7 +35,6 @@ export interface ProjectMetaUpdateCommand {
   readonly faviconPath?: string | null;
   readonly additionalInstructions?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
-  readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
@@ -108,7 +103,6 @@ export interface ProjectCommandState {
 }
 
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 /** Read state and commit the planned event under the project lock. */
 export function planProjectCommand(input: {
@@ -166,7 +160,6 @@ export function planProjectCommand(input: {
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
-          scripts: command.scripts ?? [],
           ...(command.trackedFolders === undefined || command.trackedFolders.length === 0
             ? {}
             : { trackedFolders: command.trackedFolders }),
@@ -184,17 +177,6 @@ export function planProjectCommand(input: {
         Array.from(monogramSegmenter.segment(command.projectIcon.text)).length > 2
       ) {
         return invariant("Project monograms must contain at most two characters.");
-      }
-      if (command.scripts !== undefined) {
-        // Allow editing or removing persisted invalid script ids, while rejecting new invalid ids.
-        const existingIds = new Set(project.scripts.map((script) => script.id));
-        for (const script of command.scripts) {
-          if (!existingIds.has(script.id) && !isScriptRunCommand(`script.${script.id}.run`)) {
-            return invariant(
-              `Script IDs must be 1-${MAX_SCRIPT_ID_LENGTH} lowercase letters, digits or hyphens, starting with a letter or digit (got ${script.id.length} characters).`,
-            );
-          }
-        }
       }
       if (command.workspaceRoot !== undefined) {
         const conflict = requireWorkspaceAvailable(command.workspaceRoot);
@@ -219,7 +201,6 @@ export function planProjectCommand(input: {
             ? {}
             : { additionalInstructions: command.additionalInstructions }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
-          ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
           ...(command.trackedFolders === undefined
             ? {}
             : { trackedFolders: command.trackedFolders }),

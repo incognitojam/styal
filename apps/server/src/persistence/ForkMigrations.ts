@@ -5,6 +5,7 @@ import {
   DATABASE_MIGRATIONS_FINISHED_MESSAGE,
   DATABASE_MIGRATIONS_STARTED_MESSAGE,
 } from "@t3tools/shared/databaseMigrationLog";
+import ProjectActionApprovals from "./ForkMigrations/017_ProjectActionApprovals.ts";
 import ProjectAdditionalInstructions from "./ForkMigrations/003_ProjectAdditionalInstructions.ts";
 import { hasPendingMigrations, runMigrations } from "./Migrations.ts";
 
@@ -12,6 +13,7 @@ const FORK_MIGRATIONS_TABLE = "yngatech_sql_migrations";
 // Fork migrations keep upstream's numeric sequence available for later releases.
 const forkMigrationEntries = [
   [3, "ProjectAdditionalInstructions", ProjectAdditionalInstructions],
+  [17, "ProjectActionApprovals", ProjectActionApprovals],
 ] as const;
 const runFork = Migrator.make({});
 
@@ -20,7 +22,7 @@ const hasPendingForkMigrations = Effect.fn("hasPendingForkMigrations")(function*
   const tables = yield* sql`SELECT 1 FROM sqlite_schema WHERE name = ${FORK_MIGRATIONS_TABLE}`;
   if (tables.length === 0) return true;
   const rows = yield* sql.unsafe<{ readonly migration_id: number }>(
-    `SELECT migration_id FROM ${FORK_MIGRATIONS_TABLE} WHERE migration_id >= 3 LIMIT 1`,
+    `SELECT migration_id FROM ${FORK_MIGRATIONS_TABLE} WHERE migration_id >= 17 LIMIT 1`,
   );
   return rows.length === 0;
 });

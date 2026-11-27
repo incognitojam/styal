@@ -83,6 +83,7 @@ export type ThreadLaunchWorkspaceStrategy =
       readonly baseRef: string;
       readonly branch?: string | undefined;
       readonly startFromOrigin?: boolean | undefined;
+      readonly skipSetupAction?: boolean;
       readonly repositories?: ReadonlyArray<{ readonly path: string }> | undefined;
     };
 
@@ -1070,9 +1071,10 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
       }
       yield* setupTracker.stageStatus(threadId, "setup-script", "running");
-      // The saved setup script is the project's code too.
       const setup =
-        worktreePath === null || (yield* projectCommandsNow) === "agent-below-full-access"
+        worktreePath === null ||
+        (input.workspaceStrategy.type === "worktree" && input.workspaceStrategy.skipSetupAction) ||
+        (yield* projectCommandsNow) === "agent-below-full-access"
           ? ({ status: "no-script" } as const)
           : yield* setupScripts
               .runForThread({
@@ -1091,7 +1093,6 @@ const make = Effect.gen(function* () {
                 project: {
                   id: project.id,
                   workspaceRoot: project.workspaceRoot,
-                  scripts: project.scripts,
                 },
               })
               .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
@@ -1113,10 +1114,10 @@ const make = Effect.gen(function* () {
             yield* setupTracker.stageStatus(
               threadId,
               "setup-script",
-              completion.exitCode === 0 ? "done" : "failed",
+              completion.skipped ? "skipped" : completion.exitCode === 0 ? "done" : "failed",
               `exited with ${completion.exitCode ?? "no exit code"}`,
             );
-            if (completion.exitCode !== 0 && !setup.async)
+            if (!completion.skipped && completion.exitCode !== 0 && !setup.async)
               return yield* mapError(
                 input,
                 "run-setup-script",

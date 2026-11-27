@@ -120,6 +120,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import { layerActions } from "./project/ProjectActions.testkit.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as AcpRegistrySessions from "./provider/AcpRegistrySessions.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
@@ -164,6 +165,7 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
+import * as LayoutCommandApprovals from "./workspace/LayoutCommandApprovals.ts";
 import * as LayoutCommandApprovalWrites from "./workspace/LayoutCommandApprovalWrites.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -881,6 +883,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
   Layer.mock(ProcessResourceMonitor.ProcessResourceMonitor)({}),
   Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+  layerActions(),
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
   Layer.mock(ProjectStore.ProjectStoreV2)({}),
@@ -2041,6 +2044,74 @@ it.effect(
     ),
 );
 
+it.effect("serializes action revocation with the final approval check and terminal handoff", () =>
+  Effect.gen(function* () {
+    const reads = yield* LayoutCommandApprovals.LayoutCommandApprovals;
+    const writes = yield* LayoutCommandApprovalWrites.LayoutCommandApprovalWrites;
+    const projectId = ProjectId.make("project:action-revocation");
+    const command = "echo approved";
+    yield* writes.setAction({ projectId, command, approved: true });
+    const checked = yield* Deferred.make<void>();
+    const submit = yield* Deferred.make<void>();
+    const events: string[] = [];
+    const submission = yield* LayoutCommandApprovals.withActionApprovalLease(
+      projectId,
+      Effect.gen(function* () {
+        const allowed = (yield* reads.actionTexts(projectId)).includes(command);
+        yield* Deferred.succeed(checked, undefined);
+        yield* Deferred.await(submit);
+        if (allowed) events.push("submitted");
+      }),
+    ).pipe(Effect.forkChild);
+    yield* Deferred.await(checked);
+    const removal = yield* writes.setAction({ projectId, command, approved: false }).pipe(
+      Effect.tap(() => Effect.sync(() => events.push("removed"))),
+      Effect.forkChild,
+    );
+    // Drains the removal attempt while the terminal handoff is deliberately held.
+    yield* TestClock.adjust(0);
+    assert.deepEqual(events, []);
+    yield* Deferred.succeed(submit, undefined);
+    yield* Fiber.join(submission);
+    yield* Fiber.join(removal);
+    assert.deepEqual(events, ["submitted", "removed"]);
+    assert.deepEqual(yield* reads.actionTexts(projectId), []);
+  }).pipe(
+    Effect.provide(
+      Layer.merge(LayoutCommandApprovals.layer, LayoutCommandApprovalWrites.layer).pipe(
+        Layer.provide(SqlitePersistence.layerMemory),
+        Layer.provide(NodeCrypto.layer),
+      ),
+    ),
+  ),
+);
+
+it.effect("keeps exact action approvals per project independently of layout approvals", () =>
+  Effect.gen(function* () {
+    const reads = yield* LayoutCommandApprovals.LayoutCommandApprovals;
+    const writes = yield* LayoutCommandApprovalWrites.LayoutCommandApprovalWrites;
+    const projectId = ProjectId.make("project:actions");
+    const other = ProjectId.make("project:other");
+    const command = "echo setup";
+    yield* writes.set({ projectId, kind: "create", command });
+    for (const text of [command, command + " ", command]) {
+      yield* writes.setAction({ projectId, command: text, approved: true });
+    }
+    assert.sameMembers([...(yield* reads.actionTexts(projectId))], [command, command + " "]);
+    assert.deepEqual(yield* reads.actionTexts(other), []);
+    yield* writes.setAction({ projectId, command, approved: false });
+    assert.deepEqual(yield* reads.actionTexts(projectId), [command + " "]);
+    assert.isTrue(yield* reads.isApproved({ projectId, kind: "create", command }));
+  }).pipe(
+    Effect.provide(
+      Layer.merge(LayoutCommandApprovals.layer, LayoutCommandApprovalWrites.layer).pipe(
+        Layer.provide(SqlitePersistence.layerMemory),
+        Layer.provide(NodeCrypto.layer),
+      ),
+    ),
+  ),
+);
+
 it.effect(
   "a project's layout command is approved only from a session that may use the terminal",
   () =>
@@ -2058,6 +2129,7 @@ it.effect(
           }),
           Layer.mock(LayoutCommandApprovalWrites.LayoutCommandApprovalWrites)({
             set: (input) => Effect.sync(() => void recorded.push(input)),
+            setAction: (input) => Effect.sync(() => void recorded.push(input)),
           }),
           Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
           Layer.mock(ExternalLauncher.ExternalLauncher)({}),
@@ -2097,23 +2169,33 @@ it.effect(
           payload: { projectId, approvals: [approval] },
           headers: Headers.empty,
         });
-        return { exit: yield* Queue.take(exits), recorded };
+        yield* server.write(0, {
+          _tag: "Request",
+          id: RpcMessage.RequestId("approve-action"),
+          tag: WS_METHODS.projectSetActionApproval,
+          payload: { projectId, command: approval.command, approved: true },
+          headers: Headers.empty,
+        });
+        return { exits: [yield* Queue.take(exits), yield* Queue.take(exits)], recorded };
       }, Effect.scoped);
 
       // Everything the broadest agent session holds, and every other scope short of the terminal.
       assert.deepEqual(yield* requested(mcpClientScopes("full-access")), {
-        exit: "Failure",
+        exits: ["Failure", "Failure"],
         recorded: [],
       });
       assert.deepEqual(
         yield* requested(
           AuthEnvironmentScope.literals.filter((scope) => scope !== AuthTerminalOperateScope),
         ),
-        { exit: "Failure", recorded: [] },
+        { exits: ["Failure", "Failure"], recorded: [] },
       );
       assert.deepEqual(yield* requested([AuthTerminalOperateScope]), {
-        exit: "Success",
-        recorded: [{ projectId, ...approval }],
+        exits: ["Success", "Success"],
+        recorded: [
+          { projectId, ...approval },
+          { projectId, command: approval.command, approved: true },
+        ],
       });
     }).pipe(
       Effect.provide(

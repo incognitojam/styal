@@ -48,6 +48,8 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import { layerActions } from "../project/ProjectActions.testkit.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -2491,7 +2493,17 @@ it.layer(
               Layer.mock(ProjectionStore.ProjectionStoreV2)({
                 getThreadShell: () => Effect.succeed(null),
               }),
-              ServerSettings.layerTest(),
+              layerActions([
+                {
+                  id: "setup",
+                  name: "Setup",
+                  command: "echo setup-ready",
+                  icon: "play",
+                  runOnWorktreeCreate: true,
+                  approved: true,
+                },
+              ]),
+              Layer.mock(EventSink.EventSinkV2)({}),
               Layer.succeed(HostProcess.Platform, "linux"),
               Layer.succeed(HostProcess.Environment, env),
             ),
@@ -2503,15 +2515,6 @@ it.layer(
           project: {
             id: ProjectId.make("project-setup-fallback"),
             workspaceRoot: baseDir,
-            scripts: [
-              {
-                id: "setup",
-                name: "Setup",
-                command: "echo setup-ready",
-                icon: "play",
-                runOnWorktreeCreate: true,
-              },
-            ],
           },
           observeCompletion: {},
         });
@@ -2725,7 +2728,17 @@ it.layer(
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
               getThreadShell: () => Effect.succeed(null),
             }),
-            ServerSettings.layerTest(),
+            layerActions([
+              {
+                id: "setup",
+                name: "Setup",
+                command: "echo setup-ready",
+                icon: "play",
+                runOnWorktreeCreate: true,
+                approved: true,
+              },
+            ]),
+            Layer.mock(EventSink.EventSinkV2)({}),
           ),
         ),
       );
@@ -2736,15 +2749,6 @@ it.layer(
           project: {
             id: ProjectId.make("project-cmd-fallback"),
             workspaceRoot: baseDir,
-            scripts: [
-              {
-                id: "setup",
-                name: "Setup",
-                command: "echo setup-ready",
-                icon: "play",
-                runOnWorktreeCreate: true,
-              },
-            ],
           },
           observeCompletion: {},
         })

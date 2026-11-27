@@ -1,11 +1,16 @@
-import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
+import { withActionApprovalLease } from "../workspace/LayoutCommandApprovals.ts";
+import {
+  linkOriginIsFenced,
+  ProjectId,
+  type ProjectAction,
+  EventId,
+  TurnItemId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { splitsSurrogatePair } from "@t3tools/shared/assistantCitations";
 import {
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
-  resolveProjectScripts,
-  settleProjectScript,
-  setupProjectScript,
 } from "@t3tools/shared/projectScripts";
 
 import * as Clock from "effect/Clock";
@@ -19,7 +24,9 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectActions from "./ProjectActions.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as DateTime from "effect/DateTime";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectService from "./ProjectService.ts";
 
@@ -42,6 +49,7 @@ export interface ProjectSetupScriptRunnerResultStarted {
 export interface ProjectSetupScriptCompletion {
   readonly exitCode: number | null;
   readonly durationMs: number;
+  readonly skipped?: true;
 }
 
 export interface ProjectSetupScriptOutputLine {
@@ -60,6 +68,7 @@ export interface ProjectSetupScriptRunnerResultSkippedForLink {
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
   | ProjectSetupScriptRunnerResultSkippedForLink
+  | { readonly status: "skipped-for-approval" | "skipped-for-policy" | "skipped-for-source" }
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
@@ -71,7 +80,6 @@ export interface ProjectSetupScriptRunnerInput {
   readonly project?: {
     readonly id: ProjectId;
     readonly workspaceRoot: string;
-    readonly scripts: ReadonlyArray<ProjectScript>;
   };
   readonly observeCompletion?: {
     readonly onOutputLine?: (line: string) => Effect.Effect<void>;
@@ -263,7 +271,8 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const terminalManager = yield* TerminalManager.TerminalManager;
-  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const actions = yield* ProjectActions.ProjectActions;
+  const sink = yield* EventSink.EventSinkV2;
   const random = yield* SecureRandom.SecureRandom;
   const serviceScope = yield* Effect.scope;
 
@@ -482,24 +491,96 @@ export const make = Effect.gen(function* () {
       return yield* new ProjectSetupScriptProjectNotFoundError(errorContext);
     }
 
-    const settings = yield* serverSettings.getSettings.pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProjectSetupScriptOperationError({
-            ...errorContext,
-            operation: "readSettings",
-            cause,
-          }),
+    const trigger = input.trigger ?? "setup";
+    const recordNotice = Effect.fn("ProjectSetupScriptRunner.recordNotice")(function* (notice: {
+      title: string;
+      message: string;
+      action?: ProjectAction;
+    }) {
+      const now = yield* DateTime.now;
+      const id = yield* random.uuidV4();
+      const threadId = ThreadId.make(input.threadId);
+      const runId = thread?.latestRunId ?? null;
+      yield* sink
+        .write({
+          events: [
+            {
+              id: EventId.make(id),
+              type: "turn-item.updated",
+              threadId,
+              ...(runId === null ? {} : { runId }),
+              occurredAt: now,
+              payload: {
+                id: TurnItemId.make(id),
+                threadId,
+                runId,
+                nodeId: null,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 0,
+                status: "completed",
+                title: notice.title,
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+                type: "system_notice",
+                message: notice.message,
+                ...(notice.action
+                  ? {
+                      actionReview: {
+                        projectId: project.id,
+                        actionId: notice.action.id,
+                        command: notice.action.command,
+                      },
+                    }
+                  : {}),
+              },
+            },
+          ],
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProjectSetupScriptOperationError({
+                ...errorContext,
+                operation: "readSettings",
+                cause,
+              }),
+          ),
+        );
+    });
+    const recordSkipped = (action: ProjectAction) =>
+      recordNotice({
+        title: "Action needs approval",
+        message: `Skipped ${action.name} because its command needs approval.`,
+        action,
+      });
+    const current = Effect.gen(function* () {
+      const result = yield* actions.read({ projectId: project.id }, false);
+      return {
+        script: result.actions.find((entry) =>
+          trigger === "settle" ? entry.runOnSettle : entry.runOnWorktreeCreate,
+        ),
+        policyAllowed: result.policyAllowed,
+      };
+    }).pipe(
+      Effect.catch((cause) =>
+        recordNotice({
+          title: "Actions could not be read",
+          message: `Actions could not be read: ${cause.detail}`,
+        }).pipe(Effect.as(null)),
       ),
     );
-    const trigger = input.trigger ?? "setup";
-    const scripts = resolveProjectScripts(settings, project);
-    const script =
-      trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts);
-    if (!script) {
-      return {
-        status: "no-script",
-      } as const;
+    const selected = yield* current;
+    if (selected === null) return { status: "skipped-for-source" } as const;
+    const { script, policyAllowed } = selected;
+    if (!script) return { status: "no-script" } as const;
+    if (!policyAllowed) return { status: "skipped-for-policy" } as const;
+    if (!script.approved) {
+      yield* recordSkipped(script);
+      return { status: "skipped-for-approval" } as const;
     }
 
     // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
@@ -606,24 +687,43 @@ export const make = Effect.gen(function* () {
 
     // Return once the terminal exists so callers can show it while a startup prompt waits.
     // PowerShell and cmd have no line-editor signal.
+    let skipped = false;
     const commandWriter = yield* (
       completionShell === "powershell" || completionShell === null
         ? Effect.succeed("ready" as const)
         : readiness.wait
     ).pipe(
       Effect.flatMap((shell) =>
-        shell === "exited" || commandLine === null
-          ? Effect.void
-          : terminalManager.write({
+        withActionApprovalLease(
+          project.id,
+          Effect.gen(function* () {
+            if (shell === "exited" || commandLine === null) return;
+            const latest = yield* current;
+            if (
+              latest === null ||
+              !latest.policyAllowed ||
+              !latest.script?.approved ||
+              latest.script.command !== script.command ||
+              latest.script.id !== script.id
+            ) {
+              skipped = true;
+              if (latest?.policyAllowed && latest.script && !latest.script.approved)
+                yield* recordSkipped(latest.script);
+              yield* observed?.abandon ?? Effect.void;
+              yield* terminalManager.closeIdle({ threadId: input.threadId, terminalId });
+              return;
+            }
+            yield* terminalManager.write({
               threadId: input.threadId,
               terminalId,
-              // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
               data: projectScriptTerminalInput(
                 shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
                   ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
                   : commandLine,
               ),
-            }),
+            });
+          }),
+        ),
       ),
       Effect.catchCause((cause) =>
         Effect.logWarning("project script command was not written", {
@@ -637,6 +737,7 @@ export const make = Effect.gen(function* () {
     );
 
     const completion = observed?.completion.pipe(
+      Effect.map((result) => (skipped ? { ...result, skipped: true as const } : result)),
       Effect.onInterrupt(() =>
         Fiber.interrupt(commandWriter).pipe(
           Effect.andThen(Effect.sync(() => readiness.unsubscribe())),

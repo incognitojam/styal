@@ -124,6 +124,7 @@ import { countPreparingComposerImages, holdComposerSend } from "./preparingCompo
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
+import { approveSetupAction } from "../../projectActionApproval";
 import { ensureWorktreeLayoutApproved } from "../../worktreeLayoutApproval";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import {
@@ -1041,19 +1042,34 @@ export function useComposerSend(input: ComposerSendInput) {
     // A project may set its worktrees up with its own commands, which run only once a person
     // has approved their text. Asking takes as long as the user does, so the draft is compared
     // across it like any other wait before a send.
+    let runSetupAction = true;
     if (baseBranchForWorktree || multipleModelSelections !== null) {
       const draftBeforeApproval = useComposerDraftStore
         .getState()
         .getComposerDraft(composerDraftTarget);
       sendInFlightRef.current = true;
-      const layoutApproval = await ensureWorktreeLayoutApproved({
-        environmentId,
-        projectId: activeProject.id,
-        projectTitle: activeProject.title,
-      }).finally(() => {
+      const approvals = await (async () => {
+        const layout = await ensureWorktreeLayoutApproved({
+          environmentId,
+          projectId: activeProject.id,
+          projectTitle: activeProject.title,
+        });
+        return {
+          layout,
+          setup:
+            layout.status === "proceed" &&
+            (await approveSetupAction({
+              environmentId,
+              projectId: activeProject.id,
+              projectTitle: activeProject.title,
+            })),
+        };
+      })().finally(() => {
         sendInFlightRef.current = false;
       });
+      const layoutApproval = approvals.layout;
       if (layoutApproval.status === "cancelled") return;
+      runSetupAction = approvals.setup;
       if (layoutApproval.status === "blocked") {
         setThreadError(threadIdForSend, layoutApproval.message);
         return;
@@ -1392,6 +1408,7 @@ export function useComposerSend(input: ComposerSendInput) {
     if (multipleModelSelections !== null) {
       await sendToMultipleModels({
         threadId: threadIdForSend,
+        runSetupAction,
         project: activeProject,
         branch: activeThreadBranch!,
         selections: multipleModelSelections,
@@ -1557,7 +1574,7 @@ export function useComposerSend(input: ComposerSendInput) {
                       ...(startFromOrigin ? { startFromOrigin: true } : {}),
                       ...(worktreeRepositories ? { repositories: worktreeRepositories } : {}),
                     },
-                    runSetupScript: true,
+                    runSetupScript: runSetupAction,
                   }
                 : {}),
             }

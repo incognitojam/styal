@@ -7,7 +7,6 @@ import {
   AuthSourceControlWriteScope,
   EnvironmentId,
   type GitRunStackedActionResult,
-  type ProjectScript,
   ThreadId,
   type VcsStatusResult,
 } from "@t3tools/contracts";
@@ -26,10 +25,8 @@ import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import {
   basename,
   getTerminalStatusLabel,
-  projectScriptMenuIcon,
   type TerminalMenuSession,
 } from "../terminal/terminalMenu";
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScriptsCopy";
 import { compactMenuBranchLabel } from "./ThreadGitControls.logic";
 
 function compactMenuStatus(gitStatus: VcsStatusResult | null, resolve: MessageResolver): string {
@@ -106,11 +103,10 @@ export type ThreadGitControlsProps = ThreadGitMenuProps & {
   readonly canOpenTerminal: boolean;
   readonly canOperateTerminal: boolean;
   readonly canOpenFiles: boolean;
-  readonly projectScripts: ReadonlyArray<ProjectScript>;
+  readonly onOpenActions?: () => void;
   readonly terminalSessions: ReadonlyArray<TerminalMenuSession>;
   readonly onOpenTerminal: (terminalId?: string | null) => void;
   readonly onOpenNewTerminal: () => void;
-  readonly onRunProjectScript: (script: ProjectScript) => Promise<void>;
 };
 
 function useThreadGitControlModel(props: ThreadGitMenuProps) {
@@ -286,25 +282,12 @@ export function threadTerminalMenu(
     icon: "terminal",
     separateBackground: false,
     items: [
-      ...(props.projectScripts.length > 0
-        ? props.projectScripts.map((script) => ({
-            id: `script-${script.id}`,
-            title: projectScriptMenuLabel(script, resolve),
-            icon: projectScriptMenuIcon(script.icon),
-            subtitle: script.command,
-            disabled: !props.canOperateTerminal,
-            onPress: () => void props.onRunProjectScript(script),
-          }))
-        : [
-            {
-              id: "script-none",
-              title: resolve(msg("No project scripts")),
-              icon: "play",
-              subtitle: resolve(msg("This project has no saved scripts yet")),
-              disabled: true,
-              onPress: () => {},
-            },
-          ]),
+      {
+        id: "project-actions",
+        title: resolve(msg("Project actions")),
+        icon: "play",
+        onPress: () => props.onOpenActions?.(),
+      },
       ...props.terminalSessions.map((session) => ({
         id: `terminal-${session.terminalId}`,
         title: session.displayLabel,

@@ -6,16 +6,21 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { commandHash, failed } from "./LayoutCommandApprovals.ts";
+import { commandHash, failed, withActionApprovalLease } from "./LayoutCommandApprovals.ts";
 
 /**
- * Records and withdraws approvals of a project's `worktreeLayout` commands. An approval lets the
+ * Records and withdraws approvals of project actions and worktree layout commands. An approval lets the
  * server run that text, so only a person may give one: nothing an agent can call imports this.
  */
 export class LayoutCommandApprovalWrites extends Context.Service<
   LayoutCommandApprovalWrites,
   {
-    /** `command` is the text the person was shown; null withdraws the approval. */
+    readonly setAction: (input: {
+      readonly projectId: ProjectId;
+      readonly command: string;
+      readonly approved: boolean;
+    }) => Effect.Effect<void, TaskFolderError>;
+    /** Null withdraws a layout approval. */
     readonly set: (input: {
       readonly projectId: ProjectId;
       readonly kind: WorktreeLayoutCommandKind;
@@ -29,6 +34,24 @@ const make = Effect.gen(function* () {
   const digest = yield* Digest.Digest;
 
   return LayoutCommandApprovalWrites.of({
+    setAction: Effect.fn("LayoutCommandApprovalWrites.setAction")(
+      function* ({ projectId, command, approved }) {
+        const hash = yield* commandHash(digest, command);
+        if (!approved) {
+          yield* sql`DELETE FROM layout_action_command_approvals WHERE project_id = ${projectId} AND command_hash = ${hash}`.pipe(
+            Effect.mapError(failed),
+          );
+          return;
+        }
+        const approvedAt = DateTime.formatIso(yield* DateTime.now);
+        yield* sql`
+        INSERT INTO layout_action_command_approvals (project_id, command_hash, command_text, approved_at)
+        VALUES (${projectId}, ${hash}, ${command}, ${approvedAt})
+        ON CONFLICT DO NOTHING
+      `.pipe(Effect.mapError(failed));
+      },
+      (effect, input) => withActionApprovalLease(input.projectId, effect),
+    ),
     set: Effect.fn("LayoutCommandApprovalWrites.set")(function* ({ projectId, kind, command }) {
       if (command === null) {
         yield* sql`

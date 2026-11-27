@@ -2,7 +2,6 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
-  ProjectScript,
   keepUnknownOverrideKeys,
   ProjectSettingsOverrides,
   type ProviderInstanceConfig,
@@ -644,9 +643,6 @@ function stripDefaultServerSettings(current: unknown, defaults: unknown): unknow
   return Object.is(current, defaults) ? undefined : current;
 }
 
-const decodeProjectScriptsJson = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Array(ProjectScript)),
-);
 const decodeModelSelectionJson = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.NullOr(ModelSelection)),
 );
@@ -656,7 +652,6 @@ interface LegacyProjectSettingsRow {
   readonly defaultModelSelection: string | null;
   readonly defaultThreadEnvMode: string | null;
   readonly autoPull: number;
-  readonly scripts: string;
 }
 
 // projectSettingsFolded prevents restarts from undoing later UI resets.
@@ -668,8 +663,7 @@ function foldLegacyProjectSettings(
   if (
     rows.length === 0 &&
     Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0 &&
-    Object.keys(settings.projectAutoPullOverrides).length === 0 &&
-    Object.keys(settings.projectScriptOverrides).length === 0
+    Object.keys(settings.projectAutoPullOverrides).length === 0
   ) {
     return settings;
   }
@@ -692,12 +686,6 @@ function foldLegacyProjectSettings(
   for (const [projectId, value] of Object.entries(settings.projectAutoPullOverrides)) {
     set(projectId, "defaultAutoPull", value);
   }
-  // A stored null resets to machine defaults, so the project's aggregate scripts must not resurface.
-  const resetScripts = new Set<string>();
-  for (const [projectId, value] of Object.entries(settings.projectScriptOverrides)) {
-    if (value === null) resetScripts.add(projectId);
-    else set(projectId, "defaultProjectScripts", value);
-  }
   for (const row of rows) {
     const model = decodeModelSelectionJson(row.defaultModelSelection ?? "null");
     if (Option.isSome(model) && model.value !== null) {
@@ -707,10 +695,6 @@ function foldLegacyProjectSettings(
       set(row.projectId, "defaultThreadEnvMode", row.defaultThreadEnvMode);
     }
     if (row.autoPull === 1) set(row.projectId, "defaultAutoPull", true);
-    const scripts = decodeProjectScriptsJson(row.scripts);
-    if (Option.isSome(scripts) && scripts.value.length > 0 && !resetScripts.has(row.projectId)) {
-      set(row.projectId, "defaultProjectScripts", scripts.value);
-    }
   }
   const projectSettingsOverrides = Object.fromEntries(
     Object.entries(entries).filter(([, entry]) => Object.keys(entry).length > 0),
@@ -903,8 +887,7 @@ const make = Effect.gen(function* () {
             project_id AS "projectId",
             default_model_selection_json AS "defaultModelSelection",
             default_thread_env_mode AS "defaultThreadEnvMode",
-            auto_pull AS "autoPull",
-            scripts_json AS "scripts"
+            auto_pull AS "autoPull"
           FROM projection_projects
           WHERE deleted_at IS NULL
         `.pipe(

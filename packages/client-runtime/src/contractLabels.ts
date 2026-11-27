@@ -166,9 +166,12 @@ function managedCapabilityDeniedMessage(
       );
     case "worktreeLayoutCommands":
       return resolve(
-        msg("{organization}'s policy does not allow project worktree layout commands.", {
-          organization,
-        }),
+        msg(
+          "{organization}'s policy does not allow project actions and worktree layout commands.",
+          {
+            organization,
+          },
+        ),
       );
   }
 }

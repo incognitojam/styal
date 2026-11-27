@@ -46,6 +46,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   startFromOrigin: Schema.optional(Schema.Boolean),
+  skipSetupAction: Schema.optional(Schema.Boolean),
   pullRequestReference: Schema.optional(Schema.String),
   repositories: Schema.optional(Schema.Array(Schema.String)),
   startsFromRepositoryDefaults: Schema.optional(Schema.Boolean),
@@ -82,6 +83,7 @@ export interface QueuedThreadCreation {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly startFromOrigin?: boolean;
+  readonly skipSetupAction?: boolean;
   readonly pullRequestReference?: string;
   /** Tracked repositories the new worktree takes, by path; absent leaves the choice to the server. */
   readonly repositories?: ReadonlyArray<string>;

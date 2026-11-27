@@ -48,6 +48,7 @@ import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
+import { layerActions } from "../../../project/ProjectActions.testkit.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 const clientLaunchHarness = (input: {
@@ -59,7 +60,6 @@ const clientLaunchHarness = (input: {
   readonly providers?: readonly ServerProvider[];
   /** Where Settings saves a project's model; the legacy project field stays null. */
   readonly overrideModel?: ModelSelection;
-  readonly overrideScripts?: readonly ProjectScript[];
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
@@ -99,9 +99,6 @@ const clientLaunchHarness = (input: {
             projectSettingsOverrides: {
               [projectId]: {
                 defaultModelSelection: input.overrideModel,
-                ...(input.overrideScripts === undefined
-                  ? {}
-                  : { defaultProjectScripts: input.overrideScripts }),
               },
             },
           }),
@@ -1292,60 +1289,70 @@ it.effect("an agent cannot delete the built-in scratch project, even with force"
   }),
 );
 
-it.effect("reading a project shows the default model and actions saved in Settings", () =>
-  Effect.gen(function* () {
-    const overrideModel = {
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-sonnet",
-    };
-    const overrideScripts = [
-      { id: "test", name: "Test", command: "pnpm test", icon: "test", runOnWorktreeCreate: false },
-    ] satisfies ProjectScript[];
-    const harness = clientLaunchHarness({
-      runtimeModeCeiling: "full-access",
-      overrideModel,
-      overrideScripts,
-      launched: [],
-    });
-    const dependencies = Layer.merge(
-      harness.dependencies,
-      Layer.mock(Project.ProjectService)({
-        getById: (projectId) =>
-          Effect.succeedSome({
-            id: projectId,
-            title: "Client target",
-            workspaceRoot: "/projects/client-target",
-            defaultModelSelection: null,
-            scripts: [
-              {
-                id: "stale",
-                name: "Stale",
-                command: "true",
-                icon: "play",
-                runOnWorktreeCreate: false,
-              },
-            ],
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            deletedAt: null,
-          }),
-      }),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
-      ),
-    );
+it.effect(
+  "reading a project returns the saved model and the source actions with their approval",
+  () =>
+    Effect.gen(function* () {
+      const overrideModel = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet",
+      };
+      const overrideScripts = [
+        {
+          id: "test",
+          name: "Test",
+          command: "pnpm test",
+          icon: "test",
+          runOnWorktreeCreate: false,
+        },
+      ] satisfies ProjectScript[];
+      const harness = clientLaunchHarness({
+        runtimeModeCeiling: "full-access",
+        overrideModel,
+        launched: [],
+      });
+      const dependencies = Layer.mergeAll(
+        layerActions(overrideScripts.map((script) => ({ ...script, approved: false }))),
+        harness.dependencies,
+        Layer.mock(Project.ProjectService)({
+          getById: (projectId) =>
+            Effect.succeedSome({
+              id: projectId,
+              title: "Client target",
+              workspaceRoot: "/projects/client-target",
+              defaultModelSelection: null,
+              scripts: [
+                {
+                  id: "stale",
+                  name: "Stale",
+                  command: "true",
+                  icon: "play",
+                  runOnWorktreeCreate: false,
+                },
+              ],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              deletedAt: null,
+            }),
+        }),
+      );
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(dependencies),
+          ),
+        ),
+      );
 
-    const read = yield* toolkit
-      .handle("t3_project_read", { projectId: harness.projectId })
-      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+      const read = yield* toolkit
+        .handle("t3_project_read", { projectId: harness.projectId })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
-    expect(read.at(-1)?.result).toMatchObject({
-      defaultModelSelection: overrideModel,
-      scripts: overrideScripts,
-    });
-  }),
+      expect(read.at(-1)?.result).toMatchObject({
+        defaultModelSelection: overrideModel,
+        actions: overrideScripts.map((script) => ({ ...script, approved: false })),
+      });
+    }),
 );
 
 it.effect("a project update or create that is refused tells the agent why", () =>

@@ -90,6 +90,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     draftSendState(routeThreadKey);
 
   return async ({
+    runSetupAction,
     threadId,
     project,
     branch,
@@ -104,6 +105,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     isCurrentSend,
     draftChangedDuringPreparation,
   }: {
+    readonly runSetupAction: boolean;
     readonly threadId: ThreadId;
     readonly project: EnvironmentProject;
     readonly branch: string;
@@ -207,7 +209,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                       ...(startFromOrigin ? { startFromOrigin: true } : {}),
                       ...(worktreeRepositories ? { repositories: worktreeRepositories } : {}),
                     },
-                    runSetupScript: true,
+                    runSetupScript: runSetupAction,
                   },
                   createdAt: createdAt,
                 },

@@ -23,6 +23,7 @@ import {
   MessageId,
   RunId,
   ProjectId,
+  type ProjectAction,
   ProviderDriverKind,
   ProviderInstanceId,
   OrchestrationV2ThreadProjectionJson,
@@ -31,6 +32,7 @@ import {
   ThreadId,
   TextGenerationError,
   ServerSettingsError,
+  TaskFolderError,
   VcsProcessExitError,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -52,7 +54,10 @@ import * as TestClock from "effect/testing/TestClock";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { layerActions } from "../project/ProjectActions.testkit.ts";
+import * as ProjectActions from "../project/ProjectActions.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMock.ts";
@@ -147,6 +152,8 @@ interface HarnessOptions {
   readonly remoteExists?: GitWorkflow.GitWorkflowService["Service"]["remoteExists"];
   readonly hasCommit?: GitWorkflow.GitWorkflowService["Service"]["hasCommit"];
   readonly renameBranch?: GitWorkflow.GitWorkflowService["Service"]["renameBranch"];
+  readonly actions?: readonly ProjectAction[];
+  readonly actionReadError?: TaskFolderError;
   readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
   readonly generateBranchName?: TextGeneration.TextGeneration["Service"]["generateBranchName"];
@@ -287,6 +294,25 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
+        ...(options.actions === undefined && options.actionReadError === undefined
+          ? []
+          : [
+              ProjectSetupScriptRunner.layer.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    layerExternalServices,
+                    layerOrchestrator,
+                    ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+                    options.actionReadError
+                      ? Layer.mock(ProjectActions.ProjectActions)({
+                          read: () => Effect.fail(options.actionReadError!),
+                        })
+                      : layerActions(options.actions),
+                    NodeCrypto.layer,
+                  ),
+                ),
+              ),
+            ]),
         layerLaunchThreads,
         layerReceipts,
         layerOrchestrator,
@@ -313,7 +339,6 @@ function makeHarness(options: HarnessOptions = {}) {
               autoPull: false,
               faviconPath: null,
               projectIcon: null,
-              scripts: project.scripts,
               trackedFolders: [],
               pinnedAt: null,
               archivedAt: null,
@@ -3372,6 +3397,98 @@ it.live(
     );
   },
 );
+
+it.effect.each([
+  "agent",
+  "scheduled",
+  "start-without",
+  "unreadable-user",
+  "unreadable-agent",
+  "unreadable-scheduled",
+] as const)("a skipped or unreadable setup still releases the run (%s)", (origin) => {
+  const unreadable = origin.startsWith("unreadable-");
+  const harness = makeHarness({
+    ...(unreadable
+      ? {
+          actionReadError: new TaskFolderError({
+            operation: "read",
+            detail: 't3.json on origin/main is invalid: unexpected key "futureSetting"',
+          }),
+        }
+      : {}),
+    actions: [
+      {
+        id: "setup",
+        name: "Setup",
+        command: "echo setup",
+        icon: "play",
+        runOnWorktreeCreate: true,
+        approved: false,
+      },
+    ],
+  });
+  return Effect.gen(function* () {
+    let threadId: ThreadId;
+    if (origin === "scheduled" || origin === "unreadable-scheduled") {
+      const tasks = yield* ScheduledTasks.ScheduledTaskService;
+      const { task } = yield* tasks.upsert(scheduledTaskInput("task:action-approval", projectId));
+      const result = yield* tasks.runNow({ id: task.id });
+      assert.isDefined(result.threadId);
+      threadId = result.threadId!;
+    } else {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const launched = yield* launches.launch({
+        ...launchInput({
+          command: "launch:approval",
+          thread: "thread:approval",
+          message: "Start",
+          workspace: {
+            type: "worktree",
+            baseRef: "main",
+            skipSetupAction: origin === "start-without",
+          },
+        }),
+        createdBy: origin === "agent" || origin === "unreadable-agent" ? "agent" : "user",
+        creationSource: origin === "agent" || origin === "unreadable-agent" ? "mcp" : "web",
+      });
+      threadId = launched.threadId;
+    }
+    const projection = yield* preparationSettled(threadId);
+    assert.equal(projection.runs[0]?.status, "starting");
+    const reviews = projection.turnItems.flatMap((item) =>
+      item.type === "system_notice" && item.actionReview ? [item.actionReview] : [],
+    );
+    assert.deepEqual(
+      reviews,
+      origin === "start-without" || unreadable
+        ? []
+        : [{ projectId, actionId: "setup", command: "echo setup" }],
+    );
+    if (unreadable) {
+      const notices = projection.turnItems.filter((item) => item.type === "system_notice");
+      assert.lengthOf(notices, 1);
+      assert.include(
+        notices[0]?.message,
+        'Actions could not be read: t3.json on origin/main is invalid: unexpected key "futureSetting"',
+      );
+    }
+  }).pipe(
+    Effect.provide(
+      ScheduledTasks.layer.pipe(
+        Layer.provideMerge(harness.layer),
+        Layer.provide(
+          Layer.mergeAll(
+            NodeCrypto.layer,
+            Scheduler.layer,
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            ManagedPolicy.layerTest(),
+            Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+          ),
+        ),
+      ),
+    ),
+  );
+});
 
 it.effect(
   "an agent's launch leaves the project's setup script unrun when its thread leaves Full access while the worktree is made",

@@ -1,3 +1,4 @@
+import { ProjectActionApprovalHost } from "./features/threads/ProjectActionApproval";
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
@@ -320,6 +321,7 @@ function AppContent() {
                   onStateChange={handleNavigationStateChange}
                 />
                 <Dialog.Host />
+                <ProjectActionApprovalHost />
                 <ThreadArrangementHost />
                 <ProjectChipIconRasterizer />
               </NativeLayoutMetricsProvider>

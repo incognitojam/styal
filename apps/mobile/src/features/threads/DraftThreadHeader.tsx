@@ -66,15 +66,11 @@ export function DraftThreadHeader(props: {
         canOpenTerminal: false,
         canOperateTerminal: false,
         canOpenFiles: canReadFiles && props.cwd !== null,
-        projectScripts: [],
         terminalSessions: [],
         onOpenFilesInspector: openFiles,
         onOpenGitInspector: requiresThread,
         onOpenTerminal: requiresThread,
         onOpenNewTerminal: requiresThread,
-        onRunProjectScript: async () => {
-          requiresThread();
-        },
         onPull: async () => {
           if (!canWriteGit || !props.cwd) return;
           const result = await pull({ environmentId, input: { cwd: props.cwd } });

@@ -1,6 +1,6 @@
 # Project setup
 
-This build uses `t3.json` at the project root, with `scripts`, not `styal.json` actions.
+Define shared actions in the project’s `t3.json` under `scripts`.
 Read the repository's package manager, lockfile, scripts, setup instructions and CI before
 suggesting a few frequently used commands. Prefer existing scripts over command chains.
 
@@ -21,9 +21,9 @@ suggesting a few frequently used commands. Prefer existing scripts over command 
 }
 ```
 
-Adding a script to `t3.json` runs nothing until the user imports it in Settings → Projects →
-Actions → Import scripts → Import from t3.json. The file is read from the registered checkout;
-an edit in a thread worktree affects these scripts and defaults only after it reaches that checkout.
+styal reads actions from origin’s last fetched default branch (then origin/main or origin/master).
+Without those refs it reads the project-root file. A person approves each exact command per project
+and machine. Unapproved unattended actions are skipped. `t3_project_read` shows approval status.
 
 Scripts require `name` and `command`. Setup scripts use `runOnWorktreeCreate`; `async: false`
 holds the agent until setup exits. `runOnSettle` runs a script when its thread settles; threads
@@ -36,5 +36,4 @@ file invalid.
 override file defaults. `worktreeSubmodules` is read from the new worktree's copy.
 
 Before committing project configuration, check the repository's conventions and whether its
-existing file is tracked. Do not commit `t3.json` without the user's agreement. Users can save scripts in
-styal instead of committing a file.
+existing file is tracked. Do not commit `t3.json` without the user's agreement.

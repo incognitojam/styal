@@ -33,9 +33,9 @@ model.
   read needs `providers:manage` on top of its method's scope, whether the reference is saved in
   settings or used once, as in a secret request answered with a reference. Typed values need only
   the method's scope. Clients hide the secret provider picker from sessions without it.
-- **Project scripts need `orchestration:operate`.** The host runs a saved project script itself,
-  on worktree creation and on settle, so saving one needs `orchestration:operate` on top of
-  `settings:write`, whether it arrives in a settings patch or a project update.
+- **Project actions need exact-text approval.** Every run checks the project’s approved command
+  texts on the host machine. Only a person with `terminal:operate` may record approval through
+  the client RPC; agent transports cannot import the approval writer.
 - **Backward-compatible scope evolution.** Token exchange intersects requested scopes with the
   pairing grant, dropping retired/unknown names and failing before consuming a link if none remain.
   Stored grants are never expanded when scopes split. Auth responses preserve legacy `scopes`

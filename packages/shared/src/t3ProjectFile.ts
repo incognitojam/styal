@@ -5,7 +5,18 @@ import { T3ProjectFile, T3_PROJECT_FILE_SCHEMA_URL } from "@t3tools/contracts";
 
 import { fromLenientJson } from "./schemaJson.ts";
 
-export const T3ProjectFileFromJson = fromLenientJson(T3ProjectFile);
+export const T3ProjectFileFromJson = fromLenientJson(T3ProjectFile).check(
+  Schema.makeFilter((file) => {
+    for (const action of file.scripts ?? []) {
+      const hidden = action.command.match(
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]|\r(?!\n)/,
+      );
+      if (hidden)
+        return `Action "${action.name}" command contains disallowed character U+${hidden[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+    }
+    return true;
+  }),
+);
 
 const decodeT3ProjectFile = Schema.decodeExit(T3ProjectFileFromJson);
 

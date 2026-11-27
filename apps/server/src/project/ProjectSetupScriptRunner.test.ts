@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
+  TaskFolderError,
   TerminalNotRunningError,
   type TerminalEvent,
   type TerminalOpenInput,
@@ -18,7 +19,9 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { TestClock } from "effect/testing";
 
-import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectActions from "./ProjectActions.ts";
+import { actionsResult } from "./ProjectActions.testkit.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -44,10 +47,14 @@ const openSnapshot = (history: string): TerminalSessionSnapshot => ({
 
 const makeHarness = Effect.fn(function* (options: {
   readonly command?: string;
+  readonly approved?: () => boolean;
+  readonly notices?: string[];
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
   readonly previousSession?: TerminalSessionSnapshot;
   readonly shell?: string | null;
+  readonly sourceError?: () => TaskFolderError | undefined;
+  readonly trigger?: "setup" | "settle";
 }) {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const opens: TerminalOpenInput[] = [];
@@ -55,6 +62,7 @@ const makeHarness = Effect.fn(function* (options: {
   let session = options.previousSession;
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
+  const notices: { message: string; review: unknown }[] = [];
   const terminals = Layer.mock(TerminalManager.TerminalManager)({
     open: (input) =>
       Effect.sync(() => opens.push(input)).pipe(
@@ -100,7 +108,45 @@ const makeHarness = Effect.fn(function* (options: {
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: () => Effect.succeed(null),
         }),
-        ServerSettings.layerTest(),
+        Layer.mock(ProjectActions.ProjectActions)({
+          read: () =>
+            Effect.suspend(() => {
+              const error = options.sourceError?.();
+              return error
+                ? Effect.fail(error)
+                : Effect.succeed(
+                    actionsResult([
+                      {
+                        id: "setup",
+                        name: "Setup",
+                        command: options.command ?? "echo setup",
+                        icon: "configure",
+                        runOnWorktreeCreate: true,
+                        approved: options.approved?.() ?? true,
+                      },
+                    ]),
+                  );
+            }),
+        }),
+        Layer.mock(EventSink.EventSinkV2)({
+          write: ({ events }) =>
+            Effect.sync(() => {
+              for (const event of events) {
+                if (event.type === "turn-item.updated" && event.payload.type === "system_notice")
+                  notices.push({
+                    message: event.payload.message,
+                    review: event.payload.actionReview,
+                  });
+                if (
+                  event.type === "turn-item.updated" &&
+                  event.payload.type === "system_notice" &&
+                  event.payload.actionReview
+                )
+                  options.notices?.push(event.payload.actionReview.command);
+              }
+              return [];
+            }),
+        }),
         NodeCrypto.layer,
       ),
     ),
@@ -108,24 +154,16 @@ const makeHarness = Effect.fn(function* (options: {
   const start = runner.runForThread({
     threadId,
     worktreePath: "/repo/.styal/worktrees/feature",
+    ...(options.trigger ? { trigger: options.trigger } : {}),
     observeCompletion: { onOutputLine: (line) => Queue.offer(outputLines, line) },
     project: {
       id: ProjectId.make("project-1"),
       workspaceRoot: "/repo",
-      scripts: [
-        {
-          id: "setup",
-          name: "Setup",
-          command: options.command ?? "vp i",
-          icon: "configure",
-          runOnWorktreeCreate: true,
-        },
-      ],
     },
   });
   const emit = (terminalEvent: TerminalEvent) =>
     Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
-  return { start, listeners, writes, outputLines, emit, openedSessions, opens };
+  return { start, listeners, writes, outputLines, emit, openedSessions, opens, notices };
 });
 
 const setup = Effect.fn(function* (
@@ -144,6 +182,78 @@ const setup = Effect.fn(function* (
 });
 
 describe("ProjectSetupScriptRunner", () => {
+  it.effect.each(["setup", "settle"] as const)(
+    "skips unreadable actions on %s with one non-review notice",
+    (trigger) =>
+      Effect.gen(function* () {
+        const reason = 't3.json on origin/main is invalid: unexpected key "futureSetting"';
+        const harness = yield* makeHarness({
+          trigger,
+          sourceError: () => new TaskFolderError({ operation: "read", detail: reason }),
+        });
+        expect(yield* harness.start).toEqual({ status: "skipped-for-source" });
+        expect(harness.opens).toEqual([]);
+        expect(harness.notices).toEqual([
+          { message: `Actions could not be read: ${reason}`, review: undefined },
+        ]);
+      }),
+  );
+  it.effect("skips and records a source failure after terminal startup without writing", () =>
+    Effect.gen(function* () {
+      let broken = false;
+      const harness = yield* makeHarness({
+        sourceError: () =>
+          broken
+            ? new TaskFolderError({ operation: "read", detail: "git ref disappeared" })
+            : undefined,
+      });
+      const run = yield* harness.start;
+      broken = true;
+      yield* harness.emit({ ...event, type: "output", data: "\x1b[?2004h" });
+      if (run.status !== "started" || !run.completion)
+        return assert.fail("expected an observed run");
+      const completion = yield* run.completion;
+      expect(completion.skipped).toBe(true);
+      expect(yield* Queue.size(harness.writes)).toBe(0);
+      expect(harness.notices).toEqual([
+        { message: "Actions could not be read: git ref disappeared", review: undefined },
+      ]);
+    }),
+  );
+  it.effect(
+    "skips unapproved setup and records a reviewable notice before opening a terminal",
+    () =>
+      Effect.gen(function* () {
+        const notices: string[] = [];
+        const harness = yield* makeHarness({
+          command: "echo setup",
+          approved: () => false,
+          notices,
+        });
+        expect(yield* harness.start).toEqual({ status: "skipped-for-approval" });
+        expect(harness.opens).toEqual([]);
+        expect(notices).toEqual(["echo setup"]);
+      }),
+  );
+  it.effect("rechecks approval after the terminal opens", () =>
+    Effect.gen(function* () {
+      let approved = true;
+      const notices: string[] = [];
+      const harness = yield* makeHarness({
+        command: "echo setup",
+        approved: () => approved,
+        notices,
+      });
+      const run = yield* harness.start;
+      approved = false;
+      yield* harness.emit({ ...event, type: "output", data: "\x1b[?2004h" });
+      if (run.status !== "started" || !run.completion)
+        return assert.fail("expected an observed run");
+      yield* run.completion;
+      expect(yield* Queue.size(harness.writes)).toBe(0);
+      expect(notices).toEqual(["echo setup"]);
+    }),
+  );
   it.effect("keeps setup scripts independent of the interactive shell preference", () =>
     Effect.gen(function* () {
       const { opens } = yield* setup();
@@ -205,7 +315,7 @@ describe("ProjectSetupScriptRunner", () => {
       yield* emit({ ...event, type: "activity", hasRunningSubprocess: false, label: "zsh" });
       yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
       const command = yield* Queue.take(writes);
-      expect(command).toContain("vp i");
+      expect(command).toContain("echo setup");
       const sentinel = command.match(/__T3_SETUP_DONE___[a-f0-9]+:/)?.[0];
       expect(sentinel).toBeDefined();
       yield* emit({ ...event, type: "output", data: `${sentinel}0\r\n% ` });
@@ -237,7 +347,7 @@ describe("ProjectSetupScriptRunner", () => {
 
   it.effect("types into a quiet shell that has no line editor", () =>
     Effect.gen(function* () {
-      const { writes } = yield* setup({ command: "printf '%s\\n' 'setup-ready'\n".repeat(120) });
+      const { writes } = yield* setup({ command: "echo setup-ready\n".repeat(120) });
       yield* TestClock.adjust("3 seconds");
       const submitted = yield* Queue.take(writes);
       expect(submitted).toContain("setup-ready");
@@ -263,7 +373,7 @@ describe("ProjectSetupScriptRunner", () => {
       yield* emit({ ...event, type: "restarted", snapshot: openSnapshot("") });
       // The restart lands inside a quiet window, so the next full window decides.
       yield* TestClock.adjust("6 seconds");
-      expect(yield* Queue.take(writes)).toContain("vp i");
+      expect(yield* Queue.take(writes)).toContain("echo setup");
     }),
   );
 

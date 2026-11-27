@@ -417,7 +417,7 @@ const make = Effect.gen(function* () {
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
 
         let setupScript: WorktreeMcpSetupScriptStatus = { status: "skipped" };
-        // The saved setup script is the project's code too: below Full access it waits for a person.
+        // The setup action is the project's code too: below Full access it waits for a person.
         const setupWaitsForFullAccess =
           (input.runSetupScript ?? true) &&
           (yield* projectCommandsNow) === "agent-below-full-access";
@@ -431,7 +431,6 @@ const make = Effect.gen(function* () {
               project: {
                 id: project.id,
                 workspaceRoot: project.workspaceRoot,
-                scripts: project.scripts,
               },
             })
             .pipe(
@@ -442,7 +441,7 @@ const make = Effect.gen(function* () {
                       scriptName: result.scriptName,
                       terminalId: result.terminalId,
                     }
-                  : result.status === "skipped-for-link"
+                  : result.status !== "no-script"
                     ? { status: "skipped" }
                     : { status: "no-script" },
               ),

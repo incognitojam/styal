@@ -17,6 +17,8 @@ import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectActions from "../project/ProjectActions.ts";
+import * as LayoutCommandApprovals from "../workspace/LayoutCommandApprovals.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
@@ -298,7 +300,19 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
     ),
   ),
 );
+export const layerProjectActions = ProjectActions.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerProjectService,
+      ProjectionStore.layer,
+      LayoutCommandApprovals.layer,
+      GitVcsDriver.layer,
+    ),
+  ),
+);
 export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe(
+  Layer.provideMerge(layerProjectActions),
+  Layer.provide(layerEventSink),
   Layer.provide(layerProjectService),
   // Whether a thread came from a linked environment, which skips setup.
   Layer.provide(ProjectionStore.layer),

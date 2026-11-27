@@ -207,7 +207,7 @@ restored:
 ## Limits
 
 - One Git action runs in one repository. There is no commit or push across several at once.
-- Only the project folder's `t3.json` is read. Setup scripts and actions inside one of its
-  repositories are not picked up.
+- Actions belong to the project, not its tracked repositories. See
+  [Actions](project-settings.md#actions) for their source and approval rules.
 - The Diff pane's repository picker and the base branch field for a plain folder are on web and
   desktop only.

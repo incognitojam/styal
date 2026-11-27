@@ -36,7 +36,7 @@ import {
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
 } from "@t3tools/shared/projectSettings";
-import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import * as ProjectActions from "../../../project/ProjectActions.ts";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -193,7 +193,7 @@ const access = Effect.gen(function* () {
   return yield* Project.ProjectService;
 });
 
-/** Settings, not the project record, hold the default model and actions that new threads use. */
+/** Project-level model defaults live in Settings. */
 const withSavedProjectSettings = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService.pipe(
     Effect.flatMap((service) => service.getSettings),
@@ -207,7 +207,6 @@ const withSavedProjectSettings = Effect.gen(function* () {
         resolved.sources.defaultModelSelection === "project"
           ? resolved.settings.defaultModelSelection
           : null,
-      scripts: resolveProjectScripts(settings, project),
     };
   };
 });
@@ -543,7 +542,10 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           code: "invalid_request",
           message: "The project was not found.",
         });
-      return (yield* withSavedProjectSettings)(result.value);
+      const { actions } = yield* (yield* ProjectActions.ProjectActions)
+        .read({ projectId: input.projectId }, false)
+        .pipe(Effect.mapError(unavailable));
+      return { ...(yield* withSavedProjectSettings)(result.value), actions };
     }),
   ),
   t3_project_create: McpToolAccess.writesEnvironment(
@@ -553,7 +555,6 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         if (workspaceRoot === undefined) {
           // Only updates record model defaults; reject defaults that creation would silently drop.
           if (
-            input.scripts !== undefined ||
             input.trackedFolders !== undefined ||
             input.createWorkspaceRootIfMissing !== undefined ||
             input.defaultModelSelection !== undefined
@@ -561,7 +562,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             return yield* new OrchestratorMcpFailure({
               code: "invalid_request",
               message:
-                "A project started from its title takes only a title; set scripts or defaultModelSelection afterwards with t3_project_update.",
+                "A project started from its title takes only a title; set defaultModelSelection afterwards with t3_project_update.",
             });
           const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
           const created = yield* folders.createNamedProject({ name: input.title }).pipe(

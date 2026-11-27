@@ -37,6 +37,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly startFromOrigin: boolean;
+  readonly skipSetupAction?: boolean;
   /** Tracked repositories a new worktree takes, by path; absent leaves the choice to the server. */
   readonly worktreeRepositories?: ReadonlyArray<string>;
   readonly worktreeBranchName: string;
@@ -86,7 +87,7 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
                 ? {}
                 : { repositories: spec.worktreeRepositories.map((path) => ({ path })) }),
             },
-            runSetupScript: true,
+            runSetupScript: !spec.skipSetupAction,
           }
         : {}),
     },

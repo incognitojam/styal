@@ -887,8 +887,8 @@ export const layer: Layer.Layer<
                 if (setup.async) {
                   yield* setup.completion.pipe(Effect.forkDetach);
                 } else {
-                  const { exitCode } = yield* setup.completion;
-                  if (exitCode !== 0)
+                  const { exitCode, skipped } = yield* setup.completion;
+                  if (!skipped && exitCode !== 0)
                     return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
                 }
               }),

@@ -1,3 +1,4 @@
+import { approveProjectAction } from "../../projectActionApproval";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
 import {
@@ -640,6 +641,30 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               </span>
             ) : null}
             {mcpSignIn}
+            {payload?.type === "system_notice" && payload.actionReview && (
+              <InlineButton
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const review = payload.actionReview;
+                  if (review)
+                    void approveProjectAction({
+                      environmentId: ctx.activeThreadEnvironmentId,
+                      projectId: review.projectId,
+                      projectTitle: "",
+                      review: true,
+                      action: {
+                        id: review.actionId,
+                        name: review.actionId,
+                        command: review.command,
+                        icon: "play",
+                        runOnWorktreeCreate: false,
+                      },
+                    });
+                }}
+              >
+                <T>Review</T>
+              </InlineButton>
+            )}
           </p>
         </div>
       }

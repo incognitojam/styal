@@ -1,6 +1,5 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
-  AuthOrchestrationOperateScope,
   AuthAccessWriteScope,
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
@@ -35,7 +34,6 @@ import {
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
-import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
 import {
@@ -1215,7 +1213,6 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "newWorktreesStartFromOrigin",
   "worktreeSubmodules",
   "defaultAutoPull",
-  "defaultProjectScripts",
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
   "textGenerationModelSelection",
@@ -1253,7 +1250,6 @@ export const ProjectSettingsOverrides = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   worktreeSubmodules: ForwardCompatibleOptional(WorktreeSubmodules),
   defaultAutoPull: Schema.optionalKey(Schema.Boolean),
-  defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
@@ -1287,7 +1283,13 @@ export const keepUnknownOverrideKeys = <Entry extends Schema.Struct<Schema.Struc
   Entry["Encoded"],
   Entry["DecodingServices"],
   Entry["EncodingServices"]
-> => Schema.StructWithRest(entry, [Schema.Record(Schema.String, Schema.Unknown)]);
+> =>
+  Schema.StructWithRest(entry, [
+    Schema.Record(
+      Schema.String.check(Schema.isPattern(/^(?!defaultProjectScripts$)/)),
+      Schema.Unknown,
+    ),
+  ]);
 
 /** True if null stores an override; otherwise null removes it. */
 export function isNullableProjectSettingsOverride(key: ProjectScopedServerSettingKey): boolean {
@@ -1464,12 +1466,6 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  defaultProjectScripts: Schema.Array(ProjectScript).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  projectScriptOverrides: Schema.Record(ProjectId, Schema.NullOr(Schema.Array(ProjectScript))).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
   projectAutoPullOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1930,10 +1926,6 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
   ),
   defaultAutoPull: Schema.optionalKey(Schema.Boolean),
-  defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
-  projectScriptOverrides: Schema.optionalKey(
-    Schema.Record(ProjectId, Schema.NullOr(Schema.Array(ProjectScript))),
-  ),
   projectAutoPullOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
   ),
@@ -2056,17 +2048,6 @@ export const ClientServerSettingsPatch = ServerSettingsPatch.mapFields(
   Struct.omit(["defaultTheme", "defaultThemeSetAt", "defaultAppearance", "defaultAppearanceSetAt"]),
 );
 
-/** The host runs saved project scripts, some without anyone asking: on worktree creation and on settle. */
-function carriesProjectScripts(patch: ServerSettingsPatch): boolean {
-  return (
-    patch.defaultProjectScripts !== undefined ||
-    Object.values(patch.projectScriptOverrides ?? {}).some((scripts) => scripts !== null) ||
-    Object.values(patch.projectSettingsOverrides ?? {}).some(
-      (overrides) => overrides?.defaultProjectScripts !== undefined,
-    )
-  );
-}
-
 export function requiredScopesForServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ReadonlyArray<AuthEnvironmentScope> {
@@ -2099,23 +2080,6 @@ export function requiredScopesForServerSettingsPatch(
     ...(changesSettings || (!changesProviders && !changesAccess) ? [AuthSettingsWriteScope] : []),
     ...(changesProviders ? [AuthProvidersManageScope] : []),
     ...(changesAccess ? [AuthAccessWriteScope] : []),
-    // Saving a script is choosing a command for the host to run, wherever the patch carries it.
-    ...(carriesProjectScripts(patch) ? [AuthOrchestrationOperateScope] : []),
-  ];
-}
-
-/** Host-executed project scripts require settings-write authority in addition to orchestration:operate. */
-export function requiredScopesForProjectMutation(
-  mutation: ProjectMutation,
-): ReadonlyArray<AuthEnvironmentScope> {
-  if (mutation.type === "project.delete" || mutation.scripts === undefined) {
-    return [AuthOrchestrationOperateScope];
-  }
-  return [
-    ...new Set([
-      AuthOrchestrationOperateScope,
-      ...requiredScopesForServerSettingsPatch({ defaultProjectScripts: mutation.scripts }),
-    ]),
   ];
 }
 

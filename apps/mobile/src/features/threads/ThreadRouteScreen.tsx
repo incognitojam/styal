@@ -1,3 +1,6 @@
+import { ProjectActionsSheet } from "./ProjectActionsSheet";
+import { approveProjectAction } from "./ProjectActionApproval";
+import { projectActions } from "../../state/projectActions";
 import * as Dialog from "../../components/ui/Dialog";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { useRememberThreadProject } from "./useRememberThreadProject";
@@ -28,19 +31,12 @@ import {
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
-  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   isProviderNativeSubagentThread,
   MessageId,
   ThreadId,
   type ProjectScript,
 } from "@t3tools/contracts";
-import {
-  projectScriptCwd,
-  projectScriptRuntimeEnv,
-  projectScriptTerminalInput,
-  resolveProjectScripts,
-} from "@t3tools/shared/projectScripts";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useConnectionsReady } from "../../state/workspace";
 import { useEnvironmentShellReadiness } from "../../state/shell";
@@ -75,15 +71,7 @@ import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
-import {
-  buildTerminalMenuSessions,
-  nextOpenTerminalId,
-  resolveProjectScriptTerminalId,
-} from "../terminal/terminalMenu";
-import {
-  resolvePreferredThreadWorktreePath,
-  stagePendingTerminalLaunch,
-} from "../terminal/terminalLaunchContext";
+import { buildTerminalMenuSessions, nextOpenTerminalId } from "../terminal/terminalMenu";
 import type { ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./ThreadScreenHost";
 import { draftRouteIdentity } from "./thread-route-state";
@@ -577,7 +565,6 @@ function ThreadRouteContent(
     },
     m,
   );
-  const selectedThreadDetailWorktreePath = selectedThreadDetail?.thread.worktreePath ?? null;
   const handleReconnectEnvironment = () => {
     if (!environmentId) {
       return;
@@ -768,57 +755,33 @@ function ThreadRouteContent(
     });
   };
 
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const runAction = useAtomCommand(projectActions.run);
   const handleRunProjectScript = async (script: ProjectScript) => {
+    if (!selectedThread || !selectedThreadProject) return;
     if (
-      !selectedThread ||
-      !selectedThreadProject?.workspaceRoot ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
-    ) {
-      return;
-    }
-
-    const targetTerminalId = resolveProjectScriptTerminalId({
-      existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-      ...(knownTerminalSessions === null ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-        ? { uniqueSuffix: uuidv4() }
-        : {}),
-      hasRunningTerminal: terminalMenuSessions.some(
-        (session) => session.status === "running" || session.status === "starting",
-      ),
-    });
-    const preferredWorktreePath = resolvePreferredThreadWorktreePath({
-      threadShellWorktreePath: selectedThread.worktreePath ?? null,
-      threadDetailWorktreePath: selectedThreadDetailWorktreePath,
-    });
-    const cwd = projectScriptCwd({
-      project: { cwd: selectedThreadProject.workspaceRoot },
-      worktreePath: preferredWorktreePath,
-    });
-    const env = projectScriptRuntimeEnv({
-      project: { cwd: selectedThreadProject.workspaceRoot },
-      worktreePath: preferredWorktreePath,
-    });
-    stagePendingTerminalLaunch({
-      target: {
+      !(await approveProjectAction({
         environmentId: selectedThread.environmentId,
+        projectId: selectedThreadProject.id,
+        action: script,
+      }))
+    )
+      return;
+    const result = await runAction({
+      environmentId: selectedThread.environmentId,
+      input: {
+        projectId: selectedThreadProject.id,
         threadId: selectedThread.id,
-        terminalId: targetTerminalId,
-      },
-      launch: {
-        cwd,
-        worktreePath: preferredWorktreePath,
-        env,
-        initialInput: projectScriptTerminalInput(script.command),
-        stopOnSettle: script.stopOnSettle ?? false,
+        actionId: script.id,
+        expectedCommand: script.command,
       },
     });
-
-    void navigation.navigate("ThreadTerminal", {
-      environmentId: String(selectedThread.environmentId),
-      threadId: String(selectedThread.id),
-      terminalId: targetTerminalId,
-    });
+    if (result._tag === "Success")
+      navigation.navigate("ThreadTerminal", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        terminalId: result.value.terminalId,
+      });
   };
   const threadGitControlProps = {
     environmentId: environmentIdRaw ?? "",
@@ -837,16 +800,10 @@ function ThreadRouteContent(
       Boolean(selectedThreadProject?.workspaceRoot) && (canReadTerminal || canOperateTerminal),
     canOperateTerminal,
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    projectScripts: selectedThreadProject
-      ? resolveProjectScripts(
-          routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
-          selectedThreadProject,
-        )
-      : [],
+    onOpenActions: () => setActionsOpen(true),
     terminalSessions: terminalMenuSessions,
     onOpenTerminal: handleOpenTerminal,
     onOpenNewTerminal: handleOpenNewTerminal,
-    onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
@@ -1160,6 +1117,15 @@ function ThreadRouteContent(
       ) : null}
 
       {renderThreadRouteBody()}
+      {actionsOpen && selectedThread && selectedThreadProject && (
+        <ProjectActionsSheet
+          environmentId={selectedThread.environmentId}
+          projectId={selectedThreadProject.id}
+          threadId={selectedThread.id}
+          onClose={() => setActionsOpen(false)}
+          onRun={(action) => void handleRunProjectScript(action)}
+        />
+      )}
     </>
   );
 }

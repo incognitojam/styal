@@ -2407,7 +2407,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             defaultThreadEnvMode: "worktree",
             defaultAutoPull: true,
           },
-          [scriptedProject]: { defaultAutoPull: true, defaultProjectScripts: [script] },
+          [scriptedProject]: { defaultAutoPull: true },
         },
       );
 
@@ -2418,10 +2418,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           [scriptedProject]: true,
         },
       );
-      assert.deepEqual<ServerSettings["projectScriptOverrides"]>(settings.projectScriptOverrides, {
-        [scriptedProject]: [script],
-      });
-
       yield* serverSettings.updateSettings({
         projectSettingsOverrides: { [legacyProject]: null },
       });

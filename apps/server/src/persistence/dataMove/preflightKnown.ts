@@ -99,6 +99,7 @@ export const historicalPayloads = {
   }),
 };
 export const removedFields: Record<string, readonly string[]> = {
+  projects: ["scripts"],
   threads: [
     "branchTurnContext",
     "reportDismissals",

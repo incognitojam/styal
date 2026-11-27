@@ -21,7 +21,7 @@ it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })))(
         const fork = yield* sql<{
           readonly migration_id: number;
           readonly name: string;
-        }>`SELECT migration_id, name FROM yngatech_sql_migrations`;
+        }>`SELECT migration_id, name FROM yngatech_sql_migrations WHERE migration_id = 3`;
         assert.deepEqual(fork, [{ migration_id: 3, name: "ProjectAdditionalInstructions" }]);
         const again = yield* runAllMigrations();
         assert.deepEqual(again.fork, []);

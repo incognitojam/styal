@@ -1050,6 +1050,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     claimed: Deferred.Deferred<void>;
     finished: Deferred.Deferred<boolean>;
   };
+  const lastStatusFetch = new Map<string, string>();
   const statusFetches = new Map<
     string,
     {
@@ -1653,9 +1654,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         // occupying its worker slot indefinitely.
         const fetch = isolatedFetch.pipe(
           Effect.tap(() =>
-            Effect.sync(() => {
-              statusRemoteRefreshFailures.delete(key);
-            }),
+            DateTime.now.pipe(
+              Effect.map((now) => {
+                statusRemoteRefreshFailures.delete(key);
+                lastStatusFetch.delete(key);
+                lastStatusFetch.set(key, DateTime.formatIso(now));
+                if (lastStatusFetch.size > STATUS_UPSTREAM_REFRESH_CACHE_CAPACITY) {
+                  const oldest = lastStatusFetch.keys().next().value;
+                  if (oldest !== undefined) lastStatusFetch.delete(oldest);
+                }
+              }),
+            ),
           ),
           Effect.tapError(() => recordStatusRemoteRefreshFailure(key)),
           Effect.tapCause((cause) => Effect.logWarning("Background Git fetch failed", cause)),
@@ -7171,6 +7180,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return yield* withListRefsInvalidation(input.cwd, ensureRemote(input));
     }),
     resolvePrimaryRemoteName,
+    actionSourceFetchTime: Effect.fn("GitVcsDriver.actionSourceFetchTime")(function* (
+      cwd: string,
+      fetch: boolean,
+    ) {
+      const dir = yield* resolveGitCommonDir(cwd);
+      if (fetch) yield* fetchRemoteForStatus(dir, "origin");
+      return lastStatusFetch.get(`${dir}\0origin`) ?? null;
+    }),
     resolveDefaultBranchName,
     fetchRemote: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(

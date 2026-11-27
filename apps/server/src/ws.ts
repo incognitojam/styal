@@ -228,6 +228,7 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
+import * as ProjectActions from "./project/ProjectActions.ts";
 import * as LayoutCommandApprovalWrites from "./workspace/LayoutCommandApprovalWrites.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
@@ -1604,6 +1605,7 @@ export const layerWsRpc = (
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
       const taskFolders = yield* TaskFolders.TaskFolders;
+      const projectActions = yield* ProjectActions.ProjectActions;
       const layoutCommandApprovalWrites =
         yield* LayoutCommandApprovalWrites.LayoutCommandApprovalWrites;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -3208,6 +3210,10 @@ export const layerWsRpc = (
         [WS_METHODS.workspaceTaskFolder]: (input) =>
           taskFolders.find(input.worktreePath).pipe(Effect.map((taskFolder) => ({ taskFolder }))),
         [WS_METHODS.workspaceAddTaskFolderRepository]: (input) => taskFolders.addRepository(input),
+        [WS_METHODS.projectActions]: (input) => projectActions.read(input),
+        [WS_METHODS.projectRunAction]: (input) => projectActions.run(input),
+        [WS_METHODS.projectSetActionApproval]: (input) =>
+          layoutCommandApprovalWrites.setAction(input),
         [WS_METHODS.workspaceLayoutCommands]: (input) =>
           taskFolders.layoutCommands(input.projectId),
         // The one place an approval is recorded: a person's client session, behind the scope.

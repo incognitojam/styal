@@ -15,7 +15,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";
 import { createModelSelection } from "./model.ts";
-import { resolveProjectScripts } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
   fallbackTextGenerationModelSelection,
@@ -30,8 +29,6 @@ import {
 
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
-
-const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("fallbackTextGenerationModelSelection", () => {
   it("uses Big Pickle when only OpenCode is enabled", () => {
@@ -151,83 +148,6 @@ describe("serverSettings helpers", () => {
       sourceControlHosts: { github: { tokens: { " GitHub.com ": "ghp_new" } } },
     });
     expect(recased.sourceControlHosts.github?.tokens).toEqual({ "github.com": "ghp_new" });
-  });
-
-  it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
-    const project = { id: ProjectId.make("project-actions"), scripts: [] };
-    const action = {
-      id: "check",
-      name: "Check",
-      command: "npm test",
-      icon: "play" as const,
-      runOnWorktreeCreate: false,
-    };
-    const existing = { ...project, scripts: [{ ...action, command: "npm run lint" }] };
-    const unfolded = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultProjectScripts: [action],
-    });
-    expect(resolveProjectScripts(unfolded, existing)).toEqual(existing.scripts);
-    const defaults = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
-      defaultProjectScripts: [action],
-    });
-    expect(resolveProjectScripts(defaults, project)).toEqual([action]);
-    expect(resolveProjectScripts(defaults, existing)).toEqual([action]);
-    const disabled = applyServerSettingsPatch(defaults, {
-      projectScriptOverrides: { [project.id]: [] },
-    });
-    expect(resolveProjectScripts(disabled, project)).toEqual([]);
-    const changedDefault = applyServerSettingsPatch(disabled, {
-      defaultProjectScripts: [{ ...action, command: "npm run build" }],
-    });
-    expect(resolveProjectScripts(changedDefault, project)).toEqual([]);
-    const reset = applyServerSettingsPatch(changedDefault, {
-      projectScriptOverrides: { [project.id]: null },
-    });
-    expect(resolveProjectScripts(reset, existing)).toEqual(changedDefault.defaultProjectScripts);
-    expect(
-      resolveProjectScripts(
-        applyServerSettingsPatch(reset, { defaultProjectScripts: [] }),
-        existing,
-      ),
-    ).toEqual([]);
-  });
-
-  it("preserves other projects' actions when overriding, clearing, or resetting one project", () => {
-    const firstProject = { id: ProjectId.make("first-project"), scripts: [] };
-    const secondProject = { id: ProjectId.make("second-project"), scripts: [] };
-    const defaultAction = {
-      id: "check",
-      name: "Check",
-      command: "npm test",
-      icon: "play" as const,
-      runOnWorktreeCreate: false,
-    };
-    const firstAction = { ...defaultAction, command: "npm run lint" };
-    const secondAction = { ...defaultAction, command: "npm run build" };
-    const firstUpdate = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
-      defaultProjectScripts: [defaultAction],
-      projectScriptOverrides: { [firstProject.id]: [firstAction] },
-    });
-    const secondUpdate = applyServerSettingsPatch(firstUpdate, {
-      projectScriptOverrides: { [secondProject.id]: [secondAction] },
-    });
-    expect(resolveProjectScripts(secondUpdate, firstProject)).toEqual([firstAction]);
-    expect(resolveProjectScripts(secondUpdate, secondProject)).toEqual([secondAction]);
-
-    const cleared = applyServerSettingsPatch(secondUpdate, {
-      projectScriptOverrides: { [firstProject.id]: [] },
-    });
-    expect(resolveProjectScripts(cleared, firstProject)).toEqual([]);
-    expect(resolveProjectScripts(cleared, secondProject)).toEqual([secondAction]);
-
-    const reset = applyServerSettingsPatch(cleared, {
-      projectScriptOverrides: { [firstProject.id]: null },
-    });
-    expect(resolveProjectScripts(reset, { ...firstProject, scripts: [firstAction] })).toEqual([
-      defaultAction,
-    ]);
-    expect(resolveProjectScripts(reset, secondProject)).toEqual([secondAction]);
-    expect(resolveProjectScripts(secondUpdate, firstProject)).toEqual([firstAction]);
   });
 
   it("preserves other projects' boolean overrides across separate updates and resets", () => {

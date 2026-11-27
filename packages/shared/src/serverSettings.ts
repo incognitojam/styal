@@ -295,13 +295,9 @@ function mergeProjectSettingsOverridesPatch(
 
 export function deriveLegacyProjectOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
-): Pick<
-  ServerSettings,
-  "projectAgentBrowserAccessOverrides" | "projectAutoPullOverrides" | "projectScriptOverrides"
-> {
+): Pick<ServerSettings, "projectAgentBrowserAccessOverrides" | "projectAutoPullOverrides"> {
   const projectAgentBrowserAccessOverrides: Record<string, boolean> = {};
   const projectAutoPullOverrides: Record<string, boolean> = {};
-  const projectScriptOverrides: Record<string, ServerSettings["defaultProjectScripts"] | null> = {};
   for (const [projectId, entry] of Object.entries(settings.projectSettingsOverrides)) {
     if (entry.enableAgentBrowserAccess !== undefined) {
       projectAgentBrowserAccessOverrides[projectId] = entry.enableAgentBrowserAccess;
@@ -309,28 +305,16 @@ export function deriveLegacyProjectOverrides(
     if (entry.defaultAutoPull !== undefined) {
       projectAutoPullOverrides[projectId] = entry.defaultAutoPull;
     }
-    if (entry.defaultProjectScripts !== undefined) {
-      projectScriptOverrides[projectId] = entry.defaultProjectScripts;
-    }
   }
-  return { projectAgentBrowserAccessOverrides, projectAutoPullOverrides, projectScriptOverrides };
+  return { projectAgentBrowserAccessOverrides, projectAutoPullOverrides };
 }
 
 function translateLegacyProjectOverridePatch(
   current: Pick<ServerSettings, "projectSettingsOverrides">,
   patch: ServerSettingsPatch,
 ): ServerSettingsPatch {
-  const {
-    projectAgentBrowserAccessOverrides,
-    projectAutoPullOverrides,
-    projectScriptOverrides,
-    ...rest
-  } = patch;
-  if (
-    projectAgentBrowserAccessOverrides === undefined &&
-    projectAutoPullOverrides === undefined &&
-    projectScriptOverrides === undefined
-  ) {
+  const { projectAgentBrowserAccessOverrides, projectAutoPullOverrides, ...rest } = patch;
+  if (projectAgentBrowserAccessOverrides === undefined && projectAutoPullOverrides === undefined) {
     return patch;
   }
   const currentEntries: Readonly<Record<string, ProjectSettingsOverrides>> =
@@ -360,7 +344,6 @@ function translateLegacyProjectOverridePatch(
   };
   applyKey(projectAgentBrowserAccessOverrides, "enableAgentBrowserAccess");
   applyKey(projectAutoPullOverrides, "defaultAutoPull");
-  applyKey(projectScriptOverrides, "defaultProjectScripts");
   return {
     ...rest,
     projectSettingsOverrides: Object.fromEntries(entries),
@@ -411,7 +394,6 @@ export function applyServerSettingsPatch(
     projectSettingsOverrides: projectSettingsOverridesPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
-    projectScriptOverrides: _legacyScripts,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -608,9 +590,6 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.speechPostProcessingModelSelection !== undefined
       ? { speechPostProcessingModelSelection: patch.speechPostProcessingModelSelection }
-      : {}),
-    ...(patch.defaultProjectScripts !== undefined
-      ? { defaultProjectScripts: patch.defaultProjectScripts }
       : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {

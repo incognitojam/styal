@@ -1,3 +1,4 @@
+import { approveSetupAction } from "./ProjectActionApproval";
 import { T, useGT, useMessages, Var } from "gt-react-native";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { DraftEnvironmentControl } from "./DraftEnvironmentControl";
@@ -706,11 +707,22 @@ export function NewTaskDraftScreen(props: {
       return null;
     }
 
-    const message = flow.buildPendingTaskMessage(creationMetadata, {
+    let message = flow.buildPendingTaskMessage(creationMetadata, {
       currentCheckoutBranch: queuesInsteadOfStarting ? null : flow.currentCheckoutBranchName,
     });
     if (!message) {
       return null;
+    }
+    if (message.creation?.workspaceMode === "worktree") {
+      flow.setSubmitting(true);
+      const approved =
+        environmentConnected &&
+        (await approveSetupAction({
+          environmentId: selectedProject.environmentId,
+          projectId: selectedProject.id,
+        }));
+      flow.setSubmitting(false);
+      message = { ...message, creation: { ...message.creation, skipSetupAction: !approved } };
     }
     // Persist locally before clearing or leaving the draft; server setup runs on the thread.
     flow.setSubmitting(true);

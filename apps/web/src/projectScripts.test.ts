@@ -1,13 +1,12 @@
 import { shortcutLabelForCommand } from "./keybindings";
 import { describe, expect, it } from "vite-plus/test";
-import { settleProjectScript, setupProjectScript } from "@t3tools/shared/projectScripts";
-
 import {
-  commandForProjectScript,
   nextProjectScriptId,
-  primaryProjectScript,
-  releaseClaimedRoles,
-} from "./projectScripts";
+  settleProjectScript,
+  setupProjectScript,
+} from "@t3tools/shared/projectScripts";
+
+import { commandForProjectScript } from "./projectScripts";
 
 describe("projectScripts helpers", () => {
   it.each(["install-javascript-dependencies", "A", "a.b", "a b", "-a", "", "a".repeat(25)])(
@@ -55,38 +54,7 @@ describe("projectScripts helpers", () => {
       },
     ];
 
-    expect(primaryProjectScript(scripts)?.id).toBe("test");
     expect(setupProjectScript(scripts)?.id).toBe("setup");
     expect(settleProjectScript(scripts)?.id).toBe("clean");
-    expect(primaryProjectScript(scripts.filter((script) => script.id === "clean"))).toBeNull();
-  });
-
-  it("moves the setup and settle roles to the script that claims them", () => {
-    const input = {
-      name: "Next",
-      command: "true",
-      icon: "play",
-      waitForSetup: false,
-      previewUrl: null,
-      autoOpenPreview: false,
-    } as const;
-    const holder = {
-      id: "holder",
-      name: "Holder",
-      command: "true",
-      icon: "play" as const,
-      runOnWorktreeCreate: true,
-      runOnSettle: true,
-    };
-
-    expect(
-      releaseClaimedRoles(holder, { ...input, runOnWorktreeCreate: false, runOnSettle: true }),
-    ).toMatchObject({ runOnWorktreeCreate: true, runOnSettle: false });
-    expect(
-      releaseClaimedRoles(holder, { ...input, runOnWorktreeCreate: true, runOnSettle: false }),
-    ).toMatchObject({ runOnWorktreeCreate: false, runOnSettle: true });
-    expect(
-      releaseClaimedRoles(holder, { ...input, runOnWorktreeCreate: false, runOnSettle: false }),
-    ).toBe(holder);
   });
 });

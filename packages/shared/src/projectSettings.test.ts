@@ -328,12 +328,10 @@ describe("projectSettingsOverrides patches", () => {
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectSettingsOverrides: {
         [projectId]: { defaultAutoPull: true, enableAgentBrowserAccess: false },
-        [otherProjectId]: { defaultProjectScripts: [] },
       },
     });
     expect(settings.projectAutoPullOverrides).toEqual({ [projectId]: true });
     expect(settings.projectAgentBrowserAccessOverrides).toEqual({ [projectId]: false });
-    expect(settings.projectScriptOverrides).toEqual({ [otherProjectId]: [] });
   });
 
   it("translates legacy per-key patches into the generic record", () => {

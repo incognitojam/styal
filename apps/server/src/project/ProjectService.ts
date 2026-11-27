@@ -226,7 +226,7 @@ export const make = Effect.gen(function* () {
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
     projectIcon: row.projectIcon,
-    scripts: row.scripts,
+    scripts: [],
     trackedFolders: row.trackedFolders,
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
@@ -542,12 +542,8 @@ export const make = Effect.gen(function* () {
   // Once project settings are folded, project defaults resolve from Settings only, where the app's editor saves them.
   const saveProjectSettings = (
     projectId: ProjectId,
-    input: Pick<
-      ProjectUpdateInput,
-      "scripts" | "defaultModelSelection" | "defaultThreadEnvMode" | "autoPull"
-    >,
+    input: Pick<ProjectUpdateInput, "defaultModelSelection" | "defaultThreadEnvMode" | "autoPull">,
   ) =>
-    input.scripts === undefined &&
     input.defaultModelSelection === undefined &&
     input.defaultThreadEnvMode === undefined &&
     input.autoPull === undefined
@@ -557,7 +553,6 @@ export const make = Effect.gen(function* () {
           Effect.flatMap(({ projectSettingsOverrides }) => {
             const entry = {
               ...projectSettingsOverrides[projectId],
-              ...(input.scripts === undefined ? {} : { defaultProjectScripts: input.scripts }),
               ...(input.defaultModelSelection == null
                 ? {}
                 : { defaultModelSelection: input.defaultModelSelection }),
@@ -598,19 +593,14 @@ export const make = Effect.gen(function* () {
         workspaceRoot,
         input.trackedFolders ?? [],
       );
-      yield* commit(
-        {
-          type: "project.create",
-          commandId: input.commandId,
-          projectId: input.projectId,
-          title: input.title,
-          workspaceRoot,
-          ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
-          trackedFolders,
-        },
-        undefined,
-        saveProjectSettings(input.projectId, { scripts: input.scripts }),
-      );
+      yield* commit({
+        type: "project.create",
+        commandId: input.commandId,
+        projectId: input.projectId,
+        title: input.title,
+        workspaceRoot,
+        trackedFolders,
+      });
       yield* projectEnrichment.invalidate([workspaceRoot]);
       return yield* readCommitted(input.projectId);
     },
@@ -654,7 +644,6 @@ export const make = Effect.gen(function* () {
         ...(input.defaultThreadEnvMode === undefined
           ? {}
           : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
-        ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
       } as const;

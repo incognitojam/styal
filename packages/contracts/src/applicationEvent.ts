@@ -48,7 +48,7 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   additionalInstructions: Schema.optional(Schema.NullOr(ProjectAdditionalInstructions)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
-  scripts: Schema.Array(ProjectScript),
+  scripts: Schema.optional(Schema.Array(ProjectScript)),
   trackedFolders: Schema.optional(ProjectTrackedFolders),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

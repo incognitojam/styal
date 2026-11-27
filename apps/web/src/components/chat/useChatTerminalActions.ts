@@ -55,6 +55,8 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { previewEnvironment } from "../../state/preview";
 import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { approveProjectAction } from "../../projectActionApproval";
+import { projectActions } from "../../state/projectActions";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
@@ -107,6 +109,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     setTerminalUiLaunchContext,
     setThreadError,
   } = input;
+  const runAction = useAtomCommand(projectActions.run, { reportFailure: false });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
 
   const hasTerminalWriteAccess = () =>
@@ -218,11 +221,63 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   ) => {
     if (!hasTerminalWriteAccess() || !activeThreadId || !activeProject || !activeThread) return;
     if (options?.rememberAsLastInvoked !== false) {
-      setLastInvokedScriptByProjectId((current) => {
-        if (current[activeProject.id] === script.id) return current;
-        return { ...current, [activeProject.id]: script.id };
+      if (
+        !activeThreadRef ||
+        !(await approveProjectAction({
+          environmentId,
+          projectId: activeProject.id,
+          projectTitle: activeProject.title,
+          action: script,
+        }))
+      )
+        return;
+      const result = await runAction({
+        environmentId,
+        input: {
+          projectId: activeProject.id,
+          threadId: activeThreadId,
+          actionId: script.id,
+          expectedCommand: script.command,
+        },
       });
+      if (result._tag === "Success") {
+        storeEnsureTerminal(activeThreadRef, result.value.terminalId, { open: true, active: true });
+        setLastInvokedScriptByProjectId((current) => ({
+          ...current,
+          [activeProject.id]: script.id,
+        }));
+        if (
+          script.autoOpenPreview &&
+          script.previewUrl &&
+          isPreviewAvailableFor(activeThreadRef.environmentId)
+        ) {
+          const previewResult = await openUrlInPreview({
+            threadRef: activeThreadRef,
+            url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
+            openPreview,
+          });
+          if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {
+            const error = squashAtomCommandFailure(previewResult);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: m(msg("Could not open preview")),
+                description:
+                  thrownErrorMessage(error, m) ?? m(msg("An unexpected error occurred.")),
+              }),
+            );
+          }
+        }
+      } else if (!isAtomCommandInterrupted(result)) {
+        setThreadError(
+          activeThreadId,
+          thrownErrorMessage(squashAtomCommandFailure(result), m) ??
+            m(msg("Could not run action.")),
+        );
+      }
+      return;
     }
+
     const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
     const reusableTerminalId =
       script.stopOnSettle ||
@@ -299,27 +354,6 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
         );
       }
       return;
-    }
-    if (
-      script.autoOpenPreview &&
-      script.previewUrl &&
-      isPreviewAvailableFor(activeThreadRef.environmentId)
-    ) {
-      const previewResult = await openUrlInPreview({
-        threadRef: activeThreadRef,
-        url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
-        openPreview,
-      });
-      if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {
-        const error = squashAtomCommandFailure(previewResult);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: m(msg("Could not open preview")),
-            description: thrownErrorMessage(error, m) ?? m(msg("An unexpected error occurred.")),
-          }),
-        );
-      }
     }
   };
   const runProjectScriptStable = useStableCallback(runProjectScript);

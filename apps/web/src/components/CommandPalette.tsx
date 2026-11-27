@@ -1,3 +1,7 @@
+import { useProjectActions } from "../hooks/useProjectActions";
+import { projectActions } from "../state/projectActions";
+import { approveProjectAction } from "../projectActionApproval";
+import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { decodeMsg, msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
@@ -52,7 +56,7 @@ import {
   AuthSourceControlWriteScope,
   AuthFilesystemReadScope,
   type DesktopWslState,
-  type EnvironmentId,
+  EnvironmentId,
   type FilesystemBrowseResult,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -761,6 +765,15 @@ function OpenCommandPaletteDialog(props: {
     projectByKey,
     currentProjectEnvironmentId,
     currentProjectId,
+  );
+  const actionQuery = useProjectActions(
+    currentProjectEnvironmentId ?? EnvironmentId.make(PRIMARY_LOCAL_ENVIRONMENT_ID),
+    currentProjectId,
+    activeThread?.id,
+  );
+  const runProjectAction = useAtomCommand(projectActions.run);
+  const canRunProjectAction = useAtomValue(
+    projectActions.run.permissionAtom(currentProjectEnvironmentId),
   );
   const currentProjectCwd = currentProject?.workspaceRoot ?? null;
   const currentThreadActionItems = useCommandPaletteThreadActions({
@@ -1840,6 +1853,48 @@ function OpenCommandPaletteDialog(props: {
       ),
       run: async () => toggleProjectGroupPin(currentProjectGroup),
     });
+  }
+  if (activeThread && currentProject && canRunProjectAction && actionQuery.data?.policyAllowed) {
+    for (const action of actionQuery.data.actions)
+      actionItems.push({
+        kind: "action",
+        value: `action:script:${action.id}`,
+        title: action.name,
+        description: action.approved
+          ? action.command
+          : gt("Needs approval · {command}", { command: action.command }),
+        icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+        searchTerms: ["actions", action.name, action.command],
+        run: async () => {
+          setOpen(false);
+          if (
+            !(await approveProjectAction({
+              environmentId: activeThread.environmentId,
+              projectId: currentProject.id,
+              projectTitle: currentProject.title,
+              action,
+            }))
+          )
+            return;
+          const result = await runProjectAction({
+            environmentId: activeThread.environmentId,
+            input: {
+              projectId: currentProject.id,
+              threadId: activeThread.id,
+              actionId: action.id,
+              expectedCommand: action.command,
+            },
+          });
+          if (result._tag === "Success")
+            useTerminalUiStateStore
+              .getState()
+              .ensureTerminal(
+                scopeThreadRef(activeThread.environmentId, activeThread.id),
+                result.value.terminalId,
+                { open: true, active: true },
+              );
+        },
+      });
   }
   const contextualProjectGroup = currentProjectGroup ?? projectGroups[0] ?? null;
   if (contextualProjectGroup) {

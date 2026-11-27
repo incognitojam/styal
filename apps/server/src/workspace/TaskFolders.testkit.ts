@@ -111,6 +111,7 @@ export const layerTaskFoldersWithGit = (
           LayoutCommandApprovals.LayoutCommandApprovals,
           Effect.map(LayoutCommandApprovals.LayoutCommandApprovals, (approvals) =>
             LayoutCommandApprovals.LayoutCommandApprovals.of({
+              ...approvals,
               isApproved: (input) =>
                 approvals
                   .isApproved(input)

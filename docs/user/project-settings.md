@@ -187,11 +187,28 @@ access. Source control & issues contains automatic pull, the default pull reques
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
-The Projects category, under Code, holds the project's name, icon, actions,
-checkouts and removal. Actions belong to a project: editing them creates the project's own list
-on each selected environment, and reset returns to the environment's shared list. A project's
-`t3.json` actions can be imported there. When a project has several checkouts on one environment,
-choose one in the scope line at the top to see or change only that checkout's settings.
+The Projects category, under Code, holds the project's name, icon, actions, checkouts and removal.
+Choose a checkout in the scope line to see its settings.
+
+### Actions
+
+Actions come from `scripts` in `t3.json` on origin's default branch. Commit and merge changes there,
+then use **Fetch now** in Actions to refresh them. Editing a working copy does not change the actions
+that run; the menu lists any unmerged differences. Without a usable origin default branch, actions
+come from `t3.json` in the project folder.
+
+Every command needs approval before its first run, including a manual click. Approval belongs to
+that project on that machine and covers the exact command text, not the scripts it calls. A changed
+command needs approval again; returning to a text approved before does not. Renaming an action or
+changing its unattended flags does not withdraw approval. **Allowed commands** lists approved texts;
+**Remove** makes a command ask again the next time it runs.
+
+For an unapproved setup action, sending the first message offers **Approve and run** or **Start
+without it**. Unattended setup and settle skip unapproved commands and leave a work-log note with
+**Review**. Reviewing approves future runs; it does not replay a skipped command. Agents cannot
+approve. Managed policy can turn project commands off.
+
+### Other defaults
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the

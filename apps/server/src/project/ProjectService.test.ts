@@ -254,15 +254,6 @@ it.layer(layerTest)("ProjectService", (it) => {
         title: "Project",
         workspaceRoot: "/work/project/",
         defaultModelSelection: modelSelection,
-        scripts: [
-          {
-            id: "setup",
-            name: "Setup",
-            command: "vp install",
-            icon: "configure",
-            runOnWorktreeCreate: true,
-          },
-        ],
       });
       assert.equal(created.workspaceRoot, "/work/project");
       assert.isNull(created.repositoryIdentity);
@@ -551,21 +542,13 @@ it.layer(layerTest)("ProjectService", (it) => {
       const invalid = {
         commandId: CommandId.make("command:rejected:script"),
         projectId,
-        scripts: [
-          {
-            id: "Not.Valid",
-            name: "Invalid",
-            command: "true",
-            icon: "play" as const,
-            runOnWorktreeCreate: false,
-          },
-        ],
+        projectIcon: { kind: "monogram" as const, text: "ABC", color: "red" as const },
       };
       const first = yield* service.update(invalid).pipe(Effect.flip);
       assert.equal(first._tag, "ProjectInvalidError");
-      assert.include(first.message, "Script IDs must be 1-24 lowercase letters");
+      assert.include(first.message, "Project monograms must contain at most two characters");
       const replayed = yield* service
-        .update({ ...invalid, scripts: [{ ...invalid.scripts[0]!, id: "valid" }] })
+        .update({ ...invalid, projectIcon: { ...invalid.projectIcon, text: "AB" } })
         .pipe(Effect.flip);
       assert.deepEqual(replayed, first);
       const receipts = yield* sql<{ readonly status: string; readonly aggregate_id: string }>`
@@ -577,60 +560,7 @@ it.layer(layerTest)("ProjectService", (it) => {
         SELECT sequence FROM orchestration_events WHERE command_id = ${invalid.commandId}
       `;
       assert.deepEqual(events, []);
-      assert.deepEqual(Option.getOrThrow(yield* service.getById(projectId)).scripts, []);
-    }),
-  );
-
-  it.effect("saves a project's actions where Settings reads them", () =>
-    Effect.gen(function* () {
-      const service = yield* ProjectService.ProjectService;
-      const settings = yield* ServerSettings.ServerSettingsService;
-      const projectId = ProjectId.make("project:actions");
-      const script = {
-        id: "likec4-start",
-        name: "LikeC4 podgląd",
-        command: "npx -y likec4@latest start",
-        icon: "play" as const,
-        runOnWorktreeCreate: false,
-      };
-      yield* service.create({
-        commandId: CommandId.make("command:actions:create"),
-        projectId,
-        title: "Actions",
-        workspaceRoot: "/work/actions",
-        scripts: [script],
-      });
-      assert.deepEqual(
-        (yield* settings.getSettings).projectSettingsOverrides[projectId]?.defaultProjectScripts,
-        [script],
-      );
-      yield* settings.updateSettings({
-        projectSettingsOverrides: {
-          [projectId]: { defaultProjectScripts: [script], defaultThreadEnvMode: "worktree" },
-        },
-      });
-      yield* service.update({
-        commandId: CommandId.make("command:actions:update"),
-        projectId,
-        scripts: [],
-      });
-      assert.deepEqual((yield* settings.getSettings).projectSettingsOverrides[projectId], {
-        defaultProjectScripts: [],
-        defaultThreadEnvMode: "worktree",
-      });
-      // A retried command must not put its old actions back over a later edit.
-      yield* settings.updateSettings({
-        projectSettingsOverrides: { [projectId]: { defaultProjectScripts: [script] } },
-      });
-      yield* service.update({
-        commandId: CommandId.make("command:actions:update"),
-        projectId,
-        scripts: [],
-      });
-      assert.deepEqual(
-        (yield* settings.getSettings).projectSettingsOverrides[projectId]?.defaultProjectScripts,
-        [script],
-      );
+      assert.isNull(Option.getOrThrow(yield* service.getById(projectId)).projectIcon);
     }),
   );
 

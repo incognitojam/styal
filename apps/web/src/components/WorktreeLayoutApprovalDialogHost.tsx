@@ -42,21 +42,36 @@ export function WorktreeLayoutApprovalDialogHost() {
       <AlertDialogPopup className="max-w-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            <T>Let this project run its worktree commands?</T>
+            {request?.mode === "setup" ? (
+              <T>Approve worktree setup?</T>
+            ) : request?.mode ? (
+              <T>Approve this action?</T>
+            ) : (
+              <T>Let this project run its worktree commands?</T>
+            )}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            <T>
-              <Var>{request?.projectTitle ?? ""}</Var> sets up worktree threads with its own
-              commands from <code>t3.json</code>. They run on this environment's machine with your
-              permissions, outside any agent sandbox. You are asked again whenever their text
-              changes.
-            </T>
+            {request?.mode ? (
+              <T>
+                This command text has not been approved for this project on this machine. It runs
+                with your permissions. Approval covers the command text, not the scripts it calls.
+              </T>
+            ) : (
+              <T>
+                <Var>{request?.projectTitle ?? ""}</Var> sets up worktree threads with its own
+                commands from <code>t3.json</code>. They run on this environment's machine with your
+                permissions, outside any agent sandbox. You are asked again whenever their text
+                changes.
+              </T>
+            )}
           </AlertDialogDescription>
           <div className="flex flex-col gap-3 pt-2 text-left">
             {request?.commands.map((command) => (
               <div key={command.kind} className="flex min-w-0 flex-col gap-1">
                 <span className="text-xs text-muted-foreground">
-                  {m(WORKTREE_LAYOUT_COMMAND_LABELS[command.kind])}
+                  {command.kind === "action"
+                    ? command.name
+                    : m(WORKTREE_LAYOUT_COMMAND_LABELS[command.kind])}
                 </span>
                 <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs">
                   {command.command}
@@ -68,7 +83,7 @@ export function WorktreeLayoutApprovalDialogHost() {
         {/* New buttons for each request: a press begun on one request cannot answer the next. */}
         <AlertDialogFooter key={request?.id}>
           <AlertDialogClose render={<Button variant="outline" />}>
-            <T>Cancel</T>
+            {request?.mode === "setup" ? <T>Start without it</T> : <T>Cancel</T>}
           </AlertDialogClose>
           <Button
             onClick={() => {
@@ -76,7 +91,13 @@ export function WorktreeLayoutApprovalDialogHost() {
               if (request !== null) respondToWorktreeLayoutApproval(request.id, true);
             }}
           >
-            <T>Approve and continue</T>
+            {request?.mode === "review" ? (
+              <T>Approve command</T>
+            ) : request?.mode ? (
+              <T>Approve and run</T>
+            ) : (
+              <T>Approve and continue</T>
+            )}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

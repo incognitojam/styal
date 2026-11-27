@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { type CommandId, ProjectId } from "./baseSchemas.ts";
+import { ProjectId } from "./baseSchemas.ts";
 import {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
@@ -16,7 +16,6 @@ import {
   globalIdleCompaction,
   idleCompactionPatch,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
-  requiredScopesForProjectMutation,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -494,24 +493,6 @@ describe("resolveProjectProviderInstanceEnabled", () => {
       },
     };
     expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(false);
-  });
-});
-
-describe("requiredScopesForProjectMutation", () => {
-  it("adds the settings scope only when a mutation carries scripts", () => {
-    const projectId = "project-1" as ProjectId;
-    const commandId = "command-1" as CommandId;
-    expect(
-      requiredScopesForProjectMutation({ type: "project.update", commandId, projectId }),
-    ).toEqual(["orchestration:operate"]);
-    expect(
-      requiredScopesForProjectMutation({
-        type: "project.update",
-        commandId,
-        projectId,
-        scripts: [],
-      }),
-    ).toEqual(["orchestration:operate", "settings:write"]);
   });
 });
 

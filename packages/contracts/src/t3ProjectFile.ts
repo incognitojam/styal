@@ -27,8 +27,8 @@ export const T3ProjectFileScript = Schema.Struct({
   name: trimmedNonEmpty({
     description: "Display name for the script, shown in the styal scripts menu.",
   }),
-  command: trimmedNonEmpty({
-    description: "Shell command executed in a styal terminal at the project root.",
+  command: Schema.String.check(Schema.isPattern(/\S/)).annotate({
+    description: "Shell command executed in a styal terminal. Approval covers this exact text.",
   }),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
@@ -72,7 +72,7 @@ export const T3ProjectFileScript = Schema.Struct({
     }),
   ),
 }).annotate({
-  description: "A project script that team members can import into styal.",
+  description: "A shared project action.",
 });
 export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
 

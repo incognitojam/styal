@@ -42,6 +42,8 @@ import { TestClock } from "effect/testing";
 
 import * as GitManager from "../git/GitManager.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { layerActions } from "../project/ProjectActions.testkit.ts";
+import type { ProjectAction } from "@t3tools/contracts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerActivation from "../serverActivation.ts";
@@ -582,6 +584,7 @@ function readsFreshGitState(
 
 interface HarnessOptions {
   readonly snapshot: SettlementSnapshot;
+  readonly actions?: readonly ProjectAction[];
   readonly settings?: ContractServerSettings;
   readonly branchPullRequest?: GitManager.GitManager["Service"]["branchPullRequest"];
   readonly pullRequestSummary?: PullRequestService.PullRequestService["Service"]["summary"];
@@ -744,6 +747,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         Queue.offer(closedIdle, input).pipe(Effect.andThen(options.onCloseIdle?.() ?? Effect.void)),
       hasActiveSubprocess: (input) => options.hasActiveSubprocess?.(input) ?? Effect.succeed(false),
     }),
+    layerActions(options.actions, makeProject().id),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
@@ -2390,7 +2394,8 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         runOnSettle: true,
       } as const;
       const fixture = yield* makeHarness({
-        snapshot: makeSnapshot([], [{ ...makeProject(), scripts: [teardown] }, scriptless]),
+        snapshot: makeSnapshot([], [makeProject(), scriptless]),
+        actions: [{ ...teardown, approved: true }],
         currentThreads: [shared, missing, missingScriptless, worktree],
         existingWorktreePaths: ["/worktrees/thread"],
       });

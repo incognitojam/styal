@@ -1,3 +1,4 @@
+import { layerActions } from "../project/ProjectActions.testkit.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -121,7 +122,7 @@ const layerTools = Layer.mergeAll(
 ).pipe(
   Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
-  Layer.provide(layerLaunches),
+  Layer.provide(Layer.merge(layerLaunches, layerActions())),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(
     Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
