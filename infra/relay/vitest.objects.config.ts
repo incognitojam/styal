@@ -8,6 +8,8 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-06-01",
         durableObjects: {
+          EMAILS: { className: "EmailObject", useSQLite: true },
+          CREDENTIAL_ROUTES: { className: "CredentialRouteObject", useSQLite: true },
           ACCOUNTS: { className: "AccountObject", useSQLite: true },
           INVENTORY: { className: "InventoryObject", useSQLite: true },
         },

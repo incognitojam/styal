@@ -4,6 +4,8 @@ import type {
   TunnelOperation,
   TunnelOperationIntent,
 } from "../persistence/TunnelOperationPersistence.ts";
+import { identity, identityMigration, identityInventory } from "./AccountIdentity.ts";
+import type { IdentityCommand } from "./AccountIdentity.ts";
 import { accountName } from "./names.ts";
 import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
 
@@ -13,6 +15,7 @@ export const accountMigrations = [
     user_id TEXT NOT NULL, hostname TEXT NOT NULL, tunnel_name TEXT NOT NULL,
     desired TEXT NOT NULL, phase TEXT NOT NULL, resources TEXT NOT NULL, updated_at TEXT NOT NULL
   ); CREATE INDEX tunnel_operations_pending ON tunnel_operations(phase, updated_at, operation_id);`,
+  identityMigration,
 ];
 
 type Command =
@@ -60,6 +63,30 @@ export class AccountObject extends DurableObject<unknown> {
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, accountMigrations);
     });
+  }
+
+  async identity(request: { version: number; userId: string; command: IdentityCommand }) {
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Identity account mismatch");
+    if (request.command.kind === "create" && request.command.state.userId !== request.userId)
+      throw new Error("Identity owner mismatch");
+    if (
+      request.command.kind === "open-session" &&
+      request.command.session.userId !== request.userId
+    )
+      throw new Error("Session owner mismatch");
+    if (request.command.kind === "begin-email" && request.command.userId !== request.userId)
+      throw new Error("Email owner mismatch");
+    const result = identity(this.ctx.storage, request);
+    return result;
+  }
+
+  async identityOwner(request: { version: number }) {
+    const result = identity(this.ctx.storage, {
+      version: request.version,
+      command: { kind: "read" },
+    });
+    return "state" in result ? (result.state?.userId ?? null) : null;
   }
 
   async journal(request: {
@@ -191,7 +218,10 @@ export class AccountObject extends DurableObject<unknown> {
     return {
       version: request.version,
       schemaVersion: accountMigrations.length,
-      tables: [summarize("relay_tunnel_operations", contents())],
+      tables: [
+        summarize("relay_tunnel_operations", contents()),
+        ...identityInventory(this.ctx.storage),
+      ],
     };
   }
 }

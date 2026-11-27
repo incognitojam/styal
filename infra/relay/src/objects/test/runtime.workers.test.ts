@@ -64,12 +64,12 @@ it("migrates fresh and dormant storage atomically and rejects newer schemas", as
   const stub = env.ACCOUNTS.getByName(accountName("migrations"));
   await runInDurableObject(stub, (_instance, ctx) => {
     const storage = ctx.storage;
-    expect(migrate(storage, accountMigrations)).toBe(1);
+    expect(migrate(storage, accountMigrations)).toBe(accountMigrations.length);
     const upgrade = [...accountMigrations, "CREATE TABLE upgrade_probe (value TEXT)"];
-    expect(migrate(storage, upgrade)).toBe(2);
+    expect(migrate(storage, upgrade)).toBe(accountMigrations.length + 1);
     storage.sql.exec("INSERT INTO upgrade_probe VALUES ('retained')");
     expect(() => migrate(storage, accountMigrations)).toThrow("newer than supported");
-    expect(migrate(storage, upgrade)).toBe(2);
+    expect(migrate(storage, upgrade)).toBe(accountMigrations.length + 1);
     expect(storage.sql.exec("SELECT * FROM upgrade_probe").toArray()).toEqual([
       { value: "retained" },
     ]);
@@ -79,7 +79,9 @@ it("migrates fresh and dormant storage atomically and rejects newer schemas", as
         "CREATE TABLE rolled_back (id TEXT); INSERT INTO missing VALUES (1)",
       ]),
     ).toThrow();
-    expect(storage.sql.exec("SELECT version FROM relay_object_schema").one().version).toBe(2);
+    expect(storage.sql.exec("SELECT version FROM relay_object_schema").one().version).toBe(
+      accountMigrations.length + 1,
+    );
     expect(
       storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'rolled_back'").toArray(),
     ).toEqual([]);
@@ -87,7 +89,7 @@ it("migrates fresh and dormant storage atomically and rejects newer schemas", as
   expect(
     (await env.ACCOUNTS.getByName(accountName("fresh")).inventory({ version: RPC_VERSION }))
       .schemaVersion,
-  ).toBe(1);
+  ).toBe(accountMigrations.length);
 });
 
 it("rejects RPC skew before writes, rolls back batches, and serializes competing stubs", async () => {
