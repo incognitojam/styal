@@ -25,6 +25,7 @@ import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { WorktreeLayoutApprovalDialogHost } from "../components/WorktreeLayoutApprovalDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
+import { RelayAuthDialogs } from "../components/relay-auth/RelayAuthDialogs";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -170,7 +171,12 @@ function RootRouteBranch() {
     pathname === "/connect-agent" ||
     pathname === "/approve-agent"
   ) {
-    return <Outlet />;
+    return (
+      <>
+        <RelayAuthDialogs />
+        <Outlet />
+      </>
+    );
   }
 
   // Handle links before onboarding redirects lose them.
@@ -195,6 +201,7 @@ function RootRouteBranch() {
       ) : null}
       {isElectron ? <RunningThreadKeepAlive /> : null}
       <RelayClientInstallDialog />
+      <RelayAuthDialogs />
       <ConnectOnboardingDialog />
       <SshPasswordPromptDialog />
       <SnapShotCoordinator />

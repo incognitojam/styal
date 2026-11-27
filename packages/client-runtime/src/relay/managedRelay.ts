@@ -6,6 +6,7 @@ import {
   RelayConnectEnvironmentEndpoint,
   type RelayDeviceRegistrationRequest,
   RelayDpopAccessTokenScope,
+  RelaySessionDpopAccessTokenScope,
   RelayDpopTokenExchangeGrantType,
   type RelayEnvironmentConnectRequest,
   type RelayEnvironmentConnectResponse,
@@ -108,6 +109,15 @@ export const ManagedRelayRequestAction = Schema.Literals([
   "read linked T3 Chat account",
   "start T3 Chat linking",
   "unlink T3 Chat account",
+  "refresh relay access token",
+  "send styal Link sign-in code",
+  "verify styal Link sign-in code",
+  "move styal Link sign-in from Clerk",
+  "sign out of styal Link",
+  "read styal Link account",
+  "list styal Link sessions",
+  "sign out a styal Link session",
+  "delete styal Link account",
 ]);
 export type ManagedRelayRequestAction = typeof ManagedRelayRequestAction.Type;
 
@@ -127,6 +137,15 @@ export const ManagedRelayRequestActivity = Schema.Literals([
   "Relay T3 Chat link lookup",
   "Relay T3 Chat link request",
   "Relay T3 Chat unlinking",
+  "Relay access token refresh",
+  "styal Link sign-in code request",
+  "styal Link sign-in code verification",
+  "styal Link sign-in move from Clerk",
+  "styal Link sign-out",
+  "styal Link account request",
+  "styal Link session listing",
+  "styal Link session sign-out",
+  "styal Link account deletion",
 ]);
 export type ManagedRelayRequestActivity = typeof ManagedRelayRequestActivity.Type;
 
@@ -146,6 +165,15 @@ const REQUEST_TIMED_OUT_TEXT: Record<ManagedRelayRequestActivity, string> = {
   "Relay T3 Chat link lookup": msg("Relay T3 Chat link lookup timed out."),
   "Relay T3 Chat link request": msg("Relay T3 Chat link request timed out."),
   "Relay T3 Chat unlinking": msg("Relay T3 Chat unlinking timed out."),
+  "Relay access token refresh": msg("Relay access token refresh timed out."),
+  "styal Link sign-in code request": msg("styal Link sign-in code request timed out."),
+  "styal Link sign-in code verification": msg("styal Link sign-in code verification timed out."),
+  "styal Link sign-in move from Clerk": msg("styal Link sign-in move from Clerk timed out."),
+  "styal Link sign-out": msg("styal Link sign-out timed out."),
+  "styal Link account request": msg("styal Link account request timed out."),
+  "styal Link session listing": msg("styal Link session listing timed out."),
+  "styal Link session sign-out": msg("styal Link session sign-out timed out."),
+  "styal Link account deletion": msg("styal Link account deletion timed out."),
 };
 
 export class ManagedRelayRequestTimeoutError extends Schema.TaggedError<ManagedRelayRequestTimeoutError>()(
@@ -244,6 +272,42 @@ const REQUEST_FAILED_TEXT: Record<
     failed: msg("Could not unlink T3 Chat account."),
     failedWithDetail: msg("Could not unlink T3 Chat account:"),
   },
+  "refresh relay access token": {
+    failed: msg("Could not refresh relay access token."),
+    failedWithDetail: msg("Could not refresh relay access token:"),
+  },
+  "send styal Link sign-in code": {
+    failed: msg("Could not send styal Link sign-in code."),
+    failedWithDetail: msg("Could not send styal Link sign-in code:"),
+  },
+  "verify styal Link sign-in code": {
+    failed: msg("Could not verify styal Link sign-in code."),
+    failedWithDetail: msg("Could not verify styal Link sign-in code:"),
+  },
+  "move styal Link sign-in from Clerk": {
+    failed: msg("Could not move styal Link sign-in from Clerk."),
+    failedWithDetail: msg("Could not move styal Link sign-in from Clerk:"),
+  },
+  "sign out of styal Link": {
+    failed: msg("Could not sign out of styal Link."),
+    failedWithDetail: msg("Could not sign out of styal Link:"),
+  },
+  "read styal Link account": {
+    failed: msg("Could not read styal Link account."),
+    failedWithDetail: msg("Could not read styal Link account:"),
+  },
+  "list styal Link sessions": {
+    failed: msg("Could not list styal Link sessions."),
+    failedWithDetail: msg("Could not list styal Link sessions:"),
+  },
+  "sign out a styal Link session": {
+    failed: msg("Could not sign out a styal Link session."),
+    failedWithDetail: msg("Could not sign out a styal Link session:"),
+  },
+  "delete styal Link account": {
+    failed: msg("Could not delete styal Link account."),
+    failedWithDetail: msg("Could not delete styal Link account:"),
+  },
 };
 
 export class ManagedRelayRequestFailedError extends Schema.TaggedError<ManagedRelayRequestFailedError>()(
@@ -272,7 +336,7 @@ export class ManagedRelayRequestFailedError extends Schema.TaggedError<ManagedRe
 export class ManagedRelayAccessTokenScopesUnexpectedError extends Schema.TaggedError<ManagedRelayAccessTokenScopesUnexpectedError>()(
   "ManagedRelayAccessTokenScopesUnexpectedError",
   {
-    requestedScopes: Schema.Array(RelayDpopAccessTokenScope),
+    requestedScopes: Schema.Array(RelaySessionDpopAccessTokenScope),
     grantedScope: Schema.String,
   },
 ) {

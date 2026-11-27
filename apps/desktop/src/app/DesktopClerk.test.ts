@@ -141,10 +141,10 @@ describe("DesktopClerk", () => {
       name: "development",
       isDevelopment: true,
       platform: "win32" as const,
-      userData: "/tmp/app-data/t3code-dev",
+      userData: "/tmp/app-data/styal-dev",
     },
   ])(
-    "creates the bridge before startup can yield to the event loop ($name)",
+    "configures the profile and app links synchronously without Clerk ($name)",
     ({ isDevelopment, platform, userData }) => {
       const events: string[] = [];
       storageMock.mockReturnValue(storageAdapter);
@@ -166,29 +166,11 @@ describe("DesktopClerk", () => {
         "requestSingleInstanceLock",
         "on:second-instance",
         "on:open-url",
-        "createClerkBridge",
       ]);
-      assert.deepEqual(storageMock.mock.calls, [
-        [{ path: NodePath.join(NodePath.resolve(clerkStateDir), "clerk") }],
-      ]);
-      assert.strictEqual(createClerkBridgeMock.mock.calls[0]?.[0]?.storage, storageAdapter);
+      assert.equal(storageMock.mock.calls.length, 0);
+      assert.equal(createClerkBridgeMock.mock.calls.length, 0);
     },
   );
-
-  it.effect("keeps Clerk tokens under a relative state directory instead of userData", () => {
-    storageMock.mockReturnValue(storageAdapter);
-    createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
-
-    return Effect.sync(() => {
-      assert.deepEqual(storageMock.mock.calls, [
-        [{ path: NodePath.resolve("relative-state", "clerk") }],
-      ]);
-    }).pipe(
-      Effect.provide(
-        layerDesktopClerk(true, [], "darwin", undefined, undefined, undefined, "relative-state"),
-      ),
-    );
-  });
 
   it.effect.each(["before configure", "after configure"] as const)(
     "reveals the running window when a second instance launches %s",

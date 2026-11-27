@@ -1,4 +1,4 @@
-import { Discovery } from "@t3tools/client-runtime/relay";
+import { Discovery } from "@t3tools/client-runtime/relay-session";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { T, useGT, Var } from "gt-react";
 import { useState } from "react";
@@ -48,10 +48,10 @@ export function RemoveT3ConnectEnvironmentDialog({
         openAccountPage();
       }}
     >
-      <T>T3 Connect settings</T>
+      <T>styal Link settings</T>
     </InlineButton>
   ) : (
-    gt("T3 Connect settings")
+    gt("styal Link settings")
   );
 
   return (
@@ -75,14 +75,14 @@ export function RemoveT3ConnectEnvironmentDialog({
             <AlertDialogDescription>
               {shown.registration === "registered" ? (
                 <T>
-                  It stays on your T3 Connect account and keeps its host space. Deregister it in{" "}
+                  It stays on your styal Link account and keeps its host space. Deregister it in{" "}
                   <Var>{accountPageLink}</Var> to free it.
                 </T>
               ) : shown.registration === "unregistered" ? (
-                gt("It's no longer on your T3 Connect account.")
+                gt("It's no longer on your styal Link account.")
               ) : (
                 <T>
-                  This doesn't change your T3 Connect account. To deregister it there, use{" "}
+                  This doesn't change your styal Link account. To deregister it there, use{" "}
                   <Var>{accountPageLink}</Var>.
                 </T>
               )}

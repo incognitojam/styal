@@ -1,6 +1,7 @@
 # T3 Connect
 
-T3 Connect uses Clerk for cloud identity. The relay manages environment links, bootstrap
+Web and desktop sign in to the configured relay with emailed codes and DPoP-bound refresh sessions.
+Mobile and terminal clients still use Clerk for cloud identity. The relay manages environment links, bootstrap
 credentials, and managed tunnel allocations. Regular HTTP and WebSocket traffic goes directly from
 clients to the environment's tunnel hostname—the relay Worker is not in the data path.
 
@@ -61,7 +62,7 @@ slots.
 
 ## OAuth traps
 
-- Interactive clients use Clerk session-template JWTs; the headless CLI uses a public PKCE OAuth
+- The mobile client uses Clerk session-template JWTs; the headless CLI uses a public PKCE OAuth
   client with no secret. The relay must accept both.
 - Loopback CLI login starts on the hosted `/connect` page so sign-in finishes before Clerk's
   authorize endpoint (going straight to authorize drops parameters across sign-in redirects).

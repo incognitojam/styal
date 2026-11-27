@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "../cloud/useRelayAccount";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { T } from "gt-react";
@@ -11,8 +11,8 @@ import { isElectron } from "../env";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { useRelayEnvironmentDiscovery } from "../state/environments";
 import { InstallT3Commands } from "./InstallT3Commands";
-import { retryClerkLoad, useClerkLoadFailed } from "./clerk/clerkLoadFailure";
-import { useT3ConnectAuthPrompt } from "./clerk/useT3ConnectAuthPrompt";
+import { retryRelayLoad, useRelayLoadFailed } from "../cloud/useRelayAccount";
+import { relayAuthPrompt } from "./relay-auth/relayAuthDialogState";
 import { CloudEnvironmentConnectRows } from "./cloud/CloudEnvironmentConnectList";
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
@@ -68,9 +68,9 @@ export function HostedEmptyState() {
 }
 
 function T3ConnectSteps() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const loadFailed = useClerkLoadFailed();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { isLoaded, isSignedIn } = useRelayAccount();
+  const loadFailed = useRelayLoadFailed();
+  const { openAuthPrompt } = relayAuthPrompt();
   // Adding the first computer unmounts this screen. Wait for all health checks
   // so every compatible registration is queued before that happens.
   const [autoAddedComputers] = useState(() => new Set<EnvironmentId>());
@@ -82,7 +82,7 @@ function T3ConnectSteps() {
     <>
       <SetupStep number={1}>
         {loadFailed ? (
-          <Button size="sm" onClick={retryClerkLoad}>
+          <Button size="sm" onClick={retryRelayLoad}>
             <T>Retry sign-in</T>
           </Button>
         ) : isSignedIn ? (

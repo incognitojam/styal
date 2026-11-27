@@ -12,3 +12,8 @@ export type ConnectOnboardingOptOutState = typeof ConnectOnboardingOptOutSchema.
 export const EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE: ConnectOnboardingOptOutState = {
   optOutAccounts: [],
 };
+
+import { Atom } from "effect/reactivity";
+export const interactiveRelaySignInAtom = Atom.make<{ readonly accountId: string } | null>(
+  null,
+).pipe(Atom.keepAlive);

@@ -6,7 +6,7 @@ import {
   EnvironmentId,
   type EnvironmentCloudLinkStateResult,
 } from "@t3tools/contracts";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@t3tools/client-runtime/relay-session";
 import {
   RelayEnvironmentLinkLimitExceededError,
   type RelayManagedEndpointProviderKind,
@@ -23,7 +23,7 @@ const testState = vi.hoisted(() => ({
   snapshot: null as EnvironmentCloudLinkStateResult | null,
   renderedSnapshot: null as EnvironmentCloudLinkStateResult | null,
   relayProviderKind: null as RelayManagedEndpointProviderKind | null,
-  getToken: vi.fn<() => Promise<string | null>>(),
+  getCredential: vi.fn<() => { accountId: string; refreshToken: string } | null>(),
   link: vi.fn(),
   unlink: vi.fn(),
   preferences: vi.fn(),
@@ -47,9 +47,17 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
     ),
   })) as never,
 }));
-vi.mock(import("@clerk/react"), async (original) => ({
-  ...(await original()),
-  useAuth: (() => ({ getToken: testState.getToken, isSignedIn: true })) as never,
+vi.mock(import("./useRelayAccount"), () => ({
+  useRelayAccount: () =>
+    ({
+      isLoaded: true,
+      isSignedIn: true,
+      session: {
+        get credential() {
+          return testState.getCredential();
+        },
+      },
+    }) as never,
 }));
 vi.mock(import("../components/ui/toast"), async (original) => {
   const actual = await original();
@@ -90,10 +98,6 @@ vi.mock(import("./cloudLinkState"), async (original) => ({
     isPending: false,
     refresh: testState.refreshLink,
   })) as never,
-}));
-vi.mock(import("./publicConfig"), async (original) => ({
-  ...(await original()),
-  resolveRelayClerkTokenOptions: () => ({}) as never,
 }));
 
 import { CloudEnvironmentLinkError } from "./linkEnvironment";
@@ -153,7 +157,9 @@ function setup() {
   testState.snapshot = linkedState;
   testState.renderedSnapshot = linkedState;
   testState.relayProviderKind = null;
-  testState.getToken.mockReset().mockResolvedValue("clerk-token");
+  testState.getCredential
+    .mockReset()
+    .mockReturnValue({ accountId: "account-1", refreshToken: "synthetic-refresh" });
   for (const command of [
     testState.link,
     testState.unlink,
@@ -176,7 +182,6 @@ describe("useCloudLinkController", () => {
       testState.scopes.delete(scope);
 
       expect(await screen.reconcile({ managedTunnel: true, publish: true })).toBe(false);
-      expect(testState.getToken).not.toHaveBeenCalled();
       expectNoMutations();
     },
   );
@@ -187,18 +192,17 @@ describe("useCloudLinkController", () => {
     await using screen = await mountController();
 
     expect(await screen.reconcile({ managedTunnel: false, publish: true })).toBe(false);
-    expect(testState.getToken).not.toHaveBeenCalled();
     expectNoMutations();
   });
 
   it.each([AuthRelayReadScope, AuthRelayWriteScope])(
-    "rechecks %s after requesting the cloud token",
+    "rechecks %s after reading the relay credential",
     async (scope) => {
       using _setup = setup();
       await using screen = await mountController();
-      testState.getToken.mockImplementationOnce(async () => {
+      testState.getCredential.mockImplementationOnce(() => {
         testState.scopes.delete(scope);
-        return "clerk-token";
+        return { accountId: "account-1", refreshToken: "synthetic-refresh" };
       });
 
       expect(await screen.reconcile({ managedTunnel: false, publish: false })).toBe(false);
@@ -206,25 +210,25 @@ describe("useCloudLinkController", () => {
     },
   );
 
-  it("stops if the link-state read fails while requesting the cloud token", async () => {
+  it("stops if the link-state read fails while reading the relay credential", async () => {
     using _setup = setup();
     await using screen = await mountController();
-    testState.getToken.mockImplementationOnce(async () => {
+    testState.getCredential.mockImplementationOnce(() => {
       testState.snapshot = null;
-      return "clerk-token";
+      return { accountId: "account-1", refreshToken: "synthetic-refresh" };
     });
 
     expect(await screen.reconcile({ managedTunnel: true, publish: true })).toBe(false);
     expectNoMutations();
   });
 
-  it("still lets an authorized user unlink when the cloud token is unavailable", async () => {
+  it("still lets an authorized user unlink when the relay credential is unavailable", async () => {
     using _setup = setup();
     await using screen = await mountController();
-    testState.getToken.mockRejectedValueOnce(new Error("Cloud sign-in unavailable"));
+    testState.getCredential.mockReturnValueOnce(null);
 
     expect(await screen.reconcile({ managedTunnel: false, publish: false })).toBe(true);
-    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, clerkToken: null });
+    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, credential: null });
     expect(testState.link).not.toHaveBeenCalled();
     expect(testState.preferences).not.toHaveBeenCalled();
   });

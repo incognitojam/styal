@@ -23,7 +23,7 @@ import {
 } from "@t3tools/contracts/relay";
 import { EnvironmentRegistry, EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay";
+import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay-session";
 import { executeConnectedEnvironmentHttpRequest } from "@t3tools/client-runtime/state/environmentHttpAuth";
 
 import { m } from "../i18n/messages";
@@ -285,7 +285,7 @@ export const readCloudLinkState: (input: {
     );
   });
 
-/** Runs the environment's T3 Connect reachability check now; the link state then reports it. */
+/** Runs the environment's styal Link reachability check now; the link state then reports it. */
 export const checkCloudReachability: (input: {
   readonly target: CloudLinkTarget;
 }) => Effect.Effect<EnvironmentConnectReachability, CloudEnvironmentLinkError, CloudLinkServices> =
@@ -300,8 +300,8 @@ export const checkCloudReachability: (input: {
         request: ({ client, headers }) => client.checkReachability({ headers }),
       },
       {
-        message: msg("Could not check T3 Connect."),
-        withDetail: msg("Could not check T3 Connect: {detail}"),
+        message: msg("Could not check styal Link."),
+        withDetail: msg("Could not check styal Link: {detail}"),
       },
     );
   });
@@ -334,14 +334,14 @@ export const updateCloudPreferences: (input: {
 
 export const unlinkEnvironmentFromCloud: (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string | null;
+  readonly credential: ManagedRelay.ManagedRelayCredential | null;
 }) => Effect.Effect<
   void,
   CloudEnvironmentLinkError,
   CloudLinkServices | ManagedRelay.ManagedRelayClient
 > = Effect.fn("linkEnvironment.unlinkEnvironmentFromCloud")(function* (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string | null;
+  readonly credential: ManagedRelay.ManagedRelayCredential | null;
 }) {
   yield* connectRequest(
     input.target,
@@ -357,11 +357,11 @@ export const unlinkEnvironmentFromCloud: (input: {
   );
 
   const configuredRelayUrl = relayUrl();
-  if (configuredRelayUrl && input.clerkToken) {
+  if (configuredRelayUrl && input.credential) {
     const relayClient = yield* ManagedRelay.ManagedRelayClient;
     yield* relayClient
       .unlinkEnvironment({
-        clerkToken: input.clerkToken,
+        credential: input.credential,
         environmentId: input.target.environmentId,
       })
       .pipe(
@@ -369,7 +369,7 @@ export const unlinkEnvironmentFromCloud: (input: {
           decodedRelayClientError(
             m(
               msg(
-                "Disconnected locally, but T3 Connect did not confirm it removed this environment",
+                "Disconnected locally, but styal Link did not confirm it removed this environment",
               ),
             ),
           ),
@@ -384,7 +384,7 @@ const PUBLISH_ONLY_PROVIDER_KIND = "manual" satisfies RelayManagedEndpointProvid
 
 export const linkEnvironmentToCloud: (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string;
+  readonly credential: ManagedRelay.ManagedRelayCredential;
   readonly mode?: CloudLinkMode;
 }) => Effect.Effect<
   void,
@@ -392,7 +392,7 @@ export const linkEnvironmentToCloud: (input: {
   CloudLinkServices | ManagedRelay.ManagedRelayClient
 > = Effect.fn("linkEnvironment.linkEnvironmentToCloud")(function* (input: {
   readonly target: CloudLinkTarget;
-  readonly clerkToken: string;
+  readonly credential: ManagedRelay.ManagedRelayCredential;
   readonly mode?: CloudLinkMode;
 }) {
   const configuredRelayUrl = relayUrl();
@@ -414,7 +414,7 @@ export const linkEnvironmentToCloud: (input: {
 
   const challenge = yield* relayClient
     .createEnvironmentLinkChallenge({
-      clerkToken: input.clerkToken,
+      credential: input.credential,
       payload: {
         notificationsEnabled: true,
         liveActivitiesEnabled: true,
@@ -455,7 +455,7 @@ export const linkEnvironmentToCloud: (input: {
   );
   const link = yield* relayClient
     .linkEnvironment({
-      clerkToken: input.clerkToken,
+      credential: input.credential,
       payload: {
         proof,
         notificationsEnabled: true,

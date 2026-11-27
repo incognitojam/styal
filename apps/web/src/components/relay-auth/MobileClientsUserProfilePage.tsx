@@ -1,5 +1,5 @@
-import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
 import { T, useGT, useMessages } from "gt-react";
+import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
 import { SmartphoneIcon } from "lucide-react";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
@@ -12,11 +12,7 @@ import {
   mobileClientPlatformLabel,
   mobileClientUpdatedAtLabel,
 } from "./MobileClientsUserProfilePage.logic";
-import {
-  ClerkUserProfilePage,
-  ClerkUserProfileRefreshButton,
-  ClerkUserProfileRow,
-} from "./ClerkUserProfilePage";
+import { AccountPage, AccountRefreshButton, AccountRow } from "./AccountPage";
 
 const MOBILE_CLIENT_SKELETON_ROWS = ["primary", "secondary"] as const;
 
@@ -27,21 +23,18 @@ function MobileClientStatusBadge({
   readonly enabled: boolean;
   readonly label: string;
 }) {
-  const gt = useGT();
   return (
     <Badge variant={enabled ? "success" : "outline"}>
-      {enabled
-        ? gt("{label}: On", { label, $context: "a setting is on" })
-        : gt("{label}: Off", { label, $context: "a setting is off" })}
+      {label}: {enabled ? <T>On</T> : <T>Off</T>}
     </Badge>
   );
 }
 
 function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord }) {
   const gt = useGT();
-  const m = useMessages();
+  const resolve = useMessages();
   return (
-    <ClerkUserProfileRow icon={<SmartphoneIcon className="size-4" />}>
+    <AccountRow icon={<SmartphoneIcon className="size-4" />}>
       <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-sm leading-4.5 font-medium text-foreground">
@@ -52,7 +45,7 @@ function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord 
           </p>
         </div>
         <p className="shrink-0 text-2xs leading-4 text-muted-foreground/75">
-          {mobileClientUpdatedAtLabel(device.updatedAt, m)}
+          {mobileClientUpdatedAtLabel(device.updatedAt, resolve)}
         </p>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -66,9 +59,9 @@ function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord 
         />
       </div>
       <p className="mt-1.5 text-xs leading-4.5 text-muted-foreground/80">
-        {mobileClientNotificationDetail(device, m)}
+        {mobileClientNotificationDetail(device, resolve)}
       </p>
-    </ClerkUserProfileRow>
+    </AccountRow>
   );
 }
 
@@ -107,7 +100,7 @@ function EmptyMobileClients() {
         </EmptyTitle>
         <EmptyDescription>
           <T>
-            Install styal on your phone and sign in to T3 Connect to get push notifications and Live
+            Install styal on your phone and sign in to styal Link to get push notifications and Live
             Activities.
           </T>
         </EmptyDescription>
@@ -117,22 +110,19 @@ function EmptyMobileClients() {
 }
 
 export function MobileClientsUserProfilePage() {
-  const devicesState = useManagedRelayDevices();
   const gt = useGT();
+  const devicesState = useManagedRelayDevices();
   const devices = devicesState.data ?? [];
   const isInitialLoad =
     !devicesState.accountId || (devicesState.data === null && !devicesState.error);
   const hasErrorWithoutData = devicesState.error !== null && devicesState.data === null;
 
   return (
-    <ClerkUserProfilePage
+    <AccountPage
       title={gt("Mobile clients")}
       description={gt("Mobile devices that get notifications from your environments.")}
       action={
-        <ClerkUserProfileRefreshButton
-          isPending={devicesState.isPending}
-          onClick={devicesState.refresh}
-        />
+        <AccountRefreshButton isPending={devicesState.isPending} onClick={devicesState.refresh} />
       }
     >
       <div>
@@ -167,6 +157,6 @@ export function MobileClientsUserProfilePage() {
           </div>
         )}
       </div>
-    </ClerkUserProfilePage>
+    </AccountPage>
   );
 }

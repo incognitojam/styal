@@ -77,6 +77,9 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         hop: "relay",
         ...(error.dpopFailureReason === "time_window" ? { failureCause: "clock_skew" } : {}),
       });
+    case "RelaySignInCodeInvalidError":
+    case "RelayAuthRateLimitedError":
+    case "RelayEmailSignInUnavailableError":
     case "RelayEnvironmentLinkProofExpiredError":
     case "RelayAgentActivityPublishProofExpiredError":
     case "RelayAgentActivityPublishProofInvalidError":

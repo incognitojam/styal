@@ -350,21 +350,37 @@ export const make = Effect.gen(function* () {
     identity: ClientCapabilities.CloudSessionIdentity,
   ) {
     yield* assertSession(identity);
-    const clerkToken = yield* cloudSession.clerkToken.pipe(
-      Effect.withSpan("relay.connection.cloudSessionToken.resolve"),
-    );
+    const clerkToken = cloudSession.sessionRelay
+      ? null
+      : yield* cloudSession.clerkToken.pipe(
+          Effect.withSpan("relay.connection.cloudSessionToken.resolve"),
+        );
     const deviceId = yield* deviceIdentity.deviceId.pipe(
       Effect.withSpan("relay.connection.deviceIdentity.resolve"),
     );
     yield* assertSession(identity);
-    const connected = yield* relay
-      .connectEnvironment({
-        clerkToken,
-        scopes: [RelayEnvironmentConnectScope],
-        environmentId,
-        ...(Option.isSome(deviceId) ? { deviceId: deviceId.value } : {}),
-      })
-      .pipe(Effect.mapError(mapManagedRelayError));
+    const input = {
+      scopes: [RelayEnvironmentConnectScope],
+      environmentId,
+      ...(Option.isSome(deviceId) ? { deviceId: deviceId.value } : {}),
+    };
+    const connect: Effect.Effect<
+      import("@t3tools/contracts/relay").RelayEnvironmentConnectResponse,
+      ManagedRelay.ManagedRelayClientError | ConnectionBlockedError
+    > =
+      cloudSession.sessionRelay && identity.credential
+        ? cloudSession.sessionRelay.connectEnvironment({
+            ...input,
+            credential: identity.credential,
+          })
+        : clerkToken !== null
+          ? relay.connectEnvironment({ ...input, clerkToken })
+          : Effect.fail(sessionChanged());
+    const connected = yield* connect.pipe(
+      Effect.mapError((error) =>
+        error._tag === "ConnectionBlockedError" ? error : mapManagedRelayError(error),
+      ),
+    );
     if (connected.environmentId !== environmentId) {
       return yield* environmentMismatchError({
         expected: environmentId,

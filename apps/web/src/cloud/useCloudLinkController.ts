@@ -1,11 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "./useRelayAccount";
 import { findErrorTraceId, thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { AuthRelayReadScope, AuthRelayWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@t3tools/client-runtime/relay-session";
 import {
   isAtomCommandInterrupted,
-  settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
@@ -31,7 +30,7 @@ import {
   updateEnvironmentPreferences as updateEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
 import { readCachedCloudLinkState, useCloudLinkState } from "./cloudLinkState";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
+
 import { cloudChangeReplacesLink, isManagedTunnelActive } from "./t3ConnectState";
 
 export interface CloudLinkDesiredState {
@@ -54,7 +53,7 @@ function tunnelLimitFromLinkFailure(cause: unknown): number | null {
 }
 
 export function useCloudLinkController(environmentId: EnvironmentId | null) {
-  const { getToken, isSignedIn } = useAuth();
+  const { session, isSignedIn } = useRelayAccount();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -76,16 +75,16 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
   const [tunnelLimit, setTunnelLimit] = useState<number | null>(null);
 
   const reportUpdateFailure = (cause: unknown, reason?: string) => {
-    const message = thrownErrorMessage(cause, m) ?? m(msg("Could not update T3 Connect access."));
+    const message = thrownErrorMessage(cause, m) ?? m(msg("Could not update styal Link access."));
     const traceId = findErrorTraceId(cause);
-    console.error("[t3-connect] Could not update T3 Connect", { message, traceId, cause });
+    console.error("[t3-connect] Could not update styal Link", { message, traceId, cause });
     setOperationError(
       traceId ? m(msg("{message} Trace ID: {traceId}", { message, traceId })) : message,
     );
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: m(msg("Could not update T3 Connect")),
+        title: m(msg("Could not update styal Link")),
         description: reason ?? relayFailureReason(cause) ?? message,
         ...(traceId
           ? {
@@ -131,7 +130,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       ) {
         reportUpdateFailure(
           new Error(
-            m(msg("This connection needs permission to view and manage T3 Connect settings.")),
+            m(msg("This connection needs permission to view and manage styal Link settings.")),
           ),
         );
         return false;
@@ -142,7 +141,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       const state = readCachedCloudLinkState(target);
       if (state === null) {
         reportUpdateFailure(
-          new Error(m(msg("Wait until the current T3 Connect settings can be read."))),
+          new Error(m(msg("Wait until the current styal Link settings can be read."))),
         );
       }
       return state;
@@ -150,7 +149,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
     if (!canManageLink()) return false;
     const wantsLink = desired.managedTunnel || desired.publish;
     if (wantsLink && readLinkState() === null) return false;
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
+    const credential = session?.credential ?? null;
     if (!canManageLink()) return false;
 
     // A failed mutation may have partially applied, so refresh server state on every exit.
@@ -158,7 +157,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       // Unlink needs no relay token; failed token reads must still allow it.
       const unlinkResult = await unlinkEnvironment({
         target,
-        clerkToken: tokenResult._tag === "Success" ? (tokenResult.value ?? null) : null,
+        credential,
       });
       refreshManagedTunnelUsage();
       if (unlinkResult._tag === "Failure") {
@@ -170,7 +169,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
           reportUpdateFailure(
             cause,
             relayKeptLink
-              ? m(msg("Disconnected here, but T3 Connect still lists it. Remove it in Account."))
+              ? m(msg("Disconnected here, but styal Link still lists it. Remove it in Account."))
               : undefined,
           );
         }
@@ -181,13 +180,8 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
     } else {
       const currentLinkState = readLinkState();
       if (currentLinkState === null) return false;
-      if (tokenResult._tag === "Failure") {
-        reportUpdateFailure(squashAtomCommandFailure(tokenResult));
-        return false;
-      }
-      const clerkToken = tokenResult.value;
-      if (!clerkToken) {
-        reportUpdateFailure(new Error(m(msg("Sign in to T3 Connect before enabling this."))));
+      if (!credential) {
+        reportUpdateFailure(new Error(m(msg("Sign in to styal Link before enabling this."))));
         return false;
       }
       if (cloudChangeReplacesLink(currentLinkState, relayProviderKind, desired)) {
@@ -196,7 +190,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
             new Error(
               m(
                 msg(
-                  "This connection needs the relay configuration permission to configure T3 Connect.",
+                  "This connection needs the relay configuration permission to configure styal Link.",
                 ),
               ),
             ),
@@ -205,7 +199,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
         }
         const linkResult = await linkEnvironment({
           target,
-          clerkToken,
+          credential,
           mode: desired.managedTunnel ? "managed" : "publish_only",
         });
         // Any link attempt can change the account's tunnel count.

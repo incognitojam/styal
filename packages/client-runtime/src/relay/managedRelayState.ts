@@ -232,7 +232,7 @@ export const deregisterManagedRelayEnvironment = Effect.fn(
   yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
 });
 
-/** Returns the T3 Chat page URL where the signed-in user confirms the link. */
+/** @public Returns the T3 Chat page URL for legacy Clerk clients. */
 export const createManagedRelayT3ChatLinkRequest = Effect.fn(
   "clientRuntime.managedRelaySession.createT3ChatLinkRequest",
 )(function* (registry: AtomRegistry.AtomRegistry, input: { readonly accountId: string }) {
@@ -241,6 +241,7 @@ export const createManagedRelayT3ChatLinkRequest = Effect.fn(
   return (yield* relay.createT3ChatLinkRequest({ clerkToken })).url;
 });
 
+/** @public */
 export const unlinkManagedRelayT3Chat = Effect.fn("clientRuntime.managedRelaySession.unlinkT3Chat")(
   function* (registry: AtomRegistry.AtomRegistry, input: { readonly accountId: string }) {
     const clerkToken = yield* requireSessionClerkToken(registry, input.accountId, "unlink-t3chat");

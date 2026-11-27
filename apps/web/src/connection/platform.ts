@@ -1,3 +1,4 @@
+import { runtime } from "../lib/runtime";
 import { msg } from "gt-react";
 import {
   ClientCapabilities,
@@ -22,7 +23,14 @@ import {
 } from "@t3tools/client-runtime/connection";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import {
+  ManagedRelay,
+  managedRelayAccountChanges,
+  managedRelayAuthLoadChanges,
+  managedRelayAuthLoadAtom,
+  managedRelayMissingSessionError,
+  managedRelaySessionAtom,
+} from "@t3tools/client-runtime/relay-session";
 import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
 import {
   AuthStandardClientScopes,
@@ -164,6 +172,9 @@ const layerWakeups = Wakeups.layer({
         ).pipe(Effect.asVoid),
       ),
       managedRelayAccountChanges(appAtomRegistry).pipe(
+        Stream.map(() => "credentials-changed" as const),
+      ),
+      managedRelayAuthLoadChanges(appAtomRegistry).pipe(
         Stream.map(() => "credentials-changed" as const),
       ),
       networkPathChanges,
@@ -365,7 +376,10 @@ const analyticsDevice = {
 };
 
 const layerCapabilities = Layer.effectContext(
-  Effect.sync(() => {
+  Effect.gen(function* () {
+    const sessionRelay = yield* Effect.promise(() =>
+      runtime.runPromise(ManagedRelay.ManagedRelayClient),
+    );
     const presentation = ClientCapabilities.ClientPresentation.of({
       metadata: currentClientMetadata(),
     });
@@ -373,31 +387,10 @@ const layerCapabilities = Layer.effectContext(
       identity: Effect.sync(() =>
         Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
       ),
-      clerkToken: Effect.gen(function* () {
-        const session = appAtomRegistry.get(managedRelaySessionAtom);
-        if (session === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: m(msg("Sign in to T3 Connect to connect this environment.")),
-          });
-        }
-        const token = yield* session.readClerkToken().pipe(
-          Effect.mapError(
-            (error) =>
-              new ConnectionTransientError({
-                reason: "network",
-                detail: error.message,
-              }),
-          ),
-        );
-        if (token === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: m(msg("The T3 Connect session is unavailable.")),
-          });
-        }
-        return token;
-      }),
+      sessionRelay,
+      clerkToken: Effect.failSync(() =>
+        managedRelayMissingSessionError(appAtomRegistry.get(managedRelayAuthLoadAtom)),
+      ),
     });
     const identity = ClientCapabilities.RelayDeviceIdentity.of({
       deviceId: Effect.succeedNone,

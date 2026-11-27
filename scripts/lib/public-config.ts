@@ -34,7 +34,12 @@ export function loadRepoEnv({
 
   for (const source of [rootEnv, localEnv, baseEnv]) {
     for (const [key, value] of Object.entries(source)) {
-      if (value && /(?:RELAY|CLERK|POSTHOG|OTLP|OBSERVE)/.test(key)) {
+      if (
+        value &&
+        /(?:RELAY|CLERK|POSTHOG|OTLP|OBSERVE)/.test(key) &&
+        key !== "T3CODE_RELAY_URL" &&
+        key !== "VITE_T3CODE_RELAY_URL"
+      ) {
         throw new Error(`Restart builds require unset service configuration: ${key}`);
       }
     }

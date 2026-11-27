@@ -1,3 +1,4 @@
+import type * as SessionRelay from "../relay/sessionRelay.ts";
 import {
   type AuthClientPresentationMetadata,
   type DesktopSshEnvironmentBootstrap,
@@ -23,6 +24,7 @@ export interface ProvisionedSshEnvironment extends PreparedSshEnvironment {
 /** Stable for one signed-in session, including same-account token refreshes. */
 export interface CloudSessionIdentity {
   readonly accountId: string;
+  readonly credential?: SessionRelay.ManagedRelayCredential;
 }
 
 export class CloudSession extends Context.Service<
@@ -30,6 +32,7 @@ export class CloudSession extends Context.Service<
   {
     readonly identity: Effect.Effect<Option.Option<CloudSessionIdentity>>;
     readonly clerkToken: Effect.Effect<string, ConnectionAttemptError>;
+    readonly sessionRelay?: SessionRelay.ManagedRelayClient["Service"];
   }
 >()("@t3tools/client-runtime/platform/capabilities/CloudSession") {}
 

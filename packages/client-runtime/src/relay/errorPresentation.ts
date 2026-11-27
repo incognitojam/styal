@@ -39,6 +39,8 @@ export function relayProtectedErrorText(error: RelayProtectedError): MarkedText 
   switch (error._tag) {
     case "RelayAuthInvalidError":
       switch (error.reason) {
+        case "invalid_session":
+          return [msg("Your styal Link sign-in has ended. Sign in again.")];
         case "missing_bearer":
         case "invalid_bearer":
           return [msg("Relay rejected the cloud session token.")];
@@ -127,6 +129,34 @@ export function relayProtectedErrorText(error: RelayProtectedError): MarkedText 
           reason: error.reason,
         }),
       ];
+    case "RelaySignInCodeInvalidError":
+      switch (error.reason) {
+        case "incorrect":
+          return [msg("That code is not right. Check the email and try again.")];
+        case "expired":
+          return [msg("That code has expired. Request a new one.")];
+        case "too_many_attempts":
+          return [msg("Too many wrong codes. Request a new one.")];
+      }
+    case "RelayAuthRateLimitedError":
+      return [
+        error.retryAfterSeconds < 90
+          ? msg("Too many sign-in attempts. Try again in {seconds} seconds.", {
+              seconds: Math.max(1, error.retryAfterSeconds),
+            })
+          : msg("Too many sign-in attempts. Try again in {minutes} minutes.", {
+              minutes: Math.ceil(error.retryAfterSeconds / 60),
+            }),
+      ];
+    case "RelayEmailSignInUnavailableError":
+      switch (error.reason) {
+        case "delivery_failed":
+          return [msg("The sign-in email could not be sent. Try again in a few minutes.")];
+        case "account_disabled":
+          return [msg("This account has been disabled.")];
+        case "not_configured":
+          return [msg("Email sign-in is not available on this relay.")];
+      }
     case "RelayInternalError":
       return [msg("Relay encountered an internal error ({reason}).", { reason: error.reason })];
   }

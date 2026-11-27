@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
@@ -49,8 +49,8 @@ import { useCloudLinkState } from "../../cloud/cloudLinkState";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
-import { retryClerkLoad, useClerkLoadFailed } from "../clerk/clerkLoadFailure";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { retryRelayLoad, useRelayLoadFailed } from "../../cloud/useRelayAccount";
+import { relayAuthPrompt } from "../relay-auth/relayAuthDialogState";
 import { completeOnboarding } from "../../onboarding/firstRun";
 import {
   groupOnboardingProjects,
@@ -1035,10 +1035,10 @@ function PhoneStep({ step, children }: { readonly step: number; readonly childre
 }
 
 function PhoneConnectLink({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn, userId } = useRelayAccount();
   const gt = useGT();
-  const loadFailed = useClerkLoadFailed();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const loadFailed = useRelayLoadFailed();
+  const { openAuthPrompt } = relayAuthPrompt();
   const linkState = useCloudLinkState(environmentId);
   const refreshLinkState = useEffectEvent(linkState.refresh);
   // The server rechecks the tunnel every 30 s; read its latest result while this panel is open.
@@ -1065,7 +1065,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && link === null && linkState.isPending) {
     return (
       <p className="text-sm text-muted-foreground">
-        <T>Checking T3 Connect…</T>
+        <T>Checking styal Link…</T>
       </p>
     );
   }
@@ -1073,9 +1073,9 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
     return (
       <>
         <p className="text-sm text-foreground">
-          <T>Could not check T3 Connect.</T>
+          <T>Could not check styal Link.</T>
         </p>
-        {settingsLink(gt("Check T3 Connect"))}
+        {settingsLink(gt("Check styal Link"))}
       </>
     );
   }
@@ -1090,7 +1090,7 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
   if (isSignedIn && shared && reachability === undefined) {
     return (
       <p className="text-sm text-foreground">
-        <T>T3 Connect is on for this computer. Sign in to the app with the same account.</T>
+        <T>styal Link is on for this computer. Sign in to the app with the same account.</T>
       </p>
     );
   }
@@ -1100,25 +1100,25 @@ function PhoneConnectLink({ environmentId }: { readonly environmentId: Environme
       <>
         <p className="text-sm text-foreground">
           {shared
-            ? gt("T3 Connect is on, but the app cannot reach this computer.")
+            ? gt("styal Link is on, but the app cannot reach this computer.")
             : gt("Signed in. Share this computer so the app can reach it.")}
         </p>
-        {settingsLink(shared ? gt("Check T3 Connect") : gt("Set up T3 Connect"))}
+        {settingsLink(shared ? gt("Check styal Link") : gt("Set up styal Link"))}
       </>
     );
   }
   return (
     <>
       <p className="text-sm text-foreground">
-        <T>Sign in to T3 Connect here, then in the app with the same account.</T>
+        <T>Sign in to styal Link here, then in the app with the same account.</T>
       </p>
       {loadFailed ? (
-        <Button variant="outline" size="xs" onClick={retryClerkLoad}>
+        <Button variant="outline" size="xs" onClick={retryRelayLoad}>
           <T>Retry sign-in</T>
         </Button>
       ) : (
         <Button variant="outline" size="xs" disabled={!isLoaded} onClick={openAuthPrompt}>
-          <T>Sign in to T3 Connect</T>
+          <T>Sign in to styal Link</T>
         </Button>
       )}
     </>

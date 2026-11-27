@@ -433,12 +433,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@clerk/electron':
-        specifier: 0.1.20
-        version: 0.1.20(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@44.10.1(supports-color@8.1.1))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@clerk/electron-passkeys':
-        specifier: 0.0.3
-        version: 0.0.3
       '@crowecawcaw/xa11y':
         specifier: 0.15.4
         version: 0.15.4
@@ -472,9 +466,6 @@ importers:
       electron:
         specifier: 44.10.1
         version: 44.10.1(supports-color@8.1.1)
-      electron-store:
-        specifier: ^8.2.0
-        version: 8.2.0
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9(patch_hash=91b5648a7eed42761523ef542ebb7e548b037eda41d66533c8152ac65ac72155)(supports-color@8.1.1)
@@ -14211,6 +14202,7 @@ snapshots:
       '@clerk/electron-passkeys-darwin-x64': 0.0.3
       '@clerk/electron-passkeys-win32-arm64-msvc': 0.0.3
       '@clerk/electron-passkeys-win32-x64-msvc': 0.0.3
+    optional: true
 
   '@clerk/electron@0.1.20(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@44.10.1(supports-color@8.1.1))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
@@ -18430,7 +18422,8 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  atomically@1.7.0: {}
+  atomically@1.7.0:
+    optional: true
 
   await-lock@2.2.2: {}
 
@@ -18891,6 +18884,7 @@ snapshots:
       onetime: 5.1.2
       pkg-up: 3.1.0
       semver: 7.8.5
+    optional: true
 
   connect@3.7.0(supports-color@8.1.1):
     dependencies:
@@ -19019,6 +19013,7 @@ snapshots:
   debounce-fn@4.0.0:
     dependencies:
       mimic-fn: 3.1.0
+    optional: true
 
   debug@2.6.9(supports-color@8.1.1):
     dependencies:
@@ -19156,6 +19151,7 @@ snapshots:
   dot-prop@6.0.1:
     dependencies:
       is-obj: 2.0.0
+    optional: true
 
   dotenv-expand@11.0.7:
     dependencies:
@@ -19267,6 +19263,7 @@ snapshots:
     dependencies:
       conf: 10.2.0
       type-fest: 2.19.0
+    optional: true
 
   electron-to-chromium@1.5.430: {}
 
@@ -20049,6 +20046,7 @@ snapshots:
   find-up@3.0.0:
     dependencies:
       locate-path: 3.0.0
+    optional: true
 
   flatted@3.4.4: {}
 
@@ -20627,7 +20625,8 @@ snapshots:
 
   is-number@7.0.0: {}
 
-  is-obj@2.0.0: {}
+  is-obj@2.0.0:
+    optional: true
 
   is-plain-obj@4.1.0: {}
 
@@ -20762,7 +20761,8 @@ snapshots:
 
   json-schema-traverse@1.0.0: {}
 
-  json-schema-typed@7.0.3: {}
+  json-schema-typed@7.0.3:
+    optional: true
 
   json-schema-typed@8.0.2: {}
 
@@ -20938,6 +20938,7 @@ snapshots:
     dependencies:
       p-locate: 3.0.0
       path-exists: 3.0.0
+    optional: true
 
   lodash.debounce@4.0.8: {}
 
@@ -21724,9 +21725,11 @@ snapshots:
 
   mimic-fn@1.2.0: {}
 
-  mimic-fn@2.1.0: {}
+  mimic-fn@2.1.0:
+    optional: true
 
-  mimic-fn@3.1.0: {}
+  mimic-fn@3.1.0:
+    optional: true
 
   mimic-function@5.0.1: {}
 
@@ -21973,6 +21976,7 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
+    optional: true
 
   onetime@7.0.0:
     dependencies:
@@ -22219,6 +22223,7 @@ snapshots:
   p-limit@2.3.0:
     dependencies:
       p-try: 2.2.0
+    optional: true
 
   p-limit@3.1.0:
     dependencies:
@@ -22231,6 +22236,7 @@ snapshots:
   p-locate@3.0.0:
     dependencies:
       p-limit: 2.3.0
+    optional: true
 
   p-queue@9.3.3:
     dependencies:
@@ -22239,7 +22245,8 @@ snapshots:
 
   p-timeout@7.0.2: {}
 
-  p-try@2.2.0: {}
+  p-try@2.2.0:
+    optional: true
 
   package-manager-detector@1.8.0: {}
 
@@ -22271,7 +22278,8 @@ snapshots:
 
   path-browserify@1.0.1: {}
 
-  path-exists@3.0.0: {}
+  path-exists@3.0.0:
+    optional: true
 
   path-expression-matcher@1.6.2: {}
 
@@ -22401,6 +22409,7 @@ snapshots:
   pkg-up@3.1.0:
     dependencies:
       find-up: 3.0.0
+    optional: true
 
   pkijs@3.4.0:
     dependencies:
@@ -23720,7 +23729,8 @@ snapshots:
 
   type-fest@0.7.1: {}
 
-  type-fest@2.19.0: {}
+  type-fest@2.19.0:
+    optional: true
 
   type-fest@5.7.0:
     dependencies:

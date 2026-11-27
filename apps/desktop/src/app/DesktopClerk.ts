@@ -1,12 +1,8 @@
-import { createClerkBridge } from "@clerk/electron";
 import * as NodeURL from "node:url";
-import { storage } from "@clerk/electron/storage";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { codexAuthDeliveryUrl, readCodexAuthHandoff } from "@t3tools/shared/codexAuthHandoff";
@@ -25,32 +21,6 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
-
-export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<DesktopClerkBridgeInitializationError>()(
-  "DesktopClerkBridgeInitializationError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to initialize the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
-
-export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<DesktopClerkBridgeCleanupError>()(
-  "DesktopClerkBridgeCleanupError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to clean up the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
 
 export class DesktopClerk extends Context.Service<
   DesktopClerk,
@@ -85,30 +55,16 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
     : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 
-function createDesktopClerkBridge(tokenDirectory: string, isDevelopment: boolean) {
-  return createClerkBridge({
-    storage: storage({ path: tokenDirectory }),
-    manageSingleInstanceLock: false,
-    passkeys: true,
-    renderer: {
-      scheme: ElectronProtocol.getDesktopScheme(isDevelopment),
-      host: ElectronProtocol.DESKTOP_HOST,
-    },
-  });
-}
-
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
   const shell = yield* ElectronShell.ElectronShell;
-  const path = yield* Path.Path;
 
-  // Must not yield: the bridge registers a scheme Electron rejects once ready.
   const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
   yield* electronApp.setPath("userData", userDataPath);
 
-  // Clerk skips the profile lock on macOS. Interrupt before runtime construction because quit is asynchronous.
+  // Interrupt before runtime construction because quit is asynchronous.
   if (!(yield* electronApp.requestSingleInstanceLock)) {
     yield* electronApp.quit;
     return yield* Effect.interrupt;
@@ -135,32 +91,6 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("open-url", (event: { preventDefault: () => void }, url: string) => {
     if (handleOpenUrl(url)) event.preventDefault();
   });
-
-  yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        createDesktopClerkBridge(
-          path.resolve(environment.stateDir, "clerk"),
-          environment.isDevelopment,
-        ),
-      catch: (cause) =>
-        new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
-          cause,
-        }),
-    }),
-    (bridge) =>
-      Effect.try({
-        try: () => bridge.cleanup(),
-        catch: (cause) =>
-          new DesktopClerkBridgeCleanupError({
-            stateDir: environment.stateDir,
-            isDevelopment: environment.isDevelopment,
-            cause,
-          }),
-      }).pipe(Effect.orDie),
-  );
 
   return DesktopClerk.of({
     configure: Effect.gen(function* () {
@@ -199,7 +129,7 @@ export const make = Effect.gen(function* () {
       };
       const resumeProviderAuth = (value: string | undefined) => {
         const destination = providerAuthReturnUrl(value);
-        const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}://app`;
+        const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}://${ElectronProtocol.DESKTOP_HOST}`;
         if (!destination?.startsWith(`${expectedOrigin}/`)) return false;
         void runPromise(
           Effect.gen(function* () {

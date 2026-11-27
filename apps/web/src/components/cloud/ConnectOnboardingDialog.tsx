@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { useAtomValue } from "@effect/atom-react";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import {
@@ -16,6 +16,7 @@ import {
   CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
   ConnectOnboardingOptOutSchema,
   EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
+  interactiveRelaySignInAtom,
 } from "~/cloud/connectOnboarding";
 import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -69,8 +70,8 @@ function canPublishOnEnvironment(id: EnvironmentId | null): boolean {
 }
 
 function ConfiguredConnectOnboardingDialog() {
-  // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn, accountId: userId } = useRelayAccount();
+  const interactiveSignIn = useAtomValue(interactiveRelaySignInAtom);
   const gt = useGT();
   const m = useMessages();
   const [optOutState, setOptOutState] = useLocalStorage(
@@ -119,8 +120,7 @@ function ConfiguredConnectOnboardingDialog() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [prefilledFromLinkState, setPrefilledFromLinkState] = useState(false);
-  // Start undefined so an existing account never looks like a fresh sign-in.
-  const [observedAccount, setObservedAccount] = useState<string | null | undefined>(undefined);
+  const [observedSignIn, setObservedSignIn] = useState(interactiveSignIn);
 
   if (step === "publish" && sessionScopesKnown && !showPublishStep && !isApplying) {
     setStep("devices");
@@ -128,14 +128,11 @@ function ConfiguredConnectOnboardingDialog() {
 
   const optOutAccounts = optOutState.optOutAccounts;
 
-  // A signed-in snapshot without userId is incomplete; recording signed-out would fake a fresh sign-in.
-  if (isLoaded && !(isSignedIn && !userId)) {
-    const nextAccount = isSignedIn && userId ? userId : null;
-    if (nextAccount !== observedAccount) {
-      setObservedAccount(nextAccount);
-      if (observedAccount !== undefined && nextAccount !== null) {
-        setRequestedAccount(nextAccount);
-      }
+  // Only an interactive sign-in while this dialog is mounted requests setup.
+  if (interactiveSignIn !== observedSignIn) {
+    setObservedSignIn(interactiveSignIn);
+    if (interactiveSignIn !== null && isSignedIn && userId === interactiveSignIn.accountId) {
+      setRequestedAccount(userId);
     }
   }
 
@@ -225,16 +222,16 @@ function ConfiguredConnectOnboardingDialog() {
     if (!ok) return;
     toastManager.add({
       type: "success",
-      title: gt("T3 Connect enabled"),
+      title: gt("styal Link enabled"),
       description: exposeEnvironment
-        ? gt("This environment is available to your other devices through T3 Connect.")
+        ? gt("This environment is available to your other devices through styal Link.")
         : gt("This environment publishes agent activity to your mobile clients."),
     });
     setStep("devices");
   };
 
   const openAccountPage = accountPage.open;
-  // The account page is a Clerk modal, so close this dialog before it opens.
+  // Close the setup dialog before opening the account dialog.
   const leaveForAccountPage = openAccountPage
     ? (page: T3ConnectAccountPageUrl) => {
         complete();
@@ -251,7 +248,7 @@ function ConfiguredConnectOnboardingDialog() {
     >
       <WizardPopup>
         <WizardHeader
-          title={gt("Set up T3 Connect")}
+          title={gt("Set up styal Link")}
           description={
             <T>
               Mesh your devices together. Publish this environment and connect the rest, all in one
@@ -371,7 +368,7 @@ function PublishStep({
         <OnboardingToggleRow
           title={gt("Publish this environment")}
           description={gt(
-            "Make this environment available to your other devices through T3 Connect.",
+            "Make this environment available to your other devices through styal Link.",
           )}
           checked={exposeEnvironment}
           disabled={disabled}
@@ -390,7 +387,7 @@ function PublishStep({
           <OnboardingToggleRow
             title={gt("Require approval for new devices")}
             description={gt(
-              "Devices that sign in to your T3 Connect account wait until someone already connected here approves them.",
+              "Devices that sign in to your styal Link account wait until someone already connected here approves them.",
             )}
             checked={requireDeviceApproval}
             disabled={disabled || requireDeviceApprovalLocked}
