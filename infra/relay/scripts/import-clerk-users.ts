@@ -21,6 +21,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as Accounts from "../src/auth/Accounts.ts";
 import { ClerkUser, clerkUserEmail } from "../src/auth/clerkImport.ts";
+import * as PostgresAccounts from "../src/persistence/PostgresAccounts.ts";
 import * as RelayDb from "../src/db.ts";
 import { relayUsers } from "../src/persistence/schema.ts";
 
@@ -106,6 +107,7 @@ const layerDb = Layer.effect(
 main.pipe(
   Effect.provide(
     Accounts.layer.pipe(
+      Layer.provide(PostgresAccounts.layer),
       Layer.provideMerge(layerDb),
       Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, NodeCrypto.layer)),
     ),
