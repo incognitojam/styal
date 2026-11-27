@@ -175,7 +175,7 @@ export function identityPersistenceContract<E>(
         expect(
           yield* f.sessions.authenticate({
             ...credential,
-            token: `${created.token.slice(0, -1)}x`,
+            token: `${created.token.slice(0, -1)}${created.token.endsWith("0") ? "1" : "0"}`,
           }),
         ).toEqual(Option.none());
         expect(yield* f.sessions.authenticate({ ...credential, token: "malformed" })).toEqual(
