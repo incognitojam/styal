@@ -187,7 +187,7 @@ const make = Effect.gen(function* () {
     issue,
     redeem,
     discard: Effect.fn("relay.sign_in_codes.discard")(
-      function* (codeId) {
+      function* ({ codeId }) {
         yield* db.delete(relayEmailSignInCodes).where(eq(relayEmailSignInCodes.codeId, codeId));
       },
       Effect.mapError(

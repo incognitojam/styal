@@ -69,7 +69,10 @@ export class EmailSignInCodes extends Context.Service<
       readonly code: string;
     }) => Effect.Effect<RedeemResult, SignInCodePersistenceError>;
     /** Removes a code whose email could not be sent, so it does not count against the hourly cap. */
-    readonly discard: (codeId: string) => Effect.Effect<void, SignInCodePersistenceError>;
+    readonly discard: (input: {
+      readonly email: string;
+      readonly codeId: string;
+    }) => Effect.Effect<void, SignInCodePersistenceError>;
     readonly pruneExpired: Effect.Effect<void, SignInCodePersistenceError>;
   }
 >()("t3code-relay/auth/EmailSignInCodes") {}

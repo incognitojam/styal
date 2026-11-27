@@ -30,6 +30,7 @@ export const emailMigrations = [
    CREATE TABLE code_issuance (code_id TEXT PRIMARY KEY, intent TEXT NOT NULL);
    CREATE TABLE sign_in_codes (code_id TEXT PRIMARY KEY, value TEXT NOT NULL);
    CREATE INDEX codes_key ON sign_in_codes(json_extract(value, '$.thumbprint'), json_extract(value, '$.createdAt'));`,
+  "ALTER TABLE email_owner ADD COLUMN issuance_cutoff TEXT NOT NULL DEFAULT ''",
 ];
 export class EmailObject extends DurableObject<unknown> {
   constructor(ctx: DurableObjectState, env: unknown) {
@@ -118,6 +119,11 @@ export class EmailObject extends DurableObject<unknown> {
     checkRpc(request.version);
     return this.ctx.storage.transactionSync(() => {
       const sql = this.ctx.storage.sql;
+      const { issuance_cutoff } = sql
+        .exec<{ issuance_cutoff: string }>("SELECT issuance_cutoff FROM email_owner")
+        .one();
+      // The cutoff fences delayed issuance RPCs after their deduplication rows are pruned.
+      if (request.code.expiresAt <= issuance_cutoff) return null;
       const intent = canonicalJson(request.code);
       const old = sql
         .exec<{ intent: string }>(
@@ -216,10 +222,16 @@ export class EmailObject extends DurableObject<unknown> {
   }
   async prune(request: { version: number; cutoff: string }) {
     checkRpc(request.version);
-    this.ctx.storage.sql.exec(
-      "DELETE FROM sign_in_codes WHERE json_extract(value, '$.expiresAt') <= ?",
-      request.cutoff,
-    );
+    this.ctx.storage.transactionSync(() => {
+      const sql = this.ctx.storage.sql;
+      sql.exec("UPDATE email_owner SET issuance_cutoff = MAX(issuance_cutoff, ?)", request.cutoff);
+      sql.exec(
+        "DELETE FROM code_issuance WHERE json_extract(intent, '$.expiresAt') <= (SELECT issuance_cutoff FROM email_owner)",
+      );
+      sql.exec(
+        "DELETE FROM sign_in_codes WHERE json_extract(value, '$.expiresAt') <= (SELECT issuance_cutoff FROM email_owner)",
+      );
+    });
   }
   async inventory(request: { version: number }) {
     checkRpc(request.version);

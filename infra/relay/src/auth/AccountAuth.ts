@@ -264,7 +264,7 @@ const make = Effect.gen(function* () {
         Effect.catchTags({
           EmailSendFailed: (failure) =>
             Effect.annotateCurrentSpan({ "relay.auth.email_send_failure": failure.detail }).pipe(
-              Effect.andThen(codes.discard(issued.codeId)),
+              Effect.andThen(codes.discard({ email, codeId: issued.codeId })),
               Effect.andThen(Effect.fail(new SignInUnavailable({ reason: "delivery_failed" }))),
             ),
         }),

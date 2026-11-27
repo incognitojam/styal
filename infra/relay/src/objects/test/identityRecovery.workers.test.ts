@@ -15,7 +15,7 @@ import { accountMigrations } from "../AccountObject.ts";
 import { accountName, emailName, credentialRouteName, inventoryShardName } from "../names.ts";
 import { migrate } from "../storage.ts";
 import { identityLayer } from "../IdentityPersistence.ts";
-import { SessionPersistence } from "../../persistence/IdentityPersistence.ts";
+import { EmailPersistence, SessionPersistence } from "../../persistence/IdentityPersistence.ts";
 import type { IdentityBindings } from "../IdentityCoordinator.ts";
 
 declare global {
@@ -346,6 +346,35 @@ it("retains issuance identity across lost replies and restarts without restoring
     signup: true,
   });
   expect(await c.email(address).redeem({ ...redeem, codeId: other.codeId })).toBe("expired");
+  for (const disposition of ["consumed", "discarded"] as const) {
+    const email = `prune-${disposition}@example.test`;
+    const issued = { ...code, email, codeId: `prune-${disposition}` };
+    await c.register("email", emailName(email, key));
+    await c.email(email).issue({ ...request, code: issued });
+    if (disposition === "consumed") {
+      expect(await c.email(email).redeem({ ...redeem, codeId: issued.codeId })).toBe("redeemed");
+    } else {
+      await c.email(email).discard({ version: 1, codeId: issued.codeId });
+    }
+    await c.email(email).prune({ version: 1, cutoff: code.expiresAt });
+    const counts = async () =>
+      (await c.email(email).inventory({ version: 1 })).tables.map(({ table, count }) => ({
+        table,
+        count,
+      }));
+    const empty = [
+      { table: "email_owner", count: 1 },
+      { table: "code_issuance", count: 0 },
+      { table: "email_claims", count: 0 },
+      { table: "relay_email_sign_in_codes", count: 0 },
+    ];
+    expect(await counts()).toEqual(empty);
+    await abortAllDurableObjects();
+    // Even an arbitrarily late copy of the original RPC must not recreate pruned state.
+    await c.email(email).issue({ ...request, code: issued });
+    expect(await counts()).toEqual(empty);
+    expect(await c.email(email).latest({ version: 1, thumbprint: "key" })).toBeNull();
+  }
 });
 
 it("keeps one owner when imports race for the same ID or address, and preserves session refresh on create retry", async () => {
@@ -422,3 +451,40 @@ it("releases a losing import claim after a lost account-write response and retry
     await c.signup(losingEmail, "replacement-import", "replacement-operation", now, false),
   ).toMatchObject({ userId: "replacement-import" });
 });
+
+it.effect("discards a failed delivery in its email object while inventory is unavailable", () =>
+  Effect.gen(function* () {
+    const c = new IdentityCoordinator(env, key);
+    const email = "discard-route@example.test";
+    const codeId = "discard-route-code";
+    yield* Effect.promise(async () => {
+      await c.register("email", emailName(email, key));
+      await c.email(email).issue({
+        version: 1,
+        windowStart: "2025-12-31T23:00:00.000Z",
+        code: {
+          codeId,
+          email,
+          thumbprint: "key",
+          codeHash: "synthetic-hash",
+          attempts: 0,
+          consumedAt: null,
+          createdAt: now,
+          expiresAt: "2026-01-01T00:10:00.000Z",
+        },
+      });
+    });
+    const blockedInventory = new Proxy(env.INVENTORY, {
+      get() {
+        throw new Error("Synthetic inventory outage");
+      },
+    });
+    const codes = yield* EmailPersistence.pipe(
+      Effect.provide(identityLayer({ ...env, INVENTORY: blockedInventory }, options)),
+    );
+    yield* codes.discard({ email, codeId });
+    expect(
+      yield* Effect.promise(() => c.email(email).latest({ version: 1, thumbprint: "key" })),
+    ).toBeNull();
+  }).pipe(Effect.provide(SecureRandom.layerWebCrypto)),
+);

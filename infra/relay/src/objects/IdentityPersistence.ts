@@ -265,12 +265,10 @@ export function identityLayer(
             });
           });
         }),
-        discard: Effect.fn("relay.object_email.discard")((codeId) =>
-          emailCall("discard", () =>
-            coordinator.forEach("email", async (name) => {
-              await bindings.EMAILS.getByName(name).discard({ version, codeId });
-            }),
-          ),
+        discard: Effect.fn("relay.object_email.discard")(({ email, codeId }) =>
+          emailCall("discard", async () => {
+            await coordinator.email(email).discard({ version, codeId });
+          }),
         ),
         pruneExpired: Effect.gen(function* () {
           const cutoff = DateTime.formatIso(DateTime.subtract(yield* DateTime.now, { hours: 1 }));

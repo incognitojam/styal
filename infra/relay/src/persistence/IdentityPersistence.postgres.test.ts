@@ -57,7 +57,11 @@ describe.skipIf(!databaseUrl)("Postgres", () => {
         const codes = yield* EmailPersistence;
         const id = yield* (yield* SecureRandom.SecureRandom).uuidV4();
         const issued = yield* codes.issue({ email: `ada-${id}@example.test`, thumbprint: "key" });
-        yield* Effect.addFinalizer(() => codes.discard(issued.codeId).pipe(Effect.orDie));
+        yield* Effect.addFinalizer(() =>
+          codes
+            .discard({ email: `ada-${id}@example.test`, codeId: issued.codeId })
+            .pipe(Effect.orDie),
+        );
         const rows = db
           .select()
           .from(relayEmailSignInCodes)
