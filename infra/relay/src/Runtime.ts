@@ -1,3 +1,6 @@
+import * as PostgresAgentActivityRows from "./persistence/PostgresAgentActivityRows.ts";
+import * as PostgresEnvironmentCredentials from "./persistence/PostgresEnvironmentCredentials.ts";
+import * as PostgresEnvironmentLinks from "./persistence/PostgresEnvironmentLinks.ts";
 import * as PostgresTunnelOperations from "./persistence/PostgresTunnelOperations.ts";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
@@ -93,11 +96,18 @@ export const layerServices = Layer.empty.pipe(
     ),
   ),
   Layer.provideMerge(ApnsDeliveryQueue.layer),
-  Layer.provideMerge(Layer.mergeAll(AgentActivityRows.layer, Devices.layer)),
-  Layer.provideMerge(EnvironmentCredentials.layer),
   Layer.provideMerge(
     Layer.mergeAll(
-      EnvironmentLinks.layer,
+      AgentActivityRows.layer.pipe(Layer.provide(PostgresAgentActivityRows.layer)),
+      Devices.layer,
+    ),
+  ),
+  Layer.provideMerge(
+    EnvironmentCredentials.layer.pipe(Layer.provide(PostgresEnvironmentCredentials.layer)),
+  ),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      EnvironmentLinks.layer.pipe(Layer.provide(PostgresEnvironmentLinks.layer)),
       ManagedEndpointAllocations.layer,
       ManagedTunnelLimits.layer,
     ),

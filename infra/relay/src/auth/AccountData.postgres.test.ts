@@ -1,3 +1,5 @@
+import * as PostgresEnvironmentCredentials from "../persistence/PostgresEnvironmentCredentials.ts";
+import * as PostgresEnvironmentLinks from "../persistence/PostgresEnvironmentLinks.ts";
 import * as PostgresTunnelOperations from "../persistence/PostgresTunnelOperations.ts";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -52,8 +54,8 @@ const fixture = Effect.gen(function* () {
   let failQueue = false;
   const services = Layer.mergeAll(
     AccountData.layer,
-    EnvironmentLinks.layer,
-    EnvironmentCredentials.layer,
+    EnvironmentLinks.layer.pipe(Layer.provide(PostgresEnvironmentLinks.layer)),
+    EnvironmentCredentials.layer.pipe(Layer.provide(PostgresEnvironmentCredentials.layer)),
     ManagedEndpointProvider.layer.pipe(Layer.provide(PostgresTunnelOperations.layer)),
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(ManagedEndpointAllocations.layer, ManagedTunnelLimits.layer)),

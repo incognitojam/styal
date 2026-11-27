@@ -1,3 +1,4 @@
+import * as PostgresEnvironmentCredentials from "../persistence/PostgresEnvironmentCredentials.ts";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -49,6 +50,7 @@ describe("EnvironmentCredentials", () => {
     }).pipe(
       Effect.provide(
         EnvironmentCredentials.layer.pipe(
+          Layer.provide(PostgresEnvironmentCredentials.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
@@ -133,6 +135,7 @@ describe("EnvironmentCredentials", () => {
       }).pipe(
         Effect.provide(
           EnvironmentCredentials.layer.pipe(
+            Layer.provide(PostgresEnvironmentCredentials.layer),
             Layer.provide(NodeCryptoLayer.layer),
             Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
           ),
@@ -194,6 +197,7 @@ describe("EnvironmentCredentials", () => {
     }).pipe(
       Effect.provide(
         EnvironmentCredentials.layer.pipe(
+          Layer.provide(PostgresEnvironmentCredentials.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
