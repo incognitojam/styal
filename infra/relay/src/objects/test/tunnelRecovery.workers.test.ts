@@ -19,6 +19,7 @@ import {
 import { T3ChatAccounts, T3ChatRequestFailed } from "../../t3chat/T3ChatAccounts.ts";
 import { tunnelPersistenceLayer } from "../TunnelPersistence.ts";
 import { tunnelOperationsLayer } from "../TunnelOperations.ts";
+import { EnvironmentCoordinator } from "../EnvironmentCoordinator.ts";
 import { accountName, allocationRouteName } from "../names.ts";
 import { accountMigrations } from "../AccountObject.ts";
 import { migrate } from "../storage.ts";
@@ -137,6 +138,11 @@ it.effect(
       yield* Effect.promise(() => abortAllDurableObjects());
       expect(yield* allocations.get(key)).toBeNull();
       expect(yield* journal.pending(10)).toEqual([]);
+      expect(
+        yield* limits
+          .withCapacity(key, allocations.get({ ...key, userId: "different-owner" }))
+          .pipe(Effect.flip),
+      ).toMatchObject({ _tag: "ManagedEndpointAllocationPersistenceError", operation: "get" });
       const other = { ...target, userId: "owner-b" };
       yield* allocations.reserve(other);
       const collision = { ...target, hostname: "free-name.example.test" };
@@ -383,87 +389,276 @@ it.effect(
     }).pipe(Effect.provide(layer)),
 );
 
-it.effect("fences overlapping reservation callbacks and revalidates journal reads at commit", () =>
+it.effect(
+  "follows overlapping compatible reservation callbacks and revalidates journal reads at commit",
+  () =>
+    Effect.gen(function* () {
+      const { key, target, intent } = fixture("overlap");
+      yield* Effect.promise(() => reset());
+      const allocations = yield* Allocations;
+      const limits = yield* Limits;
+      const journal = yield* Journal;
+      let reached!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      let continueClaim!: () => void;
+      const proceed = new Promise<void>((resolve) => {
+        continueClaim = resolve;
+      });
+      const tunnelRoute = allocationRouteName("tunnel", target.tunnelName);
+      const delayed = {
+        ...env,
+        ALLOCATION_ROUTES: {
+          getByName: (name: string) => {
+            const stub = env.ALLOCATION_ROUTES.getByName(name);
+            return new Proxy(stub, {
+              get(object, property) {
+                if (property === "claim")
+                  return async (input: Parameters<typeof stub.claim>[0]) => {
+                    if (name === tunnelRoute) {
+                      reached();
+                      await proceed;
+                    }
+                    return await stub.claim(input);
+                  };
+                return Reflect.get(object, property);
+              },
+            });
+          },
+        },
+      } as unknown as typeof env;
+      const delayedLayer = tunnelPersistenceLayer(delayed).pipe(
+        Layer.provide(SecureRandom.layerWebCrypto),
+        Layer.provide(Layer.mock(T3ChatAccounts, { available: false })),
+      );
+      const leading = yield* Effect.gen(function* () {
+        const a = yield* Allocations;
+        const l = yield* Limits;
+        return yield* l.withCapacity(key, a.reserve(target));
+      }).pipe(Effect.provide(delayedLayer), Effect.result, Effect.forkChild);
+      yield* Effect.promise(() => waiting);
+      const following = yield* limits
+        .withCapacity(key, allocations.reserve(target))
+        .pipe(Effect.forkChild);
+      continueClaim();
+      const winner = yield* Fiber.join(following);
+      expect(yield* Fiber.join(leading)).toMatchObject({ _tag: "Success", success: winner });
+      expect(yield* allocations.getByTunnelName(target.tunnelName)).toEqual(winner);
+      expect(yield* allocations.reserve(target)).toEqual(winner);
+      const first = yield* journal.begin(intent);
+      if (!first) return yield* Effect.die("Missing journal");
+      const guarded = yield* Deferred.make<void>();
+      const resumeGuarded = yield* Deferred.make<void>();
+      const stale = yield* limits
+        .withCapacity(
+          key,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(guarded, undefined);
+            yield* Deferred.await(resumeGuarded);
+            return yield* allocations.recordTunnel({
+              ...key,
+              generation: 0,
+              tunnelId: "stale-tunnel",
+            });
+          }),
+        )
+        .pipe(
+          Effect.provideService(TunnelOperationExecution, first),
+          Effect.result,
+          Effect.forkChild,
+        );
+      yield* Deferred.await(guarded);
+      yield* journal.begin({
+        ...intent,
+        desired: { kind: "provision", origin: { ...intent.desired.origin, localHttpPort: 4000 } },
+      });
+      yield* Deferred.succeed(resumeGuarded, undefined);
+      expect((yield* Fiber.join(stale))._tag).toBe("Failure");
+      expect((yield* allocations.get(key))?.tunnelId).toBeNull();
+    }).pipe(Effect.provide(layer)),
+);
+
+it.effect("bounds a full batch of tunnel lookups without scanning", () =>
   Effect.gen(function* () {
-    const { key, target, intent } = fixture("overlap");
+    const { target } = fixture("lookup-batch");
     yield* Effect.promise(() => reset());
     const allocations = yield* Allocations;
-    const limits = yield* Limits;
-    const journal = yield* Journal;
-    let reached!: () => void;
-    const waiting = new Promise<void>((resolve) => {
-      reached = resolve;
+    const owned = yield* allocations.reserve(target);
+    const second = yield* allocations.reserve({
+      ...target,
+      environmentId: "second-machine",
+      hostname: "second-lookup.example.test",
+      tunnelName: "second-lookup",
     });
-    let continueClaim!: () => void;
-    const proceed = new Promise<void>((resolve) => {
-      continueClaim = resolve;
-    });
-    const tunnelRoute = allocationRouteName("tunnel", target.tunnelName);
-    const delayed = {
+    let calls = 0;
+    let active = 0;
+    let peak = 0;
+    const measured = async <A>(body: () => PromiseLike<A>) => {
+      calls++;
+      active++;
+      peak = Math.max(peak, active);
+      try {
+        return await body();
+      } finally {
+        active--;
+      }
+    };
+    const counted = {
       ...env,
       ALLOCATION_ROUTES: {
         getByName: (name: string) => {
           const stub = env.ALLOCATION_ROUTES.getByName(name);
           return new Proxy(stub, {
             get(object, property) {
-              if (property === "claim")
-                return async (input: Parameters<typeof stub.claim>[0]) => {
-                  if (name === tunnelRoute) {
-                    reached();
-                    await proceed;
-                  }
-                  return await stub.claim(input);
-                };
+              if (property === "resolve")
+                return (input: Parameters<typeof stub.resolve>[0]) =>
+                  measured(() => stub.resolve(input));
               return Reflect.get(object, property);
             },
           });
         },
       },
+      ACCOUNTS: {
+        getByName: (name: string) => {
+          const stub = env.ACCOUNTS.getByName(name);
+          return new Proxy(stub, {
+            get(object, property) {
+              if (property === "tunnelLookup")
+                return (input: Parameters<typeof stub.tunnelLookup>[0]) =>
+                  measured(() => stub.tunnelLookup(input));
+              if (property === "tunnels") throw new Error("Unexpected history read");
+              return Reflect.get(object, property);
+            },
+          });
+        },
+      },
+      INVENTORY: {
+        getByName: () => {
+          throw new Error("Unexpected inventory read");
+        },
+      },
     } as unknown as typeof env;
-    const delayedLayer = tunnelPersistenceLayer(delayed).pipe(
+    const names = [
+      target.tunnelName,
+      second.tunnelName,
+      ...Array.from({ length: 398 }, (_, i) => `unowned-${i}`),
+    ];
+    const countedLayer = tunnelPersistenceLayer(counted).pipe(
       Layer.provide(SecureRandom.layerWebCrypto),
       Layer.provide(Layer.mock(T3ChatAccounts, { available: false })),
     );
-    const losing = yield* Effect.gen(function* () {
-      const a = yield* Allocations;
-      const l = yield* Limits;
-      return yield* l.withCapacity(key, a.reserve(target));
-    }).pipe(Effect.provide(delayedLayer), Effect.result, Effect.forkChild);
-    yield* Effect.promise(() => waiting);
-    const winner = yield* limits.withCapacity(key, allocations.reserve(target));
-    continueClaim();
-    expect((yield* Fiber.join(losing))._tag).toBe("Failure");
-    expect(yield* allocations.getByTunnelName(target.tunnelName)).toEqual(winner);
-    expect(yield* allocations.reserve(target)).toEqual(winner);
-    const first = yield* journal.begin(intent);
-    if (!first) return yield* Effect.die("Missing journal");
-    const guarded = yield* Deferred.make<void>();
-    const resumeGuarded = yield* Deferred.make<void>();
-    const stale = yield* limits
+    expect(
+      yield* Allocations.pipe(
+        Effect.flatMap((a) => a.listByTunnelNames(names)),
+        Effect.provide(countedLayer),
+      ),
+    ).toEqual([
+      { ...owned, recoveryEnabled: false },
+      { ...second, recoveryEnabled: false },
+    ]);
+    expect(calls).toBe(402);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(16);
+  }).pipe(Effect.provide(layer)),
+);
+
+it.effect("releases a definite commit rejection without retaining a tunnel slot", () =>
+  Effect.gen(function* () {
+    const { key, target, intent } = fixture("rejected-commit");
+    yield* Effect.promise(() => reset());
+    const allocations = yield* Allocations;
+    const limits = yield* Limits;
+    const journal = yield* Journal;
+    for (let i = 0; i < 2; i++) {
+      const other = {
+        ...target,
+        environmentId: `occupied-${i}`,
+        hostname: `occupied-${i}.example.test`,
+        tunnelName: `occupied-${i}`,
+      };
+      yield* limits.withCapacity(other, allocations.reserve(other));
+    }
+    const staged = yield* Deferred.make<void>();
+    const resume = yield* Deferred.make<void>();
+    const rejected = yield* limits
       .withCapacity(
         key,
         Effect.gen(function* () {
-          yield* Deferred.succeed(guarded, undefined);
-          yield* Deferred.await(resumeGuarded);
-          return yield* allocations.recordTunnel({
-            ...key,
-            generation: 0,
-            tunnelId: "stale-tunnel",
-          });
+          yield* allocations.reserve(target);
+          yield* journal.begin(intent);
+          yield* Deferred.succeed(staged, undefined);
+          yield* Deferred.await(resume);
         }),
       )
-      .pipe(
-        Effect.provideService(TunnelOperationExecution, first),
-        Effect.result,
-        Effect.forkChild,
-      );
-    yield* Deferred.await(guarded);
-    yield* journal.begin({
+      .pipe(Effect.result, Effect.forkChild);
+    yield* Deferred.await(staged);
+    const deleting = yield* journal.begin({
       ...intent,
-      desired: { kind: "provision", origin: { ...intent.desired.origin, localHttpPort: 4000 } },
+      desired: { kind: "deprovision", target: { tunnelId: null, dnsRecordId: null } },
     });
-    yield* Deferred.succeed(resumeGuarded, undefined);
-    expect((yield* Fiber.join(stale))._tag).toBe("Failure");
-    expect((yield* allocations.get(key))?.tunnelId).toBeNull();
+    yield* Deferred.succeed(resume, undefined);
+    expect((yield* Fiber.join(rejected))._tag).toBe("Failure");
+    if (!deleting) return yield* Effect.die("Missing deletion operation");
+    yield* journal.complete(deleting.operationId);
+    const next = {
+      ...target,
+      environmentId: "new-machine",
+      hostname: "after-rejection.example.test",
+      tunnelName: "after-rejection",
+    };
+    expect(yield* limits.withCapacity(next, allocations.reserve(next))).toMatchObject(next);
+    expect(
+      (yield* Effect.promise(() =>
+        env.ACCOUNTS.getByName(accountName(key.userId)).tunnels({ version: 1, userId: key.userId }),
+      )).intents,
+    ).toEqual([]);
+  }).pipe(Effect.provide(layer)),
+);
+
+it.effect("keeps a reservation when an unrelated environment link changes", () =>
+  Effect.gen(function* () {
+    const { key, target } = fixture("unrelated-link");
+    yield* Effect.promise(() => reset());
+    const allocations = yield* Allocations;
+    const limits = yield* Limits;
+    const staged = yield* Deferred.make<void>();
+    const resume = yield* Deferred.make<void>();
+    const reservation = yield* limits
+      .withCapacity(
+        key,
+        Effect.gen(function* () {
+          const row = yield* allocations.reserve(target);
+          yield* Deferred.succeed(staged, undefined);
+          yield* Deferred.await(resume);
+          return row;
+        }),
+      )
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(staged);
+    yield* Effect.promise(() =>
+      new EnvironmentCoordinator(env).upsert(
+        {
+          userId: key.userId,
+          environmentId: "unrelated-machine",
+          environmentPublicKey: "key-a",
+          label: "Synthetic machine",
+          endpoint: {
+            providerKind: "cloudflare_tunnel",
+            httpBaseUrl: "https://unrelated.example.test",
+            wsBaseUrl: "wss://unrelated.example.test",
+          },
+          notificationsEnabled: true,
+          liveActivitiesEnabled: true,
+          managedTunnelsEnabled: true,
+          createdByDeviceId: null,
+        },
+        "unrelated-link-operation",
+        now,
+      ),
+    );
+    yield* Deferred.succeed(resume, undefined);
+    expect(yield* Fiber.join(reservation)).toMatchObject(target);
+    expect(yield* allocations.get(key)).toMatchObject(target);
   }).pipe(Effect.provide(layer)),
 );

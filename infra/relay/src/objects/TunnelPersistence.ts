@@ -7,7 +7,6 @@ import * as Option from "effect/Option";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import { DEFAULT_MANAGED_TUNNEL_LIMIT, T3CHAT_PLAN_TUNNEL_LIMITS } from "@t3tools/contracts/relay";
 import { ManagedEndpointAllocationPersistenceError } from "../environments/ManagedEndpointAllocations.ts";
-import type { ManagedEndpointAllocation } from "../environments/ManagedEndpointAllocations.ts";
 import {
   ManagedTunnelLimitExceeded,
   ManagedTunnelLimitPersistenceError,
@@ -61,7 +60,14 @@ export function tunnelPersistenceLayer(bindings: TunnelBindings) {
       const snapshot = Effect.fn("relay.object_allocations.snapshot")(function* (userId: string) {
         const transaction = yield* Effect.serviceOption(AccountReservation);
         if (Option.isSome(transaction)) {
-          if (transaction.value.userId !== userId) throw new Error("Reservation account mismatch");
+          if (transaction.value.userId !== userId)
+            return yield* new ManagedEndpointAllocationPersistenceError({
+              operation: "get",
+              stage: "database-request",
+              userId,
+              environmentId: "",
+              cause: new Error("Reservation account mismatch"),
+            });
           return transaction.value.state;
         }
         return yield* call(
@@ -80,7 +86,14 @@ export function tunnelPersistenceLayer(bindings: TunnelBindings) {
         const operationId = Option.getOrUndefined(Option.map(executor, (e) => e.operationId));
         const transaction = yield* Effect.serviceOption(AccountReservation);
         if (Option.isSome(transaction)) {
-          if (transaction.value.userId !== userId) throw new Error("Reservation account mismatch");
+          if (transaction.value.userId !== userId)
+            return yield* new ManagedEndpointAllocationPersistenceError({
+              operation,
+              stage: "database-request",
+              userId,
+              environmentId: c.environmentId,
+              cause: new Error("Reservation account mismatch"),
+            });
           if (
             [
               "record-tunnel",
@@ -136,7 +149,12 @@ export function tunnelPersistenceLayer(bindings: TunnelBindings) {
         const transaction = yield* Effect.serviceOption(AccountReservation);
         if (Option.isSome(transaction)) {
           if (transaction.value.userId !== located.owner.userId)
-            throw new Error("Reservation account mismatch");
+            return yield* new ManagedEndpointAllocationPersistenceError({
+              operation: "get-by-tunnel-name",
+              stage: "database-request",
+              ...located.owner,
+              cause: new Error("Reservation account mismatch"),
+            });
           const state = transaction.value.state;
           const row = state.allocations.find(
             (a) =>
@@ -305,16 +323,19 @@ export function tunnelPersistenceLayer(bindings: TunnelBindings) {
           const result = yield* command(i.userId, { ...i, kind: "claimed" }, "lock-tunnel");
           return result.applied ? yield* Effect.asSome(effect) : Option.none<A>();
         }),
-        listByTunnelNames: Effect.fn("relay.object_allocations.list_by_tunnel_names")(
-          function* (names) {
-            const rows: (ManagedEndpointAllocation & { recoveryEnabled: boolean })[] = [];
-            for (const name of new Set(names)) {
-              const found = yield* getByName(name);
-              if (found && !found.pending)
-                rows.push({ ...found.allocation, recoveryEnabled: found.recoveryEnabled });
-            }
-            return rows;
-          },
+        listByTunnelNames: Effect.fn("relay.object_allocations.list_by_tunnel_names")((names) =>
+          Effect.forEach(
+            [...new Set(names)],
+            (name) =>
+              getByName(name).pipe(
+                Effect.map((found) =>
+                  found && !found.pending
+                    ? [{ ...found.allocation, recoveryEnabled: found.recoveryEnabled }]
+                    : [],
+                ),
+              ),
+            { concurrency: 16 },
+          ).pipe(Effect.map((rows) => rows.flat())),
         ),
       });
       const limits = ManagedTunnelLimitPersistence.of({
@@ -422,7 +443,12 @@ export function tunnelPersistenceLayer(bindings: TunnelBindings) {
               maxTunnels: result.maxTunnels,
               activeTunnels: result.activeTunnels,
             });
-          if (!outcome) throw new Error("Missing reservation outcome");
+          if (!outcome)
+            return yield* new ManagedTunnelLimitPersistenceError({
+              operation: "transaction",
+              userId: input.userId,
+              cause: new Error("Missing reservation outcome"),
+            });
           return yield* outcome;
         }),
       });

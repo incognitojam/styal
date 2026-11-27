@@ -60,6 +60,7 @@ function decode(row: Row): TunnelOperation {
 }
 
 export class AccountObject extends DurableObject<unknown> {
+  private reservations = new Map<string, Promise<void>>();
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -167,140 +168,183 @@ export class AccountObject extends DurableObject<unknown> {
     checkRpc(request.version);
     if (this.ctx.id.name !== accountName(request.userId))
       throw new Error("Capacity account mismatch");
-    const admitted = this.ctx.storage.transactionSync(() => {
-      const state = tunnelSnapshot(this.ctx.storage);
-      const claims = this.ctx.storage.sql
-        .exec<{ environment_id: string }>("SELECT environment_id FROM account_capacity_claims")
-        .toArray();
-      const combined = [
-        ...state.allocations,
-        ...state.intents.filter(
-          (r) => !state.allocations.some((a) => a.environmentId === r.environmentId),
-        ),
-      ];
-      const slots = new Set(
-        combined
-          .filter((r) => counted(state, r, request.pendingCutoff))
-          .map((r) => r.environmentId),
-      );
-      for (const claim of claims) slots.add(claim.environment_id);
-      const activeTunnels = [...slots].filter((id) => id !== request.environmentId).length;
-      const maxTunnels =
-        state.override ?? Math.max(DEFAULT_MANAGED_TUNNEL_LIMIT, request.raisedLimit ?? 0);
-      if (activeTunnels >= maxTunnels && !slots.has(request.environmentId))
-        return { state: null, activeTunnels, maxTunnels, override: state.override };
-      this.ctx.storage.sql.exec(
-        "INSERT INTO account_capacity_claims VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET token = excluded.token",
-        request.environmentId,
-        request.token,
-      );
-      return {
-        state,
-        activeTunnels,
-        maxTunnels,
-        override: state.override,
-        reservationGeneration: nextReservationGeneration(this.ctx.storage, request.environmentId),
-      };
+    const previous = this.reservations.get(request.environmentId);
+    let finish!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finish = resolve;
     });
-    if (!admitted.state)
-      return {
-        allowed: false,
-        activeTunnels: admitted.activeTunnels,
-        maxTunnels: admitted.maxTunnels,
-        override: admitted.override,
-      };
-    const original = structuredClone(admitted.state);
-    const recorded = new Map<string, string>();
-    const current = () =>
-      this.ctx.storage.sql
-        .exec<{ token: string }>(
-          "SELECT token FROM account_capacity_claims WHERE environment_id = ?",
-          request.environmentId,
-        )
-        .toArray()[0]?.token === request.token;
+    this.reservations.set(request.environmentId, completion);
+    // This orders live callbacks; SQLite claims and generations remain authoritative across restart.
     try {
-      const state = await callback(
-        admitted.state,
-        async (allocations) => {
-          this.ctx.storage.transactionSync(() => {
-            if (!current()) throw new Error("Reservation superseded");
-            for (const row of allocations) {
-              if (row.environmentId !== request.environmentId)
-                throw new Error("Reservation environment mismatch");
-              this.ctx.storage.sql.exec(
-                "INSERT INTO account_allocation_intents VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET value = excluded.value",
-                row.environmentId,
-                canonicalJson(row),
-              );
-              recorded.set(row.environmentId, row.nameOperationId!);
-            }
-          });
-        },
-        admitted.reservationGeneration!,
-      );
-      this.ctx.storage.transactionSync(() => {
-        if (!current()) throw new Error("Reservation superseded");
-        if (state) {
-          const live = tunnelSnapshot(this.ctx.storage);
-          for (const environmentId of state.guardedEnvironments)
-            if (
-              canonicalJson(live.journal.find((j) => j.environmentId === environmentId) ?? null) !==
-              canonicalJson(original.journal.find((j) => j.environmentId === environmentId) ?? null)
-            )
-              throw new Error("Reservation journal changed");
-          const merge = <T>(before: T[], after: T[], present: T[], key: (v: T) => string) => {
-            const ids = new Set([...before, ...after].map(key));
-            for (const id of ids) {
-              const was = before.find((v) => key(v) === id);
-              const next = after.find((v) => key(v) === id);
-              if (canonicalJson(was ?? null) === canonicalJson(next ?? null)) continue;
-              if (
-                canonicalJson(present.find((v) => key(v) === id) ?? null) !==
-                canonicalJson(was ?? null)
-              )
-                throw new Error("Reservation state changed");
-              const index = present.findIndex((v) => key(v) === id);
-              if (index !== -1) present.splice(index, 1);
-              if (next) present.push(next);
-            }
-            return present;
-          };
-          if (canonicalJson(live.links) !== canonicalJson(original.links))
-            throw new Error("Reservation link changed");
-          saveAllocations(
-            this.ctx.storage,
-            merge(
-              original.allocations,
-              state.allocations,
-              live.allocations,
-              (r) => r.environmentId,
-            ),
-            merge(original.releases, state.releases, live.releases, (r) => r.nameOperationId!),
-          );
-          saveJournal(
-            this.ctx.storage,
-            merge(original.journal, state.journal, live.journal, (r) => r.environmentId),
-          );
-        }
+      if (previous) await previous;
+      const admitted = this.ctx.storage.transactionSync(() => {
+        const state = tunnelSnapshot(this.ctx.storage);
+        const claims = this.ctx.storage.sql
+          .exec<{ environment_id: string }>("SELECT environment_id FROM account_capacity_claims")
+          .toArray();
+        const combined = [
+          ...state.allocations,
+          ...state.intents.filter(
+            (r) => !state.allocations.some((a) => a.environmentId === r.environmentId),
+          ),
+        ];
+        const slots = new Set(
+          combined
+            .filter((r) => counted(state, r, request.pendingCutoff))
+            .map((r) => r.environmentId),
+        );
+        for (const claim of claims) slots.add(claim.environment_id);
+        const activeTunnels = [...slots].filter((id) => id !== request.environmentId).length;
+        const maxTunnels =
+          state.override ?? Math.max(DEFAULT_MANAGED_TUNNEL_LIMIT, request.raisedLimit ?? 0);
+        if (activeTunnels >= maxTunnels && !slots.has(request.environmentId))
+          return { state: null, activeTunnels, maxTunnels, override: state.override };
+        this.ctx.storage.sql.exec(
+          "INSERT INTO account_capacity_claims VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET token = excluded.token",
+          request.environmentId,
+          request.token,
+        );
+        return {
+          state,
+          activeTunnels,
+          maxTunnels,
+          override: state.override,
+          reservationGeneration: nextReservationGeneration(this.ctx.storage, request.environmentId),
+        };
+      });
+      if (!admitted.state)
+        return {
+          allowed: false,
+          activeTunnels: admitted.activeTunnels,
+          maxTunnels: admitted.maxTunnels,
+          override: admitted.override,
+        };
+      const original = structuredClone(admitted.state);
+      const recorded = new Map<string, string>();
+      const current = () =>
+        this.ctx.storage.sql
+          .exec<{ token: string }>(
+            "SELECT token FROM account_capacity_claims WHERE environment_id = ?",
+            request.environmentId,
+          )
+          .toArray()[0]?.token === request.token;
+      const discardRecorded = () => {
         for (const [environmentId, reservationId] of recorded)
           this.ctx.storage.sql.exec(
             "DELETE FROM account_allocation_intents WHERE environment_id = ? AND json_extract(value, '$.nameOperationId') = ?",
             environmentId,
             reservationId,
           );
-      });
-      return {
-        allowed: true,
-        activeTunnels: admitted.activeTunnels,
-        maxTunnels: admitted.maxTunnels,
-        override: admitted.override,
       };
+      let callbackReturned = false;
+      try {
+        const state = await callback(
+          admitted.state,
+          async (allocations) => {
+            this.ctx.storage.transactionSync(() => {
+              if (!current()) throw new Error("Reservation superseded");
+              for (const row of allocations) {
+                if (row.environmentId !== request.environmentId)
+                  throw new Error("Reservation environment mismatch");
+                this.ctx.storage.sql.exec(
+                  "INSERT INTO account_allocation_intents VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET value = excluded.value",
+                  row.environmentId,
+                  canonicalJson(row),
+                );
+                recorded.set(row.environmentId, row.nameOperationId!);
+              }
+            });
+          },
+          admitted.reservationGeneration!,
+        );
+        callbackReturned = true;
+        this.ctx.storage.transactionSync(() => {
+          if (!current()) throw new Error("Reservation superseded");
+          if (state) {
+            const live = tunnelSnapshot(this.ctx.storage);
+            for (const environmentId of state.guardedEnvironments)
+              if (
+                canonicalJson(
+                  live.journal.find((j) => j.environmentId === environmentId) ?? null,
+                ) !==
+                canonicalJson(
+                  original.journal.find((j) => j.environmentId === environmentId) ?? null,
+                )
+              )
+                throw new Error("Reservation journal changed");
+            const merge = <T>(before: T[], after: T[], present: T[], key: (v: T) => string) => {
+              const ids = new Set([...before, ...after].map(key));
+              for (const id of ids) {
+                const was = before.find((v) => key(v) === id);
+                const next = after.find((v) => key(v) === id);
+                if (canonicalJson(was ?? null) === canonicalJson(next ?? null)) continue;
+                if (
+                  canonicalJson(present.find((v) => key(v) === id) ?? null) !==
+                  canonicalJson(was ?? null)
+                )
+                  throw new Error("Reservation state changed");
+                const index = present.findIndex((v) => key(v) === id);
+                if (index !== -1) present.splice(index, 1);
+                if (next) present.push(next);
+              }
+              return present;
+            };
+            const related = new Set([
+              request.environmentId,
+              ...state.guardedEnvironments,
+              ...state.allocations
+                .filter(
+                  (row) =>
+                    canonicalJson(row) !==
+                    canonicalJson(
+                      original.allocations.find((old) => old.environmentId === row.environmentId) ??
+                        null,
+                    ),
+                )
+                .map((row) => row.environmentId),
+            ]);
+            if (
+              canonicalJson(live.links.filter((link) => related.has(link.environmentId))) !==
+              canonicalJson(original.links.filter((link) => related.has(link.environmentId)))
+            )
+              throw new Error("Reservation link changed");
+            saveAllocations(
+              this.ctx.storage,
+              merge(
+                original.allocations,
+                state.allocations,
+                live.allocations,
+                (r) => r.environmentId,
+              ),
+              merge(original.releases, state.releases, live.releases, (r) => r.nameOperationId!),
+            );
+            saveJournal(
+              this.ctx.storage,
+              merge(original.journal, state.journal, live.journal, (r) => r.environmentId),
+            );
+          }
+          discardRecorded();
+        });
+        return {
+          allowed: true,
+          activeTunnels: admitted.activeTunnels,
+          maxTunnels: admitted.maxTunnels,
+          override: admitted.override,
+        };
+      } catch (error) {
+        if (callbackReturned) this.ctx.storage.transactionSync(discardRecorded);
+        throw error;
+      } finally {
+        this.ctx.storage.sql.exec(
+          "DELETE FROM account_capacity_claims WHERE environment_id = ? AND token = ?",
+          request.environmentId,
+          request.token,
+        );
+      }
     } finally {
-      this.ctx.storage.sql.exec(
-        "DELETE FROM account_capacity_claims WHERE environment_id = ? AND token = ?",
-        request.environmentId,
-        request.token,
-      );
+      finish();
+      if (this.reservations.get(request.environmentId) === completion)
+        this.reservations.delete(request.environmentId);
     }
   }
 
