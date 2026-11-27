@@ -9,6 +9,8 @@ import { environmentName } from "./names.ts";
 const parseActivity = Schema.decodeUnknownSync(ActivitySchema);
 const decodeActivity = Schema.decodeUnknownOption(ActivitySchema);
 
+export const MACHINE_AUTH_OWNER_LIMIT = 32;
+
 export interface EnvironmentCandidate {
   userId: string;
   environmentPublicKey: string;
@@ -30,6 +32,10 @@ export const environmentMigrations = [
    CREATE INDEX candidate_key ON candidates(json_extract(value, '$.environmentPublicKey'), json_extract(value, '$.revoked'), json_extract(value, '$.published'), user_id);
    CREATE TABLE credentials (hash TEXT PRIMARY KEY, credential_id TEXT NOT NULL UNIQUE, public_key TEXT NOT NULL, created_at TEXT NOT NULL, published INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0);
    CREATE TABLE activity (public_key TEXT NOT NULL, thread_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(public_key, thread_id));`,
+  // Older unpublished intents lack the generation needed for safe publication.
+  `ALTER TABLE credentials ADD COLUMN link_user_id TEXT;
+   ALTER TABLE credentials ADD COLUMN link_generation INTEGER;
+   UPDATE credentials SET revoked = 1 WHERE published = 0;`,
 ];
 export class EnvironmentObject extends DurableObject<unknown> {
   private initialized() {
@@ -158,28 +164,59 @@ export class EnvironmentObject extends DurableObject<unknown> {
           throw new Error("Credential intent mismatch");
         return;
       }
-      sql.exec("UPDATE credentials SET revoked = 1 WHERE public_key = ?", c.environmentPublicKey);
       sql.exec(
-        "INSERT INTO credentials(hash, credential_id, public_key, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO credentials(hash, credential_id, public_key, created_at, link_user_id, link_generation) VALUES (?, ?, ?, ?, ?, ?)",
         c.tokenHash,
         c.credentialId,
         c.environmentPublicKey,
         c.createdAt,
+        c.link?.userId ?? null,
+        c.link?.generation ?? null,
       );
     });
   }
   async publishCredential(request: { version: number; environmentId: string; tokenHash: string }) {
     this.check(request);
     if (!this.initialized()) return false;
-    return (
-      this.ctx.storage.sql
-        .exec(
-          "UPDATE credentials SET published = 1 WHERE hash = ? RETURNING hash",
+    return this.ctx.storage.transactionSync(() => {
+      const sql = this.ctx.storage.sql;
+      const row = sql
+        .exec<{
+          public_key: string;
+          published: number;
+          revoked: number;
+          link_user_id: string | null;
+          link_generation: number | null;
+        }>(
+          "SELECT public_key, published, revoked, link_user_id, link_generation FROM credentials WHERE hash = ?",
           request.tokenHash,
         )
-        .toArray().length > 0
-    );
+        .toArray()[0];
+      if (!row) return false;
+      if (row.published) return true;
+      if (row.revoked) return false;
+      if (row.link_user_id !== null) {
+        const candidate = sql
+          .exec<{ value: string }>(
+            "SELECT value FROM candidates WHERE user_id = ? AND generation = ?",
+            row.link_user_id,
+            row.link_generation!,
+          )
+          .toArray()[0];
+        const owner: EnvironmentCandidate | null = candidate ? JSON.parse(candidate.value) : null;
+        if (!owner || owner.revoked || owner.environmentPublicKey !== row.public_key)
+          throw new Error("Credential link superseded");
+      }
+      sql.exec(
+        "UPDATE credentials SET revoked = 1 WHERE public_key = ? AND hash <> ? AND published = 1",
+        row.public_key,
+        request.tokenHash,
+      );
+      sql.exec("UPDATE credentials SET published = 1 WHERE hash = ?", request.tokenHash);
+      return true;
+    });
   }
+
   async credential(request: { version: number; environmentId: string; tokenHash: string }) {
     this.check(request);
     if (!this.initialized()) return null;
@@ -190,21 +227,21 @@ export class EnvironmentObject extends DurableObject<unknown> {
       )
       .toArray()[0];
     if (!credential) return null;
-    const row = this.ctx.storage.sql
+    const candidates = this.ctx.storage.sql
       .exec<{ value: string }>(
-        "SELECT value FROM candidates WHERE json_extract(value, '$.environmentPublicKey') = ? AND json_extract(value, '$.revoked') = 0 AND json_extract(value, '$.published') = 1 ORDER BY user_id LIMIT 1",
+        "SELECT value FROM candidates WHERE json_extract(value, '$.environmentPublicKey') = ? AND json_extract(value, '$.revoked') = 0 AND json_extract(value, '$.published') = 1 ORDER BY user_id LIMIT ?",
         credential.public_key,
+        MACHINE_AUTH_OWNER_LIMIT,
       )
-      .toArray()[0];
-    const candidate = row ? (JSON.parse(row.value) as EnvironmentCandidate) : null;
-    return candidate
-      ? {
-          credentialId: credential.credential_id,
-          environmentPublicKey: credential.public_key,
-          candidate,
-        }
-      : null;
+      .toArray()
+      .map((row) => JSON.parse(row.value) as EnvironmentCandidate);
+    return {
+      credentialId: credential.credential_id,
+      environmentPublicKey: credential.public_key,
+      candidates,
+    };
   }
+
   async revokeCredentials(request: {
     version: number;
     environmentId: string;
@@ -234,6 +271,7 @@ export class EnvironmentObject extends DurableObject<unknown> {
   async activity(request: {
     version: number;
     environmentId: string;
+    registered?: boolean;
     command:
       | { kind: "upsert"; environmentPublicKey: string; state: RelayAgentActivityState }
       | { kind: "remove"; environmentPublicKey: string; threadId: string }
@@ -241,8 +279,11 @@ export class EnvironmentObject extends DurableObject<unknown> {
       | { kind: "prune"; updatedBefore: string };
   }) {
     this.check(request);
-    if (request.command.kind === "upsert") migrate(this.ctx.storage, environmentMigrations);
-    if (!this.initialized()) return { previous: null, states: [] };
+    if (request.command.kind === "upsert" && !this.initialized()) {
+      if (!request.registered) return { needsRegistration: true, previous: null, states: [] };
+      migrate(this.ctx.storage, environmentMigrations);
+    }
+    if (!this.initialized()) return { needsRegistration: false, previous: null, states: [] };
     return this.ctx.storage.transactionSync(() => {
       const sql = this.ctx.storage.sql;
       const c = request.command;
@@ -265,6 +306,7 @@ export class EnvironmentObject extends DurableObject<unknown> {
           canonicalJson(state),
         );
         return {
+          needsRegistration: false,
           previous: previous ? Option.getOrNull(decodeActivity(JSON.parse(previous.value))) : null,
           states: [],
         };
@@ -281,6 +323,7 @@ export class EnvironmentObject extends DurableObject<unknown> {
           c.updatedBefore,
         );
       return {
+        needsRegistration: false,
         previous: null,
         states:
           c.kind === "read"

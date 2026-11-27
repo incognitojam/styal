@@ -256,14 +256,18 @@ export function environmentLayer(bindings: EnvironmentBindings) {
         upsert: Effect.fn("relay.object_activity.upsert")((input) =>
           call(
             async () => {
-              await c.register("environment", environmentName(input.state.environmentId));
-              return (
-                await c.environment(input.state.environmentId).activity({
-                  version,
-                  environmentId: input.state.environmentId,
-                  command: { kind: "upsert", ...input },
-                })
-              ).previous;
+              const stub = c.environment(input.state.environmentId);
+              const request = {
+                version,
+                environmentId: input.state.environmentId,
+                command: { kind: "upsert" as const, ...input },
+              };
+              let result = await stub.activity(request);
+              if (result.needsRegistration) {
+                await c.register("environment", environmentName(input.state.environmentId));
+                result = await stub.activity({ ...request, registered: true });
+              }
+              return result.previous;
             },
             (cause) =>
               new AgentActivityRowUpsertPersistenceError({
@@ -374,7 +378,7 @@ export function environmentLayer(bindings: EnvironmentBindings) {
           yield* call(() => c.installCandidate(link), linkError);
           yield* call(
             () =>
-              c.publishCredential(link.environmentId, {
+              c.stageCredential(link.environmentId, {
                 ...prepared.credential,
                 environmentPublicKey: link.environmentPublicKey,
                 createdAt: link.updatedAt,
@@ -389,6 +393,16 @@ export function environmentLayer(bindings: EnvironmentBindings) {
               }),
           );
           yield* call(() => c.publishLink(link), linkError);
+          yield* call(
+            () => c.confirmCredential(link.environmentId, credential.tokenHash),
+            (cause) =>
+              new EnvironmentCredentialCreatePersistenceError({
+                stage: "insert-credential",
+                environmentId: link.environmentId,
+                credentialId: credential.credentialId,
+                cause,
+              }),
+          );
           return credential.token;
         }),
       });

@@ -12,6 +12,7 @@ import type { LinkIntent, LinkCommand } from "../AccountLinks.ts";
 import { environmentLayer, machineTokenHash } from "../EnvironmentPersistence.ts";
 import { accountName, environmentName, credentialRouteName, inventoryShardName } from "../names.ts";
 import { accountMigrations } from "../AccountObject.ts";
+import { environmentMigrations, MACHINE_AUTH_OWNER_LIMIT } from "../EnvironmentObject.ts";
 import { migrate } from "../storage.ts";
 import {
   EnvironmentLinkPersistence,
@@ -117,6 +118,7 @@ it("recovers every link/credential publication interruption after abort and reac
           ...desired.credential,
           environmentPublicKey: link.environmentPublicKey,
           createdAt: now,
+          link: { userId: link.userId, generation: link.generation },
         },
       });
     if (stage >= 3) {
@@ -124,17 +126,14 @@ it("recovers every link/credential publication interruption after abort and reac
       await c.route(material.tokenHash).publish({ version: 1, destination: environmentId });
     }
     if (stage >= 4)
-      await c
-        .environment(environmentId)
-        .publishCredential({ version: 1, environmentId, tokenHash: material.tokenHash });
-    if (stage >= 5)
       await c.command(link.userId, {
         kind: "publish",
         environmentId,
         operationId: link.operationId,
         generation: link.generation,
       });
-    if (stage >= 6) await c.publishLink(link);
+    if (stage >= 5) await c.publishLink(link);
+    if (stage >= 6) await c.confirmCredential(environmentId, material.tokenHash);
     expect((await c.authenticate(material.tokenHash)) !== null).toBe(stage === 6);
     await abortAllDurableObjects();
     const restarted = new EnvironmentCoordinator(env);
@@ -193,6 +192,23 @@ it.effect(
       };
       yield* rows.upsert({ environmentPublicKey: "key-a", state });
       const c = new EnvironmentCoordinator(env);
+      class Unreachable extends EnvironmentCoordinator {
+        override async read(userId: string, id: string) {
+          if (userId === "owner-a") throw new Error("Synthetic owner outage");
+          return await super.read(userId, id);
+        }
+      }
+      const candidates = yield* Effect.promise(() =>
+        c.environment(environmentId).candidates({ version: 1, environmentId }),
+      );
+      expect(
+        yield* Effect.promise(() => new Unreachable(env).authenticate(machineTokenHash(token))),
+      ).not.toBeNull();
+      expect(
+        yield* Effect.promise(() =>
+          c.environment(environmentId).candidates({ version: 1, environmentId }),
+        ),
+      ).toEqual(candidates);
       const before = yield* Effect.promise(() => c.read("owner-b", environmentId));
       if (!before) return yield* Effect.die("Missing owner");
       yield* Effect.promise(() =>
@@ -207,6 +223,7 @@ it.effect(
       ).toBeNull();
       expect(yield* rows.listForUser({ userId: "owner-b" })).toEqual([state]);
       yield* Effect.promise(() => abortAllDurableObjects());
+      expect(Option.isSome(yield* credentials.authenticate(token))).toBe(true);
       yield* Effect.promise(() =>
         new EnvironmentCoordinator(env).revoke("owner-a", environmentId, "unlink-a", now),
       );
@@ -217,6 +234,15 @@ it.effect(
         }),
       ).toBe(false);
       expect(Option.isSome(yield* credentials.authenticate(token))).toBe(true);
+      yield* Effect.promise(() =>
+        c.command("owner-b", {
+          kind: "revoke",
+          environmentId,
+          operationId: "unlink-b-without-candidate",
+          now,
+        }),
+      );
+      expect(yield* credentials.authenticate(token)).toEqual(Option.none());
       const newToken = yield* completion.complete(request("owner-b", environmentId, "key-b"));
       expect(yield* credentials.authenticate(token)).toEqual(Option.none());
       expect(Option.isSome(yield* credentials.authenticate(newToken))).toBe(true);
@@ -280,46 +306,98 @@ it.effect(
 it("never revives a rotated or revoked credential when publication replies are lost", async () => {
   await reset();
   const c = new EnvironmentCoordinator(env);
-  const delayedId = "delayed-first-install";
-  const a = credential(40);
-  const b = credential(41);
-  const oldLink = await c.beginLink(
+  const failedId = "failed-publication";
+  const working = credential(50);
+  const pending = credential(51);
+  await c.upsert(intent("working-owner", failedId), "working-link", now);
+  await c.publishCredential(failedId, {
+    credentialId: working.credentialId,
+    tokenHash: working.tokenHash,
+    environmentPublicKey: "key-a",
+    createdAt: now,
+  });
+  const pendingLink = await c.beginLink(
     {
-      ...intent("delayed-owner", delayedId),
-      credential: { credentialId: a.credentialId, tokenHash: a.tokenHash },
+      ...intent("pending-owner", failedId),
+      credential: { credentialId: pending.credentialId, tokenHash: pending.tokenHash },
     },
-    "delayed-a",
+    "pending-link",
     now,
   );
-  await c.installCandidate(oldLink);
-  const newLink = await c.beginLink(
-    {
-      ...intent("delayed-owner", delayedId),
-      credential: { credentialId: b.credentialId, tokenHash: b.tokenHash },
-    },
-    "delayed-b",
-    now,
-  );
-  await c.finishLink(newLink);
-  expect(await c.authenticate(b.tokenHash)).not.toBeNull();
-  await abortAllDurableObjects();
-  let failure = "";
-  try {
-    await c.publishCredential(delayedId, {
-      credentialId: a.credentialId,
-      tokenHash: a.tokenHash,
+  await c.installCandidate(pendingLink);
+  await c.environment(failedId).installCredential({
+    version: 1,
+    environmentId: failedId,
+    credential: {
+      credentialId: pending.credentialId,
+      tokenHash: pending.tokenHash,
       environmentPublicKey: "key-a",
       createdAt: now,
-      link: { userId: oldLink.userId, generation: oldLink.generation },
-    });
-  } catch (error) {
-    failure = String(error);
-  }
-  expect(await c.authenticate(b.tokenHash)).not.toBeNull();
-  expect(failure).toContain("superseded");
+      link: { userId: pendingLink.userId, generation: pendingLink.generation },
+    },
+  });
   await abortAllDurableObjects();
-  await c.finishLink(newLink);
-  expect(await c.authenticate(b.tokenHash)).not.toBeNull();
+  expect(await c.authenticate(working.tokenHash)).not.toBeNull();
+  expect(await c.authenticate(pending.tokenHash)).toBeNull();
+  await c.register("credential-route", credentialRouteName("machine", pending.tokenHash));
+  await c.route(pending.tokenHash).publish({ version: 1, destination: failedId });
+  await abortAllDurableObjects();
+  expect(await c.authenticate(working.tokenHash)).not.toBeNull();
+  expect(await c.authenticate(pending.tokenHash)).toBeNull();
+  await c.finishLink(pendingLink);
+  expect(await c.authenticate(working.tokenHash)).toBeNull();
+  expect(await c.authenticate(pending.tokenHash)).not.toBeNull();
+  for (const installed of [false, true]) {
+    const delayedId = `delayed-${installed ? "publication" : "install"}`;
+    const a = credential(installed ? 42 : 40);
+    const b = credential(installed ? 43 : 41);
+    const oldLink = await c.beginLink(
+      {
+        ...intent("delayed-owner", delayedId),
+        credential: { credentialId: a.credentialId, tokenHash: a.tokenHash },
+      },
+      `delayed-a-${installed}`,
+      now,
+    );
+    await c.installCandidate(oldLink);
+    if (installed)
+      await c.stageCredential(delayedId, {
+        ...a,
+        environmentPublicKey: "key-a",
+        createdAt: now,
+        link: { userId: oldLink.userId, generation: oldLink.generation },
+      });
+    const newLink = await c.beginLink(
+      {
+        ...intent("delayed-owner", delayedId),
+        credential: { credentialId: b.credentialId, tokenHash: b.tokenHash },
+      },
+      `delayed-b-${installed}`,
+      now,
+    );
+    await c.finishLink(newLink);
+    expect(await c.authenticate(b.tokenHash)).not.toBeNull();
+    await abortAllDurableObjects();
+    let failure = "";
+    try {
+      if (installed) await c.confirmCredential(delayedId, a.tokenHash);
+      else
+        await c.publishCredential(delayedId, {
+          credentialId: a.credentialId,
+          tokenHash: a.tokenHash,
+          environmentPublicKey: "key-a",
+          createdAt: now,
+          link: { userId: oldLink.userId, generation: oldLink.generation },
+        });
+    } catch (error) {
+      failure = String(error);
+    }
+    expect(await c.authenticate(b.tokenHash)).not.toBeNull();
+    expect(failure).toContain("superseded");
+    await abortAllDurableObjects();
+    await c.finishLink(newLink);
+    expect(await c.authenticate(b.tokenHash)).not.toBeNull();
+  }
   const environmentId = "credential-retry";
   await c.upsert(intent("owner", environmentId), "link", now);
   const old = credential(10);
@@ -349,95 +427,192 @@ it("never revives a rotated or revoked credential when publication replies are l
   expect(await c.authenticate(next.tokenHash)).toBeNull();
 });
 
-it("does not persist unknown routing lookups and keeps auth/unlink RPCs constant without inventory discovery", async () => {
-  await reset();
-  const c = new EnvironmentCoordinator(env);
-  for (let i = 20; i < 23; i++) {
-    const tokenHash = credential(i).tokenHash;
-    expect(await c.authenticate(tokenHash)).toBeNull();
-    await runInDurableObject(c.route(tokenHash), (_object, ctx) => {
-      expect(
-        ctx.storage.sql
-          .exec(
-            "SELECT name FROM sqlite_master WHERE name IN ('relay_object_schema', 'credential_route')",
-          )
-          .toArray(),
-      ).toEqual([]);
-    });
-  }
-  expect(
-    await c.environment("unknown").candidates({ version: 1, environmentId: "unknown" }),
-  ).toEqual([]);
-  await runInDurableObject(c.environment("unknown"), (_object, ctx) => {
-    expect(
-      ctx.storage.sql
-        .exec("SELECT name FROM sqlite_master WHERE name IN ('relay_object_schema', 'candidates')")
-        .toArray(),
-    ).toEqual([]);
-  });
-  const environmentId = "bounded-auth";
-  await c.upsert(intent("owner", environmentId), "link", now);
-  const token = credential(30);
-  await c.publishCredential(environmentId, {
-    credentialId: token.credentialId,
-    tokenHash: token.tokenHash,
-    environmentPublicKey: "key-a",
-    createdAt: now,
-  });
-  const calls: string[] = [];
-  class Bounded extends EnvironmentCoordinator {
-    override route(hash: string) {
-      calls.push("route");
-      return super.route(hash);
-    }
-    override environment(id: string) {
-      calls.push("environment");
-      return super.environment(id);
-    }
-    override async command(userId: string, command: LinkCommand) {
-      calls.push("account");
-      return await super.command(userId, command);
-    }
-    override async register(kind: Parameters<EnvironmentCoordinator["register"]>[0], name: string) {
-      calls.push("inventory-write");
-      await super.register(kind, name);
-    }
-    override async owners(): Promise<never> {
-      throw new Error("Unexpected owner scan");
-    }
-  }
-  const bindings = {
-    ...env,
-    INVENTORY: {
-      getByName: () => {
-        throw new Error("Unexpected inventory access");
-      },
-    },
-  } as unknown as EnvironmentBindings;
-  const bounded = new Bounded(bindings);
-  expect(await bounded.authenticate(token.tokenHash)).not.toBeNull();
-  expect(calls).toEqual(["route", "environment", "account"]);
-  calls.length = 0;
-  expect(await new Bounded(env).revoke("owner", environmentId, "unlink", now)).toBe(true);
-  expect(calls).toEqual(["inventory-write", "account", "environment"]);
-  await abortAllDurableObjects();
-  expect(await bounded.authenticate(token.tokenHash)).toBeNull();
-  await runInDurableObject(c.route(token.tokenHash), (_object, ctx) => {
-    ctx.storage.sql.exec("UPDATE relay_object_schema SET version = 2");
-  });
-  await runInDurableObject(c.environment(environmentId), (_object, ctx) => {
-    ctx.storage.sql.exec("UPDATE relay_object_schema SET version = 2");
-  });
-  await abortAllDurableObjects();
-  expect(
-    await errorOf(async () => await c.route(token.tokenHash).resolve({ version: 1 })),
-  ).toContain("newer than supported");
-  expect(
-    await errorOf(
-      async () => await c.environment(environmentId).candidates({ version: 1, environmentId }),
-    ),
-  ).toContain("newer than supported");
-});
+it.effect(
+  "does not persist unknown routing lookups and keeps auth/unlink RPCs constant without inventory discovery",
+  () =>
+    Effect.gen(function* () {
+      const { c, environmentId, token, noInventory } = yield* Effect.promise(async () => {
+        await reset();
+        const c = new EnvironmentCoordinator(env);
+        for (let i = 20; i < 23; i++) {
+          const tokenHash = credential(i).tokenHash;
+          expect(await c.authenticate(tokenHash)).toBeNull();
+          await runInDurableObject(c.route(tokenHash), (_object, ctx) => {
+            expect(
+              ctx.storage.sql
+                .exec(
+                  "SELECT name FROM sqlite_master WHERE name IN ('relay_object_schema', 'credential_route')",
+                )
+                .toArray(),
+            ).toEqual([]);
+          });
+        }
+        expect(
+          await c.environment("unknown").candidates({ version: 1, environmentId: "unknown" }),
+        ).toEqual([]);
+        await runInDurableObject(c.environment("unknown"), (_object, ctx) => {
+          expect(
+            ctx.storage.sql
+              .exec(
+                "SELECT name FROM sqlite_master WHERE name IN ('relay_object_schema', 'candidates')",
+              )
+              .toArray(),
+          ).toEqual([]);
+        });
+        const environmentId = "bounded-auth";
+        await c.upsert(intent("owner", environmentId), "link", now);
+        const token = credential(30);
+        await c.publishCredential(environmentId, {
+          credentialId: token.credentialId,
+          tokenHash: token.tokenHash,
+          environmentPublicKey: "key-a",
+          createdAt: now,
+        });
+        const noInventory = {
+          ...env,
+          INVENTORY: {
+            getByName: () => {
+              throw new Error("Unexpected hot-path inventory access");
+            },
+          },
+        } as unknown as EnvironmentBindings;
+        return { c, environmentId, token, noInventory };
+      });
+      const activityState = {
+        environmentId: EnvironmentId.make(environmentId),
+        threadId: ThreadId.make("hot-thread"),
+        projectTitle: "Synthetic project",
+        threadTitle: "Synthetic thread",
+        modelTitle: "Synthetic model",
+        phase: "running" as const,
+        headline: "Working",
+        updatedAt: now,
+        deepLink: "/threads/bounded-auth/hot-thread",
+      };
+      yield* Effect.gen(function* () {
+        const rows = yield* AgentActivityPersistence;
+        expect(
+          yield* rows.upsert({ environmentPublicKey: "key-a", state: activityState }),
+        ).toBeNull();
+        expect(
+          yield* rows.upsert({
+            environmentPublicKey: "key-a",
+            state: { ...activityState, headline: "Updated" },
+          }),
+        ).toEqual(activityState);
+      }).pipe(
+        Effect.provide(
+          environmentLayer(noInventory).pipe(Layer.provide(SecureRandom.layerWebCrypto)),
+        ),
+      );
+      const coldState = { ...activityState, environmentId: EnvironmentId.make("cold-activity") };
+      yield* Effect.gen(function* () {
+        const rows = yield* AgentActivityPersistence;
+        yield* rows.upsert({ environmentPublicKey: "key-a", state: coldState });
+      });
+      yield* Effect.promise(async () => {
+        const coldName = environmentName(coldState.environmentId);
+        expect(
+          await env.INVENTORY.getByName(inventoryShardName("environment", coldName)).list({
+            version: 1,
+            kind: "environment",
+            after: "",
+            limit: 1000,
+          }),
+        ).toContainEqual({ name: coldName });
+        const calls: string[] = [];
+        class Bounded extends EnvironmentCoordinator {
+          override route(hash: string) {
+            calls.push("route");
+            return super.route(hash);
+          }
+          override environment(id: string) {
+            calls.push("environment");
+            return super.environment(id);
+          }
+          override async command(userId: string, command: LinkCommand) {
+            calls.push("account");
+            return await super.command(userId, command);
+          }
+          override async register(
+            kind: Parameters<EnvironmentCoordinator["register"]>[0],
+            name: string,
+          ) {
+            calls.push("inventory-write");
+            await super.register(kind, name);
+          }
+          override async owners(): Promise<never> {
+            throw new Error("Unexpected owner scan");
+          }
+        }
+        const bindings = {
+          ...env,
+          INVENTORY: {
+            getByName: () => {
+              throw new Error("Unexpected inventory access");
+            },
+          },
+        } as unknown as EnvironmentBindings;
+        const bounded = new Bounded(bindings);
+        expect(await bounded.authenticate(token.tokenHash)).not.toBeNull();
+        expect(calls).toEqual(["route", "environment", "account"]);
+        for (let i = 0; i < MACHINE_AUTH_OWNER_LIMIT; i++)
+          await c.environment(environmentId).candidate({
+            version: 1,
+            environmentId,
+            candidate: {
+              userId: `aaa-stale-${i}`,
+              environmentPublicKey: "key-a",
+              generation: 1,
+              published: true,
+              revoked: false,
+              holdWebhooksWhileOffline: false,
+            },
+          });
+        calls.length = 0;
+        expect(await bounded.authenticate(token.tokenHash)).toBeNull();
+        expect(calls.filter((v) => v === "account")).toHaveLength(MACHINE_AUTH_OWNER_LIMIT);
+        expect(calls).toHaveLength(MACHINE_AUTH_OWNER_LIMIT + 2);
+        for (let i = 0; i < MACHINE_AUTH_OWNER_LIMIT; i++)
+          await c.environment(environmentId).candidate({
+            version: 1,
+            environmentId,
+            candidate: {
+              userId: `aaa-stale-${i}`,
+              environmentPublicKey: "key-a",
+              generation: 2,
+              published: false,
+              revoked: true,
+              holdWebhooksWhileOffline: false,
+            },
+          });
+        calls.length = 0;
+        expect(await new Bounded(env).revoke("owner", environmentId, "unlink", now)).toBe(true);
+        expect(calls).toEqual(["inventory-write", "account", "environment"]);
+        await abortAllDurableObjects();
+        expect(await bounded.authenticate(token.tokenHash)).toBeNull();
+        await runInDurableObject(c.route(token.tokenHash), (_object, ctx) => {
+          ctx.storage.sql.exec("UPDATE relay_object_schema SET version = 2");
+        });
+        await runInDurableObject(c.environment(environmentId), (_object, ctx) => {
+          ctx.storage.sql.exec(
+            "UPDATE relay_object_schema SET version = ?",
+            environmentMigrations.length + 1,
+          );
+        });
+        await abortAllDurableObjects();
+        expect(
+          await errorOf(async () => await c.route(token.tokenHash).resolve({ version: 1 })),
+        ).toContain("newer than supported");
+        expect(
+          await errorOf(
+            async () =>
+              await c.environment(environmentId).candidates({ version: 1, environmentId }),
+          ),
+        ).toContain("newer than supported");
+      });
+    }).pipe(Effect.provide(layer)),
+);
 
 it("upgrades piece-four account storage without altering identity, session or pending journal rows", async () => {
   await reset();
@@ -484,6 +659,37 @@ it("upgrades piece-four account storage without altering identity, session or pe
     ).toEqual([{ operation_id: "operation-a", phase: "intent" }]);
     expect(ctx.storage.sql.exec("SELECT * FROM account_links").toArray()).toEqual([]);
   });
+  const legacyEnvironment = env.ENVIRONMENTS.getByName(environmentName("legacy-machine"));
+  await runInDurableObject(legacyEnvironment, async (_object, ctx) => {
+    await ctx.storage.deleteAll();
+    migrate(ctx.storage, environmentMigrations.slice(0, 1));
+    ctx.storage.sql.exec(
+      "INSERT INTO credentials VALUES ('published-hash','published-id','key-a',?,1,0)",
+      now,
+    );
+    ctx.storage.sql.exec(
+      "INSERT INTO credentials VALUES ('pending-hash','pending-id','key-a',?,0,0)",
+      now,
+    );
+  });
+  await abortAllDurableObjects();
+  await env.ENVIRONMENTS.getByName(environmentName("legacy-machine")).candidates({
+    version: 1,
+    environmentId: "legacy-machine",
+  });
+  await runInDurableObject(
+    env.ENVIRONMENTS.getByName(environmentName("legacy-machine")),
+    (_object, ctx) => {
+      expect(
+        ctx.storage.sql
+          .exec("SELECT credential_id, published, revoked FROM credentials ORDER BY credential_id")
+          .toArray(),
+      ).toEqual([
+        { credential_id: "pending-id", published: 0, revoked: 1 },
+        { credential_id: "published-id", published: 1, revoked: 0 },
+      ]);
+    },
+  );
   await new EnvironmentCoordinator(env).upsert(
     intent(userId, "schema-environment"),
     "new-link",

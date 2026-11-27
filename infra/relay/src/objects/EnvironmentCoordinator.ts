@@ -116,16 +116,22 @@ export class EnvironmentCoordinator {
     if (!activeLink(current) || current.generation !== link.generation)
       throw new Error("Link superseded during publication");
   }
-  async publishCredential(environmentId: string, credential: MachineCredential) {
+  async stageCredential(environmentId: string, credential: MachineCredential) {
     await this.register("environment", environmentName(environmentId));
     await this.environment(environmentId).installCredential({ version, environmentId, credential });
     await this.register("credential-route", credentialRouteName("machine", credential.tokenHash));
     await this.route(credential.tokenHash).publish({ version, destination: environmentId });
+  }
+  async publishCredential(environmentId: string, credential: MachineCredential) {
+    await this.stageCredential(environmentId, credential);
+    await this.confirmCredential(environmentId, credential.tokenHash);
+  }
+  async confirmCredential(environmentId: string, tokenHash: string) {
     if (
       !(await this.environment(environmentId).publishCredential({
         version,
         environmentId,
-        tokenHash: credential.tokenHash,
+        tokenHash,
       }))
     )
       throw new Error("Credential publication failed");
@@ -141,13 +147,15 @@ export class EnvironmentCoordinator {
       throw new Error("Link operation superseded");
     await this.installCandidate(current);
     if (current.credential)
-      await this.publishCredential(current.environmentId, {
+      await this.stageCredential(current.environmentId, {
         ...current.credential,
         environmentPublicKey: current.environmentPublicKey,
         createdAt: current.updatedAt,
         link: { userId: current.userId, generation: current.generation },
       });
     await this.publishLink(current);
+    if (current.credential)
+      await this.confirmCredential(current.environmentId, current.credential.tokenHash);
   }
   async upsert(intent: LinkIntent, operationId: string, now: string) {
     const link = await this.beginLink(intent, operationId, now);
@@ -173,19 +181,28 @@ export class EnvironmentCoordinator {
       tokenHash,
     });
     if (!result) return null;
-    const link = await this.read(result.candidate.userId, environmentId);
-    if (
-      !activeLink(link) ||
-      link.generation !== result.candidate.generation ||
-      link.environmentPublicKey !== result.environmentPublicKey
-    )
-      return null;
-    return {
-      credentialId: result.credentialId,
-      environmentId,
-      environmentPublicKey: result.environmentPublicKey,
-    };
+    for (const candidate of result.candidates) {
+      let link: StoredLink | null;
+      try {
+        link = await this.read(candidate.userId, environmentId);
+      } catch {
+        continue;
+      }
+      if (
+        activeLink(link) &&
+        link.generation === candidate.generation &&
+        link.environmentPublicKey === result.environmentPublicKey
+      ) {
+        return {
+          credentialId: result.credentialId,
+          environmentId,
+          environmentPublicKey: result.environmentPublicKey,
+        };
+      }
+    }
+    return null;
   }
+
   async prune(updatedBefore: string) {
     // Maintenance only; authentication and account requests never read inventory.
     for (const shard of inventoryShardNames) {
