@@ -225,7 +225,7 @@ export function makeAssistantStreamingFilter(
       return withText(event, ready);
     },
     nextIdleFlushAt: (): number | null => nextDueAt,
-    /** Returns the held snapshots due by `now` and counts them as delivered. */
+    /** Delivers snapshots due by `now`, or selected by a boundary drain. */
     takeIdleFlushes(
       now: number,
       drain?: (event: ProviderAdapter.ProviderAdapterV2Event) => boolean,

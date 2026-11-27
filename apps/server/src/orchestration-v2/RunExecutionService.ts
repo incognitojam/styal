@@ -114,6 +114,13 @@ const backgroundCapableTurnItemTypes: ReadonlySet<OrchestrationV2TurnItem["type"
   "subagent",
 ]);
 
+const toolTurnItemTypes: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
+  ...backgroundCapableTurnItemTypes,
+  "file_change",
+  "file_search",
+  "web_search",
+]);
+
 function isSettledTurnItemStatus(status: OrchestrationV2TurnItem["status"]): boolean {
   return !isOrchestrationV2WorkActive(status);
 }
@@ -1604,14 +1611,11 @@ export const layer: Layer.Layer<
                       threadId: event.threadId ?? input.run.threadId,
                     }
                   : event.type === "turn_item.updated" &&
-                      backgroundCapableTurnItemTypes.has(event.turnItem.type) &&
+                      toolTurnItemTypes.has(event.turnItem.type) &&
                       !startedToolItems.has(event.turnItem.id)
                     ? { turnId: event.turnItem.providerTurnId, threadId: event.turnItem.threadId }
                     : null;
-          if (
-            event.type === "turn_item.updated" &&
-            backgroundCapableTurnItemTypes.has(event.turnItem.type)
-          )
+          if (event.type === "turn_item.updated" && toolTurnItemTypes.has(event.turnItem.type))
             startedToolItems.add(event.turnItem.id);
           if (boundary !== null) {
             yield* flushAssistantText(DateTime.toEpochMillis(yield* DateTime.now), (held) =>
@@ -1619,8 +1623,8 @@ export const layer: Layer.Layer<
               event.status !== "completed" &&
               !childTurnsContinue(event)
                 ? true
-                : held.type === "turn_item.updated"
-                  ? boundary.turnId !== null && held.turnItem.providerTurnId === boundary.turnId
+                : held.type === "turn_item.updated" && boundary.turnId !== null
+                  ? held.turnItem.providerTurnId === boundary.turnId
                   : streamedThreadId(held) === boundary.threadId,
             );
           }

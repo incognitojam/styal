@@ -1,9 +1,12 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   CheckpointScopeId,
   ChatAttachmentId,
   ChatFileAttachment,
   CommandId,
+  EventId,
+  ProjectId,
   MessageId,
   NodeId,
   type OrchestrationV2AppThread,
@@ -48,6 +51,15 @@ import { SqlError, classifySqliteError } from "effect/sql/SqlError";
 
 import { toPersistenceSqlError } from "../persistence/Errors.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as Orchestrator from "./Orchestrator.ts";
+import * as EffectWorker from "./EffectWorker.ts";
+import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
+import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+
 import * as CheckpointService from "./CheckpointService.ts";
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
@@ -3379,32 +3391,11 @@ it.effect("fails the run when its event stream ends without a root terminal", ()
 
 it.effect("leaves the run to restart recovery when shutdown interrupts its event stream", () =>
   Effect.gen(function* () {
-    let drained = false;
     const { written, observed } = yield* captureRootRunTermination({
       key: "stream-end:shutdown",
       shouldFinalizeRun: () => Effect.succeed(true),
-      events: (ids) =>
-        Stream.make(
-          streamedMessageEvent({
-            id: "shutdown-held-text",
-            threadId: ids.threadId,
-            runId: ids.runId,
-            role: "assistant",
-            text: "Preserved on shutdown",
-            streaming: true,
-          }),
-        ).pipe(Stream.concat(Stream.failCause(Cause.interrupt()))),
-      ingestNormalized: (input) =>
-        Effect.sync(() => {
-          if (input.event.type === "message.updated") {
-            assert.equal(input.event.message.text, "Preserved on shutdown");
-            assert.equal(input.writeIfRunCurrent?.expectedStatus, "running");
-            drained = true;
-          }
-          return [];
-        }),
+      events: () => Stream.failCause(Cause.interrupt()),
     });
-    assert.isTrue(drained);
     assert.deepEqual(written, []);
     assert.deepEqual(observed, []);
   }),
@@ -4663,35 +4654,57 @@ it.effect("drops a child's held text once the child is handed to another run", (
   }),
 );
 
-it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed"] as const)(
-  "drains paired text and reasoning before %s, without a late timer write",
-  (boundary) =>
-    Effect.gen(function* () {
-      const key = `text-boundary-${boundary}`;
-      const ids = backgroundScenarioIds(key);
-      const observed: string[] = [];
-      const text = streamedMessageEvent({
-        id: `${key}:message`,
-        threadId: ids.threadId,
-        runId: ids.runId,
-        role: "assistant",
-        text: "Exact held tail",
-        streaming: true,
-      });
-      const item = {
-        ...makeLinkedChildTurnItemFixture({ ids, driver, type: "assistant_message" }),
-        threadId: ids.threadId,
-        runId: ids.runId,
-        providerTurnId: ids.rootProviderTurnId,
-        text: "Exact held tail",
-        streaming: true,
-      };
-      const terminal = rootTerminalEvent(
-        ids,
-        boundary === "failed" ? "failed" : boundary === "interrupted" ? "interrupted" : "completed",
-      );
-      const control: ProviderAdapter.ProviderAdapterV2Event =
-        boundary === "tool"
+it.effect.each([
+  "tool",
+  "file_change",
+  "file_search",
+  "web_search",
+  "approval",
+  "input",
+  "completed",
+  "interrupted",
+  "failed",
+] as const)("drains paired text and reasoning before %s, without a late timer write", (boundary) =>
+  Effect.gen(function* () {
+    const key = `text-boundary-${boundary}`;
+    const ids = backgroundScenarioIds(key);
+    const observed: string[] = [];
+    const text = streamedMessageEvent({
+      id: `${key}:message`,
+      threadId: ids.threadId,
+      runId: ids.runId,
+      role: "assistant",
+      text: "Exact held tail",
+      streaming: true,
+    });
+    const item = {
+      ...makeLinkedChildTurnItemFixture({ ids, driver, type: "assistant_message" }),
+      threadId: ids.threadId,
+      runId: ids.runId,
+      providerTurnId: ids.rootProviderTurnId,
+      text: "Exact held tail",
+      streaming: true,
+    };
+    const terminal = rootTerminalEvent(
+      ids,
+      boundary === "failed" ? "failed" : boundary === "interrupted" ? "interrupted" : "completed",
+    );
+    const control: ProviderAdapter.ProviderAdapterV2Event =
+      boundary === "file_change" || boundary === "file_search" || boundary === "web_search"
+        ? {
+            type: "turn_item.updated",
+            driver,
+            turnItem: {
+              ...makeLinkedChildTurnItemFixture({ ids, driver, type: "command_execution" }),
+              id: TurnItemId.make(`${key}:tool`),
+              threadId: ids.threadId,
+              runId: ids.runId,
+              providerTurnId: ids.rootProviderTurnId,
+              type: boundary,
+              fileName: "demo.txt",
+            },
+          }
+        : boundary === "tool"
           ? {
               type: "turn_item.updated",
               driver,
@@ -4699,6 +4712,7 @@ it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed
                 ...makeLinkedChildTurnItemFixture({ ids, driver, type: "command_execution" }),
                 id: TurnItemId.make(`${key}:tool`),
                 threadId: ids.threadId,
+                runId: ids.runId,
                 providerTurnId: ids.rootProviderTurnId,
               },
             }
@@ -4720,47 +4734,44 @@ it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed
                 },
               }
             : terminal;
-      yield* runBackgroundItemScenario(
-        key,
-        () => [
-          text,
-          { type: "turn_item.updated", driver, turnItem: item },
-          {
-            type: "turn_item.updated",
-            driver,
-            turnItem: { ...item, id: TurnItemId.make(`${key}:reasoning`), type: "reasoning" },
-          },
-          control,
-          terminal,
-        ],
+    yield* runBackgroundItemScenario(
+      key,
+      () => [
+        text,
+        { type: "turn_item.updated", driver, turnItem: item },
         {
-          onIngest: (event) =>
-            Effect.sync(() => {
-              if (event.type === "message.updated") observed.push(event.message.text);
-              else if (event.type === "turn_item.updated" && "text" in event.turnItem)
-                observed.push(event.turnItem.text);
-              else if (
-                event.type === "runtime_request.updated" ||
-                event.type === "turn.terminal" ||
-                event.type === "turn_item.updated"
-              )
-                observed.push("boundary");
-            }),
-          onFinalized: () =>
-            Effect.sync(() => {
-              assert.deepEqual(observed.slice(0, 3), [
-                "Exact held tail",
-                "Exact held tail",
-                "Exact held tail",
-              ]);
-            }),
+          type: "turn_item.updated",
+          driver,
+          turnItem: { ...item, id: TurnItemId.make(`${key}:reasoning`), type: "reasoning" },
         },
-      );
-      const settled = [...observed];
-      yield* TestClock.adjust("2 seconds");
-      assert.deepEqual(observed, settled);
-      assert.equal(observed[3], "boundary");
-    }),
+        control,
+        terminal,
+      ],
+      {
+        onIngest: (event) =>
+          Effect.sync(() => {
+            if (event.type === "message.updated") observed.push(event.message.text);
+            else if (event.type === "turn_item.updated" && "text" in event.turnItem)
+              observed.push(event.turnItem.text);
+            else if (
+              event.type === "runtime_request.updated" ||
+              event.type === "turn.terminal" ||
+              event.type === "turn_item.updated"
+            )
+              observed.push("boundary");
+          }),
+      },
+    );
+    assert.deepEqual(observed.slice(0, 3), [
+      "Exact held tail",
+      "Exact held tail",
+      "Exact held tail",
+    ]);
+    const settled = [...observed];
+    yield* TestClock.adjust("2 seconds");
+    assert.deepEqual(observed, settled);
+    assert.equal(observed[3], "boundary");
+  }),
 );
 
 it.effect("delivers paired continuous text at its fixed deadline while new chunks arrive", () =>
@@ -4831,4 +4842,354 @@ it.effect("delivers paired continuous text at its fixed deadline while new chunk
     yield* Queue.offer(events, rootTerminalEvent(ids, "completed"));
     yield* Fiber.join(scenario);
   }),
+);
+
+it.effect("drains a child's held text before its search starts without a provider turn id", () =>
+  Effect.gen(function* () {
+    const key = "child-search-boundary";
+    let textStored = false;
+    let searchSawText = false;
+    yield* runBackgroundItemScenario(
+      key,
+      (ids) => [
+        childThreadCreatedEvent(ids),
+        linkedSubagentEvent(ids, "running"),
+        childAssistantSnapshot(ids),
+        {
+          type: "turn_item.updated",
+          driver,
+          turnItem: {
+            ...makeLinkedChildTurnItemFixture({ ids, driver, type: "command_execution" }),
+            id: TurnItemId.make(`${key}:search`),
+            type: "file_search",
+          },
+        },
+        rootTerminalEvent(ids, "interrupted"),
+      ],
+      {
+        onIngest: (event) =>
+          Effect.sync(() => {
+            if (isHeldChildSnapshot(event)) textStored = true;
+            if (event.type === "turn_item.updated" && event.turnItem.type === "file_search")
+              searchSawText = textStored;
+          }),
+      },
+    );
+    assert.isTrue(searchSawText);
+  }),
+);
+
+it.effect.each([
+  "complete",
+  "stop",
+  "shutdown",
+  "shutdown-after-timer",
+  "owner-lost",
+  "owner-lost-after-timer",
+] as const)("persists held text with the real sink and reopens it after %s", (ending) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const cwd = yield* checkpointWorkspace(`streaming-persistence-${ending}`);
+      const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+      const started = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2TurnInput>();
+      const instanceId = ProviderInstanceId.make("codex");
+      const modelSelection = { instanceId, model: "test-model" };
+      const threadId = ThreadId.make("thread:streaming-persistence");
+      let active: ProviderAdapter.ProviderAdapterV2TurnInput | undefined;
+      const terminal = (
+        status: "completed" | "interrupted",
+      ): ProviderAdapter.ProviderAdapterV2Event => ({
+        type: "turn.terminal",
+        driver,
+        providerThreadId: active!.providerThread.id,
+        providerTurnId: ProviderTurnId.make(`turn:${active!.attemptId}`),
+        runOrdinal: active!.runOrdinal,
+        status,
+        failure: null,
+        threadDisposition: "reusable",
+      });
+      const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
+        instanceId,
+        driver,
+        getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+        planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
+        openSession: (input) =>
+          Effect.gen(function* () {
+            const now = yield* DateTime.now;
+            return {
+              instanceId,
+              driver,
+              providerSessionId: input.providerSessionId,
+              providerSession: {
+                id: input.providerSessionId,
+                driver,
+                providerInstanceId: instanceId,
+                status: "ready",
+                cwd,
+                model: modelSelection.model,
+                capabilities: CodexProviderCapabilitiesV2,
+                createdAt: now,
+                updatedAt: now,
+                lastError: null,
+              },
+              events: Stream.fromQueue(events),
+              ensureThread: ({ threadId }) =>
+                Effect.succeed({
+                  id: ProviderThreadId.make(`provider-thread:${threadId}`),
+                  driver,
+                  providerInstanceId: instanceId,
+                  providerSessionId: input.providerSessionId,
+                  appThreadId: threadId,
+                  ownerNodeId: null,
+                  nativeThreadRef: { driver, nativeId: "synthetic-thread", strength: "strong" },
+                  nativeConversationHeadRef: null,
+                  status: "idle",
+                  firstRunOrdinal: null,
+                  lastRunOrdinal: null,
+                  handoffIds: [],
+                  forkedFrom: null,
+                  createdAt: now,
+                  updatedAt: now,
+                }),
+              resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
+              startTurn: (turn) =>
+                Effect.gen(function* () {
+                  active = turn;
+                  yield* Queue.offer(events, {
+                    type: "provider_turn.updated",
+                    driver,
+                    providerTurn: {
+                      id: ProviderTurnId.make(`turn:${turn.attemptId}`),
+                      providerThreadId: turn.providerThread.id,
+                      nodeId: turn.rootNodeId,
+                      runAttemptId: turn.attemptId,
+                      nativeTurnRef: null,
+                      ordinal: turn.providerTurnOrdinal,
+                      status: "running",
+                      startedAt: now,
+                      completedAt: null,
+                    },
+                  });
+                  yield* Queue.offer(started, turn);
+                }),
+              interruptTurn: () => Queue.offer(events, terminal("interrupted")).pipe(Effect.asVoid),
+              steerTurn: () => Effect.die("unused"),
+              respondToRuntimeRequest: () => Effect.die("unused"),
+              readThreadSnapshot: () => Effect.die("unused"),
+              rollbackThread: () => Effect.die("unused"),
+              forkThread: () => Effect.die("unused"),
+            };
+          }),
+      };
+      const databaseLayer = SqlitePersistence.layerFromPath(`${cwd}/.git/streaming.sqlite`).pipe(
+        Layer.provide(NodeServices.layer),
+      );
+      const layer = () =>
+        ProviderReplayHarness.layerWithRegistry(
+          { name: `streaming-persistence-${ending}` },
+          ProviderAdapterRegistry.layerSingle(adapter),
+          {
+            databaseLayer,
+            runEffectWorker: false,
+            serverSettingsLayer: ServerSettings.layerTest({
+              responseStreamingMode: "paragraph",
+            }).pipe(Layer.orDie),
+          },
+        );
+      let expected = "First.\n\nheld";
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const watch = Effect.fn("StreamingPersistence.watch")(function* (
+          predicate: (event: OrchestrationV2DomainEvent) => boolean,
+        ) {
+          const afterSequence = yield* sink.latestSequence();
+          return yield* sink.stream({ afterSequence }).pipe(
+            Stream.filter(({ event }) => predicate(event)),
+            Stream.take(1),
+            Stream.mapEffect(() => orchestrator.getThreadProjection(threadId)),
+            Stream.runHead,
+            Effect.forkScoped,
+          );
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("create"),
+          threadId,
+          projectId: ProjectId.make("project:streaming-persistence"),
+          title: "Synthetic persistence",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: cwd,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const running = yield* watch(
+          (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+        );
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("start"),
+          threadId,
+          messageId: MessageId.make("prompt"),
+          text: "Synthetic reply",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* worker.drain();
+        const startedProjection = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(startedProjection.runs[0]?.status, "running");
+        const turn = yield* Queue.take(started);
+        yield* Fiber.join(running);
+        const message = (text: string) =>
+          streamedMessageEvent({
+            id: "assistant",
+            threadId,
+            runId: turn.runId,
+            role: "assistant",
+            text,
+            streaming: true,
+          });
+        const pair = (text: string): ProviderAdapter.ProviderAdapterV2Event => ({
+          type: "turn_item.updated",
+          driver,
+          turnItem: {
+            id: TurnItemId.make("assistant-item"),
+            threadId,
+            runId: turn.runId,
+            nodeId: turn.rootNodeId,
+            providerThreadId: turn.providerThread.id,
+            providerTurnId: ProviderTurnId.make(`turn:${turn.attemptId}`),
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 2,
+            status: "running",
+            title: "Reply",
+            startedAt: DateTime.makeUnsafe(0),
+            completedAt: null,
+            updatedAt: DateTime.makeUnsafe(0),
+            type: "assistant_message",
+            messageId: MessageId.make("assistant"),
+            text,
+            streaming: true,
+          },
+        });
+        const feed = (text: string, marker: string) =>
+          Effect.gen(function* () {
+            const read = yield* watch(
+              (event) =>
+                event.type === "message.updated" && event.payload.id === MessageId.make(marker),
+            );
+            yield* Queue.offerAll(events, [
+              message(text),
+              pair(text),
+              streamedMessageEvent({
+                id: marker,
+                threadId,
+                runId: turn.runId,
+                role: "user",
+                text: "marker",
+                streaming: false,
+              }),
+            ]);
+            yield* Fiber.join(read);
+          });
+        yield* feed(expected, "marker-1");
+        const before = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(
+          before.messages.find((m) => m.id === MessageId.make("assistant"))?.text,
+          "First.\n\n",
+        );
+        if (ending.endsWith("after-timer")) {
+          const flushed = yield* watch(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.id === TurnItemId.make("assistant-item") &&
+              event.payload.type === "assistant_message" &&
+              event.payload.text === expected,
+          );
+          yield* TestClock.adjust("800 millis");
+          yield* Fiber.join(flushed);
+          expected += " late";
+          yield* feed(expected, "marker-2");
+        }
+        if (ending.startsWith("owner-lost")) {
+          const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("ownership-changed"),
+                type: "run.updated",
+                threadId,
+                runId: run.id,
+                occurredAt: yield* DateTime.now,
+                payload: { ...run, activeAttemptId: RunAttemptId.make("replacement-attempt") },
+              },
+            ],
+          });
+          expected = ending.endsWith("after-timer") ? "First.\n\nheld" : "First.\n\n";
+          yield* TestClock.adjust("1 second");
+        } else if (ending === "complete" || ending === "stop") {
+          const finished = yield* watch(
+            (event) =>
+              event.type === "run.updated" &&
+              (event.payload.status === "waiting" ||
+                event.payload.status === "completed" ||
+                event.payload.status === "interrupted"),
+          );
+          if (ending === "stop") {
+            yield* orchestrator.dispatch({
+              type: "thread.stop",
+              commandId: CommandId.make("stop"),
+              threadId,
+            });
+            yield* worker.drain();
+          } else yield* Queue.offer(events, terminal("completed"));
+          const projection = yield* Fiber.join(finished);
+          yield* worker.drain();
+          const settledProjection = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(
+            settledProjection.runs[0]?.status,
+            ending === "stop" ? "interrupted" : "completed",
+          );
+          const settledSequence = yield* sink.latestSequence();
+          yield* TestClock.adjust("2 seconds");
+          assert.equal(yield* sink.latestSequence(), settledSequence);
+          assert.deepEqual(
+            (yield* orchestrator.getThreadProjection(threadId)).messages,
+            settledProjection.messages,
+          );
+          assert.isTrue(Option.isSome(projection));
+          if (Option.isSome(projection))
+            assert.equal(
+              projection.value.messages.find((m) => m.id === MessageId.make("assistant"))?.text,
+              expected,
+            );
+        }
+        const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        yield* sessions.release({
+          providerSessionId: turn.providerThread.providerSessionId!,
+          reason: "server_shutdown",
+        });
+      }).pipe(Effect.provide(layer()));
+      yield* Effect.gen(function* () {
+        const projection = yield* (yield* Orchestrator.OrchestratorV2).getThreadProjection(
+          threadId,
+        );
+        assert.equal(
+          projection.messages.find((m) => m.id === MessageId.make("assistant"))?.text,
+          expected,
+        );
+        const item = projection.turnItems.find(
+          (item) => item.id === TurnItemId.make("assistant-item"),
+        );
+        assert.equal(item?.type === "assistant_message" ? item.text : null, expected);
+      }).pipe(Effect.provide(layer()));
+    }),
+  ),
 );

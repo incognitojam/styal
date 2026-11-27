@@ -121,7 +121,7 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
     steps: [
       { at: 0, text: "A\n\nB", shows: "A\n\n" },
       { idle: 800, shows: ["A\n\nB"] },
-      { at: 800, final: "A\n\nB." },
+      { at: 800, final: "A\n\nB" },
       { idle: 5_000, shows: [] },
     ],
   },
@@ -184,7 +184,12 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
   {
     name: "turn mode",
     mode: "turn",
-    steps: [{ at: 0, text: "A\n\nB", shows: null }, { dueAt: null }],
+    steps: [
+      { at: 0, text: "A\n\nB", shows: null },
+      { dueAt: null },
+      { at: 200, final: "A\n\nB" },
+      { idle: 1_000, shows: [] },
+    ],
   },
 ])("paragraph streaming holds and idle-delivers $name", ({ mode, steps }) => {
   const filter = makeAssistantStreamingFilter(mode ?? "paragraph", 800);
@@ -192,9 +197,10 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
     if ("dueAt" in step) assert.equal(filter.nextIdleFlushAt(), step.dueAt);
     else if ("idle" in step)
       assert.deepEqual(filter.takeIdleFlushes(step.idle).map(shown), [...step.shows]);
-    else if ("final" in step)
-      assert.equal(shown(filter.filter(snapshot("m", step.final, false), step.at)), step.final);
-    else
+    else if ("final" in step) {
+      const final = snapshot("m", step.final, false);
+      assert.deepEqual(filter.filter(final, step.at), final);
+    } else
       assert.equal(
         shown(filter.filter(snapshot("id" in step ? step.id : "m", step.text, true), step.at)),
         step.shows,
