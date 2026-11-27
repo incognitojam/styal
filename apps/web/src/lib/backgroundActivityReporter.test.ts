@@ -3,6 +3,8 @@ import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
@@ -10,6 +12,7 @@ import { vi } from "vite-plus/test";
 
 import {
   layer,
+  readSystemActive,
   observeBackgroundActivitySubscription,
   retainedBackgroundScopes,
 } from "./backgroundActivityReporter.ts";
@@ -64,6 +67,37 @@ describe("wasRecentlyInteracted", () => {
       ]);
 
       yield* Effect.all([releaseFirst, releaseSecond]);
+    }),
+  );
+});
+
+describe("readSystemActive", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubBridge = (getSystemActive?: () => Promise<boolean>) =>
+    vi.stubGlobal("window", { desktopBridge: getSystemActive ? { getSystemActive } : {} });
+
+  it.effect("reports the desktop OS idle state", () =>
+    Effect.gen(function* () {
+      stubBridge(() => Promise.resolve(false));
+      expect(yield* readSystemActive).toEqual(Option.some(false));
+    }),
+  );
+
+  it.effect("omits the state when the bridge lacks it, fails, or stalls", () =>
+    Effect.gen(function* () {
+      stubBridge();
+      expect(yield* readSystemActive).toEqual(Option.none());
+
+      stubBridge(() => Promise.reject(new Error("ipc closed")));
+      expect(yield* readSystemActive).toEqual(Option.none());
+
+      stubBridge(() => new Promise<boolean>(() => undefined));
+      const stalled = yield* Effect.forkChild(readSystemActive);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(stalled)).toEqual(Option.none());
     }),
   );
 });

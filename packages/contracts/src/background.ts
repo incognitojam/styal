@@ -71,6 +71,8 @@ export const ClientActivityReportInput = Schema.Struct({
   visible: Schema.Boolean,
   focused: Schema.Boolean,
   recentlyInteracted: Schema.Boolean,
+  /** Desktop only: the OS saw keyboard or mouse input recently, in any app. */
+  systemActive: Schema.optionalKey(Schema.Boolean),
   appState: Schema.optionalKey(Schema.Literals(["active", "inactive", "background", "unknown"])),
   lowPowerMode: Schema.optionalKey(BackgroundBooleanState),
   scopes: Schema.Array(BackgroundScope),
@@ -87,6 +89,8 @@ export const ClientActivityLease = Schema.Struct({
   visible: Schema.Boolean,
   focused: Schema.Boolean,
   recentlyInteracted: Schema.Boolean,
+  /** Desktop only: the OS saw keyboard or mouse input recently, in any app. */
+  systemActive: Schema.optionalKey(Schema.Boolean),
   appState: Schema.optionalKey(Schema.Literals(["active", "inactive", "background", "unknown"])),
   lowPowerMode: Schema.optionalKey(BackgroundBooleanState),
   scopes: Schema.Array(BackgroundScope),

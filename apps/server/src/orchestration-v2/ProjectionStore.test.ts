@@ -304,6 +304,17 @@ it.effect("routes full projection reads to readers and retains uncommitted write
         forkedFrom: { type: "run", threadId: parentId, runId: parent.runs[0]!.id },
       },
     });
+    yield* store.apply({
+      id: EventId.make("event:reader-routing:visit"),
+      type: "thread.visit-recorded",
+      threadId,
+      occurredAt: parent.thread.createdAt,
+      payload: { lastVisitedAt: parent.thread.createdAt },
+    });
+    assert.deepEqual(
+      (yield* store.getAgentAwarenessSnapshot(threadId)).threads[0]?.lastVisitedAt,
+      parent.thread.createdAt,
+    );
     // Historical forks use the timestamp fallback even when their source run is now rolled back.
     yield* sql`UPDATE orchestration_v2_projection_threads SET fork_run_ids_json = NULL WHERE thread_id = ${threadId}`;
     const messageId = MessageId.make("message:reader-routing");

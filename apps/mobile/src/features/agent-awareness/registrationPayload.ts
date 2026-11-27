@@ -3,6 +3,8 @@ import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
 import type { Preferences } from "../../persistence/mobile-preferences";
 import { supportsAgentAwarenessPush } from "./capabilities";
 
+export const DEFAULT_ATTENDED_ALERT_DELAY_SECONDS = 600;
+
 // Development builds use sandbox APNs; distribution builds use production APNs.
 export function resolveApsEnvironment(appVariant: unknown): "sandbox" | "production" {
   return appVariant === "development" ? "sandbox" : "production";
@@ -53,6 +55,8 @@ export function makeRelayDeviceRegistrationRequest(
       notifyOnInput: input.preferences.notifyOnInput !== false,
       notifyOnCompletion: input.preferences.notifyOnCompletion !== false,
       notifyOnFailure: input.preferences.notifyOnFailure !== false,
+      attendedAlertDelaySeconds:
+        input.preferences.attendedAlertDelaySeconds ?? DEFAULT_ATTENDED_ALERT_DELAY_SECONDS,
     },
   };
 }

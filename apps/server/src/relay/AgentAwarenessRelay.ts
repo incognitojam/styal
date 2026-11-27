@@ -1,6 +1,7 @@
 import type { AgentAwarenessThread } from "../orchestration-v2/ProjectionStore.ts";
 import {
   isListedThreadLineage,
+  type ClientActivityLease,
   type EnvironmentId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2TurnItem,
@@ -40,6 +41,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
   isAgentActivityPublishingEnabledValue,
@@ -90,6 +92,9 @@ function shouldPublishAgentAwarenessEvent(
     return false;
   }
   switch (event.type) {
+    case "thread.visited":
+    case "thread.visit-recorded":
+    case "thread.marked-unread":
     case "thread.created":
     case "thread.archived":
     case "thread.unarchived":
@@ -118,9 +123,6 @@ function shouldPublishAgentAwarenessEvent(
     case "thread.pin-reordered":
     case "thread.active-reordered":
     case "thread.tags-updated":
-    case "thread.visited":
-    case "thread.visit-recorded":
-    case "thread.marked-unread":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
     case "run.background-work-cancelled":
@@ -174,11 +176,36 @@ function agentAwarenessPublishIdentity(
   if (state === null) {
     return "null";
   }
-  const { updatedAt: _updatedAt, ...meaningfulState } = state;
+  // Presence changes alone must never republish.
+  const { updatedAt: _updatedAt, attended: _attended, ...meaningfulState } = state;
   // A child's next request reads the same as its last one, but it is a new
   // wait and must reach the phone.
   return JSON.stringify(
     subagentRequest === null ? meaningfulState : [meaningfulState, subagentRequest.requestId],
+  );
+}
+
+export function isComputerClientInUse(
+  leases: ReadonlyArray<ClientActivityLease>,
+  now: DateTime.Utc,
+): boolean {
+  return leases.some(
+    (lease) =>
+      (lease.clientKind === "desktop-renderer" || lease.clientKind === "web") &&
+      DateTime.isGreaterThan(lease.expiresAt, now) &&
+      (lease.systemActive === true ||
+        (lease.visible && (lease.focused || lease.recentlyInteracted))),
+  );
+}
+
+// Visits to threads that cannot alert would republish without informing any
+// delayed alert decision on the relay.
+function phaseCanAlert(phase: RelayAgentActivityState["phase"]): boolean {
+  return (
+    phase === "waiting_for_approval" ||
+    phase === "waiting_for_input" ||
+    phase === "completed" ||
+    phase === "failed"
   );
 }
 
@@ -363,11 +390,16 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   const childDrivesWait =
     input.pendingSubagentRequest !== null &&
     state?.phase !== projectThreadAwarenessV2(awarenessInput)?.phase;
+  const sanitized = snoozedCompletion(input.thread.value, state)
+    ? null
+    : sanitizeRelayAgentActivityState(state);
+  const lastVisitedAt = input.thread.value.lastVisitedAt;
   return {
     projectId: input.thread.value.projectId,
-    state: snoozedCompletion(input.thread.value, state)
-      ? null
-      : sanitizeRelayAgentActivityState(state),
+    state:
+      sanitized !== null && lastVisitedAt != null && phaseCanAlert(sanitized.phase)
+        ? { ...sanitized, lastVisitedAt: DateTime.formatIso(lastVisitedAt) }
+        : sanitized,
     subagentWait: childDrivesWait ? input.pendingSubagentRequest : null,
     reason: "snapshot",
   };
@@ -429,6 +461,7 @@ export const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
+  const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const random = yield* SecureRandom.SecureRandom;
   const signingKey = yield* EnvironmentSigningKey;
   const scope = yield* Effect.scope;
@@ -706,12 +739,17 @@ export const make = Effect.gen(function* () {
 
     const childRequestId = snapshot.subagentWait?.requestId;
     const childAlert = childAlertByThread.get(threadId);
-    const state =
+    const alertState =
       snapshot.state !== null &&
       childRequestId !== undefined &&
       childAlert?.requestId === childRequestId
         ? { ...snapshot.state, updatedAt: childAlert.updatedAt }
         : snapshot.state;
+    const state =
+      alertState !== null &&
+      isComputerClientInUse((yield* backgroundPolicy.snapshot).leases, yield* DateTime.now)
+        ? { ...alertState, attended: true }
+        : alertState;
     yield* publishState({
       projectId: snapshot.projectId,
       state,

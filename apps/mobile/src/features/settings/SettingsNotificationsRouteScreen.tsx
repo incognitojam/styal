@@ -67,6 +67,8 @@ import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/prefer
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
+import { DEFAULT_ATTENDED_ALERT_DELAY_SECONDS } from "../agent-awareness/registrationPayload";
+import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -157,6 +159,14 @@ const ALERT_TYPES: ReadonlyArray<{
   { preference: "notifyOnInput", label: msg("Needs input"), icon: "questionmark.bubble" },
   { preference: "notifyOnCompletion", label: msg("Done"), icon: "checkmark.circle" },
   { preference: "notifyOnFailure", label: msg("Failed"), icon: "exclamationmark.triangle" },
+];
+
+const ATTENDED_ALERT_DELAYS: ReadonlyArray<{ readonly seconds: number; readonly label: string }> = [
+  { seconds: 0, label: msg("Immediately") },
+  { seconds: 60, label: msg("After 1 minute") },
+  { seconds: 120, label: msg("After 2 minutes") },
+  { seconds: 300, label: msg("After 5 minutes") },
+  { seconds: 600, label: msg("After 10 minutes") },
 ];
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
@@ -302,6 +312,24 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   const storedPreferences = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value
     : null;
+
+  const selectedAlertDelay =
+    storedPreferences?.attendedAlertDelaySeconds ?? DEFAULT_ATTENDED_ALERT_DELAY_SECONDS;
+  const handleAlertDelayChange = async (seconds: number) => {
+    const saved = await savePreferences({ attendedAlertDelaySeconds: seconds });
+    if (saved._tag === "Failure") {
+      reportAtomCommandResult(saved, { label: "notification delay save" });
+      return;
+    }
+    const result = await settleAsyncResult(() =>
+      runtime.runPromiseExit(
+        updateAgentAwarenessRegistrationPreferences({ attendedAlertDelaySeconds: seconds }),
+      ),
+    );
+    if (result._tag === "Failure") {
+      reportAtomCommandResult(result, { label: "notification delay update" });
+    }
+  };
 
   // The stored preference is what later registrations send, so a failed relay
   // update is retried by the next registration (app foreground, token rotation).
@@ -678,6 +706,23 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               disabled={!alertsEnabled || storedPreferences === null}
               value={storedPreferences?.[alertType.preference] !== false}
               onValueChange={(enabled) => void handleAlertTypeChange(alertType.preference, enabled)}
+            />
+          ))}
+        </SettingsSection>
+        <SettingsSection
+          title={gt("While I'm using a computer")}
+          footer={gt(
+            "Alerts wait while you're active in styal on a computer, and are skipped if you handle or open the thread there first.",
+          )}
+        >
+          {ATTENDED_ALERT_DELAYS.map((delay, index) => (
+            <SettingsChoiceRow
+              key={delay.seconds}
+              label={m(delay.label)}
+              selected={selectedAlertDelay === delay.seconds}
+              separated={index > 0}
+              disabled={!alertsEnabled || storedPreferences === null}
+              onPress={() => void handleAlertDelayChange(delay.seconds)}
             />
           ))}
         </SettingsSection>

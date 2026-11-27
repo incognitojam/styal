@@ -14,8 +14,10 @@ import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -27,6 +29,7 @@ const REPORT_INTERVAL_MS = 25_000;
 const REPORT_TIMEOUT_MS = 15_000;
 const LEASE_TTL_MS = 45_000;
 const RECENT_INTERACTION_WINDOW_MS = LEASE_TTL_MS;
+const SYSTEM_ACTIVE_TIMEOUT = "1 second";
 const BASELINE_SCOPES: ReadonlyArray<BackgroundScope> = [{ type: "provider-status" }];
 
 interface RetainedScope {
@@ -84,10 +87,25 @@ function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number
   );
 }
 
+// Absent outside desktop and on desktop builds that predate the bridge method. A failed or
+// slow read omits the field rather than claiming the computer is idle.
+export const readSystemActive = Effect.suspend(() => {
+  const getSystemActive = window.desktopBridge?.getSystemActive;
+  if (!getSystemActive) return Effect.succeed(Option.none<boolean>());
+  return Effect.tryPromise({
+    try: () => getSystemActive(),
+    catch: (cause) => new SystemActivityReadError({ cause }),
+  }).pipe(
+    Effect.timeoutOption(SYSTEM_ACTIVE_TIMEOUT),
+    Effect.orElseSucceed(() => Option.none<boolean>()),
+  );
+});
+
 function createActivityReport(
   environmentId: EnvironmentId,
   lastInteractionAtMs: number,
   observedAtMs: number,
+  systemActive: Option.Option<boolean>,
 ): ClientActivityReportInput {
   const scopes = [...BASELINE_SCOPES];
   for (const entry of retainedScopes.values()) {
@@ -102,6 +120,7 @@ function createActivityReport(
     visible: document.visibilityState === "visible",
     focused: document.hasFocus(),
     recentlyInteracted: wasRecentlyInteracted(lastInteractionAtMs, observedAtMs),
+    ...(Option.isSome(systemActive) ? { systemActive: systemActive.value } : {}),
     appState: document.visibilityState === "visible" ? "active" : "background",
     scopes,
     ttlMs: LEASE_TTL_MS,
@@ -194,6 +213,7 @@ export const layer = Layer.effectDiscard(
     const passiveListenerOptions = { passive: true } as const;
 
     const report = Effect.gen(function* () {
+      const systemActive = yield* readSystemActive;
       const observedAtMs = yield* Clock.currentTimeMillis;
       const entries = yield* SubscriptionRef.get(registry.entries);
       yield* Effect.forEach(
@@ -204,7 +224,12 @@ export const layer = Layer.effectDiscard(
               environmentId,
               request(
                 WS_METHODS.serverReportClientActivity,
-                createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
+                createActivityReport(
+                  environmentId,
+                  lastInteractionAtMs,
+                  observedAtMs,
+                  systemActive,
+                ),
               ),
             )
             // Not `ignore`: tearing down an environment mid-request interrupts its report,
@@ -256,3 +281,8 @@ export const layer = Layer.effectDiscard(
     );
   }),
 );
+
+class SystemActivityReadError extends Schema.TaggedError<SystemActivityReadError>()(
+  "SystemActivityReadError",
+  { cause: Schema.Defect() },
+) {}

@@ -167,6 +167,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     );
     return Array.isArray(result) ? result.filter((tag) => typeof tag === "string") : [];
   },
+  getSystemActive: () => ipcRenderer.invoke(IpcChannels.GET_SYSTEM_ACTIVE_CHANNEL),
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
     if (!Array.isArray(result)) {

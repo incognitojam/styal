@@ -226,6 +226,7 @@ export const make = Effect.fn("background.policy.make")(function* () {
       visible: input.visible,
       focused: input.focused,
       recentlyInteracted: input.recentlyInteracted,
+      ...(input.systemActive !== undefined ? { systemActive: input.systemActive } : {}),
       ...(input.appState !== undefined ? { appState: input.appState } : {}),
       ...(input.lowPowerMode !== undefined ? { lowPowerMode: input.lowPowerMode } : {}),
       scopes: input.scopes,

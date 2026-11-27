@@ -33,11 +33,13 @@ import * as DesktopShellEnvironment from "../../shell/DesktopShellEnvironment.ts
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
+import * as ElectronPowerMonitor from "../../electron/ElectronPowerMonitor.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
   getLocalEnvironmentBootstraps,
+  getSystemActive,
   installRelayTelemetryEnabled,
   pickProjectFavicon,
   probeRemoteEditors,
@@ -680,3 +682,38 @@ describe("probeRemoteEditors PATH scan", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+it.effect("reads system activity through the registered asynchronous IPC channel", () =>
+  Effect.gen(function* () {
+    const handlers = new Map<string, DesktopIpc.DesktopIpcHandleListener>();
+    const ipc = DesktopIpc.make(
+      {
+        handle: (channel, listener) => void handlers.set(channel, listener),
+        removeHandler: (channel) => void handlers.delete(channel),
+        on: () => {},
+        removeAllListeners: () => {},
+      },
+      () => Effect.succeed(true),
+    );
+    const thresholds: number[] = [];
+    for (const state of ["active", "idle", "locked", "unknown"] as const) {
+      yield* ipc.handle(getSystemActive).pipe(
+        Effect.provide(
+          Layer.mock(ElectronPowerMonitor.ElectronPowerMonitor)({
+            getSystemIdleState: (seconds) => {
+              thresholds.push(seconds);
+              return Effect.succeed(state);
+            },
+          }),
+        ),
+      );
+      const result = yield* Effect.promise(() =>
+        Promise.resolve(
+          handlers.get(IpcChannels.GET_SYSTEM_ACTIVE_CHANNEL)!({ sender: { id: 1 } }, undefined),
+        ),
+      );
+      assert.equal(result, state === "active");
+    }
+    assert.deepEqual(thresholds, [300, 300, 300, 300]);
+  }),
+);

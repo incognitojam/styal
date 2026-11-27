@@ -348,6 +348,20 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     environmentConfigsMock.configs.clear();
   });
 
+  it("defaults to ten minutes and preserves an immediate or custom delay", () => {
+    const request = (preferences: { attendedAlertDelaySeconds?: number }) =>
+      makeRelayDeviceRegistrationRequest({
+        deviceId: "device-delay",
+        label: "Test phone",
+        iosMajorVersion: 18,
+        notificationsEnabled: true,
+        preferences,
+      }).preferences.attendedAlertDelaySeconds;
+    expect(request({})).toBe(600);
+    expect(request({ attendedAlertDelaySeconds: 0 })).toBe(0);
+    expect(request({ attendedAlertDelaySeconds: 120 })).toBe(120);
+  });
+
   it("disables push features in Personal Team relay registrations", () => {
     Constants.expoConfig!.extra = { iosPersonalTeamBuild: true };
 
@@ -701,6 +715,8 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
       expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
       for (const preferences of [
+        { attendedAlertDelaySeconds: 0 },
+        { attendedAlertDelaySeconds: 120 },
         { notifyOnCompletion: false },
         {
           notifyOnApproval: false,
@@ -713,17 +729,19 @@ describe("makeRelayDeviceRegistrationRequest", () => {
           notifyOnInput: true,
           notifyOnCompletion: true,
           notifyOnFailure: true,
+          attendedAlertDelaySeconds: 600,
         },
       ]) {
         vi.mocked(loadPreferences).mockResolvedValue(preferences);
         yield* refreshAgentAwarenessRegistration();
         expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
-        const signature = registrationRecordStore.current!.signature.split("|").slice(-4);
+        const signature = registrationRecordStore.current!.signature.split("|").slice(-5);
         expect(signature).toEqual([
           String(preferences.notifyOnApproval !== false),
           String(preferences.notifyOnInput !== false),
           String(preferences.notifyOnCompletion !== false),
           String(preferences.notifyOnFailure !== false),
+          String(preferences.attendedAlertDelaySeconds ?? 600),
         ]);
         vi.mocked(saveAgentAwarenessRegistrationRecord).mockClear();
         yield* refreshAgentAwarenessRegistration();
