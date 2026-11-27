@@ -362,8 +362,8 @@ they finish; the chat lists the ones still working or waiting on you right after
 started them, and the page's status line counts them. A thread comes back to the sidebar when it
 needs an approval or an answer, fails, or when you open it, pin it or send it a message
 yourself. They finish without a Done notification, and stay in search and the command palette.
-A thread a scheduled task runs in leaves the sidebar too, and its runs finish without a Done
-notification. It comes back the same way, except that only a message you sent after the task's
+A thread created after its scheduled task leaves the sidebar too, and its runs finish without a Done
+notification. Binding a new task to an existing conversation leaves that conversation in the sidebar. It comes back the same way, except that only a message you sent after the task's
 latest run started counts, and it leaves again at the next run. A paused task, or a one-time task
 that has run, leaves its thread in the sidebar. **Scheduled** in the page's header lists each task
 with its schedule and how its latest run went.

@@ -48,6 +48,7 @@ const orchard = {
 function shell(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
   return {
     environmentId: local,
+    createdAt: "2026-11-01T09:00:00.000Z",
     id: ThreadId.make(id),
     projectId: project,
     lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
@@ -83,15 +84,30 @@ describe("jobThreadStates", () => {
       jobThreadStates([
         task("new"),
         task("daily", { threadId: shared, lastRunAt: "2026-11-19T09:00:00.000Z" }),
-        task("hourly", { threadId: shared, lastRunAt: "2026-11-20T08:00:00.000Z" }),
+        task("hourly", {
+          threadId: shared,
+          createdAt: "2026-11-10T09:00:00.000Z",
+          lastRunAt: "2026-11-20T08:00:00.000Z",
+        }),
       ]),
     ).toEqual(
       new Map([
         [
           ThreadId.make("thread-new"),
-          { since: Date.parse("2026-11-01T09:00:00.000Z"), dispatchFailed: false },
+          {
+            createdAt: Date.parse("2026-11-01T09:00:00.000Z"),
+            since: Date.parse("2026-11-01T09:00:00.000Z"),
+            dispatchFailed: false,
+          },
         ],
-        [shared, { since: Date.parse("2026-11-20T08:00:00.000Z"), dispatchFailed: false }],
+        [
+          shared,
+          {
+            createdAt: Date.parse("2026-11-01T09:00:00.000Z"),
+            since: Date.parse("2026-11-20T08:00:00.000Z"),
+            dispatchFailed: false,
+          },
+        ],
       ]),
     );
   });
@@ -177,8 +193,8 @@ describe("isProjectPageJob", () => {
   };
   const page = { archived: false };
   const jobs = new Map([
-    [ThreadId.make("job"), { since: 0, dispatchFailed: false }],
-    [chatId, { since: 0, dispatchFailed: false }],
+    [ThreadId.make("job"), { createdAt: 0, since: 0, dispatchFailed: false }],
+    [chatId, { createdAt: 0, since: 0, dispatchFailed: false }],
   ]);
 
   it("keeps a scheduled task's thread in a project with a page, but not the chat or other threads", () => {
@@ -246,31 +262,46 @@ describe("staysOnProjectPage", () => {
       staysOnProjectPage(
         job,
         new Map(),
-        new Map([[`${local}:job`, { since: 0, dispatchFailed: false }]]),
+        new Map([
+          [
+            `${local}:job`,
+            { createdAt: Date.parse(job.createdAt), since: 0, dispatchFailed: false },
+          ],
+        ]),
       ),
     ).toBe(true);
     expect(
       staysOnProjectPage(
         job,
         new Map(),
-        new Map([[`${remote}:job`, { since: 0, dispatchFailed: false }]]),
+        new Map([[`${remote}:job`, { createdAt: 0, since: 0, dispatchFailed: false }]]),
       ),
     ).toBe(false);
   });
 
-  it("keeps a scheduled task's thread despite what the person wrote before its latest run", () => {
-    const handMade = started("hand-made", {
-      reportTo: null,
-      source: { createdBy: "user" } as EnvironmentThreadShell["source"],
-      latestUserAuthoredMessageAt: "2026-11-01T10:00:00.000Z",
-    });
-    const latestRun = new Map([
-      [
-        `${local}:hand-made`,
-        { since: Date.parse("2026-11-19T09:00:00.000Z"), dispatchFailed: false },
-      ],
-    ]);
-    expect(staysOnProjectPage(handMade, new Map(), latestRun)).toBe(true);
+  it("leaves a conversation in the sidebar when a task is bound later, runs or is removed", () => {
+    for (const createdBy of ["user", "agent"] as const) {
+      const conversation = started("conversation", {
+        createdAt: "2026-11-01T09:00:00.000Z",
+        reportTo: { threadId: chatId },
+        source: { createdBy } as EnvironmentThreadShell["source"],
+        latestUserAuthoredMessageAt: "2026-11-01T10:00:00.000Z",
+      });
+      const tasks = new Map([
+        [
+          `${local}:conversation`,
+          {
+            createdAt: Date.parse("2026-11-02T09:00:00.000Z"),
+            since: Date.parse("2026-11-02T09:00:00.000Z"),
+            dispatchFailed: false,
+          },
+        ],
+      ]);
+      expect(staysOnProjectPage(conversation, chats, tasks)).toBe(false);
+      tasks.get(`${local}:conversation`)!.since = Date.parse("2026-11-19T09:00:00.000Z");
+      expect(staysOnProjectPage(conversation, chats, tasks)).toBe(false);
+      expect(staysOnProjectPage(conversation, chats, new Map())).toBe(false);
+    }
   });
 
   it("brings a scheduled task's thread back for a message after its latest run, until the next run", () => {
@@ -279,7 +310,9 @@ describe("staysOnProjectPage", () => {
       latestUserAuthoredMessageAt: "2026-11-19T10:00:00.000Z",
     });
     const since = (at: string) =>
-      new Map([[`${local}:written`, { since: Date.parse(at), dispatchFailed: false }]]);
+      new Map([
+        [`${local}:written`, { createdAt: 0, since: Date.parse(at), dispatchFailed: false }],
+      ]);
     expect(staysOnProjectPage(written, new Map(), since("2026-11-19T09:00:00.000Z"))).toBe(false);
     expect(staysOnProjectPage(written, new Map(), since("2026-11-19T11:00:00.000Z"))).toBe(true);
   });
@@ -299,7 +332,9 @@ describe("staysOnProjectPage", () => {
     ]) {
       expect([thread.id, staysOnProjectPage(thread, chats)]).toEqual([thread.id, false]);
       const job = { ...thread, reportTo: null };
-      const jobs = new Map([[`${local}:${thread.id}`, { since: 0, dispatchFailed: false }]]);
+      const jobs = new Map([
+        [`${local}:${thread.id}`, { createdAt: 0, since: 0, dispatchFailed: false }],
+      ]);
       expect([thread.id, staysOnProjectPage(job, new Map(), jobs)]).toEqual([thread.id, false]);
     }
   });

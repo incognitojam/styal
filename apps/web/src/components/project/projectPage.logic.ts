@@ -126,13 +126,14 @@ export function jobRunsAgain(task: ScheduledTaskThread): boolean {
 }
 
 export interface JobThreadState {
+  readonly createdAt: number;
   readonly since: number;
   readonly dispatchFailed: boolean;
 }
 
 /**
- * By thread id, the latest personal-message cutoff and whether any bound task still has a
- * failed dispatch. A successful task cannot mask a failed task sharing the thread.
+ * By thread id, the earliest task creation, latest personal-message cutoff and whether any bound
+ * task still has a failed dispatch. A successful task cannot mask a failed task sharing the thread.
  */
 export function jobThreadStates(
   tasks: ReadonlyArray<ScheduledTaskThread>,
@@ -142,8 +143,10 @@ export function jobThreadStates(
     const dispatchFailed = task.dispatchFailed === true || task.lastRunStatus === "failed";
     if (!jobRunsAgain(task) && !dispatchFailed) continue;
     const previous = states.get(task.threadId);
+    const createdAt = Date.parse(task.createdAt);
     const at = Date.parse(task.lastRunAt ?? task.createdAt);
     states.set(task.threadId, {
+      createdAt: Math.min(createdAt, previous?.createdAt ?? createdAt),
       since: Math.max(at, previous?.since ?? at),
       dispatchFailed: previous?.dispatchFailed === true || dispatchFailed,
     });
@@ -187,7 +190,7 @@ export function isProjectPageJob(
 const NO_JOB_THREADS: ReadonlyMap<string, JobThreadState> = new Map();
 
 /**
- * A thread the project's chat launched in the same project group with reportBack, or a scheduled task's thread in
+ * A thread the project's chat launched in the same project group with reportBack, or a thread created after its scheduled task in
  * `jobThreads` (by thread key), stays on the project page until it needs you, fails, is pinned or
  * you write to it (to a job, after its cutoff). A `project-coordinator` report target
  * only says the thread was created in the project. `chatProjects`: project-group members of chats taking reports.
@@ -205,7 +208,9 @@ export function staysOnProjectPage(
       ?.has(`${thread.environmentId}:${thread.projectId}`) === true &&
     thread.source.createdBy === "agent";
   const job = jobThreads.get(`${thread.environmentId}:${thread.id}`);
-  const jobSince = job?.since;
+  // Binding a later task does not turn an existing conversation into a job thread.
+  const jobSince =
+    job !== undefined && Date.parse(thread.createdAt) >= job.createdAt ? job.since : undefined;
   const authored = thread.latestUserAuthoredMessageAt;
   if (
     !(launched || jobSince !== undefined) ||
