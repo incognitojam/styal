@@ -8,6 +8,15 @@ import { links, linkMigration, linkInventory } from "./AccountLinks.ts";
 import type { LinkCommand } from "./AccountLinks.ts";
 import { accountName } from "./names.ts";
 import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
+import {
+  registrationMigration,
+  registrations,
+  registrationRemoval,
+  removalRecords,
+  endSessionRegistrations,
+  registrationInventory,
+} from "./AccountRegistrations.ts";
+import type { RegistrationCommand } from "./AccountRegistrations.ts";
 
 export const accountMigrations = [
   `CREATE TABLE tunnel_operations (
@@ -18,6 +27,7 @@ export const accountMigrations = [
   identityMigration,
   linkMigration,
   tunnelMigration,
+  registrationMigration,
 ];
 
 export type { JournalResult } from "./AccountJournal.ts";
@@ -61,6 +71,7 @@ function decode(row: Row): TunnelOperation {
 
 export class AccountObject extends DurableObject<unknown> {
   private reservations = new Map<string, Promise<void>>();
+  private registrationTails = new Map<string, Promise<void>>();
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -76,7 +87,13 @@ export class AccountObject extends DurableObject<unknown> {
     return links(this.ctx.storage, request);
   }
 
-  async identity(request: { version: number; userId: string; command: IdentityCommand }) {
+  async identity(request: {
+    version: number;
+    userId: string;
+    command: IdentityCommand;
+    registrationGuard?: { sessionIds: string[]; stamp: string };
+  }) {
+    checkRpc(request.version);
     if (this.ctx.id.name !== accountName(request.userId))
       throw new Error("Identity account mismatch");
     if (request.command.kind === "create" && request.command.state.userId !== request.userId)
@@ -88,8 +105,73 @@ export class AccountObject extends DurableObject<unknown> {
       throw new Error("Session owner mismatch");
     if (request.command.kind === "begin-email" && request.command.userId !== request.userId)
       throw new Error("Email owner mismatch");
-    const result = identity(this.ctx.storage, request);
-    return result;
+    const command = request.command;
+    if (
+      command.kind !== "revoke-session" &&
+      command.kind !== "prune-sessions" &&
+      command.kind !== "publish-session" &&
+      !(command.kind === "use-session" && command.revoke)
+    )
+      return identity(this.ctx.storage, request);
+    const initial = registrationRemoval(this.ctx.storage, request.command);
+    await Promise.all(
+      initial.records.flatMap((record) => this.registrationTails.get(record.deviceId) ?? []),
+    );
+    return this.ctx.storage.transactionSync(() => {
+      const guard = request.registrationGuard;
+      if (
+        guard &&
+        canonicalJson(removalRecords(this.ctx.storage, guard.sessionIds)) !== guard.stamp
+      )
+        return { registrationsChanged: true };
+      const removal = registrationRemoval(this.ctx.storage, request.command);
+      if (removal.records.some((record) => record.pending)) return { registrationPending: true };
+      const result = identity(this.ctx.storage, request);
+      if (command.kind !== "publish-session" || ("session" in result && result.session?.revoked))
+        endSessionRegistrations(this.ctx.storage, removal.sessionIds);
+      return result;
+    });
+  }
+
+  async registrations(request: { version: number; userId: string; command: RegistrationCommand }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    return registrations(this.ctx.storage, request.userId, request.command);
+  }
+
+  async registrationRemoval(request: {
+    version: number;
+    userId: string;
+    command: IdentityCommand;
+  }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    return registrationRemoval(this.ctx.storage, request.command);
+  }
+
+  async registrationGate(
+    request: { version: number; userId: string; deviceId: string },
+    callback: () => Promise<void>,
+  ) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    const previous = this.registrationTails.get(request.deviceId);
+    let finish!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    this.registrationTails.set(request.deviceId, completion);
+    try {
+      if (previous) await previous;
+      await callback();
+    } finally {
+      finish();
+      if (this.registrationTails.get(request.deviceId) === completion)
+        this.registrationTails.delete(request.deviceId);
+    }
   }
 
   async identityOwner(request: { version: number }) {
@@ -97,7 +179,13 @@ export class AccountObject extends DurableObject<unknown> {
       version: request.version,
       command: { kind: "read" },
     });
-    return "state" in result ? (result.state?.userId ?? null) : null;
+    return "state" in result
+      ? (result.state?.userId ??
+          this.ctx.storage.sql
+            .exec<{ user_id: string }>("SELECT user_id FROM account_registration_owner")
+            .toArray()[0]?.user_id ??
+          null)
+      : null;
   }
 
   async allocation(request: {
@@ -384,6 +472,7 @@ export class AccountObject extends DurableObject<unknown> {
         ...identityInventory(this.ctx.storage),
         ...linkInventory(this.ctx.storage),
         ...tunnelInventory(this.ctx.storage),
+        ...registrationInventory(this.ctx.storage),
       ],
     };
   }
