@@ -267,6 +267,14 @@
     {
       "pr": 37117,
       "reason": "Fork #1670 ported this by hand, without an Upstream-PR trailer, because ThreadFeed.tsx conflicts with earlier pending upstream PRs (35008, 35036, 35408 and others): a tap on a markdown image the native renderer draws (table cells, list items, images after text) opens the viewer with its message's images. When chronological intake reaches it, its cherry-pick should change no code, because both hunks and the test mock line are already in place; check that rather than assume it. Remove this entry once recorded."
+    },
+    {
+      "pr": 36362,
+      "reason": "Imported provisionally as one unchanged snapshot: consecutive streaming assistant-message and reasoning snapshots replace earlier rows in the event log. Requested for fork issue 1774 to measure database growth and write volume; projection snapshots are still rewritten, existing historical rows are not compacted, and append-time deletes do not use the fork's event-pruning safety copy. No implementation adaptations. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, rerun event-store and transaction tests plus reconnect and write-volume proof, and clear the snapshot marker in that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "bfec2754b8bc4a6451cfd21cb128545ab138b795",
+        "head": "2ad9381e0c987f42c1b28dd4dc1495a5312e0e6c"
+      }
     }
   ]
 }
