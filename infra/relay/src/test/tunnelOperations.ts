@@ -37,16 +37,32 @@ export const layerMemoryTunnelOperations = Layer.sync(TunnelOperationPersistence
           (current?.operationId !== expectedOperationId || current.phase === "complete")
         )
           return null;
+        let resources: Readonly<Record<string, string>> = {};
         if (current && current.phase !== "complete") {
-          return NodeUtil.isDeepStrictEqual(current.desired, intent.desired)
-            ? { ...current, resumed: true }
-            : null;
+          if (current.hostname !== intent.hostname || current.tunnelName !== intent.tunnelName)
+            return null;
+          const same = NodeUtil.isDeepStrictEqual(current.desired, intent.desired);
+          if (expectedOperationId !== undefined)
+            return same ||
+              (intent.desired.kind === "deprovision" && current.desired.kind === "deprovision")
+              ? { ...current, resumed: true }
+              : null;
+          if (same && intent.desired.kind !== "deprovision") return { ...current, resumed: true };
+          if (
+            intent.desired.kind !== "deprovision" &&
+            !(intent.desired.kind === "provision" && current.desired.kind === "provision")
+          )
+            return null;
+          resources = {
+            ...current.resources,
+            supersededOperationId: current.operationId,
+          };
         }
         const operation = {
           ...intent,
           operationId: `operation-${++sequence}`,
           phase: "intent",
-          resources: {},
+          resources,
         };
         operations.set(key, operation);
         return operation;

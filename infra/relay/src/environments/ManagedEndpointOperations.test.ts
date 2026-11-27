@@ -6,7 +6,9 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { RelayDb } from "../db.ts";
-import { relayManagedTunnelLimits } from "../persistence/schema.ts";
+import { relayManagedTunnelLimits, relayUsers } from "../persistence/schema.ts";
+import * as AccountData from "../auth/AccountData.ts";
+import * as ApnsDeliveryQueue from "../agentActivity/ApnsDeliveryQueue.ts";
 import * as PostgresTunnelOperations from "../persistence/PostgresTunnelOperations.ts";
 import { TunnelOperationPersistence } from "../persistence/TunnelOperationPersistence.ts";
 import { layerLocalRelayDb } from "../test/localRelayDb.ts";
@@ -24,12 +26,14 @@ const request = { ...key, origin: { localHttpHost: "localhost", localHttpPort: 3
 function fixture(hooks?: {
   readonly beforeClaim?: Effect.Effect<void>;
   readonly afterDnsDelete?: Effect.Effect<void>;
+  readonly afterTunnelCreate?: Effect.Effect<void>;
 }) {
   let tunnel: { id: string; name: string } | null = null;
   let record: { id: string; content: string } | null = null;
   let crash:
     | "before-create"
     | "after-create"
+    | "error-after-create"
     | "after-dns"
     | "after-config"
     | "after-delete"
@@ -40,6 +44,7 @@ function fixture(hooks?: {
   let ingress: unknown;
   let configurationWrites = 0;
   let refuseDelete = false;
+  let failReads = false;
   const tunnelClient = Provider.ManagedEndpointTunnelClient.of({
     get: (id) =>
       Effect.suspend(() =>
@@ -57,7 +62,17 @@ function fixture(hooks?: {
               }),
             ),
       ),
-    list: () => Effect.sync(() => ({ result: tunnel ? [tunnel] : [] })),
+    list: () =>
+      Effect.suspend(() =>
+        failReads
+          ? Effect.fail(
+              new Provider.ManagedEndpointTunnelClientError({
+                operation: "list",
+                cause: { status: 503 },
+              }),
+            )
+          : Effect.succeed({ result: tunnel ? [tunnel] : [] }),
+      ),
     create: ({ name }) =>
       Effect.gen(function* () {
         if (crash === "before-create") {
@@ -69,6 +84,14 @@ function fixture(hooks?: {
           crash = null;
           return yield* Effect.die("process lost after create");
         }
+        if (crash === "error-after-create") {
+          crash = null;
+          return yield* new Provider.ManagedEndpointTunnelClientError({
+            operation: "create",
+            cause: { status: 503 },
+          });
+        }
+        if (hooks?.afterTunnelCreate) yield* hooks.afterTunnelCreate;
         return tunnel;
       }),
     putConfiguration: (_, configuration) =>
@@ -177,9 +200,21 @@ function fixture(hooks?: {
     Layer.provideMerge(Provider.layerDnsClient(dnsClient)),
   );
   return {
-    layer: Reaper.layer.pipe(Layer.provideMerge(layer)),
+    layer: Layer.merge(
+      Reaper.layer,
+      AccountData.layer.pipe(
+        Layer.provide(
+          Layer.mock(ApnsDeliveryQueue.ApnsDeliveryQueue, {
+            enqueueLiveActivity: () => Effect.die("unexpected push"),
+          }),
+        ),
+      ),
+    ).pipe(Layer.provideMerge(layer)),
     crash: (point: typeof crash) => {
       crash = point;
+    },
+    failReads: (value: boolean) => {
+      failReads = value;
     },
     refuseDelete: (value: boolean) => {
       refuseDelete = value;
@@ -360,4 +395,148 @@ describe("durable endpoint operations", () => {
       ).toBe("capacity available");
     }).pipe(Effect.provide(f.layer));
   });
+  it.effect.each(["error-after-create", "after-create", "after-dns"] as const)(
+    "unlinks and erases the account immediately after %s",
+    (point) => {
+      const f = fixture();
+      return Effect.gen(function* () {
+        const provider = yield* Provider.ManagedEndpointProvider;
+        const journal = yield* TunnelOperationPersistence;
+        const allocations = yield* Allocations.ManagedEndpointAllocations;
+        const db = yield* RelayDb;
+        yield* db
+          .insert(relayUsers)
+          .values({ userId: key.userId, createdAt: "2026-01-01", updatedAt: "2026-01-01" });
+        yield* db.insert(relayManagedTunnelLimits).values({
+          userId: key.userId,
+          maxTunnels: 1,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+        f.crash(point);
+        yield* Effect.exit(provider.provision(request));
+        expect(yield* journal.pending(10)).toHaveLength(1);
+        expect(f.state().created).toBe(1);
+        expect(f.state().tunnel).not.toBeNull();
+        expect(yield* provider.deprovision(key)).toBe(true);
+        expect(f.state().tunnel).toBeNull();
+        expect(f.state().record).toBeNull();
+        expect(yield* allocations.get(key)).toBeNull();
+        expect(yield* journal.pending(10)).toEqual([]);
+        expect(
+          yield* (yield* Limits.ManagedTunnelLimits).withCapacity(
+            { ...key, environmentId: "environment-b" },
+            Effect.succeed("capacity returned"),
+          ),
+        ).toBe("capacity returned");
+        yield* (yield* AccountData.AccountData).deleteForUser({ userId: key.userId, email: null });
+        expect(yield* db.select().from(relayUsers)).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+    },
+  );
+
+  it.effect(
+    "undispatched failures retain the legacy reservation window and do not require remote cleanup",
+    () => {
+      const f = fixture();
+      return Effect.gen(function* () {
+        const provider = yield* Provider.ManagedEndpointProvider;
+        const journal = yield* TunnelOperationPersistence;
+        const limits = yield* Limits.ManagedTunnelLimits;
+        yield* (yield* RelayDb).insert(relayManagedTunnelLimits).values({
+          userId: key.userId,
+          maxTunnels: 1,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+        f.failReads(true);
+        expect((yield* Effect.result(provider.provision(request)))._tag).toBe("Failure");
+        expect(f.state().created).toBe(0);
+        expect(yield* journal.pending(10)).toEqual([]);
+        expect(
+          (yield* Effect.flip(
+            limits.withCapacity({ ...key, environmentId: "environment-b" }, Effect.void),
+          ))._tag,
+        ).toBe("ManagedTunnelLimitExceeded");
+        yield* TestClock.adjust("16 minutes");
+        expect(
+          yield* limits.withCapacity(
+            { ...key, environmentId: "environment-b" },
+            Effect.succeed("expired legacy reservation"),
+          ),
+        ).toBe("expired legacy reservation");
+        expect(yield* provider.deprovision(key)).toBe(true);
+        expect(yield* (yield* Allocations.ManagedEndpointAllocations).get(key)).toBeNull();
+      }).pipe(Effect.provide(f.layer));
+    },
+  );
+
+  it.effect("supersedes failed provisioning when the origin changes", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const provider = yield* Provider.ManagedEndpointProvider;
+      const journal = yield* TunnelOperationPersistence;
+      f.crash("error-after-create");
+      yield* Effect.exit(provider.provision(request));
+      const first = (yield* journal.pending(1))[0];
+      f.failReads(true);
+      yield* Effect.result(
+        provider.provision({ ...request, origin: { ...request.origin, localHttpPort: 4000 } }),
+      );
+      expect(yield* journal.pending(10)).toHaveLength(1);
+      f.failReads(false);
+      const updated = yield* provider.provision({
+        ...request,
+        origin: { ...request.origin, localHttpPort: 4000 },
+      });
+      expect(updated.runtime.tunnelName).toBe(first?.tunnelName);
+      expect(f.state().created).toBe(1);
+      expect(f.state().ingress).toMatchObject({
+        ingress: [{ service: "http://localhost:4000" }, { service: "http_status:404" }],
+      });
+      expect(yield* journal.pending(10)).toEqual([]);
+      f.crash("after-config");
+      yield* Effect.exit(provider.provision(request));
+      yield* provider.provision({
+        ...request,
+        origin: { ...request.origin, localHttpPort: 4000 },
+        reuseReadyTunnel: true,
+      });
+      expect(f.state().configurationWrites).toBe(3);
+      expect(f.state().ingress).toMatchObject({
+        ingress: [{ service: "http://localhost:4000" }, { service: "http_status:404" }],
+      });
+      expect(yield* journal.pending(10)).toEqual([]);
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("a superseded create cannot checkpoint, configure or complete after unlink", () =>
+    Effect.gen(function* () {
+      const created = yield* Deferred.make<void>();
+      const resume = yield* Deferred.make<void>();
+      const f = fixture({
+        afterTunnelCreate: Deferred.succeed(created, undefined).pipe(
+          Effect.andThen(Deferred.await(resume)),
+          Effect.asVoid,
+        ),
+      });
+      yield* Effect.gen(function* () {
+        const provider = yield* Provider.ManagedEndpointProvider;
+        const journal = yield* TunnelOperationPersistence;
+        const provisioning = yield* Effect.forkChild(
+          provider.provision(request).pipe(Effect.result),
+        );
+        yield* Deferred.await(created);
+        const first = (yield* journal.pending(1))[0];
+        expect(yield* provider.deprovision(key)).toBe(true);
+        yield* Deferred.succeed(resume, undefined);
+        expect((yield* Fiber.join(provisioning))._tag).toBe("Failure");
+        expect(f.state().configurationWrites).toBe(0);
+        expect(f.state().tunnel).toBeNull();
+        expect(yield* (yield* Allocations.ManagedEndpointAllocations).get(key)).toBeNull();
+        if (first) expect(yield* journal.complete(first.operationId)).toBe(false);
+        expect(yield* journal.pending(10)).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
 });

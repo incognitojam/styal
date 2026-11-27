@@ -17,6 +17,7 @@ import {
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 import * as ManagedEndpointProvider from "./ManagedEndpointProvider.ts";
 
+const MANAGED_ENDPOINT_REPLAY_BUDGET_MS = 15_000;
 const MANAGED_ENDPOINT_GRACE_PERIOD_MINUTES = 5;
 // Never-connected tunnels may still be pairing; allow an hour.
 const MANAGED_ENDPOINT_INACTIVE_GRACE_PERIOD_MINUTES = 60;
@@ -161,17 +162,29 @@ const make = Effect.gen(function* () {
   const journal = yield* TunnelOperationPersistence;
 
   const sweep = Effect.gen(function* () {
-    const pending = yield* journal.pending(10).pipe(Effect.orElseSucceed(() => []));
+    const sweepStartedAtMillis = yield* Clock.currentTimeMillis;
+    const replayDeadline = sweepStartedAtMillis + MANAGED_ENDPOINT_REPLAY_BUDGET_MS;
+    const pending = yield* journal
+      .pending(10)
+      .pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to read pending tunnel operations", { cause }).pipe(
+            Effect.as([]),
+          ),
+        ),
+      );
     for (const operation of pending) {
+      if ((yield* Clock.currentTimeMillis) >= replayDeadline) break;
       const key = { userId: operation.userId, environmentId: operation.environmentId };
       const desired = operation.desired;
       yield* Effect.gen(function* () {
         if (desired.kind === "provision")
           yield* provider.provision({ ...key, origin: desired.origin });
         else {
+          const { kind: _kind, ...releaseOptions } = desired;
           const completed =
             desired.kind === "release"
-              ? yield* provider.release({ ...key, ...desired })
+              ? yield* provider.release({ ...key, ...releaseOptions })
               : yield* provider.deprovision(key);
           if (completed) yield* journal.complete(operation.operationId);
         }
@@ -188,7 +201,6 @@ const make = Effect.gen(function* () {
     if ((mode === "off" && legacyMode === "off") || !namespace) {
       return emptyResult(mode, legacyMode);
     }
-    const sweepStartedAtMillis = yield* Clock.currentTimeMillis;
     const legacyGraceMinutes =
       namespace !== MANAGED_ENDPOINT_ZONE_OWNER_STAGE &&
       config.legacyTunnelGraceMinutes !== undefined

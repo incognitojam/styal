@@ -55,14 +55,35 @@ const make = Effect.gen(function* () {
           .where(
             and(
               eq(operations.operationId, expectedOperationId),
+              eq(operations.userId, intent.userId),
+              eq(operations.environmentId, intent.environmentId),
+              eq(operations.hostname, intent.hostname),
+              eq(operations.tunnelName, intent.tunnelName),
               pending,
-              eq(operations.desired, intent.desired),
+              intent.desired.kind === "deprovision"
+                ? sql`${operations.desired}->>'kind' = 'deprovision'`
+                : eq(operations.desired, intent.desired),
             ),
           )
           .returning()
           .pipe(Effect.mapError(mapError));
         return rows[0] ? { ...rows[0], resumed: true } : null;
       }
+      const sameNames = and(
+        eq(operations.hostname, intent.hostname),
+        eq(operations.tunnelName, intent.tunnelName),
+      );
+      const reuse = and(
+        pending,
+        eq(operations.desired, intent.desired),
+        sql`${intent.desired.kind !== "deprovision"}`,
+      );
+      const supersede =
+        intent.desired.kind === "deprovision"
+          ? sql`true`
+          : intent.desired.kind === "provision"
+            ? sql`${operations.desired}->>'kind' = 'provision'`
+            : sql`false`;
       const operationId = yield* random.uuidV4();
       const rows = yield* db
         .insert(operations)
@@ -76,22 +97,16 @@ const make = Effect.gen(function* () {
         .onConflictDoUpdate({
           target: [operations.userId, operations.environmentId],
           set: {
-            operationId: sql`case when ${pending} then ${operations.operationId} else excluded.operation_id end`,
-            hostname: sql`excluded.hostname`,
-            tunnelName: sql`excluded.tunnel_name`,
+            operationId: sql`case when ${reuse} then ${operations.operationId} else excluded.operation_id end`,
+            hostname: sql`case when ${pending} then ${operations.hostname} else excluded.hostname end`,
+            tunnelName: sql`case when ${pending} then ${operations.tunnelName} else excluded.tunnel_name end`,
             desired: sql`excluded.desired`,
-            phase: sql`case when ${pending} then ${operations.phase} else 'intent' end`,
-            resources: sql`case when ${pending} then ${operations.resources} else '{}'::jsonb end`,
+            phase: sql`case when ${reuse} then ${operations.phase} else 'intent' end`,
+            resources: sql`case when not (${pending}) then '{}'::jsonb when ${reuse} then ${operations.resources}
+              else ${operations.resources} || jsonb_build_object('supersededOperationId', ${operations.operationId}) end`,
             updatedAt: DateTime.formatIso(yield* DateTime.now),
           },
-          setWhere: sql`${or(
-            eq(operations.phase, "complete"),
-            and(
-              eq(operations.hostname, intent.hostname),
-              eq(operations.tunnelName, intent.tunnelName),
-              eq(operations.desired, intent.desired),
-            ),
-          )}`,
+          setWhere: sql`${or(eq(operations.phase, "complete"), and(sameNames, or(reuse, supersede)))}`,
         })
         .returning()
         .pipe(Effect.mapError(mapError));

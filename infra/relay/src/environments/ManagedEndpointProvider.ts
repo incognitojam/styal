@@ -587,11 +587,16 @@ const make = Effect.gen(function* () {
       typeof result.id === "string"
         ? result.id
         : undefined;
-    yield* journal.advance(
-      operation.operationId,
-      `${phase}:confirmed`,
-      resource && id ? { [resource]: id } : {},
-    );
+    if (
+      !(yield* journal.advance(
+        operation.operationId,
+        `${phase}:confirmed`,
+        resource && id ? { [resource]: id } : {},
+      ))
+    )
+      return yield* new TunnelOperationPersistenceError({
+        cause: "Tunnel operation was superseded during the remote call",
+      });
     return result;
   });
   const tunnels = {
@@ -1018,8 +1023,45 @@ const make = Effect.gen(function* () {
         const tunnelId = allocation.tunnelId;
         let tunnelDeleted = false;
         const deprovision = Effect.gen(function* () {
-          const dnsRecordId = allocation.dnsRecordId;
-          if (dnsRecordId !== null) {
+          const dnsIds = new Set(
+            [allocation.dnsRecordId, operation.resources.dnsRecordId].filter(
+              (id): id is string => typeof id === "string",
+            ),
+          );
+          const tunnelIds = new Set(
+            [tunnelId, operation.resources.tunnelId].filter(
+              (id): id is string => typeof id === "string",
+            ),
+          );
+          if (operation.resources.supersededOperationId !== undefined) {
+            const records = yield* dns.listRecords(operation.hostname).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ManagedEndpointDeprovisioningFailed({
+                    ...input,
+                    stage: "delete-dns-record",
+                    cause,
+                  }),
+              ),
+            );
+            for (const record of records) dnsIds.add(record.id);
+            const remote = yield* tunnels
+              .list({ name: operation.tunnelName, isDeleted: false })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ManagedEndpointDeprovisioningFailed({
+                      ...input,
+                      stage: "load-tunnel",
+                      cause,
+                    }),
+                ),
+              );
+            for (const tunnel of remote.result)
+              if (tunnel.name === operation.tunnelName && tunnel.id && !tunnel.deletedAt)
+                tunnelIds.add(tunnel.id);
+          }
+          for (const dnsRecordId of dnsIds) {
             yield* ignoreNotFound(dns.deleteRecord(dnsRecordId)).pipe(
               Effect.mapError(
                 (cause) =>
@@ -1032,14 +1074,14 @@ const make = Effect.gen(function* () {
               ),
             );
           }
-          if (tunnelId !== null) {
-            yield* ignoreNotFound(tunnels.delete(tunnelId)).pipe(
+          for (const id of tunnelIds) {
+            yield* ignoreNotFound(tunnels.delete(id)).pipe(
               Effect.mapError(
                 (cause) =>
                   new ManagedEndpointDeprovisioningFailed({
                     ...input,
                     stage: "delete-tunnel",
-                    tunnelId,
+                    tunnelId: id,
                     cause,
                   }),
               ),
@@ -1120,7 +1162,11 @@ const make = Effect.gen(function* () {
       }).pipe(
         Effect.provideService(TunnelOperationExecution, operation),
         Effect.tap((completed) =>
-          journal.complete(operation.operationId, completed ? undefined : "intent"),
+          completed
+            ? journal.complete(operation.operationId)
+            : operation.resources.supersededOperationId
+              ? Effect.void
+              : journal.complete(operation.operationId, "intent"),
         ),
         Effect.mapError((cause) =>
           isDeprovisioningFailure(cause)
@@ -1428,7 +1474,11 @@ const make = Effect.gen(function* () {
       return yield* Effect.gen(function* () {
         const { hostname, tunnelName } = allocation;
 
-        if (input.reuseReadyTunnel === true && !operation.resumed) {
+        if (
+          input.reuseReadyTunnel === true &&
+          !operation.resumed &&
+          !operation.resources.supersededOperationId
+        ) {
           const reused = yield* reuseReadyTunnel(allocation, input.origin);
           if (Option.isSome(reused)) {
             return reused.value;
@@ -1731,6 +1781,17 @@ const make = Effect.gen(function* () {
         } satisfies ManagedEndpointProvisioningResult;
       }).pipe(
         Effect.provideService(TunnelOperationExecution, operation),
+        Effect.tapError(() =>
+          operation.resources.supersededOperationId
+            ? Effect.void
+            : journal
+                .complete(operation.operationId, "intent")
+                .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning("Failed to finish undispatched tunnel operation", { cause }),
+                  ),
+                ),
+        ),
         Effect.tap(() => journal.complete(operation.operationId)),
         Effect.mapError((cause) =>
           isProvisioningFailure(cause)

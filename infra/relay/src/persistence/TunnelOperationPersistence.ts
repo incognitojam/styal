@@ -42,7 +42,7 @@ export class TunnelOperationPersistenceError extends Schema.TaggedError<TunnelOp
 export class TunnelOperationPersistence extends Context.Service<
   TunnelOperationPersistence,
   {
-    /** Reuse identical pending intent; reject incompatible work until it completes. */
+    /** Teardown supersedes pending work; a new origin supersedes provisioning. Release waits. */
     readonly begin: (
       intent: TunnelOperationIntent,
       expectedOperationId?: string,
