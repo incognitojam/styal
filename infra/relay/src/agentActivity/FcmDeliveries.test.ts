@@ -1,3 +1,4 @@
+import * as PostgresFcmTokens from "../persistence/PostgresFcmTokens.ts";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
@@ -201,7 +202,10 @@ function harness() {
     queuedOptions,
     marked,
     current,
-    layer: FcmDeliveries.layer.pipe(Layer.provide(layerServices)),
+    layer: FcmDeliveries.layer.pipe(
+      Layer.provide(PostgresFcmTokens.layer),
+      Layer.provide(layerServices),
+    ),
     job: {
       userId: "user",
       deviceId: "phone",

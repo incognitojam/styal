@@ -74,9 +74,6 @@ const make = Effect.gen(function* () {
     return Option.some({ row, now });
   });
 
-  const sessionDevices = (userId: string, sessionId: string) =>
-    and(eq(relayMobileDevices.userId, userId), eq(relayMobileDevices.sessionId, sessionId))!;
-
   // Called inside the transaction that deletes the sessions, after the
   // session rows are locked. Legacy NULL ownership is kept; matching both
   // account and device avoids other users.
@@ -101,7 +98,7 @@ const make = Effect.gen(function* () {
   // Deleting the session row locks it, which waits for an in-flight
   // registration and blocks new ones, before `confirm` checks the queued ends.
   const revokeSession = (userId: string, sessionId: string) =>
-    cleanup.removeAfterEnds(sessionDevices(userId, sessionId), (confirm) =>
+    cleanup.removeAfterEnds({ kind: "session", userId, sessionId }, (confirm) =>
       db.$client.withTransaction(
         Effect.gen(function* () {
           const deleted = yield* db
@@ -267,7 +264,7 @@ const make = Effect.gen(function* () {
         .where(lte(relayAuthSessions.expiresAt, now));
       if (expired.length === 0) return;
       const sessionIds = expired.map((row) => row.sessionId);
-      yield* cleanup.removeAfterEnds(inArray(relayMobileDevices.sessionId, sessionIds), (confirm) =>
+      yield* cleanup.removeAfterEnds({ kind: "sessions", sessionIds }, (confirm) =>
         db.$client.withTransaction(
           Effect.gen(function* () {
             const deleted = yield* db

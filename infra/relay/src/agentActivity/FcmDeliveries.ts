@@ -1,4 +1,3 @@
-import { and, eq } from "drizzle-orm";
 import {
   RelayAgentActivityState,
   RelayAgentActivityAggregateState,
@@ -15,8 +14,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as RelayConfiguration from "../Config.ts";
-import * as RelayDb from "../db.ts";
-import { relayMobileDevices } from "../persistence/schema.ts";
+import { FcmTokenPersistence } from "../persistence/DeliveryTargetPersistence.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as AgentActivityRows from "./AgentActivityRows.ts";
 import * as LiveActivities from "./LiveActivities.ts";
@@ -153,7 +151,7 @@ const make = Effect.gen(function* () {
   const devices = yield* LiveActivities.LiveActivities;
   const rows = yield* AgentActivityRows.AgentActivityRows;
   const links = yield* EnvironmentLinks.EnvironmentLinks;
-  const db = yield* RelayDb.RelayDb;
+  const tokens = yield* FcmTokenPersistence;
 
   return FcmDeliveries.of({
     enqueue: Effect.fn("relay.fcm.enqueue")(function* (input) {
@@ -341,21 +339,7 @@ const make = Effect.gen(function* () {
         data: fitFcmData(data),
       });
       if (result.unregistered) {
-        yield* db
-          .update(relayMobileDevices)
-          .set({ pushToken: null })
-          .where(
-            and(
-              eq(relayMobileDevices.userId, job.userId),
-              eq(relayMobileDevices.deviceId, job.deviceId),
-              eq(relayMobileDevices.pushToken, job.token),
-            ),
-          )
-          .pipe(
-            Effect.mapError(
-              (cause) => new FcmDeliveryError({ operation: "invalidate-token", cause }),
-            ),
-          );
+        yield* tokens.invalidate({ userId: job.userId, deviceId: job.deviceId, token: job.token });
       } else if (acknowledgeAggregate) {
         yield* devices.markDelivery({
           userId: job.userId,

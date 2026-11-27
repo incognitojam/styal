@@ -1,3 +1,5 @@
+import * as PostgresFcmTokens from "./persistence/PostgresFcmTokens.ts";
+import * as PostgresRegistrationCleanup from "./persistence/PostgresRegistrationCleanup.ts";
 import * as PostgresDeliveryAttempts from "./persistence/PostgresDeliveryAttempts.ts";
 import * as PostgresLiveActivities from "./persistence/PostgresLiveActivities.ts";
 import * as PostgresDevices from "./persistence/PostgresDevices.ts";
@@ -65,12 +67,16 @@ export const layerServices = Layer.empty.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       MobileRegistrations.layer,
-      AccountData.layer,
+      AccountData.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
       AccountAuth.layer.pipe(
         Layer.provideMerge(
           Layer.mergeAll(
             ClerkDirectory.layer,
-            AuthSessions.layer.pipe(Layer.provide(PostgresAuthSessions.layer)),
+            AuthSessions.layer.pipe(
+              Layer.provide(
+                PostgresAuthSessions.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
+              ),
+            ),
             EmailSignInCodes.layer.pipe(Layer.provide(PostgresEmailSignInCodes.layer)),
           ),
         ),
@@ -95,6 +101,7 @@ export const layerServices = Layer.empty.pipe(
   Layer.provideMerge(ApnsDeliveries.layer),
   Layer.provideMerge(
     FcmDeliveries.layer.pipe(
+      Layer.provide(PostgresFcmTokens.layer),
       Layer.provideMerge(
         FcmClient.layer.pipe(
           Layer.provide(FcmAssertionSigner.layer),

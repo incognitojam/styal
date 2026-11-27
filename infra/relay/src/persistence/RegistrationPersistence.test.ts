@@ -1,3 +1,4 @@
+import * as PostgresRegistrationCleanup from "./PostgresRegistrationCleanup.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Layer from "effect/Layer";
 
@@ -14,7 +15,7 @@ const layer = Layer.mergeAll(
   PostgresDevices.layer,
   PostgresLiveActivities.layer,
   PostgresAccounts.layer,
-  PostgresAuthSessions.layer,
+  PostgresAuthSessions.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
 ).pipe(
   Layer.provide(RelayConfiguration.layer(config)),
   Layer.provide(layerLocalRelayDb),

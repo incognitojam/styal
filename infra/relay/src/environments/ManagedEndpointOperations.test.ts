@@ -1,3 +1,4 @@
+import * as PostgresRegistrationCleanup from "../persistence/PostgresRegistrationCleanup.ts";
 import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
 import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -209,6 +210,7 @@ function fixture(hooks?: {
     layer: Layer.merge(
       Reaper.layer,
       AccountData.layer.pipe(
+        Layer.provide(PostgresRegistrationCleanup.layer),
         Layer.provide(
           Layer.mock(ApnsDeliveryQueue.ApnsDeliveryQueue, {
             enqueueLiveActivity: () => Effect.die("unexpected push"),

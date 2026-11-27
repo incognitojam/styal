@@ -1,3 +1,4 @@
+import * as PostgresRegistrationCleanup from "../persistence/PostgresRegistrationCleanup.ts";
 import * as PostgresDevices from "../persistence/PostgresDevices.ts";
 import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
 import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
@@ -56,7 +57,7 @@ const fixture = Effect.gen(function* () {
   let failInbox = false;
   let failQueue = false;
   const services = Layer.mergeAll(
-    AccountData.layer,
+    AccountData.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
     EnvironmentLinks.layer.pipe(Layer.provide(PostgresEnvironmentLinks.layer)),
     EnvironmentCredentials.layer.pipe(Layer.provide(PostgresEnvironmentCredentials.layer)),
     ManagedEndpointProvider.layer.pipe(Layer.provide(PostgresTunnelOperations.layer)),
