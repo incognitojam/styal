@@ -8,6 +8,8 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-06-01",
         durableObjects: {
+          REPLAYS: { className: "ReplayObject", useSQLite: true },
+          API_PAUSES: { className: "ApiPauseObject", useSQLite: true },
           ALLOCATION_ROUTES: { className: "AllocationRouteObject", useSQLite: true },
           ENVIRONMENTS: { className: "EnvironmentObject", useSQLite: true },
           EMAILS: { className: "EmailObject", useSQLite: true },

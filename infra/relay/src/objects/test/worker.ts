@@ -1,3 +1,5 @@
+export { ReplayObject } from "../ReplayObject.ts";
+export { ApiPauseObject } from "../ApiPauseObject.ts";
 export { AllocationRouteObject } from "../AllocationRouteObject.ts";
 export { EnvironmentObject } from "../EnvironmentObject.ts";
 export { EmailObject } from "../EmailObject.ts";
