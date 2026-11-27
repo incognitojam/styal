@@ -17,6 +17,8 @@ import {
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
+import { useAvailableNativeAppUpdate } from "../updates/native-app-updates";
+import { NativeAppUpdateRow } from "./components/NativeAppUpdateRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -52,8 +54,9 @@ function AppSettingsSection() {
     checkState.state === "current" && confirmationExpired ? "idle" : checkState.state;
   const updateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
+  const nativeUpdate = useAvailableNativeAppUpdate();
 
-  const version = Constants.expoConfig?.version ?? "0.0.0";
+  const version = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "0.0.0";
   // Match app.config.ts's production fallback to avoid mislabeling builds as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : capitalize(variant);
@@ -153,6 +156,7 @@ function AppSettingsSection() {
       ) : (
         versionRow
       )}
+      {nativeUpdate ? <NativeAppUpdateRow update={nativeUpdate} /> : null}
     </SettingsSection>
   );
 }

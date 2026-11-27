@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.text.format.DateFormat
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
@@ -20,8 +21,10 @@ import java.net.URI
 
 class T3NativeControlsModule : Module() {
   private var filePreviewPromise: Promise? = null
+  private var installPermissionPromise: Promise? = null
 
-  @Suppress("TooGenericExceptionCaught") // Clear the pending promise before rethrowing.
+  // Clear the pending promise before rethrowing. Expo declares every export in this one block.
+  @Suppress("TooGenericExceptionCaught", "LongMethod")
   override fun definition() = ModuleDefinition {
     Name("T3NativeControls")
 
@@ -37,6 +40,10 @@ class T3NativeControlsModule : Module() {
     Function("is24HourFormat") {
       val context = appContext.reactContext ?: error("The app is not active.")
       DateFormat.is24HourFormat(context)
+    }
+
+    AsyncFunction("requestPackageInstallPermission") { promise: Promise ->
+      requestPackageInstallPermission(promise)
     }
 
     AsyncFunction("generateDpopKey") { T3DpopKeys.generate() }
@@ -79,10 +86,17 @@ class T3NativeControlsModule : Module() {
       }
     }
 
-    OnActivityResult { _, (requestCode) ->
+    OnActivityResult { activity, (requestCode) ->
       if (requestCode == 7343) {
         filePreviewPromise?.resolve(null)
         filePreviewPromise = null
+      }
+      if (requestCode == 7344) {
+        installPermissionPromise?.resolve(
+          Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            activity.packageManager.canRequestPackageInstalls()
+        )
+        installPermissionPromise = null
       }
     }
 
@@ -116,6 +130,28 @@ class T3NativeControlsModule : Module() {
         ?.filesDir
         ?.resolve("t3-showcase-ready")
         ?.writeText(scene)
+    }
+  }
+
+  @Suppress("TooGenericExceptionCaught") // Clear the pending promise before rethrowing.
+  private fun requestPackageInstallPermission(promise: Promise) {
+    check(installPermissionPromise == null) { "Install settings are already open." }
+    val activity = appContext.currentActivity ?: error("The app is not active.")
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+      activity.packageManager.canRequestPackageInstalls()
+    ) {
+      promise.resolve(true)
+    } else {
+      val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+        data = Uri.parse("package:${activity.packageName}")
+      }
+      installPermissionPromise = promise
+      try {
+        activity.startActivityForResult(intent, 7344)
+      } catch (error: Exception) {
+        installPermissionPromise = null
+        throw error
+      }
     }
   }
 }

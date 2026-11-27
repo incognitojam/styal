@@ -267,6 +267,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "sidebar.left": IconLayoutSidebar,
   "sidebar.right": IconLayoutSidebarRight,
   "slider.horizontal.3": IconAdjustmentsHorizontal,
+  "square.and.arrow.down": IconDownload,
   "square.and.arrow.up": IconShare,
   "square.and.pencil": IconEdit,
   "square.on.square": IconCopy,

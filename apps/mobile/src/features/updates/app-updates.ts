@@ -480,7 +480,7 @@ function isAppUpdateUnavailableError(error: unknown): boolean {
 
 const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;
 
-function shouldRecheckAppUpdateOnForeground(
+export function shouldRecheckAppUpdateOnForeground(
   backgroundedAtMs: number | null,
   activeAtMs: number,
   pendingInstall: boolean,

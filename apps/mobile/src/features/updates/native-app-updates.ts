@@ -1,0 +1,279 @@
+import { msg } from "gt-react-native";
+import { m } from "../../i18n/messages";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import * as Updates from "expo-updates";
+import { useSyncExternalStore } from "react";
+
+import { isAppUpdateCheckAvailable, shouldRecheckAppUpdateOnForeground } from "./app-updates";
+
+/**
+ * Android installs come from GitHub releases, and OTA updates only reach binaries with the same
+ * runtime version, so a newer release with a different runtime needs its APK installed.
+ * .github/scripts/publish-android-release.sh publishes the tags and manifest asset read here.
+ */
+const RELEASE_REPOSITORY: string | undefined =
+  Constants.expoConfig?.extra?.androidUpdateRepository || undefined;
+const RELEASE_TAGS_URL = `https://api.github.com/repos/${RELEASE_REPOSITORY}/git/matching-refs/tags/android-`;
+const RELEASE_DOWNLOAD_URL = `https://github.com/${RELEASE_REPOSITORY}/releases/download`;
+export const ANDROID_UPDATE_MANIFEST_ASSET = "android-update.json";
+
+const RELEASE_TAG_PATTERN = /^refs\/tags\/(android-\d+(?:\.\d+)*-(\d+))$/;
+const REQUEST_TIMEOUT_MS = 15_000;
+
+export interface NativeAppUpdate {
+  readonly tag: string;
+  readonly version: string;
+  readonly apkUrl: string;
+  readonly apkSizeBytes: number;
+}
+
+/** Picks the release with the highest versionCode from GitHub's matching-refs response. */
+export function newestAndroidReleaseTag(refs: unknown): string | undefined {
+  if (!Array.isArray(refs)) return undefined;
+  let newest: { readonly tag: string; readonly versionCode: number } | undefined;
+  for (const entry of refs) {
+    const ref: unknown = entry?.ref;
+    if (typeof ref !== "string") continue;
+    const match = RELEASE_TAG_PATTERN.exec(ref);
+    if (!match) continue;
+    const versionCode = Number(match[2]);
+    if (!newest || versionCode > newest.versionCode) {
+      newest = { tag: match[1]!, versionCode };
+    }
+  }
+  return newest?.tag;
+}
+
+/**
+ * Returns the release when it needs a new installation, meaning its runtime
+ * version differs from the installed binary's. A malformed manifest yields
+ * nothing rather than a prompt the user cannot act on.
+ */
+export function resolveNativeAppUpdate(
+  tag: string,
+  manifest: unknown,
+  installedRuntimeVersion: string,
+): NativeAppUpdate | undefined {
+  if (typeof manifest !== "object" || manifest === null) return undefined;
+  const { apk, apkSizeBytes, runtimeVersion, version } = manifest as Record<string, unknown>;
+  if (
+    typeof apk !== "string" ||
+    !/^[\w.-]+\.apk$/.test(apk) ||
+    typeof apkSizeBytes !== "number" ||
+    !Number.isSafeInteger(apkSizeBytes) ||
+    apkSizeBytes <= 0 ||
+    typeof runtimeVersion !== "string" ||
+    runtimeVersion.length === 0 ||
+    typeof version !== "string"
+  ) {
+    return undefined;
+  }
+  if (runtimeVersion === installedRuntimeVersion) return undefined;
+  return { tag, version, apkUrl: `${RELEASE_DOWNLOAD_URL}/${tag}/${apk}`, apkSizeBytes };
+}
+
+/** Binary megabytes for the release download size. */
+export function formatApkSize(bytes: number): string {
+  return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
+}
+
+async function fetchJson(fetcher: typeof fetch, url: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetcher(url, { signal: controller.signal });
+    // A newest tag without a manifest predates manifests; nothing to offer.
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`GET ${url} returned ${response.status}.`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function findNativeAppUpdate(
+  fetcher: typeof fetch,
+  installedRuntimeVersion: string,
+): Promise<NativeAppUpdate | undefined> {
+  if (!RELEASE_REPOSITORY) return undefined;
+  const tag = newestAndroidReleaseTag(await fetchJson(fetcher, RELEASE_TAGS_URL));
+  if (!tag) return undefined;
+  const manifest = await fetchJson(
+    fetcher,
+    `${RELEASE_DOWNLOAD_URL}/${tag}/${ANDROID_UPDATE_MANIFEST_ASSET}`,
+  );
+  return resolveNativeAppUpdate(tag, manifest, installedRuntimeVersion);
+}
+
+export interface NativeAppUpdateEnvironment {
+  readonly isSupported: () => boolean;
+  readonly installedRuntimeVersion: () => string | null;
+  readonly fetch: typeof fetch;
+  /** Android drops an alert raised while the app is backgrounded. */
+  readonly isForeground: () => Promise<boolean>;
+  /** The release tag the user was last prompted about, so each release prompts once. */
+  readonly loadPromptedTag: () => Promise<string | undefined>;
+  readonly savePromptedTag: (tag: string) => Promise<void>;
+  /** Resolves `true` when the user chose to download now. */
+  readonly confirmDownload: (update: NativeAppUpdate) => Promise<boolean>;
+  readonly openDownload: (update: NativeAppUpdate) => Promise<void>;
+}
+
+/** Holds the update found by the latest check for the About screen. */
+export interface NativeAppUpdateStore {
+  current: NativeAppUpdate | undefined;
+  readonly listeners: Set<() => void>;
+}
+
+export function createNativeAppUpdateStore(): NativeAppUpdateStore {
+  return { current: undefined, listeners: new Set() };
+}
+
+const nativeAppUpdateStore = createNativeAppUpdateStore();
+let nativeAppUpdateCheckInFlight: Promise<void> | undefined;
+
+function setAvailableNativeAppUpdate(
+  store: NativeAppUpdateStore,
+  update: NativeAppUpdate | undefined,
+): void {
+  if (store.current?.tag === update?.tag && store.current?.apkUrl === update?.apkUrl) return;
+  store.current = update;
+  for (const listener of Array.from(store.listeners)) listener();
+}
+
+/**
+ * Checks GitHub for a release this install cannot reach over the air and asks
+ * once per release whether to download it. Failures leave the last result in
+ * place: the check is advisory and runs again on later foregrounds.
+ */
+export async function runNativeAppUpdateCheck(
+  environment: NativeAppUpdateEnvironment = defaultNativeAppUpdateEnvironment,
+  store: NativeAppUpdateStore = nativeAppUpdateStore,
+): Promise<void> {
+  if (!environment.isSupported()) return;
+  const installedRuntimeVersion = environment.installedRuntimeVersion();
+  if (!installedRuntimeVersion) return;
+
+  let update: NativeAppUpdate | undefined;
+  try {
+    update = await findNativeAppUpdate(environment.fetch, installedRuntimeVersion);
+  } catch (error) {
+    console.warn("Could not check for a new Android release.", error);
+    return;
+  }
+  setAvailableNativeAppUpdate(store, update);
+  if (!update) return;
+
+  const promptedTag = await environment.loadPromptedTag().catch(() => undefined);
+  // Leaving the tag unrecorded lets the next foreground check ask instead.
+  if (promptedTag === update.tag || !(await environment.isForeground())) return;
+  // Record the prompt before showing it, so a failed save cannot turn every
+  // launch into another prompt. The About screen keeps the download reachable.
+  await environment.savePromptedTag(update.tag).catch((error: unknown) => {
+    console.warn("Could not record the Android release prompt.", error);
+  });
+  if (await environment.confirmDownload(update)) {
+    await environment.openDownload(update);
+  }
+}
+
+function runSharedNativeAppUpdateCheck(): Promise<void> {
+  nativeAppUpdateCheckInFlight ??= runNativeAppUpdateCheck().finally(() => {
+    nativeAppUpdateCheckInFlight = undefined;
+  });
+  return nativeAppUpdateCheckInFlight;
+}
+
+/** Checks at launch and again when the app returns after a long background. */
+export function installNativeAppUpdateChecks(): () => void {
+  if (!defaultNativeAppUpdateEnvironment.isSupported()) return () => undefined;
+  let disposed = false;
+  let removeListener: (() => void) | undefined;
+  void runSharedNativeAppUpdateCheck();
+  void import("react-native").then(({ AppState }) => {
+    if (disposed) return;
+    let backgroundedAtMs: number | null = null;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background") {
+        backgroundedAtMs = Date.now();
+        return;
+      }
+      if (state !== "active") return;
+      const shouldCheck = shouldRecheckAppUpdateOnForeground(backgroundedAtMs, Date.now(), false);
+      backgroundedAtMs = null;
+      if (shouldCheck) void runSharedNativeAppUpdateCheck();
+    });
+    removeListener = () => subscription.remove();
+  });
+  return () => {
+    disposed = true;
+    removeListener?.();
+  };
+}
+
+export function useAvailableNativeAppUpdate(): NativeAppUpdate | undefined {
+  return useSyncExternalStore(
+    (listener) => {
+      nativeAppUpdateStore.listeners.add(listener);
+      return () => nativeAppUpdateStore.listeners.delete(listener);
+    },
+    () => nativeAppUpdateStore.current,
+  );
+}
+
+export async function openNativeAppUpdateDownload(update: NativeAppUpdate): Promise<void> {
+  const [Linking, { nativeAppUpdateDownloader }] = await Promise.all([
+    import("expo-linking"),
+    import("./native-app-update-download"),
+  ]);
+  // The launch prompt shares the About screen's progress, cancellation and retry actions.
+  await Linking.openURL(Linking.createURL("settings/about"));
+  await nativeAppUpdateDownloader.start(update);
+}
+
+async function defaultConfirmDownload(update: NativeAppUpdate): Promise<boolean> {
+  const { Alert } = await import("react-native");
+  return new Promise<boolean>((resolve) => {
+    Alert.alert(
+      m(msg("Update available")),
+      m(msg("styal {version} is ready to download ({size})."), {
+        version: update.version,
+        size: formatApkSize(update.apkSizeBytes),
+      }),
+      [
+        { onPress: () => resolve(false), style: "cancel", text: m(msg("Later")) },
+        { onPress: () => resolve(true), text: m(msg("Download")) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
+const defaultNativeAppUpdateEnvironment: NativeAppUpdateEnvironment = {
+  // Only production APKs come from these releases; preview and development
+  // builds use other application IDs and update channels.
+  isSupported: () =>
+    !!RELEASE_REPOSITORY &&
+    Constants.platform?.android !== undefined &&
+    isAppUpdateCheckAvailable() &&
+    (Constants.expoConfig?.extra?.appVariant ?? "production") === "production" &&
+    // Release APKs carry only arm64 libraries and cannot install elsewhere.
+    Device.supportedCpuArchitectures?.includes("arm64-v8a") === true,
+  installedRuntimeVersion: () => Updates.runtimeVersion,
+  fetch: (input, init) => fetch(input, init),
+  isForeground: async () => {
+    const { AppState } = await import("react-native");
+    return AppState.currentState === "active";
+  },
+  loadPromptedTag: async () => {
+    const { loadPreferences } = await import("../../persistence/imperative");
+    return (await loadPreferences()).nativeUpdatePromptedTag;
+  },
+  savePromptedTag: async (tag) => {
+    const { savePreferencesPatch } = await import("../../persistence/imperative");
+    await savePreferencesPatch({ nativeUpdatePromptedTag: tag });
+  },
+  confirmDownload: defaultConfirmDownload,
+  openDownload: openNativeAppUpdateDownload,
+};

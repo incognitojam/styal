@@ -5735,5 +5735,20 @@
   "ad208e3e32c85029": "すべて非表示",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "チャット内のツール呼び出し",
-  "8d545d54c0a9e950": "エージェントが実行するコマンド、編集、検索を非表示にします。「成功したものを非表示」では失敗は表示されます。Zen では最終的な回答だけを表示します。承認、質問、エラーは常に表示されます。"
+  "8d545d54c0a9e950": "エージェントが実行するコマンド、編集、検索を非表示にします。「成功したものを非表示」では失敗は表示されます。Zen では最終的な回答だけを表示します。承認、質問、エラーは常に表示されます。",
+  "f72624201184e1ca": "Allow installs from styal to continue",
+  "c60db2f31b6d6c27": "Could not open the installer. Tap to try again.",
+  "a7cc2a6283178e56": "Could not download the update. Check your connection and try again.",
+  "2ee2077700686fbb": "Update available",
+  "410d1b9be6edbfa4": "styal {version} is ready to download ({size}).",
+  "5004547dc22a40db": "Download",
+  "7fdece033260e9fb": "Downloading update",
+  "43f421c6652e90cc": "{percent}% · Tap to cancel",
+  "efabe5b92944461b": "Opening installer…",
+  "d6d8e2efa483ec0d": "Confirm the update in Android",
+  "e5ddb125549642de": "Install styal {version}",
+  "6b2ab86bbd37a715": "Retry update to styal {version}",
+  "ba35e1121ec95298": "Update to styal {version}",
+  "92abea2a41fa59bf": "Download complete · Tap to install",
+  "6f88ecbc39556a93": "{size} download"
 }

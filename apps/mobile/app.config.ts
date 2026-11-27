@@ -471,6 +471,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    androidUpdateRepository: repoEnv.T3CODE_MOBILE_ANDROID_UPDATE_REPOSITORY ?? null,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
