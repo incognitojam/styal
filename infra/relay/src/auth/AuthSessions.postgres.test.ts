@@ -1,3 +1,5 @@
+import * as PostgresLiveActivities from "../persistence/PostgresLiveActivities.ts";
+import * as PostgresDevices from "../persistence/PostgresDevices.ts";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as PgClient from "@effect/sql-pg/PgClient";
@@ -42,8 +44,8 @@ const queueFailures = new Set<string>();
 const sendHooks = new Map<string, (job: SignedApnsDeliveryJob) => Effect.Effect<void>>();
 const layer = Layer.mergeAll(
   AuthSessions.layer.pipe(Layer.provide(PostgresAuthSessions.layer)),
-  Devices.layer,
-  LiveActivities.layer,
+  Devices.layer.pipe(Layer.provide(PostgresDevices.layer)),
+  LiveActivities.layer.pipe(Layer.provide(PostgresLiveActivities.layer)),
 ).pipe(
   Layer.provideMerge(ApnsDeliveryQueue.layer),
   Layer.provide(
@@ -405,7 +407,7 @@ describe.skipIf(!databaseUrl)("session-owned mobile delivery (Postgres)", () => 
         const creating = yield* f.db.$client
           .withTransaction(
             Effect.gen(function* () {
-              yield* Devices.lockDeviceOwnership(f.db, f.userId, "phone");
+              yield* PostgresDevices.lockDeviceOwnership(f.db, f.userId, "phone");
               const now = DateTime.formatIso(yield* DateTime.now);
               yield* f.db.insert(relayMobileDevices).values({
                 userId: f.userId,
@@ -470,7 +472,7 @@ describe.skipIf(!databaseUrl)("session-owned mobile delivery (Postgres)", () => 
       const adding = yield* f.db.$client
         .withTransaction(
           Effect.gen(function* () {
-            yield* Devices.lockDeviceOwnership(f.db, f.userId, "phone");
+            yield* PostgresDevices.lockDeviceOwnership(f.db, f.userId, "phone");
             yield* f.db.execute(
               sql`select 1 from relay_mobile_devices where user_id = ${f.userId} and device_id = 'phone' for update`,
             );

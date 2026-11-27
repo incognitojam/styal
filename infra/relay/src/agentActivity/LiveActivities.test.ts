@@ -1,3 +1,4 @@
+import * as PostgresLiveActivities from "../persistence/PostgresLiveActivities.ts";
 import type {
   RelayAgentActivityAggregateState,
   RelayLiveActivityRegistrationRequest,
@@ -78,7 +79,10 @@ describe("LiveActivities", () => {
       expect(conflictSets[1]?.remoteStartedAt).not.toBe(armedAt);
     }).pipe(
       Effect.provide(
-        LiveActivities.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb))),
+        LiveActivities.layer.pipe(
+          Layer.provide(PostgresLiveActivities.layer),
+          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+        ),
       ),
     );
   });
@@ -131,7 +135,10 @@ describe("LiveActivities", () => {
       );
     }).pipe(
       Effect.provide(
-        LiveActivities.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb))),
+        LiveActivities.layer.pipe(
+          Layer.provide(PostgresLiveActivities.layer),
+          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+        ),
       ),
     );
   });

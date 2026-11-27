@@ -1,3 +1,4 @@
+import * as PostgresDevices from "../persistence/PostgresDevices.ts";
 import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
 import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
 import * as PostgresEnvironmentCredentials from "../persistence/PostgresEnvironmentCredentials.ts";
@@ -519,7 +520,9 @@ describe.skipIf(!databaseUrl)("account deletion (Postgres)", () => {
         createdAt: f.now,
         updatedAt: f.now,
       });
-      const devices = yield* Devices.Devices.pipe(Effect.provide(Devices.layer));
+      const devices = yield* Devices.Devices.pipe(
+        Effect.provide(Devices.layer.pipe(Layer.provide(PostgresDevices.layer))),
+      );
       const register = devices.register({
         userId: f.userId,
         sessionId,
