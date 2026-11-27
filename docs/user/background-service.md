@@ -210,6 +210,10 @@ history that is not imported into the current database yet, such as proposed
 plans and drafts. `styal doctor` reports its size but does not offer to delete
 it.
 
+## Streaming replies
+
+As a reply streams, styal replaces superseded copies with its newest text and keeps the final reply. This happens automatically, separately from history pruning, without a safety copy.
+
 ## Safety copy before history pruning
 
 History pruning is off by default. To turn it on early, start the server with `T3CODE_EVENT_PRUNING=1` in its environment. This also applies to desktop and background-service server processes. Without it, styal makes no pruning copy, checks no copy disk space, and shows no copy progress screen.

@@ -58,7 +58,9 @@ therefore means the intent committed, not that the provider, checkpoint, or othe
 finished. Keep external I/O out of command decisions and the database transaction. Effects tied to
 a lost provider process cannot simply replay; recovery retires them before admitting new work.
 
-When pruning is enabled, the event log only keeps what live readers need: about a day of history
+The event log follows the
+[streaming reply retention policy](../user/background-service.md#streaming-replies).
+When history pruning is enabled, it also keeps only what live readers need: about a day of history
 for reconnect replay and command-id retries.
 [ProjectionMaintenance](../../apps/server/src/orchestration-v2/ProjectionMaintenance.ts) deletes
 older events the projections cover, so projections cannot be rebuilt from the log. It keeps each
