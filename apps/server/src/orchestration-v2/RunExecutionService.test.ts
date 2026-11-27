@@ -1682,12 +1682,9 @@ it.effect("ingests new member threads of an owned child after the root turn term
           },
         },
       });
+      yield* Deferred.await(childMessageIngested);
     }).pipe(Effect.provide(layerTest));
 
-    const observed = yield* Deferred.await(childMessageIngested).pipe(
-      Effect.timeoutOption("2 seconds"),
-    );
-    assert.isTrue(Option.isSome(observed), "child message was not ingested after root terminal");
     assert.deepEqual(yield* Ref.get(order), ["root-finalized", "member-thread", "child-message"]);
     // The run's message started the root; the parent agent started the child's turn.
     const recorded = yield* Ref.get(origins);
@@ -1833,6 +1830,7 @@ it.effect("ends a nested native subagent and its thread when the root run is int
           sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false },
         },
       });
+      yield* Deferred.await(finalized);
     }).pipe(Effect.provide(layerTest));
 
     const ended = (yield* Deferred.await(finalized)).flatMap((event) =>
@@ -2423,10 +2421,8 @@ it.effect(
             },
           },
         });
+        yield* Deferred.await(ingestionDone);
       }).pipe(Effect.provide(layerTest));
-
-      const closed = yield* Deferred.await(ingestionDone).pipe(Effect.timeoutOption("2 seconds"));
-      assert.isTrue(Option.isSome(closed), "event ingestion fiber did not finish");
 
       const events = yield* Ref.get(written);
       const subagentEvents = events.flatMap((event) =>
@@ -2715,10 +2711,8 @@ it.effect("settles native subagents when a workspace handoff completes the root 
           },
         },
       });
+      yield* Deferred.await(ingestionDone);
     }).pipe(Effect.provide(layerTest));
-
-    const closed = yield* Deferred.await(ingestionDone).pipe(Effect.timeoutOption("2 seconds"));
-    assert.isTrue(Option.isSome(closed), "settled children must end event ingestion");
 
     const events = yield* Ref.get(written);
     const statusOf = (type: OrchestrationV2DomainEvent["type"], id: string) =>
@@ -4201,10 +4195,8 @@ function runBackgroundItemScenario(
           },
         },
       });
+      yield* Deferred.await(ingestionDone);
     }).pipe(Effect.provide(layerTest));
-
-    // No timeout: tests advance the TestClock, which would fire it early.
-    yield* Deferred.await(ingestionDone);
 
     return yield* Ref.get(observed);
   });

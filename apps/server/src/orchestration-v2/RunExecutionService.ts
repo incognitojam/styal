@@ -1883,7 +1883,7 @@ export const layer: Layer.Layer<
             ),
             Effect.ensuring(endPreviewActivity),
             Effect.ensuring(eventSubscription.close),
-            Effect.forkDetach,
+            Effect.forkIn(scope),
           );
 
         // A provider turn is a sign that the session is still alive. Keep
