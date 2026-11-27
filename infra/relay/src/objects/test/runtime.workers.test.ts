@@ -6,6 +6,7 @@ import { env } from "cloudflare:workers";
 import { abortAllDurableObjects, reset, runInDurableObject } from "cloudflare:test";
 import { expect, it } from "@effect/vitest";
 import { accountMigrations } from "../AccountObject.ts";
+import { inventoryMigrations } from "../InventoryObject.ts";
 import {
   accountName,
   credentialRouteName,
@@ -253,3 +254,43 @@ it.effect(
       expect((yield* journal.pending(2)).map((row) => row.operationId)).toEqual([a.operationId]);
     }).pipe(Effect.provide(tunnelOperationsLayer(env))),
 );
+
+it("upgrades piece 5 inventory rows and fences replay retirement across name reuse", async () => {
+  await reset();
+  const shard = "inventory:v1:0";
+  await runInDurableObject(env.INVENTORY.getByName(shard), async (_instance, ctx) => {
+    await ctx.storage.deleteAll();
+    migrate(ctx.storage, inventoryMigrations.slice(0, 1));
+    ctx.storage.sql.exec(
+      "INSERT INTO object_references VALUES ('account', 'existing-account'), ('replay', 'existing-replay')",
+    );
+  });
+  await abortAllDurableObjects();
+  const inventory = () => env.INVENTORY.getByName(shard);
+  expect(await inventory().list({ version: 1, kind: "account", after: "", limit: 1000 })).toEqual([
+    { name: "existing-account" },
+  ]);
+  expect(await inventory().list({ version: 1, kind: "replay", after: "", limit: 1000 })).toEqual([
+    { name: "existing-replay" },
+  ]);
+  const [old] = await inventory().replayReferences({ version: 1, after: "", limit: 1000 });
+  expect(old).toMatchObject({ name: "existing-replay", retiring: 0 });
+  expect(await inventory().unregister({ version: 1, name: old!.name, epoch: old!.epoch })).toBe(
+    true,
+  );
+  await inventory().finishReplayRetirement({ version: 1, name: old!.name, epoch: old!.epoch });
+  await abortAllDurableObjects();
+  await inventory().register({ version: 1, references: [{ kind: "replay", name: old!.name }] });
+  const [fresh] = await inventory().replayReferences({ version: 1, after: "", limit: 1000 });
+  expect(fresh!.epoch).toBeGreaterThan(old!.epoch);
+  expect(await inventory().unregister({ version: 1, name: old!.name, epoch: old!.epoch })).toBe(
+    false,
+  );
+  await inventory().finishReplayRetirement({ version: 1, name: old!.name, epoch: old!.epoch });
+  expect(await inventory().list({ version: 1, kind: "replay", after: "", limit: 1000 })).toEqual([
+    { name: "existing-replay" },
+  ]);
+  expect((await inventory().inventory({ version: 1 })).schemaVersion).toBe(
+    inventoryMigrations.length,
+  );
+});

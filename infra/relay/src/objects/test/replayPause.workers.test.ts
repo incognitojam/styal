@@ -66,7 +66,7 @@ it("leaves no application schema on cold reads, unregistered probes or invalid R
       expiresAt: "1970-01-01T00:00:01.000Z",
       createdAt: "1970-01-01T00:00:00.000Z",
     }),
-  ).toEqual({ needsRegistration: true });
+  ).toMatchObject({ needsRegistration: true });
   await replay.prune({ version, expiresBefore: "1970-01-01T00:00:02.000Z" });
   expect(await pause.read({ version, api: "cold" })).toBe(0);
   expect(await pause.extend({ version, api: "cold", untilMillis: 1000 })).toEqual({
@@ -405,4 +405,343 @@ it.effect(
         ),
       ),
     ),
+);
+
+it.effect("retires an expired-only replay key instead of retaining its schema and reference", () =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => reset());
+    const replay = yield* ReplayPersistence.pipe(Effect.provide(replayLayer(env)));
+    const proof = input("retire-expired");
+    const name = replayName(proof.thumbprint, proof.jti);
+    expect(yield* replay.consume(proof)).toBe(true);
+    yield* TestClock.setTime(1001);
+    yield* replay.pruneExpired;
+    expect(
+      (yield* Effect.promise(() => env.REPLAYS.getByName(name).inventory({ version })))
+        .schemaVersion,
+    ).toBe(0);
+    expect(
+      yield* Effect.promise(() =>
+        env.INVENTORY.getByName(inventoryShardName("replay", name)).list({
+          version,
+          kind: "replay",
+          after: "",
+          limit: 1000,
+        }),
+      ),
+    ).toEqual([]);
+  }),
+);
+
+it.effect.each(["before", "after"] as const)(
+  "preserves an unexpired proof arriving %s unregister",
+  (arrival) =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => reset());
+      const replay = yield* ReplayPersistence.pipe(Effect.provide(replayLayer(env)));
+      const expired = input("retire-race");
+      const live = { ...expired, jti: "still-live", expiresAt: DateTime.makeUnsafe(5000) };
+      const name = replayName(expired.thumbprint, expired.jti);
+      const shardName = inventoryShardName("replay", name);
+      expect(yield* replay.consume(expired)).toBe(true);
+      const [candidate] = yield* Effect.promise(() =>
+        env.INVENTORY.getByName(shardName).replayReferences({ version, after: "", limit: 1000 }),
+      );
+      expect(
+        yield* Effect.promise(() =>
+          env.REPLAYS.getByName(name).prune({ version, expiresBefore: "1970-01-01T00:00:01.001Z" }),
+        ),
+      ).toBe(true);
+      yield* Effect.promise(() => abortAllDurableObjects());
+      if (arrival === "before") expect(yield* replay.consume(live)).toBe(true);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shardName).unregister({ version, name, epoch: candidate!.epoch }),
+        ),
+      ).toBe(true);
+      yield* Effect.promise(() => abortAllDurableObjects());
+      if (arrival === "after") expect(yield* replay.consume(live)).toBe(true);
+      expect(yield* replay.consume(live)).toBe(false);
+      expect(yield* Effect.promise(() => env.REPLAYS.getByName(name).retire({ version }))).toBe(
+        false,
+      );
+      yield* Effect.promise(() => abortAllDurableObjects());
+      expect(yield* replay.consume(live)).toBe(false);
+      // A new maintenance invocation discovers the interrupted retirement and restores the live key.
+      yield* TestClock.setTime(1001);
+      yield* replay.pruneExpired;
+      expect(yield* replay.consume(live)).toBe(false);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shardName).list({
+            version,
+            kind: "replay",
+            after: "",
+            limit: 1000,
+          }),
+        ),
+      ).toEqual([{ name }]);
+      const [restored] = yield* Effect.promise(() =>
+        env.INVENTORY.getByName(shardName).replayReferences({ version, after: "", limit: 1000 }),
+      );
+      expect(restored!.epoch).toBeGreaterThan(candidate!.epoch);
+      expect(restored!.retiring).toBe(0);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shardName).unregister({ version, name, epoch: candidate!.epoch }),
+        ),
+      ).toBe(false);
+      yield* Effect.promise(() =>
+        env.INVENTORY.getByName(shardName).finishReplayRetirement({
+          version,
+          name,
+          epoch: candidate!.epoch,
+        }),
+      );
+      yield* Effect.promise(() => abortAllDurableObjects());
+      expect(yield* replay.consume(live)).toBe(false);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shardName).list({
+            version,
+            kind: "replay",
+            after: "",
+            limit: 1000,
+          }),
+        ),
+      ).toEqual([{ name }]);
+    }),
+);
+
+it.effect.each(["unregister", "retire", "finish"] as const)(
+  "resumes replay retirement after a lost %s reply and object restart",
+  (step) => {
+    const lostInventory = {
+      getByName(name: string) {
+        const stub = env.INVENTORY.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "unregister" && step === "unregister")
+              return async (request: Parameters<typeof stub.unregister>[0]) => {
+                const result = await stub.unregister(request);
+                throw new Error(`Synthetic lost unregister reply: ${result}`);
+              };
+            if (method === "finishReplayRetirement" && step === "finish")
+              return async (request: Parameters<typeof stub.finishReplayRetirement>[0]) => {
+                await stub.finishReplayRetirement(request);
+                throw new Error("Synthetic lost finish reply");
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    };
+    const lostReplay = {
+      getByName(name: string) {
+        const stub = env.REPLAYS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "retire" && step === "retire")
+              return async (request: Parameters<typeof stub.retire>[0]) => {
+                const result = await stub.retire(request);
+                throw new Error(`Synthetic lost retire reply: ${result}`);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    };
+    return Effect.gen(function* () {
+      yield* Effect.promise(() => reset());
+      const replay = yield* ReplayPersistence.pipe(Effect.provide(replayLayer(env)));
+      const proof = input(`retirement-loss-${step}`);
+      const name = replayName(proof.thumbprint, proof.jti);
+      const shard = inventoryShardName("replay", name);
+      expect(yield* replay.consume(proof)).toBe(true);
+      yield* TestClock.setTime(1001);
+      const interrupted = yield* ReplayPersistence.pipe(
+        Effect.provide(replayLayer({ ...env, INVENTORY: lostInventory, REPLAYS: lostReplay })),
+      );
+      expect(yield* interrupted.pruneExpired.pipe(Effect.flip)).toMatchObject({
+        operation: "prune-expired",
+      });
+      yield* Effect.promise(() => abortAllDurableObjects());
+      yield* replay.pruneExpired;
+      expect(
+        (yield* Effect.promise(() => env.REPLAYS.getByName(name).inventory({ version })))
+          .schemaVersion,
+      ).toBe(0);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shard).list({ version, kind: "replay", after: "", limit: 1000 }),
+        ),
+      ).toEqual([]);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shard).replayReferences({ version, after: "", limit: 1000 }),
+        ),
+      ).toEqual([]);
+      const retired = yield* Effect.promise(() =>
+        runInDurableObject(env.REPLAYS.getByName(name), async (_instance, ctx) => ({
+          tables: ctx.storage.sql.exec("SELECT name FROM sqlite_master ORDER BY name").toArray(),
+          keys: Array.from(await ctx.storage.list()),
+          alarm: await ctx.storage.getAlarm(),
+        })),
+      );
+      const fresh = yield* Effect.promise(() =>
+        runInDurableObject(
+          env.REPLAYS.getByName(replayName("never-written", "proof-a")),
+          async (_instance, ctx) => ({
+            tables: ctx.storage.sql.exec("SELECT name FROM sqlite_master ORDER BY name").toArray(),
+            keys: Array.from(await ctx.storage.list()),
+            alarm: await ctx.storage.getAlarm(),
+          }),
+        ),
+      );
+      expect(retired).toEqual(fresh);
+      const live = { ...proof, jti: "fresh", expiresAt: DateTime.makeUnsafe(5000) };
+      expect(yield* replay.consume(live)).toBe(true);
+      yield* Effect.promise(() => abortAllDurableObjects());
+      expect(yield* replay.consume(live)).toBe(false);
+      expect(
+        yield* Effect.promise(() =>
+          env.INVENTORY.getByName(shard).list({ version, kind: "replay", after: "", limit: 1000 }),
+        ),
+      ).toEqual([{ name }]);
+    });
+  },
+);
+
+it("rejects a delayed first-write ticket after storage retirement or restart", async () => {
+  await reset();
+  const name = replayName("delayed-initialization", "proof-a");
+  const request = {
+    version,
+    thumbprint: "delayed-initialization",
+    jti: "proof-a",
+    iat: 0,
+    expiresAt: "1970-01-01T00:00:05.000Z",
+    createdAt: "1970-01-01T00:00:00.000Z",
+  };
+  const initial = await env.REPLAYS.getByName(name).consume(request);
+  if (!("needsRegistration" in initial)) throw new Error("Expected cold replay");
+  const shard = inventoryShardName("replay", name);
+  await env.INVENTORY.getByName(shard).register({
+    version,
+    references: [{ kind: "replay", name }],
+  });
+  const [candidate] = await env.INVENTORY.getByName(shard).replayReferences({
+    version,
+    after: "",
+    limit: 1000,
+  });
+  await env.INVENTORY.getByName(shard).unregister({ version, name, epoch: candidate!.epoch });
+  expect(await env.REPLAYS.getByName(name).retire({ version })).toBe(true);
+  await env.INVENTORY.getByName(shard).finishReplayRetirement({
+    version,
+    name,
+    epoch: candidate!.epoch,
+  });
+  expect(
+    await env.REPLAYS.getByName(name).consume({
+      ...request,
+      initialization: initial.initialization,
+    }),
+  ).toMatchObject({ needsRegistration: true });
+  expect((await env.REPLAYS.getByName(name).inventory({ version })).schemaVersion).toBe(0);
+  await abortAllDurableObjects();
+  expect(
+    await env.REPLAYS.getByName(name).consume({
+      ...request,
+      initialization: initial.initialization,
+    }),
+  ).toMatchObject({ needsRegistration: true });
+  expect(
+    await env.INVENTORY.getByName(shard).replayReferences({ version, after: "", limit: 1000 }),
+  ).toEqual([]);
+});
+
+it.effect.each([1, 2])("bounds the first-write handshake across %s restarts", (restarts) => {
+  let remaining = restarts;
+  const interrupted = {
+    getByName(name: string) {
+      const stub = env.INVENTORY.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "register")
+            return async (request: Parameters<typeof stub.register>[0]) => {
+              await stub.register(request);
+              if (remaining > 0) {
+                remaining--;
+                await abortAllDurableObjects();
+              }
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    },
+  };
+  return Effect.gen(function* () {
+    yield* Effect.promise(() => reset());
+    const replay = yield* ReplayPersistence.pipe(
+      Effect.provide(replayLayer({ ...env, INVENTORY: interrupted })),
+    );
+    const proof = { ...input("handshake-restart"), expiresAt: DateTime.makeUnsafe(5000) };
+    if (restarts === 2) {
+      expect(yield* replay.consume(proof).pipe(Effect.flip)).toMatchObject({
+        _tag: "DpopProofReplayPersistenceError",
+        operation: "consume",
+      });
+      const name = replayName(proof.thumbprint, proof.jti);
+      expect(
+        (yield* Effect.promise(() => env.REPLAYS.getByName(name).inventory({ version })))
+          .schemaVersion,
+      ).toBe(0);
+    }
+    expect(yield* replay.consume(proof)).toBe(true);
+    yield* Effect.promise(() => abortAllDurableObjects());
+    expect(yield* replay.consume(proof)).toBe(false);
+    const name = replayName(proof.thumbprint, proof.jti);
+    expect(
+      yield* Effect.promise(() =>
+        env.INVENTORY.getByName(inventoryShardName("replay", name)).list({
+          version,
+          kind: "replay",
+          after: "",
+          limit: 1000,
+        }),
+      ),
+    ).toEqual([{ name }]);
+  });
+});
+
+it.effect("converges duplicate maintenance without making an unexpired proof reusable", () =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => reset());
+    const a = yield* ReplayPersistence.pipe(Effect.provide(replayLayer(env)));
+    const b = yield* ReplayPersistence.pipe(Effect.provide(replayLayer(env)));
+    const live = { ...input("duplicate-maintenance-live"), expiresAt: DateTime.makeUnsafe(5000) };
+    const expired = input("duplicate-maintenance-expired");
+    expect(yield* a.consume(expired)).toBe(true);
+    expect(yield* a.consume(live)).toBe(true);
+    yield* TestClock.setTime(1001);
+    yield* Effect.all([a.pruneExpired, b.pruneExpired], { concurrency: "unbounded" });
+    yield* Effect.promise(() => abortAllDurableObjects());
+    expect(yield* a.consume(live)).toBe(false);
+    const expiredName = replayName(expired.thumbprint, expired.jti);
+    expect(
+      (yield* Effect.promise(() => env.REPLAYS.getByName(expiredName).inventory({ version })))
+        .schemaVersion,
+    ).toBe(0);
+    expect(
+      yield* Effect.promise(() =>
+        env.INVENTORY.getByName(inventoryShardName("replay", expiredName)).list({
+          version,
+          kind: "replay",
+          after: "",
+          limit: 1000,
+        }),
+      ),
+    ).not.toContainEqual({ name: expiredName });
+  }),
 );

@@ -30,16 +30,25 @@ export const replayLayer = (bindings: ReplayBindings) =>
         };
         return yield* Effect.tryPromise({
           try: async () => {
-            const stub = bindings.REPLAYS.getByName(name);
-            const first = await stub.consume(request);
-            if (!("needsRegistration" in first)) return first.consumed;
-            await bindings.INVENTORY.getByName(inventoryShardName("replay", name)).register({
-              version,
-              references: [{ kind: "replay", name }],
+            let result = await bindings.REPLAYS.getByName(name).consume(request);
+            for (let handshake = 0; "needsRegistration" in result && handshake < 2; handshake++) {
+              await bindings.INVENTORY.getByName(inventoryShardName("replay", name)).register({
+                version,
+                references: [{ kind: "replay", name }],
+              });
+              result = await bindings.REPLAYS.getByName(name).consume({
+                ...request,
+                initialization: result.initialization,
+              });
+            }
+            if ("consumed" in result) return result.consumed;
+            throw new DpopProofReplayPersistenceError({
+              operation: "consume",
+              thumbprint: input.thumbprint,
+              jti: input.jti,
+              iat: input.iat,
+              cause: "Replay initialization repeatedly changed",
             });
-            const written = await stub.consume({ ...request, registered: true });
-            if (!("consumed" in written)) throw new Error("Replay inventory publication failed");
-            return written.consumed;
           },
           catch: (cause) =>
             new DpopProofReplayPersistenceError({
@@ -59,14 +68,34 @@ export const replayLayer = (bindings: ReplayBindings) =>
             for (const shard of inventoryShardNames) {
               let after = "";
               for (;;) {
-                const refs = await bindings.INVENTORY.getByName(shard).list({
-                  version,
-                  kind: "replay",
-                  after,
-                  limit: 1000,
-                });
-                for (const ref of refs)
-                  await bindings.REPLAYS.getByName(ref.name).prune({ version, expiresBefore });
+                const inventory = () => bindings.INVENTORY.getByName(shard);
+                const refs = await inventory().replayReferences({ version, after, limit: 1000 });
+                for (const ref of refs) {
+                  const replay = () => bindings.REPLAYS.getByName(ref.name);
+                  if (!(await replay().prune({ version, expiresBefore }))) {
+                    if (ref.retiring)
+                      await inventory().register({
+                        version,
+                        references: [{ kind: "replay", name: ref.name }],
+                      });
+                    continue;
+                  }
+                  if (
+                    !(await inventory().unregister({ version, name: ref.name, epoch: ref.epoch }))
+                  )
+                    continue;
+                  if (await replay().retire({ version }))
+                    await inventory().finishReplayRetirement({
+                      version,
+                      name: ref.name,
+                      epoch: ref.epoch,
+                    });
+                  else
+                    await inventory().register({
+                      version,
+                      references: [{ kind: "replay", name: ref.name }],
+                    });
+                }
                 if (refs.length < 1000) break;
                 after = refs[refs.length - 1]!.name;
               }

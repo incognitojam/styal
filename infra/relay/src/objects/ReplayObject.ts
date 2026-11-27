@@ -1,3 +1,4 @@
+// @effect-diagnostics cryptoRandomUUID:off - Workerd initialization tickets are synchronous, ephemeral object state.
 import { DurableObject } from "cloudflare:workers";
 import { replayName } from "./names.ts";
 import { checkRpc, migrate, summarize } from "./storage.ts";
@@ -13,6 +14,7 @@ const migrations = [
 ];
 
 export class ReplayObject extends DurableObject<unknown> {
+  private initialization = crypto.randomUUID();
   private initialized() {
     return (
       this.ctx.storage.sql
@@ -28,12 +30,13 @@ export class ReplayObject extends DurableObject<unknown> {
     iat: number;
     expiresAt: string;
     createdAt: string;
-    registered?: true;
-  }): Promise<{ needsRegistration: true } | { consumed: boolean }> {
+    initialization?: string;
+  }): Promise<{ needsRegistration: true; initialization: string } | { consumed: boolean }> {
     checkRpc(request.version);
     if (this.ctx.id.name !== replayName(request.thumbprint, request.jti))
       throw new Error("Replay identity mismatch");
-    if (!this.initialized() && !request.registered) return { needsRegistration: true };
+    if (!this.initialized() && request.initialization !== this.initialization)
+      return { needsRegistration: true, initialization: this.initialization };
     return this.ctx.storage.transactionSync(() => {
       migrate(this.ctx.storage, migrations);
       const rows = this.ctx.storage.sql
@@ -52,12 +55,28 @@ export class ReplayObject extends DurableObject<unknown> {
 
   async prune(request: { version: number; expiresBefore: string }) {
     checkRpc(request.version);
-    if (!this.initialized()) return;
+    if (!this.initialized()) return true;
     migrate(this.ctx.storage, migrations);
     this.ctx.storage.sql.exec(
       "DELETE FROM replay_proofs WHERE expires_at < ?",
       request.expiresBefore,
     );
+    return this.ctx.storage.sql.exec("SELECT 1 FROM replay_proofs LIMIT 1").toArray().length === 0;
+  }
+
+  async retire(request: { version: number }) {
+    checkRpc(request.version);
+    // Exclude consumes between the emptiness check and asynchronous storage deallocation.
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (
+        this.initialized() &&
+        this.ctx.storage.sql.exec("SELECT 1 FROM replay_proofs LIMIT 1").toArray().length
+      )
+        return false;
+      this.initialization = crypto.randomUUID();
+      await this.ctx.storage.deleteAll();
+      return true;
+    });
   }
 
   async inventory(request: { version: number }) {
