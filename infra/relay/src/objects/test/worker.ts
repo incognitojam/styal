@@ -1,3 +1,4 @@
+export { EnvironmentObject } from "../EnvironmentObject.ts";
 export { EmailObject } from "../EmailObject.ts";
 export { CredentialRouteObject } from "../CredentialRouteObject.ts";
 export { AccountObject } from "../AccountObject.ts";
