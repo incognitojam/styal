@@ -52,7 +52,7 @@ export const ProjectRow = Schema.Struct({
 });
 export type ProjectRow = typeof ProjectRow.Type;
 
-const ProjectDbRow = Schema.Struct({
+export const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   hasCustomTitle: Schema.BooleanFromBit,

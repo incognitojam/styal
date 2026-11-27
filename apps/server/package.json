@@ -16,6 +16,8 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.ts",
+    "data-move:preflight-fixtures": "node src/persistence/dataMove/generatePreflight.mjs",
+    "data-move:preflight": "node src/persistence/dataMove/preflightCli.ts",
     "data-move:inventory": "node src/persistence/dataMove/cli.ts",
     "data-move:fixtures": "node src/persistence/dataMove/generateSource.ts",
     "dev:built": "vp run dev",

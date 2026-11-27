@@ -125,7 +125,7 @@ export class OrchestrationEventStore extends Context.Service<
 >()("t3/persistence/OrchestrationEventStore") {}
 
 const encodeProjectIcon = Schema.encodeSync(StoredProjectIcon);
-const decodeProjectEvent = Schema.decodeUnknownEffect(ApplicationProjectEvent);
+const decodeProjectEvent = Schema.decodeUnknownEffect(ApplicationProjectEvent, { errors: "all" });
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
 const EventMetadataFromJsonString = Schema.fromJsonString(ApplicationEventMetadata);
 const ProjectEventType = Schema.Literals([
@@ -164,7 +164,7 @@ const ProjectEventPersistedRowSchema = Schema.Struct({
 
 const READ_PAGE_SIZE = 500;
 
-interface ApplicationEventRow {
+export interface ApplicationEventRow {
   readonly sequence: number;
   readonly event_id: string;
   readonly command_id: string | null;
@@ -179,7 +179,9 @@ interface ApplicationEventRow {
   readonly correlation_id: string | null;
 }
 
-const decodeV2EventJson = Schema.decodeUnknownEffect(OrchestrationV2DomainEventJson);
+const decodeV2EventJson = Schema.decodeUnknownEffect(OrchestrationV2DomainEventJson, {
+  errors: "all",
+});
 const encodeV2EventJson = Schema.encodeEffect(OrchestrationV2DomainEventJson);
 const decodeV2StoredEvent = Schema.decodeUnknownEffect(OrchestrationV2StoredEvent);
 // decodeV2EventJson already validated the event; decoding it again here is the hot cost in replay.
@@ -253,7 +255,7 @@ const rowToProjectEvent = Effect.fnUntraced(function* (row: ApplicationEventRow)
   });
 });
 
-function rowToApplicationStoredEvent(
+export function rowToApplicationStoredEvent(
   row: ApplicationEventRow,
 ): Effect.Effect<ApplicationStoredEvent, Schema.SchemaError> {
   return row.aggregate_kind === "project" ? rowToProjectEvent(row) : rowToV2StoredEvent(row);
@@ -301,11 +303,8 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
       : toPersistenceSqlError(sqlOperation)(cause);
 }
 
-const makeEventStore = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const committedEvents = yield* PubSub.unbounded<ApplicationStoredEvent>();
-  const promptHints = new Map<string, number>();
-  const restoredPayloadJson = sql`CASE
+function makeRestoredPayload(sql: SqlClient.SqlClient) {
+  return sql`CASE
     WHEN orchestration_events.event_type IN ('subagent.updated', 'turn-item.updated')
       AND json_type(orchestration_events.payload_json, '$.promptSequence') = 'integer'
     THEN json_set(
@@ -317,6 +316,68 @@ const makeEventStore = Effect.gen(function* () {
     )
     ELSE orchestration_events.payload_json
   END`;
+}
+
+export function makeReadApplicationRows(sql: SqlClient.SqlClient) {
+  const restoredPayloadJson = makeRestoredPayload(sql);
+  return (input: {
+    readonly afterSequence: number;
+    readonly throughSequence?: number;
+    readonly threadId?: ThreadId;
+    readonly commandId?: CommandId;
+    readonly eventType?: OrchestrationV2DomainEvent["type"];
+    readonly onlyAgentEvents?: boolean;
+    readonly limit: number;
+  }) =>
+    sql<ApplicationEventRow>`
+      SELECT
+        sequence,
+        event_id,
+        command_id,
+        aggregate_kind,
+        stream_id,
+        event_type,
+        occurred_at,
+        ${restoredPayloadJson} AS payload_json,
+        metadata_json,
+        application_event_version,
+        causation_event_id,
+        correlation_id
+      FROM orchestration_events
+      ${
+        // Otherwise the sequence index wins and command lookups scan every V2 event.
+        input.commandId !== undefined
+          ? sql`INDEXED BY idx_orch_events_command_id`
+          : input.onlyAgentEvents === true
+            ? sql``
+            : sql`INDEXED BY idx_orchestration_events_application_high_water`
+      }
+      WHERE sequence > ${input.afterSequence}
+        AND sequence <= ${input.throughSequence ?? Number.MAX_SAFE_INTEGER}
+        AND (
+          ${
+            input.onlyAgentEvents === true
+              ? sql`application_event_version = 2 AND aggregate_kind = 'thread'`
+              : sql`aggregate_kind = 'project'
+                    OR (application_event_version = 2 AND aggregate_kind = 'thread')`
+          }
+        )
+        AND ${sql.and([
+          ...(input.threadId === undefined ? [] : [sql`stream_id = ${input.threadId}`]),
+          ...(input.commandId === undefined ? [] : [sql`command_id = ${input.commandId}`]),
+          ...(input.eventType === undefined ? [] : [sql`event_type = ${input.eventType}`]),
+        ])}
+      ORDER BY sequence ASC
+      LIMIT ${input.limit}
+    `.pipe(NodeSqliteClient.readOnly);
+}
+
+const makeEventStore = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const committedEvents = yield* PubSub.unbounded<ApplicationStoredEvent>();
+  const promptHints = new Map<string, number>();
+  const restoredPayloadJson = makeRestoredPayload(sql);
+  const readApplicationRows = makeReadApplicationRows(sql);
 
   const appendProjectEventRow = SqlSchema.findOne({
     Request: AppendProjectEventRequestSchema,
@@ -402,57 +463,6 @@ const makeEventStore = Effect.gen(function* () {
         ),
       ),
     );
-
-  const readApplicationRows = (input: {
-    readonly afterSequence: number;
-    readonly throughSequence?: number;
-    readonly threadId?: ThreadId;
-    readonly commandId?: CommandId;
-    readonly eventType?: OrchestrationV2DomainEvent["type"];
-    readonly onlyAgentEvents?: boolean;
-    readonly limit: number;
-  }) =>
-    sql<ApplicationEventRow>`
-      SELECT
-        sequence,
-        event_id,
-        command_id,
-        aggregate_kind,
-        stream_id,
-        event_type,
-        occurred_at,
-        ${restoredPayloadJson} AS payload_json,
-        metadata_json,
-        application_event_version,
-        causation_event_id,
-        correlation_id
-      FROM orchestration_events
-      ${
-        // Otherwise the sequence index wins and command lookups scan every V2 event.
-        input.commandId !== undefined
-          ? sql`INDEXED BY idx_orch_events_command_id`
-          : input.onlyAgentEvents === true
-            ? sql``
-            : sql`INDEXED BY idx_orchestration_events_application_high_water`
-      }
-      WHERE sequence > ${input.afterSequence}
-        AND sequence <= ${input.throughSequence ?? Number.MAX_SAFE_INTEGER}
-        AND (
-          ${
-            input.onlyAgentEvents === true
-              ? sql`application_event_version = 2 AND aggregate_kind = 'thread'`
-              : sql`aggregate_kind = 'project'
-                    OR (application_event_version = 2 AND aggregate_kind = 'thread')`
-          }
-        )
-        AND ${sql.and([
-          ...(input.threadId === undefined ? [] : [sql`stream_id = ${input.threadId}`]),
-          ...(input.commandId === undefined ? [] : [sql`command_id = ${input.commandId}`]),
-          ...(input.eventType === undefined ? [] : [sql`event_type = ${input.eventType}`]),
-        ])}
-      ORDER BY sequence ASC
-      LIMIT ${input.limit}
-    `.pipe(NodeSqliteClient.readOnly);
 
   const appendAgentEvents: OrchestrationEventStore["Service"]["appendAgentEvents"] = (input) =>
     Effect.forEach(
