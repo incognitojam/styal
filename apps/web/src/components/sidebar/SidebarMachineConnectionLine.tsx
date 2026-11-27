@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionRoutes } from "@t3tools/client-runtime/connection";
-import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import { Atom } from "effect/reactivity";
 import { TriangleAlertIcon } from "lucide-react";
 
 import { environmentCatalog } from "../../connection/catalog";
@@ -8,43 +9,76 @@ import { useEnvironmentStateHeldFor } from "../../hooks/useEnvironmentDisconnect
 import { environmentIdsKey } from "../../state/environmentAtomList";
 import { useEnvironments } from "../../state/environments";
 import { environmentUpdateStatesAtom } from "../../state/server";
+import { environmentShell } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
+import {
+  createMachineShellProgressAtom,
+  machineConnectionEmptyText,
+  machineConnectionLine,
+} from "./machineConnectionLine.logic";
+
+const shellProgressAtom = createMachineShellProgressAtom(
+  Atom.make((get) =>
+    [...get(environmentCatalog.catalogValueAtom).entries]
+      .filter(([, entry]) => entry.enabled)
+      .map(([id]) => id),
+  ),
+  environmentShell.stateValueAtom,
+);
 
 function useMachineConnections() {
-  const { environments } = useEnvironments();
+  const { environments, isReady } = useEnvironments();
+  const shellProgress = useAtomValue(shellProgressAtom);
   const updateStates = useAtomValue(
     environmentUpdateStatesAtom(
       environmentIdsKey(environments.map((environment) => environment.environmentId)),
     ),
   );
   const relaySession = useAtomValue(managedRelaySessionAtom);
-  return environments.map((environment, index) => ({
+  const authLoad = useAtomValue(managedRelayAuthLoadAtom);
+  const machines = environments.map((environment, index) => ({
     ...environment,
+    hasLoadedShell: shellProgress.get(environment.environmentId)?.hasLoadedShell ?? false,
+    shellError: shellProgress.get(environment.environmentId)?.shellError ?? null,
+    signInLoading:
+      authLoad === "loading" &&
+      relaySession === null &&
+      connectionRoutes(environment.entry).every(
+        (route) => route.target._tag === "RelayConnectionTarget",
+      ),
     outdated: environment.entry.outdated ?? null,
     enabled: environment.entry.enabled,
     updating: updateStates[index]?.status === "running",
     awaitingSignIn:
+      authLoad !== "loading" &&
       relaySession === null &&
       connectionRoutes(environment.entry).every(
         (route) => route.target._tag === "RelayConnectionTarget",
       ),
   }));
+  return { machines, isReady };
 }
 
 /** A footer line, like the provider update line, while a saved machine is not connected yet. */
 export function SidebarMachineConnectionLine() {
   const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
-  const line = machineConnectionLine(useMachineConnections());
-  // Machines that connect within a moment never show the line.
+  const { machines, isReady } = useMachineConnections();
+  const line = machineConnectionLine(machines);
   const graceElapsed = useEnvironmentStateHeldFor(
     line?.waitingEnvironmentId ?? null,
     ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   );
-  if (line === null || !graceElapsed) return null;
+  if (!isReady) {
+    return (
+      <span role="status" className="px-2 py-1.5 text-2xs">
+        Loading saved machines…
+      </span>
+    );
+  }
+  if (line === null || (!line.showImmediately && !graceElapsed)) return null;
 
   const failed = line.tone === "failed";
   return (
@@ -85,5 +119,6 @@ export function SidebarMachineConnectionLine() {
 
 /** The empty sidebar's text, which waits for machines that have not connected yet. */
 export function SidebarNoProjectsText() {
-  return <span>{machineConnectionEmptyText(useMachineConnections()) ?? "No projects yet"}</span>;
+  const { machines, isReady } = useMachineConnections();
+  return <span>{machineConnectionEmptyText(machines, isReady) ?? "No projects yet"}</span>;
 }
