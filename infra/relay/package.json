@@ -9,7 +9,7 @@
     "tunnels:census": "node scripts/tunnel-census.ts",
     "users:import-clerk": "node scripts/import-clerk-users.ts",
     "destroy": "alchemy destroy",
-    "test": "vp test run --config ../../vite.config.ts --dir .",
+    "test": "vp test run",
     "typecheck": "effect-tsgo tsrs --noEmit"
   },
   "dependencies": {
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@alchemy.run/test": "catalog:",
+    "@cloudflare/vitest-plugin": "1.10.0",
     "@cloudflare/workers-types": "^4.20260601.1",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
@@ -38,6 +39,7 @@
     "@types/node": "catalog:",
     "drizzle-kit": "1.0.0-rc.5",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "5.0.5"
   }
 }

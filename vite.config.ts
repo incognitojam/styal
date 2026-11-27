@@ -21,6 +21,7 @@ const TEST_CONFIG_PACKAGES = [
   "apps/server",
   "apps/web",
   "packages/client-runtime",
+  "infra/relay",
 ];
 
 // `vp test run <file>` from the repo root hands each file to its package's
