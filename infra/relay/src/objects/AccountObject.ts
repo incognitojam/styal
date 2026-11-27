@@ -74,6 +74,7 @@ export class AccountObject extends DurableObject<unknown> {
         switch (command.kind) {
           case "begin": {
             const { intent, expectedOperationId } = command;
+            // Named stubs pass ctx.id.name through: https://developers.cloudflare.com/durable-objects/api/id/#name
             if (this.ctx.id.name !== accountName(intent.userId))
               throw new Error("Journal account mismatch");
             const existing = sql
