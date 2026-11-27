@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { applicationId } from "expo-application";
 import { requireOptionalNativeModule } from "expo";
 import { Linking, Platform } from "react-native";
 
@@ -54,4 +55,13 @@ export async function openAndroidLiveUpdateSettings(): Promise<void> {
   if (!native?.openLiveUpdateSettings?.()) {
     await Linking.openSettings();
   }
+}
+
+export type AndroidAgentChannel = "alerts" | "activity";
+
+export async function openAndroidAgentChannelSettings(channel: AndroidAgentChannel): Promise<void> {
+  await Linking.sendIntent("android.settings.CHANNEL_NOTIFICATION_SETTINGS", [
+    { key: "android.provider.extra.APP_PACKAGE", value: applicationId ?? "" },
+    { key: "android.provider.extra.CHANNEL_ID", value: `agent-${channel}` },
+  ]).catch(() => Linking.openSettings());
 }

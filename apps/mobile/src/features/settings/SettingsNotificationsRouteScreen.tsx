@@ -37,6 +37,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import {
+  type AndroidAgentChannel,
+  openAndroidAgentChannelSettings,
   openAndroidLiveUpdateSettings,
   supportsAndroidLiveUpdateSettings,
 } from "../agent-awareness/androidNotifications";
@@ -186,19 +188,27 @@ const notificationStatusAtom = makePermissionStatusAtom<NotificationStatus>({
   },
 });
 
-const alertsChannelEnabledAtom = makePermissionStatusAtom<boolean | null>({
-  label: "mobile:android-agent-alerts-channel",
+const androidChannelStatesAtom = makePermissionStatusAtom<{
+  readonly alerts: boolean;
+  readonly activity: boolean;
+} | null>({
+  label: "mobile:android-notification-channels",
   initial: null,
   read: async () => {
     if (Platform.OS !== "android") return null;
-    const result = await settlePromise(() =>
-      Notifications.getNotificationChannelAsync("agent-alerts"),
-    );
+    const result = await settlePromise(async () => {
+      const alerts = await Notifications.getNotificationChannelAsync("agent-alerts");
+      const activity = await Notifications.getNotificationChannelAsync("agent-activity");
+      return {
+        alerts: alerts?.importance !== Notifications.AndroidImportance.NONE,
+        activity: activity?.importance !== Notifications.AndroidImportance.NONE,
+      };
+    });
     if (result._tag === "Failure") {
       reportAtomCommandResult(result, { label: "notification channel refresh" });
-      return false;
+      return { alerts: false, activity: false };
     }
-    return result.value?.importance !== Notifications.AndroidImportance.NONE;
+    return result.value;
   },
 });
 
@@ -303,12 +313,14 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   const connections = Object.values(savedConnectionsById);
   const environmentCount = connections.length;
-  const alertsChannelEnabled = useAtomValue(alertsChannelEnabledAtom);
+  const channelStates = useAtomValue(androidChannelStatesAtom);
+  const alertsChannelOff = channelStates?.alerts === false;
+  const activityChannelOff = channelStates?.activity === false;
   const alertsEnabled =
     agentAwarenessPushAvailable &&
     notificationStatus === "enabled" &&
     notificationsReady &&
-    alertsChannelEnabled !== false;
+    !alertsChannelOff;
   const storedPreferences = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value
     : null;
@@ -529,13 +541,33 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     }
   };
 
+  function openChannelSettings(channel: AndroidAgentChannel) {
+    void openAndroidAgentChannelSettings(channel).catch(() => {
+      Dialog.alert(
+        gt("Couldn't open Settings"),
+        gt("Open Android Settings, select {product}, then open Notifications.", {
+          product: "styal",
+        }),
+      );
+    });
+  }
+
   const handleDeviceNotificationsChange = (enabled: boolean) => {
     if (enabled) {
       if (!isSignedIn) {
         promptSignIn();
         return;
       }
+      if (alertsChannelOff && notificationStatus === "enabled") {
+        openChannelSettings("alerts");
+        return;
+      }
       void requestNotifications();
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      openChannelSettings("alerts");
       return;
     }
 
@@ -603,6 +635,10 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   // Both writers settle their own failures, so awaiting them never throws.
   const handleLiveActivitiesChange = async (enabled: boolean) => {
     if (liveActivityWriteInFlight.current) return;
+    if (enabled && activityChannelOff && liveActivityStatus === "enabled") {
+      openChannelSettings("activity");
+      return;
+    }
     if (!enabled) {
       liveActivityWriteInFlight.current = true;
       setLiveActivityStatus("linking");
@@ -635,17 +671,22 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         <SettingsSection title={gt("Agent activity")}>
           <SettingsSwitchRow
             icon="bell.badge"
-            label={gt("Device Notifications")}
+            label={Platform.OS === "android" ? gt("Agent alerts") : gt("Device Notifications")}
             disabled={
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
               notificationStatus === "checking" ||
               notificationStatus === "unsupported"
             }
-            subtitle={agentAwarenessSubtitle}
-            value={
-              agentAwarenessPushAvailable && notificationStatus === "enabled" && notificationsReady
+            subtitle={
+              agentAwarenessSubtitle ??
+              (Platform.OS === "android"
+                ? alertsChannelOff
+                  ? gt("Off in Android settings")
+                  : gt("When a thread finishes, fails, or needs input or approval")
+                : undefined)
             }
+            value={alertsEnabled}
             onValueChange={handleDeviceNotificationsChange}
           />
           <SettingsSwitchRow
@@ -658,17 +699,21 @@ function ConfiguredSettingsNotificationsRouteScreen() {
             }
             icon="bolt.circle"
             label={
-              Platform.OS === "android"
-                ? supportsAndroidLiveUpdateSettings()
-                  ? gt("Agent Live Updates")
-                  : gt("Ongoing Agent Activity")
-                : gt("Live Activity Updates")
+              Platform.OS === "android" ? gt("Ongoing agent activity") : gt("Live Activity Updates")
             }
-            subtitle={agentAwarenessSubtitle}
+            subtitle={
+              agentAwarenessSubtitle ??
+              (Platform.OS === "android"
+                ? activityChannelOff
+                  ? gt("Off in Android settings")
+                  : gt("Lists agents while they work")
+                : undefined)
+            }
             value={
               agentAwarenessPushAvailable &&
               (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
-              deviceRegistered
+              deviceRegistered &&
+              !activityChannelOff
             }
             onValueChange={(enabled) => void handleLiveActivitiesChange(enabled)}
           />
@@ -681,8 +726,9 @@ function ConfiguredSettingsNotificationsRouteScreen() {
           ) : null}
           {supportsAndroidLiveUpdateSettings() ? (
             <SettingsRow
-              icon="bolt.circle"
-              label={gt("Live Update Settings")}
+              icon={{ ios: "iphone", android: "smartphone" }}
+              label={gt("Live Updates")}
+              value={gt("Show working agents in the status bar")}
               onPress={() => {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(
