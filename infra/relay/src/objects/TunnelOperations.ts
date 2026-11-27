@@ -1,5 +1,9 @@
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import { AccountReservation } from "./AccountReservation.ts";
+import { journalTransition } from "./AccountJournal.ts";
 import {
   TunnelOperationPersistence,
   TunnelOperationPersistenceError,
@@ -40,10 +44,12 @@ export function tunnelOperationsLayer(bindings: ObjectBindings) {
       resources: Readonly<Record<string, string>> = {},
       expectedPhase?: string,
     ) =>
-      call(async () => {
-        const [result] = await operationAccount(operationId).journal({
-          version: RPC_VERSION,
-          commands: [
+      Effect.gen(function* () {
+        const transaction = yield* Effect.serviceOption(AccountReservation);
+        if (Option.isSome(transaction)) {
+          const result = journalTransition(
+            transaction.value.state.journal,
+            transaction.value.userId,
             {
               kind: "advance",
               operationId,
@@ -51,35 +57,70 @@ export function tunnelOperationsLayer(bindings: ObjectBindings) {
               resources,
               ...(expectedPhase === undefined ? {} : { expectedPhase }),
             },
-          ],
+            DateTime.formatIso(yield* DateTime.now),
+            "",
+          );
+          return result.kind === "advance" && result.applied;
+        }
+        return yield* call(async () => {
+          const [result] = await operationAccount(operationId).journal({
+            version: RPC_VERSION,
+            commands: [
+              {
+                kind: "advance",
+                operationId,
+                phase,
+                resources,
+                ...(expectedPhase === undefined ? {} : { expectedPhase }),
+              },
+            ],
+          });
+          if (result?.kind !== "advance") throw new Error("Unexpected journal RPC response");
+          return result.applied;
         });
-        if (result?.kind !== "advance") throw new Error("Unexpected journal RPC response");
-        return result.applied;
       }),
   );
   return Layer.succeed(
     TunnelOperationPersistence,
     TunnelOperationPersistence.of({
-      begin: Effect.fn("relay.object_tunnel_operations.begin")((intent, expectedOperationId) =>
-        call(async () => {
-          const name = accountName(intent.userId);
-          await bindings.INVENTORY.getByName(inventoryShardName("account", name)).register({
-            version: RPC_VERSION,
-            references: [{ kind: "account", name }],
-          });
-          const [result] = await account(intent.userId).journal({
-            version: RPC_VERSION,
-            commands: [
+      begin: Effect.fn("relay.object_tunnel_operations.begin")(
+        function* (intent, expectedOperationId) {
+          const transaction = yield* Effect.serviceOption(AccountReservation);
+          if (Option.isSome(transaction)) {
+            const result = journalTransition(
+              transaction.value.state.journal,
+              transaction.value.userId,
               {
                 kind: "begin",
                 intent,
                 ...(expectedOperationId === undefined ? {} : { expectedOperationId }),
               },
-            ],
+              DateTime.formatIso(yield* DateTime.now),
+              yield* transaction.value.uuid,
+            );
+            if (result.kind !== "begin") throw new Error("Unexpected journal transition");
+            return result.operation;
+          }
+          return yield* call(async () => {
+            const name = accountName(intent.userId);
+            await bindings.INVENTORY.getByName(inventoryShardName("account", name)).register({
+              version: RPC_VERSION,
+              references: [{ kind: "account", name }],
+            });
+            const [result] = await account(intent.userId).journal({
+              version: RPC_VERSION,
+              commands: [
+                {
+                  kind: "begin",
+                  intent,
+                  ...(expectedOperationId === undefined ? {} : { expectedOperationId }),
+                },
+              ],
+            });
+            if (result?.kind !== "begin") throw new Error("Unexpected journal RPC response");
+            return result.operation;
           });
-          if (result?.kind !== "begin") throw new Error("Unexpected journal RPC response");
-          return result.operation;
-        }),
+        },
       ),
       advance,
       complete: Effect.fn("relay.object_tunnel_operations.complete")((id, expectedPhase) =>

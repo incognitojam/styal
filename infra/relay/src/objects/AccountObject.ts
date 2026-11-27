@@ -1,9 +1,7 @@
 // @effect-diagnostics globalDate:off cryptoRandomUUID:off - Synchronous workerd transitions cannot yield to Effect services.
+import { DEFAULT_MANAGED_TUNNEL_LIMIT } from "@t3tools/contracts/relay";
 import { DurableObject } from "cloudflare:workers";
-import type {
-  TunnelOperation,
-  TunnelOperationIntent,
-} from "../persistence/TunnelOperationPersistence.ts";
+import type { TunnelOperation } from "../persistence/TunnelOperationPersistence.ts";
 import { identity, identityMigration, identityInventory } from "./AccountIdentity.ts";
 import type { IdentityCommand } from "./AccountIdentity.ts";
 import { links, linkMigration, linkInventory } from "./AccountLinks.ts";
@@ -19,22 +17,23 @@ export const accountMigrations = [
   ); CREATE INDEX tunnel_operations_pending ON tunnel_operations(phase, updated_at, operation_id);`,
   identityMigration,
   linkMigration,
+  tunnelMigration,
 ];
 
-type Command =
-  | { kind: "begin"; intent: TunnelOperationIntent; expectedOperationId?: string }
-  | {
-      kind: "advance";
-      operationId: string;
-      phase: string;
-      resources: Readonly<Record<string, string>>;
-      expectedPhase?: string;
-    }
-  | { kind: "pending"; limit: number };
-export type JournalResult =
-  | { kind: "begin"; operation: TunnelOperation | null }
-  | { kind: "advance"; applied: boolean }
-  | { kind: "pending"; operations: Array<TunnelOperation & { updatedAt: string }> };
+export type { JournalResult } from "./AccountJournal.ts";
+import { journalTransition, loadJournal, saveJournal } from "./AccountJournal.ts";
+import type { JournalCommand, JournalResult } from "./AccountJournal.ts";
+import {
+  tunnelMigration,
+  tunnelSnapshot,
+  saveAllocations,
+  allocationTransition,
+  tunnelInventory,
+  counted,
+  nextReservationGeneration,
+  tunnelLookup,
+} from "./AccountTunnels.ts";
+import type { AllocationCommand, TunnelSnapshot } from "./AccountTunnels.ts";
 
 type Row = {
   environment_id: string;
@@ -65,6 +64,7 @@ export class AccountObject extends DurableObject<unknown> {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, accountMigrations);
+      ctx.storage.sql.exec("DELETE FROM account_capacity_claims");
     });
   }
 
@@ -99,122 +99,229 @@ export class AccountObject extends DurableObject<unknown> {
     return "state" in result ? (result.state?.userId ?? null) : null;
   }
 
+  async allocation(request: {
+    version: number;
+    userId: string;
+    command: AllocationCommand;
+    now: string;
+    operationId?: string;
+  }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Allocation account mismatch");
+    return this.ctx.storage.transactionSync(() => {
+      const state = tunnelSnapshot(this.ctx.storage);
+      const result = allocationTransition(
+        state,
+        request.userId,
+        request.command.kind === "reserve"
+          ? {
+              ...request.command,
+              reservationGeneration: nextReservationGeneration(
+                this.ctx.storage,
+                request.command.environmentId,
+              ),
+            }
+          : request.command,
+        request.now,
+        request.operationId,
+      );
+      if (result.applied && request.command.kind !== "claimed")
+        saveAllocations(this.ctx.storage, state.allocations, state.releases);
+      return result;
+    });
+  }
+  async tunnels(request: { version: number; userId: string }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Tunnel account mismatch");
+    return tunnelSnapshot(this.ctx.storage);
+  }
+  async tunnelLookup(request: {
+    version: number;
+    userId: string;
+    environmentId: string;
+    tunnelName: string;
+    epoch: number;
+  }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Tunnel account mismatch");
+    return tunnelLookup(this.ctx.storage, request);
+  }
+  async capacity(
+    request: {
+      version: number;
+      userId: string;
+      environmentId: string;
+      token: string;
+      pendingCutoff: string;
+      raisedLimit?: number;
+    },
+    callback: (
+      state: TunnelSnapshot,
+      record: (allocations: TunnelSnapshot["allocations"]) => Promise<void>,
+      reservationGeneration: number,
+    ) => Promise<TunnelSnapshot | null>,
+  ) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Capacity account mismatch");
+    const admitted = this.ctx.storage.transactionSync(() => {
+      const state = tunnelSnapshot(this.ctx.storage);
+      const claims = this.ctx.storage.sql
+        .exec<{ environment_id: string }>("SELECT environment_id FROM account_capacity_claims")
+        .toArray();
+      const combined = [
+        ...state.allocations,
+        ...state.intents.filter(
+          (r) => !state.allocations.some((a) => a.environmentId === r.environmentId),
+        ),
+      ];
+      const slots = new Set(
+        combined
+          .filter((r) => counted(state, r, request.pendingCutoff))
+          .map((r) => r.environmentId),
+      );
+      for (const claim of claims) slots.add(claim.environment_id);
+      const activeTunnels = [...slots].filter((id) => id !== request.environmentId).length;
+      const maxTunnels =
+        state.override ?? Math.max(DEFAULT_MANAGED_TUNNEL_LIMIT, request.raisedLimit ?? 0);
+      if (activeTunnels >= maxTunnels && !slots.has(request.environmentId))
+        return { state: null, activeTunnels, maxTunnels, override: state.override };
+      this.ctx.storage.sql.exec(
+        "INSERT INTO account_capacity_claims VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET token = excluded.token",
+        request.environmentId,
+        request.token,
+      );
+      return {
+        state,
+        activeTunnels,
+        maxTunnels,
+        override: state.override,
+        reservationGeneration: nextReservationGeneration(this.ctx.storage, request.environmentId),
+      };
+    });
+    if (!admitted.state)
+      return {
+        allowed: false,
+        activeTunnels: admitted.activeTunnels,
+        maxTunnels: admitted.maxTunnels,
+        override: admitted.override,
+      };
+    const original = structuredClone(admitted.state);
+    const recorded = new Map<string, string>();
+    const current = () =>
+      this.ctx.storage.sql
+        .exec<{ token: string }>(
+          "SELECT token FROM account_capacity_claims WHERE environment_id = ?",
+          request.environmentId,
+        )
+        .toArray()[0]?.token === request.token;
+    try {
+      const state = await callback(
+        admitted.state,
+        async (allocations) => {
+          this.ctx.storage.transactionSync(() => {
+            if (!current()) throw new Error("Reservation superseded");
+            for (const row of allocations) {
+              if (row.environmentId !== request.environmentId)
+                throw new Error("Reservation environment mismatch");
+              this.ctx.storage.sql.exec(
+                "INSERT INTO account_allocation_intents VALUES (?, ?) ON CONFLICT(environment_id) DO UPDATE SET value = excluded.value",
+                row.environmentId,
+                canonicalJson(row),
+              );
+              recorded.set(row.environmentId, row.nameOperationId!);
+            }
+          });
+        },
+        admitted.reservationGeneration!,
+      );
+      this.ctx.storage.transactionSync(() => {
+        if (!current()) throw new Error("Reservation superseded");
+        if (state) {
+          const live = tunnelSnapshot(this.ctx.storage);
+          for (const environmentId of state.guardedEnvironments)
+            if (
+              canonicalJson(live.journal.find((j) => j.environmentId === environmentId) ?? null) !==
+              canonicalJson(original.journal.find((j) => j.environmentId === environmentId) ?? null)
+            )
+              throw new Error("Reservation journal changed");
+          const merge = <T>(before: T[], after: T[], present: T[], key: (v: T) => string) => {
+            const ids = new Set([...before, ...after].map(key));
+            for (const id of ids) {
+              const was = before.find((v) => key(v) === id);
+              const next = after.find((v) => key(v) === id);
+              if (canonicalJson(was ?? null) === canonicalJson(next ?? null)) continue;
+              if (
+                canonicalJson(present.find((v) => key(v) === id) ?? null) !==
+                canonicalJson(was ?? null)
+              )
+                throw new Error("Reservation state changed");
+              const index = present.findIndex((v) => key(v) === id);
+              if (index !== -1) present.splice(index, 1);
+              if (next) present.push(next);
+            }
+            return present;
+          };
+          if (canonicalJson(live.links) !== canonicalJson(original.links))
+            throw new Error("Reservation link changed");
+          saveAllocations(
+            this.ctx.storage,
+            merge(
+              original.allocations,
+              state.allocations,
+              live.allocations,
+              (r) => r.environmentId,
+            ),
+            merge(original.releases, state.releases, live.releases, (r) => r.nameOperationId!),
+          );
+          saveJournal(
+            this.ctx.storage,
+            merge(original.journal, state.journal, live.journal, (r) => r.environmentId),
+          );
+        }
+        for (const [environmentId, reservationId] of recorded)
+          this.ctx.storage.sql.exec(
+            "DELETE FROM account_allocation_intents WHERE environment_id = ? AND json_extract(value, '$.nameOperationId') = ?",
+            environmentId,
+            reservationId,
+          );
+      });
+      return {
+        allowed: true,
+        activeTunnels: admitted.activeTunnels,
+        maxTunnels: admitted.maxTunnels,
+        override: admitted.override,
+      };
+    } finally {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM account_capacity_claims WHERE environment_id = ? AND token = ?",
+        request.environmentId,
+        request.token,
+      );
+    }
+  }
+
   async journal(request: {
     version: number;
-    commands: readonly Command[];
+    commands: readonly JournalCommand[];
   }): Promise<JournalResult[]> {
     checkRpc(request.version);
     checkLimit(request.commands.length);
-    return this.ctx.storage.transactionSync(() =>
-      request.commands.map((command): JournalResult => {
-        const sql = this.ctx.storage.sql;
-        switch (command.kind) {
-          case "begin": {
-            const { intent, expectedOperationId } = command;
-            // Named stubs pass ctx.id.name through: https://developers.cloudflare.com/durable-objects/api/id/#name
-            if (this.ctx.id.name !== accountName(intent.userId))
-              throw new Error("Journal account mismatch");
-            const existing = sql
-              .exec<Row>(
-                "SELECT * FROM tunnel_operations WHERE environment_id = ?",
-                intent.environmentId,
-              )
-              .toArray()[0];
-            const old = existing ? decode(existing) : null;
-            const pending = old !== null && old.phase !== "complete";
-            const sameNames =
-              old?.hostname === intent.hostname && old.tunnelName === intent.tunnelName;
-            const sameDesired =
-              old !== null && canonicalJson(old.desired) === canonicalJson(intent.desired);
-            if (expectedOperationId !== undefined) {
-              if (
-                !pending ||
-                old.operationId !== expectedOperationId ||
-                !sameNames ||
-                !(intent.desired.kind === "deprovision"
-                  ? old.desired.kind === "deprovision"
-                  : sameDesired)
-              ) {
-                return { kind: "begin", operation: null };
-              }
-              sql.exec(
-                "UPDATE tunnel_operations SET updated_at = ? WHERE operation_id = ?",
-                new Date().toISOString(),
-                old.operationId,
-              );
-              return { kind: "begin", operation: { ...old, resumed: true } };
-            }
-            const reuse = pending && sameDesired && intent.desired.kind !== "deprovision";
-            const supersede =
-              intent.desired.kind === "deprovision" ||
-              (intent.desired.kind === "provision" && old?.desired.kind === "provision");
-            if (pending && (!sameNames || (!reuse && !supersede)))
-              return { kind: "begin", operation: null };
-            const operation: TunnelOperation = reuse
-              ? { ...old, resumed: true }
-              : {
-                  ...intent,
-                  operationId: JSON.stringify([intent.userId, crypto.randomUUID()]),
-                  phase: "intent",
-                  resources: pending
-                    ? { ...old.resources, supersededOperationId: old.operationId }
-                    : {},
-                  resumed: false,
-                };
-            sql.exec(
-              `INSERT INTO tunnel_operations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(environment_id) DO UPDATE SET operation_id = excluded.operation_id,
-            hostname = excluded.hostname, tunnel_name = excluded.tunnel_name, desired = excluded.desired,
-            phase = excluded.phase, resources = excluded.resources, updated_at = excluded.updated_at`,
-              operation.environmentId,
-              operation.operationId,
-              operation.userId,
-              operation.hostname,
-              operation.tunnelName,
-              canonicalJson(operation.desired),
-              operation.phase,
-              canonicalJson(operation.resources),
-              new Date().toISOString(),
-            );
-            return { kind: "begin", operation };
-          }
-          case "advance": {
-            const row = sql
-              .exec<Row>(
-                "SELECT * FROM tunnel_operations WHERE operation_id = ? AND phase != 'complete'",
-                command.operationId,
-              )
-              .toArray()[0];
-            if (
-              !row ||
-              (command.expectedPhase !== undefined && row.phase !== command.expectedPhase)
-            )
-              return { kind: "advance", applied: false };
-            sql.exec(
-              "UPDATE tunnel_operations SET phase = ?, resources = ?, updated_at = ? WHERE operation_id = ?",
-              command.phase,
-              canonicalJson({ ...JSON.parse(row.resources), ...command.resources }),
-              new Date().toISOString(),
-              command.operationId,
-            );
-            return { kind: "advance", applied: true };
-          }
-          case "pending": {
-            checkLimit(command.limit);
-            return {
-              kind: "pending",
-              operations: sql
-                .exec<Row>(
-                  "SELECT * FROM tunnel_operations WHERE phase != 'complete' ORDER BY updated_at, operation_id LIMIT ?",
-                  command.limit,
-                )
-                .toArray()
-                .map((row) => ({ ...decode(row), updatedAt: row.updated_at })),
-            };
-          }
-        }
-      }),
-    );
+    return this.ctx.storage.transactionSync(() => {
+      const rows = loadJournal(this.ctx.storage);
+      const userId =
+        request.commands.find((c) => c.kind === "begin")?.intent.userId ?? rows[0]?.userId ?? "";
+      if (userId && this.ctx.id.name !== accountName(userId))
+        throw new Error("Journal account mismatch");
+      const results = request.commands.map((c) =>
+        journalTransition(rows, userId, c, new Date().toISOString(), crypto.randomUUID()),
+      );
+      if (request.commands.some((c) => c.kind !== "pending")) saveJournal(this.ctx.storage, rows);
+      return results;
+    });
   }
 
   async inventory(request: { version: number }) {
@@ -232,6 +339,7 @@ export class AccountObject extends DurableObject<unknown> {
         summarize("relay_tunnel_operations", contents()),
         ...identityInventory(this.ctx.storage),
         ...linkInventory(this.ctx.storage),
+        ...tunnelInventory(this.ctx.storage),
       ],
     };
   }

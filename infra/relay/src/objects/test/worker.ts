@@ -1,3 +1,4 @@
+export { AllocationRouteObject } from "../AllocationRouteObject.ts";
 export { EnvironmentObject } from "../EnvironmentObject.ts";
 export { EmailObject } from "../EmailObject.ts";
 export { CredentialRouteObject } from "../CredentialRouteObject.ts";
