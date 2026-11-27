@@ -21,16 +21,20 @@ interface MachineConnection {
   readonly updating: boolean;
   /** Reached only through styal Link and there is no Link sign-in, so a retry cannot help. */
   readonly awaitingSignIn: boolean;
+  readonly signInLoading: boolean;
+  readonly hasLoadedShell: boolean;
+  readonly shellError: string | null;
 }
 
 export interface MachineConnectionLine {
   readonly tone: "connecting" | "failed";
+  readonly showImmediately: boolean;
   readonly text: string;
   /** Each machine's problem on its own line, when a version is one of them. */
   readonly tooltip: string | null;
   /** The icon while connecting: the one machine's own kind, or a server for several. */
   readonly machineKind: EnvironmentMachineKind | null;
-  /** The first machine still waiting, failed or not, which keys the line's grace period. */
+  /** The first machine represented by the line. */
   readonly waitingEnvironmentId: EnvironmentId;
   /** The failed machines Retry reconnects; empty while connecting. */
   readonly retryEnvironmentIds: ReadonlyArray<EnvironmentId>;
@@ -43,18 +47,32 @@ function nameMachines(labels: ReadonlyArray<string>): string {
 // A machine switched off, an offline device and one this client can never use, such as SSH on the
 // web, are left out. The composer banner covers a missing Link sign-in, which Retry cannot fix.
 function waitingMachines(environments: ReadonlyArray<MachineConnection>, everyMachine = false) {
+  const enabled = environments.filter((environment) => environment.enabled);
   const shown = everyMachine
-    ? environments
-    : environments.filter(
+    ? enabled
+    : enabled.filter(
         (environment) =>
           !environment.awaitingSignIn &&
           (!environment.updating || environment.connection.phase === "error"),
       );
-  const connecting = shown.filter((environment) => environment.connection.phase === "connecting");
+  const connecting = shown.filter(
+    (environment) =>
+      (environment.signInLoading &&
+        (environment.connection.phase === "connecting" ||
+          environment.connection.phase === "reconnecting" ||
+          environment.connection.phase === "error")) ||
+      environment.connection.phase === "connecting" ||
+      (environment.connection.phase === "connected" &&
+        !environment.hasLoadedShell &&
+        environment.shellError === null),
+  );
   // Reconnecting means an attempt failed; a manual retry starts over as connecting.
   const failed = shown.filter(
     (environment) =>
-      environment.connection.phase === "reconnecting" || environment.connection.phase === "error",
+      !connecting.includes(environment) &&
+      (environment.connection.phase === "reconnecting" ||
+        environment.connection.phase === "error" ||
+        (environment.connection.phase === "connected" && environment.shellError !== null)),
   );
   const outdated = shown.filter(
     (environment) =>
@@ -88,22 +106,37 @@ function outdatedLineText(
   return `Can't use ${count} machines`;
 }
 
-/** The sidebar footer line for machines the app is still connecting to, failures first. */
+/** Pending machines stay visible even when another machine has failed. */
 export function machineConnectionLine(
   environments: ReadonlyArray<MachineConnection>,
 ): MachineConnectionLine | null {
   const { connecting, failed, outdated } = waitingMachines(environments);
+  if (connecting.length > 0) {
+    return {
+      tone: "connecting",
+      showImmediately: connecting.some((environment) => !environment.hasLoadedShell),
+      machineKind:
+        connecting.length === 1 && connecting[0]
+          ? resolveEnvironmentMachineKind(connecting[0].serverConfig)
+          : "server",
+      waitingEnvironmentId: connecting[0]!.environmentId,
+      text: `Connecting to ${nameMachines(connecting.map((environment) => environment.label))}`,
+      tooltip:
+        connecting.length > 2
+          ? connecting.map((environment) => environment.label).join("\n")
+          : null,
+      retryEnvironmentIds: [],
+    };
+  }
   const waitingEnvironmentId = environments.find(
-    (environment) =>
-      connecting.includes(environment) ||
-      failed.includes(environment) ||
-      outdated.includes(environment),
+    (environment) => failed.includes(environment) || outdated.includes(environment),
   )?.environmentId;
   if (waitingEnvironmentId === undefined) return null;
   const retryEnvironmentIds = failed.map((environment) => environment.environmentId);
   if (outdated.length > 0) {
     return {
       tone: "failed",
+      showImmediately: [...failed, ...outdated].some((environment) => !environment.hasLoadedShell),
       machineKind: null,
       waitingEnvironmentId,
       text: outdatedLineText(failed, outdated),
@@ -117,30 +150,23 @@ export function machineConnectionLine(
   if (failed.length > 0) {
     return {
       tone: "failed",
+      showImmediately: [...failed, ...outdated].some((environment) => !environment.hasLoadedShell),
       machineKind: null,
       waitingEnvironmentId,
-      text: `Can't reach ${nameMachines(failed.map((environment) => environment.label))}`,
+      text: `${failed.some((environment) => environment.connection.phase === "connected") ? "Can't load projects from" : "Can't reach"} ${nameMachines(failed.map((environment) => environment.label))}`,
       tooltip: null,
       retryEnvironmentIds,
     };
   }
-  return {
-    tone: "connecting",
-    machineKind:
-      connecting.length === 1 && connecting[0]
-        ? resolveEnvironmentMachineKind(connecting[0].serverConfig)
-        : "server",
-    waitingEnvironmentId,
-    text: `Connecting to ${nameMachines(connecting.map((environment) => environment.label))}`,
-    tooltip: null,
-    retryEnvironmentIds: [],
-  };
+  return null;
 }
 
 /** What an empty sidebar says instead of "No projects yet" while a machine's projects can still arrive. */
 export function machineConnectionEmptyText(
   environments: ReadonlyArray<MachineConnection>,
+  catalogReady = true,
 ): string | null {
+  if (!catalogReady) return "Loading saved machines…";
   // Projects can still arrive from a machine the footer line leaves out.
   const { connecting, failed } = waitingMachines(environments, true);
   const waiting = [...failed, ...connecting];

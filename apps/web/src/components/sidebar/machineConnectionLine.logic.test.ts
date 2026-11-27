@@ -13,6 +13,9 @@ const machine = (
     kind?: EnvironmentMachineKind;
     outdated?: "client" | "server";
     hidden?: boolean;
+    signInLoading?: boolean;
+    hasLoadedShell?: boolean;
+    shellError?: string | null;
   } = {},
 ) => ({
   environmentId: EnvironmentId.make(label),
@@ -29,6 +32,9 @@ const machine = (
     : null,
   updating: flags.updating ?? false,
   awaitingSignIn: flags.awaitingSignIn ?? false,
+  signInLoading: flags.signInLoading ?? false,
+  hasLoadedShell: flags.hasLoadedShell ?? phase === "connected",
+  shellError: flags.shellError ?? null,
 });
 
 describe("machineConnectionLine", () => {
@@ -93,7 +99,7 @@ describe("machineConnectionLine", () => {
         machine("mesa", "error"),
         machine("atlas", "unsupported", { outdated: "server" }),
       ],
-      "Can't reach or use 2 machines",
+      "Connecting to pine",
     ],
     ["one machine connecting", [machine("atlas", "connecting")], "Connecting to atlas"],
     [
@@ -129,7 +135,27 @@ describe("machineConnectionLine", () => {
     [
       "a failure beside a machine still connecting",
       [machine("mesa", "connecting"), machine("atlas", "error")],
-      "Can't reach atlas",
+      "Connecting to mesa",
+    ],
+    [
+      "saved sign-in still loading",
+      [machine("atlas", "error", { signInLoading: true })],
+      "Connecting to atlas",
+    ],
+    [
+      "socket connected before the first shell",
+      [machine("atlas", "connected", { hasLoadedShell: false })],
+      "Connecting to atlas",
+    ],
+    [
+      "first shell failed",
+      [
+        machine("atlas", "connected", {
+          hasLoadedShell: false,
+          shellError: "Could not synchronize",
+        }),
+      ],
+      "Can't load projects from atlas",
     ],
   ])("%s", (_name, environments, text) => {
     expect(machineConnectionLine(environments)?.text ?? null).toBe(text);
@@ -152,14 +178,27 @@ describe("machineConnectionLine", () => {
     expect(machineConnectionLine(environments)?.machineKind).toBe(kind);
   });
 
-  it("retries only the failed machines and keeps the first waiting machine across tones", () => {
+  it("keeps progress visible before offering retries for other machines", () => {
     const line = machineConnectionLine([
       machine("laptop", "connected"),
       machine("mesa", "connecting"),
       machine("atlas", "error"),
     ]);
-    expect(line?.retryEnvironmentIds).toEqual([EnvironmentId.make("atlas")]);
+    expect(line?.retryEnvironmentIds).toEqual([]);
     expect(line?.waitingEnvironmentId).toBe(EnvironmentId.make("mesa"));
+  });
+
+  it.each([
+    ["first connect", machine("atlas", "connecting"), true],
+    ["first shell", machine("atlas", "connected", { hasLoadedShell: false }), true],
+    ["reconnect", machine("atlas", "reconnecting", { hasLoadedShell: true }), false],
+    ["manual reconnect", machine("atlas", "connecting", { hasLoadedShell: true }), false],
+  ])("grace: %s", (_name, environment, immediate) => {
+    expect(machineConnectionLine([environment])?.showImmediately).toBe(immediate);
+  });
+
+  it("waits for the saved catalog before declaring the sidebar empty", () => {
+    expect(machineConnectionEmptyText([], false)).toBe("Loading saved machines…");
   });
 
   it("names each machine in the tooltip and retries none of the versions", () => {
