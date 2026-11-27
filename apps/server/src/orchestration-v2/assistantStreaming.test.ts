@@ -69,7 +69,7 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
       { idle: 799, shows: [] },
       { idle: 800, shows: ["A\n\n```ts\nx()"] },
       { dueAt: null },
-      { at: 1_300, text: "A\n\n```ts\nx()\n```\n\nB", shows: "A\n\n```ts\nx()\n```\n\n" },
+      { at: 1_800, text: "A\n\n```ts\nx()\n```\n\nB", shows: "A\n\n```ts\nx()\n```\n\n" },
     ],
   },
   {
@@ -77,7 +77,7 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
     steps: [
       { at: 0, text: "Steps:\n\n- one\n- tw", shows: "Steps:\n\n- one\n" },
       { idle: 800, shows: ["Steps:\n\n- one\n- tw"] },
-      { at: 1_300, text: "Steps:\n\n- one\n- two\n- th", shows: "Steps:\n\n- one\n- two\n" },
+      { at: 1_800, text: "Steps:\n\n- one\n- two\n- th", shows: "Steps:\n\n- one\n- two\n" },
     ],
   },
   {
@@ -86,7 +86,7 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
       { at: 0, text: "Intro.\n\n| a | b |\n|---|---|\n| 1 |", shows: "Intro.\n\n" },
       { idle: 800, shows: ["Intro.\n\n| a | b |\n|---|---|\n| 1 |"] },
       {
-        at: 1_300,
+        at: 1_800,
         text: "Intro.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nAfter",
         shows: "Intro.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n",
       },
@@ -132,8 +132,9 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
       { at: 100, text: "A\n\nB\n\nC", shows: null },
       { at: 200, text: "A\n\nB\n\nC\n\nD", shows: null },
       { at: 300, text: "A\n\nB\n\nC\n\nD\n\nE", shows: null },
-      { idle: 1_099, shows: [] },
-      { idle: 1_100, shows: ["A\n\nB\n\nC\n\nD\n\nE"] },
+      { at: 500, text: "A\n\nB\n\nC\n\nD\n\nE", shows: null },
+      { idle: 999, shows: [] },
+      { idle: 1_000, shows: ["A\n\nB\n\nC\n\nD\n\nE"] },
     ],
   },
   {
@@ -177,7 +178,7 @@ it.each<{ readonly name: string; readonly mode?: "turn"; readonly steps: Readonl
     name: "a rewrite that drops an open code fence",
     steps: [
       { at: 0, text: "Intro\n\n```ts\nx()\n", shows: "Intro\n\n" },
-      { at: 400, text: "Retry\n\n- a\n- b", shows: "Retry\n\n- a\n" },
+      { at: 1_000, text: "Retry\n\n- a\n- b", shows: "Retry\n\n- a\n" },
     ],
   },
   {
@@ -218,4 +219,18 @@ it("scans each streamed line once while a long code fence is still open", () => 
   }
   text += "```\n";
   assert.equal(shown(filter.filter(snapshot("m", text, true), lineCount * 400)), text);
+});
+
+it("keeps a fixed deadline under continuous boundaryless text and ignores unchanged snapshots", () => {
+  const filter = makeAssistantStreamingFilter("paragraph");
+  for (const at of [0, 300, 600, 900]) {
+    assert.isNull(filter.filter(snapshot("m", `Text ${at}`, true), at));
+  }
+  assert.deepEqual(filter.takeIdleFlushes(999), []);
+  assert.deepEqual(filter.takeIdleFlushes(1_000).map(shown), ["Text 900"]);
+  assert.isNull(filter.filter(snapshot("m", "Text 900", true), 1_100));
+  assert.deepEqual(filter.takeIdleFlushes(5_000), []);
+  assert.isNull(filter.filter(snapshot("m", "Text 900 more", true), 5_100));
+  assert.equal(shown(filter.filter(snapshot("m", "Exact final", false), 5_899)), "Exact final");
+  assert.deepEqual(filter.takeIdleFlushes(6_000), []);
 });

@@ -124,6 +124,7 @@ interface StreamTrack {
   // Latest snapshot whose text has not all been delivered yet.
   readonly held: ProviderAdapter.ProviderAdapterV2Event | null;
   readonly dueAt: number;
+  readonly dirtyAt: number;
   readonly scan: AssistantTextScan;
 }
 
@@ -151,9 +152,8 @@ function withText(
 }
 
 /**
- * Paragraph mode delivers streamed text at Markdown boundaries, at most every 400ms. A snapshot
- * held back that way is delivered whole once its message has been idle for `idleFlushMs`, so a
- * provider that pauses mid-turn still shows everything it wrote.
+ * Paragraph mode delivers the first Markdown boundary immediately, then at most once a second.
+ * Held text has a fixed delivery deadline, shortened by a provider pause.
  */
 export function makeAssistantStreamingFilter(
   mode: ResponseStreamingMode,
@@ -194,12 +194,20 @@ export function makeAssistantStreamingFilter(
           text: delivered,
           at: previous?.at ?? Number.NEGATIVE_INFINITY,
           held: message.text !== delivered ? event : null,
-          dueAt: now + idleFlushMs,
+          dirtyAt: previous?.held ? previous.dirtyAt : now,
+          dueAt: Math.min(
+            (previous && Number.isFinite(previous.at)
+              ? previous.at
+              : previous?.held
+                ? previous.dirtyAt
+                : now) + 1_000,
+            now + idleFlushMs,
+          ),
           scan,
         });
         return null;
       };
-      if (previous && now - previous.at < 400) return hold();
+      if (previous && now - previous.at < 1_000) return hold();
       const scan = advanceScan(previous?.scan ?? EMPTY_SCAN, message.text);
       const boundary = readyBoundary(scan);
       const ready = boundary === -1 ? "" : message.text.slice(0, boundary);
@@ -210,20 +218,24 @@ export function makeAssistantStreamingFilter(
         text: ready,
         at: now,
         held: ready !== message.text ? event : null,
-        dueAt: now + idleFlushMs,
+        dueAt: now + Math.min(1_000, idleFlushMs),
+        dirtyAt: now,
         scan,
       });
       return withText(event, ready);
     },
     nextIdleFlushAt: (): number | null => nextDueAt,
     /** Returns the held snapshots due by `now` and counts them as delivered. */
-    takeIdleFlushes(now: number): ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event> {
+    takeIdleFlushes(
+      now: number,
+      drain?: (event: ProviderAdapter.ProviderAdapterV2Event) => boolean,
+    ): ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event> {
       const due: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
       nextDueAt = null;
       for (const [key, current] of tracks) {
         const event = current.held;
         if (event === null) continue;
-        if (current.dueAt > now) {
+        if (drain ? !drain(event) : current.dueAt > now) {
           if (nextDueAt === null || current.dueAt < nextDueAt) nextDueAt = current.dueAt;
           continue;
         }
@@ -233,6 +245,7 @@ export function makeAssistantStreamingFilter(
           at: now,
           held: null,
           dueAt: now,
+          dirtyAt: now,
           scan: current.scan,
         });
       }

@@ -3374,11 +3374,32 @@ it.effect("fails the run when its event stream ends without a root terminal", ()
 
 it.effect("leaves the run to restart recovery when shutdown interrupts its event stream", () =>
   Effect.gen(function* () {
+    let drained = false;
     const { written, observed } = yield* captureRootRunTermination({
       key: "stream-end:shutdown",
       shouldFinalizeRun: () => Effect.succeed(true),
-      events: () => Stream.failCause(Cause.interrupt()),
+      events: (ids) =>
+        Stream.make(
+          streamedMessageEvent({
+            id: "shutdown-held-text",
+            threadId: ids.threadId,
+            runId: ids.runId,
+            role: "assistant",
+            text: "Preserved on shutdown",
+            streaming: true,
+          }),
+        ).pipe(Stream.concat(Stream.failCause(Cause.interrupt()))),
+      ingestNormalized: (input) =>
+        Effect.sync(() => {
+          if (input.event.type === "message.updated") {
+            assert.equal(input.event.message.text, "Preserved on shutdown");
+            assert.equal(input.writeIfRunCurrent?.expectedStatus, "running");
+            drained = true;
+          }
+          return [];
+        }),
     });
+    assert.isTrue(drained);
     assert.deepEqual(written, []);
     assert.deepEqual(observed, []);
   }),
@@ -3859,6 +3880,13 @@ function makeRunOwnedSubagentTurnItemFixture(input: {
   };
 }
 
+function makeLinkedChildTurnItemFixture<
+  T extends "assistant_message" | "command_execution" | "reasoning",
+>(input: {
+  readonly ids: BackgroundScenarioIds;
+  readonly driver: typeof driver;
+  readonly type: T;
+}): Extract<OrchestrationV2TurnItem, { type: T }>;
 function makeLinkedChildTurnItemFixture(input: {
   readonly ids: BackgroundScenarioIds;
   readonly driver: typeof driver;
@@ -4497,7 +4525,7 @@ it.effect.each([
     }).pipe(Effect.forkChild);
 
     yield* holdChildSnapshot(ids, events, subagentIngested);
-    // The root ends mid-paragraph: its tail is held, and the run settles without it.
+    // The root ends mid-paragraph; its held tail must land before settlement.
     yield* Queue.offer(
       events,
       streamedMessageEvent({
@@ -4528,7 +4556,7 @@ it.effect.each([
       "subagent:completed",
     ]);
     // A streaming write after the run settled would reopen the root's message.
-    assert.deepEqual(yield* Ref.get(rootWrites), ["Root.\n\n"]);
+    assert.deepEqual(yield* Ref.get(rootWrites), ["Root.\n\n", "Root.\n\nhalf"]);
   }),
 );
 
@@ -4623,5 +4651,175 @@ it.effect("drops a child's held text once the child is handed to another run", (
     yield* Fiber.join(scenario);
 
     assert.deepEqual(yield* Ref.get(staleWrites), []);
+  }),
+);
+
+it.effect.each(["tool", "approval", "input", "completed", "interrupted", "failed"] as const)(
+  "drains paired text and reasoning before %s, without a late timer write",
+  (boundary) =>
+    Effect.gen(function* () {
+      const key = `text-boundary-${boundary}`;
+      const ids = backgroundScenarioIds(key);
+      const observed: string[] = [];
+      const text = streamedMessageEvent({
+        id: `${key}:message`,
+        threadId: ids.threadId,
+        runId: ids.runId,
+        role: "assistant",
+        text: "Exact held tail",
+        streaming: true,
+      });
+      const item = {
+        ...makeLinkedChildTurnItemFixture({ ids, driver, type: "assistant_message" }),
+        threadId: ids.threadId,
+        runId: ids.runId,
+        providerTurnId: ids.rootProviderTurnId,
+        text: "Exact held tail",
+        streaming: true,
+      };
+      const terminal = rootTerminalEvent(
+        ids,
+        boundary === "failed" ? "failed" : boundary === "interrupted" ? "interrupted" : "completed",
+      );
+      const control =
+        boundary === "tool"
+          ? {
+              type: "turn_item.updated",
+              driver,
+              turnItem: {
+                ...makeLinkedChildTurnItemFixture({ ids, driver, type: "command_execution" }),
+                id: TurnItemId.make(`${key}:tool`),
+                threadId: ids.threadId,
+                providerTurnId: ids.rootProviderTurnId,
+              },
+            }
+          : boundary === "approval" || boundary === "input"
+            ? {
+                type: "runtime_request.updated",
+                driver,
+                threadId: ids.threadId,
+                runtimeRequest: {
+                  id: `${key}:request`,
+                  nodeId: ids.rootNodeId,
+                  providerTurnId: ids.rootProviderTurnId,
+                  nativeRequestRef: null,
+                  kind: boundary === "input" ? "user_input" : "command_execution",
+                  status: "pending",
+                  responseCapability: { type: "message" },
+                  createdAt: DateTime.makeUnsafe(0),
+                  resolvedAt: null,
+                },
+              }
+            : terminal;
+      yield* runBackgroundItemScenario(
+        key,
+        () => [
+          text,
+          { type: "turn_item.updated", driver, turnItem: item },
+          {
+            type: "turn_item.updated",
+            driver,
+            turnItem: { ...item, id: TurnItemId.make(`${key}:reasoning`), type: "reasoning" },
+          },
+          control as ProviderAdapter.ProviderAdapterV2Event,
+          terminal,
+        ],
+        {
+          onIngest: (event) =>
+            Effect.sync(() => {
+              if (event.type === "message.updated") observed.push(event.message.text);
+              else if (event.type === "turn_item.updated" && "text" in event.turnItem)
+                observed.push(event.turnItem.text);
+              else if (
+                event.type === "runtime_request.updated" ||
+                event.type === "turn.terminal" ||
+                event.type === "turn_item.updated"
+              )
+                observed.push("boundary");
+            }),
+          onFinalized: () =>
+            Effect.sync(() => {
+              assert.deepEqual(observed.slice(0, 3), [
+                "Exact held tail",
+                "Exact held tail",
+                "Exact held tail",
+              ]);
+            }),
+        },
+      );
+      const settled = [...observed];
+      yield* TestClock.adjust("2 seconds");
+      assert.deepEqual(observed, settled);
+      assert.equal(observed[3], "boundary");
+    }),
+);
+
+it.effect("delivers paired continuous text at its fixed deadline while new chunks arrive", () =>
+  Effect.gen(function* () {
+    const key = "continuous-text-deadline";
+    const ids = backgroundScenarioIds(key);
+    const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+    const delivered: string[] = [];
+    const markers = yield* Queue.unbounded<void>();
+    const flushed = yield* Deferred.make<void>();
+    const scenario = yield* runBackgroundItemScenario(key, () => Stream.fromQueue(events), {
+      onIngest: (event) =>
+        event.type === "message.updated" && event.message.role === "user"
+          ? Queue.offer(markers, undefined)
+          : event.type === "message.updated"
+            ? Effect.sync(() => {
+                delivered.push(event.message.text);
+              })
+            : event.type === "turn_item.updated" &&
+                (event.turnItem.type === "assistant_message" || event.turnItem.type === "reasoning")
+              ? Effect.sync(() => {
+                  if (
+                    event.turnItem.type === "assistant_message" ||
+                    event.turnItem.type === "reasoning"
+                  )
+                    delivered.push(event.turnItem.text);
+                }).pipe(Effect.andThen(Deferred.succeed(flushed, undefined)))
+              : Effect.void,
+    }).pipe(Effect.forkChild);
+    for (const suffix of ["a", "ab", "abc", "abcd"]) {
+      yield* Queue.offerAll(events, [
+        streamedMessageEvent({
+          id: `${key}:message`,
+          threadId: ids.threadId,
+          runId: ids.runId,
+          role: "assistant",
+          text: suffix,
+          streaming: true,
+        }),
+        {
+          type: "turn_item.updated",
+          driver,
+          turnItem: {
+            ...makeLinkedChildTurnItemFixture({ ids, driver, type: "assistant_message" }),
+            threadId: ids.threadId,
+            runId: ids.runId,
+            providerTurnId: ids.rootProviderTurnId,
+            text: suffix,
+            streaming: true,
+          },
+        },
+        streamedMessageEvent({
+          id: `${key}:marker`,
+          threadId: ids.threadId,
+          runId: ids.runId,
+          role: "user",
+          text: "marker",
+          streaming: false,
+        }),
+      ]);
+      yield* Queue.take(markers);
+      if (suffix !== "abcd") yield* TestClock.adjust("300 millis");
+    }
+    assert.deepEqual(delivered, []);
+    yield* TestClock.adjust("100 millis");
+    yield* Deferred.await(flushed);
+    assert.deepEqual(delivered, ["abcd", "abcd"]);
+    yield* Queue.offer(events, rootTerminalEvent(ids, "completed"));
+    yield* Fiber.join(scenario);
   }),
 );
