@@ -1,3 +1,4 @@
+import * as PostgresDeliveryAttempts from "../persistence/PostgresDeliveryAttempts.ts";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Drizzle from "@alchemy.run/drizzle/Postgres";
@@ -52,6 +53,7 @@ describe("DeliveryAttempts", () => {
     }).pipe(
       Effect.provide(
         DeliveryAttempts.layer.pipe(
+          Layer.provide(PostgresDeliveryAttempts.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
@@ -102,6 +104,7 @@ describe("DeliveryAttempts", () => {
     }).pipe(
       Effect.provide(
         DeliveryAttempts.layer.pipe(
+          Layer.provide(PostgresDeliveryAttempts.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
@@ -164,6 +167,7 @@ describe("DeliveryAttempts", () => {
     }).pipe(
       Effect.provide(
         DeliveryAttempts.layer.pipe(
+          Layer.provide(PostgresDeliveryAttempts.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
@@ -188,6 +192,7 @@ describe("DeliveryAttempts", () => {
       Effect.flatMap((attempts) => attempts.pruneExpired),
       Effect.provide(
         DeliveryAttempts.layer.pipe(
+          Layer.provide(PostgresDeliveryAttempts.layer),
           Layer.provide(NodeCryptoLayer.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
         ),
@@ -226,6 +231,7 @@ describe("DeliveryAttempts", () => {
         Effect.flatMap((attempts) => attempts.pruneExpired),
         Effect.provide(
           DeliveryAttempts.layer.pipe(
+            Layer.provide(PostgresDeliveryAttempts.layer),
             Layer.provide(NodeCryptoLayer.layer),
             Layer.provide(Layer.succeed(RelayDb.RelayDb, db)),
           ),

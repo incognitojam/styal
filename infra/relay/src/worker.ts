@@ -1,3 +1,4 @@
+import * as PostgresCloudflareApiPause from "./persistence/PostgresCloudflareApiPause.ts";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Drizzle from "@alchemy.run/drizzle/Postgres";
@@ -345,7 +346,12 @@ export const layer = Api.make(
       managedEndpointTunnelBinding,
       managedEndpointDnsBinding,
       alchemyRuntimeContext,
-    ).pipe(Layer.provideMerge(CloudflareApiPause.layer), Layer.provide(layerBindings));
+    ).pipe(
+      Layer.provideMerge(
+        CloudflareApiPause.layer.pipe(Layer.provide(PostgresCloudflareApiPause.layer)),
+      ),
+      Layer.provide(layerBindings),
+    );
     const layerRuntime = RelayRuntime.layerServices.pipe(
       Layer.provideMerge(layerCloudflare),
       Layer.provideMerge(layerBindings),

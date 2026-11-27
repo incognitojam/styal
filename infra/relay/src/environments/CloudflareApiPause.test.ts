@@ -1,3 +1,4 @@
+import * as PostgresCloudflareApiPause from "../persistence/PostgresCloudflareApiPause.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -51,6 +52,7 @@ describe("CloudflareApiPause", () => {
     }).pipe(
       Effect.provide(
         CloudflareApiPause.layer.pipe(
+          Layer.provide(PostgresCloudflareApiPause.layer),
           Layer.provide(Layer.succeed(RelayDb.RelayDb, makeFakeDb(joinedTransaction))),
         ),
       ),
