@@ -1,3 +1,5 @@
+import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
+import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
 import * as PostgresEnvironmentCredentials from "../persistence/PostgresEnvironmentCredentials.ts";
 import * as PostgresEnvironmentLinks from "../persistence/PostgresEnvironmentLinks.ts";
 import * as PostgresTunnelOperations from "../persistence/PostgresTunnelOperations.ts";
@@ -58,7 +60,14 @@ const fixture = Effect.gen(function* () {
     EnvironmentCredentials.layer.pipe(Layer.provide(PostgresEnvironmentCredentials.layer)),
     ManagedEndpointProvider.layer.pipe(Layer.provide(PostgresTunnelOperations.layer)),
   ).pipe(
-    Layer.provideMerge(Layer.mergeAll(ManagedEndpointAllocations.layer, ManagedTunnelLimits.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        ManagedEndpointAllocations.layer.pipe(
+          Layer.provide(PostgresManagedEndpointAllocations.layer),
+        ),
+        ManagedTunnelLimits.layer.pipe(Layer.provide(PostgresManagedTunnelLimits.layer)),
+      ),
+    ),
     Layer.provide(Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false })),
     Layer.provideMerge(RelayDb.RelayTransactions.layer),
     Layer.provide(ApnsDeliveryQueue.layer),

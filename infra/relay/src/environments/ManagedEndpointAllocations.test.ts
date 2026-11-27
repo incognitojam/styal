@@ -1,3 +1,4 @@
+import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -7,7 +8,10 @@ import { relayManagedEndpointAllocations } from "../persistence/schema.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 
 const layerWithDb = (db: RelayDb.RelayDb["Service"]) =>
-  ManagedEndpointAllocations.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, db)));
+  ManagedEndpointAllocations.layer.pipe(
+    Layer.provide(PostgresManagedEndpointAllocations.layer),
+    Layer.provide(Layer.succeed(RelayDb.RelayDb, db)),
+  );
 
 describe("ManagedEndpointAllocations", () => {
   it.effect("returns recovery support with tunnel allocation lookups", () => {

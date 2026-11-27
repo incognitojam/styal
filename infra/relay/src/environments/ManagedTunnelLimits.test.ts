@@ -1,3 +1,4 @@
+import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Context from "effect/Context";
@@ -111,6 +112,7 @@ const reserve = (
   }).pipe(
     Effect.provide(
       ManagedTunnelLimits.layer.pipe(
+        Layer.provide(PostgresManagedTunnelLimits.layer),
         Layer.provide(
           Layer.succeed(
             RelayDb.RelayDb,
@@ -129,6 +131,7 @@ const getOverride = (override?: number) =>
   }).pipe(
     Effect.provide(
       ManagedTunnelLimits.layer.pipe(
+        Layer.provide(PostgresManagedTunnelLimits.layer),
         Layer.provide(
           Layer.succeed(
             RelayDb.RelayDb,
@@ -172,6 +175,7 @@ describe("ManagedTunnelLimits", () => {
     }).pipe(
       Effect.provide(
         ManagedTunnelLimits.layer.pipe(
+          Layer.provide(PostgresManagedTunnelLimits.layer),
           Layer.provide(
             Layer.succeed(RelayDb.RelayDb, makeFakeDb({ otherSlots: () => reserved.length })),
           ),
@@ -352,7 +356,7 @@ describe("ManagedTunnelLimits", () => {
           .select({ environmentId: relayManagedEndpointAllocations.environmentId })
           .from(relayManagedEndpointAllocations)
           .where(
-            ManagedTunnelLimits.countedAllocations({
+            PostgresManagedTunnelLimits.countedAllocations({
               userId: "user-1",
               environmentId: "self",
               pendingCutoff: at(45),

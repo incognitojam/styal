@@ -1,3 +1,5 @@
+import * as PostgresManagedTunnelLimits from "./persistence/PostgresManagedTunnelLimits.ts";
+import * as PostgresManagedEndpointAllocations from "./persistence/PostgresManagedEndpointAllocations.ts";
 import * as PostgresAgentActivityRows from "./persistence/PostgresAgentActivityRows.ts";
 import * as PostgresEnvironmentCredentials from "./persistence/PostgresEnvironmentCredentials.ts";
 import * as PostgresEnvironmentLinks from "./persistence/PostgresEnvironmentLinks.ts";
@@ -108,8 +110,10 @@ export const layerServices = Layer.empty.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       EnvironmentLinks.layer.pipe(Layer.provide(PostgresEnvironmentLinks.layer)),
-      ManagedEndpointAllocations.layer,
-      ManagedTunnelLimits.layer,
+      ManagedEndpointAllocations.layer.pipe(
+        Layer.provide(PostgresManagedEndpointAllocations.layer),
+      ),
+      ManagedTunnelLimits.layer.pipe(Layer.provide(PostgresManagedTunnelLimits.layer)),
     ),
   ),
   Layer.provideMerge(Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer)),
