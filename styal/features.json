@@ -80,10 +80,6 @@
     "subject": "feat(server): inventory offline styal data for the restart"
   },
   {
-    "name": "data-move-importer",
-    "subject": "feat(server): import offline terminal V2 history"
-  },
-  {
     "name": "running-work-check",
     "subject": "feat(styal): check running work before quitting or updating"
   },
