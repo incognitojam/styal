@@ -532,6 +532,7 @@
   "bc24c300d53d61c5": "{host} did not answer on any saved route.",
   "b0dd3cd876937ca8": "Connection profile {connectionId} is unavailable.",
   "5ce46783e79ca9d1": "Connection credential {connectionId} is unavailable.",
+  "9f0a639210d595e4": "Notify me when an agent",
   "71db16b00912d9a7": "This address now runs a different styal install ({actual}, not {expected}). Remove this connection and add it again.",
   "ea0d3e4e51d5706f": "The environment credential is invalid.",
   "7283ebfd16d09677": "The environment credential does not grant the required access.",

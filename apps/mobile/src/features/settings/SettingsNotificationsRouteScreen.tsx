@@ -25,6 +25,7 @@ import { Linking, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { m as resolveMessage } from "../../i18n/messages";
 
+import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
   createEnvironmentCommand,
@@ -49,6 +50,7 @@ import {
   getAgentAwarenessRegistrationStatus,
   refreshAgentAwarenessRegistration,
   subscribeAgentAwarenessRegistrationStatus,
+  updateAgentAwarenessRegistrationPreferences,
 } from "../agent-awareness/remoteRegistration";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import {
@@ -62,6 +64,7 @@ import { useRelayAuth } from "../cloud/useRelayAuth";
 import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
@@ -139,6 +142,23 @@ function canManageConnect(
   );
 }
 
+type AlertTypePreference =
+  | "notifyOnApproval"
+  | "notifyOnInput"
+  | "notifyOnCompletion"
+  | "notifyOnFailure";
+
+const ALERT_TYPES: ReadonlyArray<{
+  readonly preference: AlertTypePreference;
+  readonly label: string;
+  readonly icon: AppSymbolName;
+}> = [
+  { preference: "notifyOnApproval", label: msg("Needs approval"), icon: "exclamationmark.shield" },
+  { preference: "notifyOnInput", label: msg("Needs input"), icon: "questionmark.bubble" },
+  { preference: "notifyOnCompletion", label: msg("Done"), icon: "checkmark.circle" },
+  { preference: "notifyOnFailure", label: msg("Failed"), icon: "exclamationmark.triangle" },
+];
+
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
 
@@ -153,6 +173,22 @@ const notificationStatusAtom = makePermissionStatusAtom<NotificationStatus>({
       return "disabled";
     }
     return result.value.granted ? "enabled" : "disabled";
+  },
+});
+
+const alertsChannelEnabledAtom = makePermissionStatusAtom<boolean | null>({
+  label: "mobile:android-agent-alerts-channel",
+  initial: null,
+  read: async () => {
+    if (Platform.OS !== "android") return null;
+    const result = await settlePromise(() =>
+      Notifications.getNotificationChannelAsync("agent-alerts"),
+    );
+    if (result._tag === "Failure") {
+      reportAtomCommandResult(result, { label: "notification channel refresh" });
+      return false;
+    }
+    return result.value?.importance !== Notifications.AndroidImportance.NONE;
   },
 });
 
@@ -215,6 +251,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   const gt = useGT();
   const m = useMessages();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const agentAwarenessPushAvailable = supportsAgentAwarenessPush();
   const agentAwarenessPlatform = resolveAgentAwarenessPlatformPresentation(Platform.OS, m);
   const agentAwarenessSubtitle =
@@ -256,6 +293,33 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   const connections = Object.values(savedConnectionsById);
   const environmentCount = connections.length;
+  const alertsChannelEnabled = useAtomValue(alertsChannelEnabledAtom);
+  const alertsEnabled =
+    agentAwarenessPushAvailable &&
+    notificationStatus === "enabled" &&
+    notificationsReady &&
+    alertsChannelEnabled !== false;
+  const storedPreferences = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value
+    : null;
+
+  // The stored preference is what later registrations send, so a failed relay
+  // update is retried by the next registration (app foreground, token rotation).
+  const handleAlertTypeChange = async (preference: AlertTypePreference, enabled: boolean) => {
+    const saved = await savePreferences({ [preference]: enabled });
+    if (saved._tag === "Failure") {
+      reportAtomCommandResult(saved, { label: "notification type save" });
+      return;
+    }
+    const result = await settleAsyncResult(() =>
+      runtime.runPromiseExit(
+        updateAgentAwarenessRegistrationPreferences({ [preference]: enabled }),
+      ),
+    );
+    if (result._tag === "Failure") {
+      reportAtomCommandResult(result, { label: "notification type update" });
+    }
+  };
 
   const requestNotifications = async () => {
     const result = await settleAsyncResult(() =>
@@ -604,6 +668,18 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               }}
             />
           ) : null}
+        </SettingsSection>
+        <SettingsSection title={gt("Notify me when an agent")}>
+          {ALERT_TYPES.map((alertType) => (
+            <SettingsSwitchRow
+              key={alertType.preference}
+              icon={alertType.icon}
+              label={m(alertType.label)}
+              disabled={!alertsEnabled || storedPreferences === null}
+              value={storedPreferences?.[alertType.preference] !== false}
+              onValueChange={(enabled) => void handleAlertTypeChange(alertType.preference, enabled)}
+            />
+          ))}
         </SettingsSection>
       </ScrollView>
     </SettingsScreen>

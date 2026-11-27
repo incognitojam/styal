@@ -532,6 +532,7 @@
   "bc24c300d53d61c5": "{host} n’a répondu sur aucune route enregistrée.",
   "b0dd3cd876937ca8": "Le profil de connexion {connectionId} n’est pas disponible.",
   "5ce46783e79ca9d1": "Les identifiants de connexion {connectionId} ne sont pas disponibles.",
+  "9f0a639210d595e4": "Me prévenir lorsqu’un agent",
   "71db16b00912d9a7": "Cette adresse exécute désormais une autre installation de styal ({actual}, et non {expected}). Supprimez cette connexion et ajoutez-la à nouveau.",
   "ea0d3e4e51d5706f": "Les identifiants de l’environnement ne sont pas valides.",
   "7283ebfd16d09677": "Les identifiants de l’environnement n’accordent pas l’accès requis.",

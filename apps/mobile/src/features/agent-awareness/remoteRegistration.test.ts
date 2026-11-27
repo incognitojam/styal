@@ -682,7 +682,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(layerRelayTest));
   });
 
-  it.effect("does not re-register the same account when nothing has changed", () => {
+  it.effect("re-registers changed alert choices while deduplicating unchanged preferences", () => {
     Constants.expoConfig!.extra = {
       relay: {
         url: "https://relay.example.test/",
@@ -700,6 +700,35 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       yield* refreshAgentAwarenessRegistration();
       expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
       expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
+      for (const preferences of [
+        { notifyOnCompletion: false },
+        {
+          notifyOnApproval: false,
+          notifyOnInput: false,
+          notifyOnCompletion: false,
+          notifyOnFailure: false,
+        },
+        {
+          notifyOnApproval: true,
+          notifyOnInput: true,
+          notifyOnCompletion: true,
+          notifyOnFailure: true,
+        },
+      ]) {
+        vi.mocked(loadPreferences).mockResolvedValue(preferences);
+        yield* refreshAgentAwarenessRegistration();
+        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
+        const signature = registrationRecordStore.current!.signature.split("|").slice(-4);
+        expect(signature).toEqual([
+          String(preferences.notifyOnApproval !== false),
+          String(preferences.notifyOnInput !== false),
+          String(preferences.notifyOnCompletion !== false),
+          String(preferences.notifyOnFailure !== false),
+        ]);
+        vi.mocked(saveAgentAwarenessRegistrationRecord).mockClear();
+        yield* refreshAgentAwarenessRegistration();
+        expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
+      }
     }).pipe(Effect.provide(layerRelayTest));
   });
 
