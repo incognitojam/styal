@@ -1,8 +1,14 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, type EnvironmentMachineKind } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
+import {
+  createMachineShellProgressAtom,
+  machineConnectionEmptyText,
+  machineConnectionLine,
+} from "./machineConnectionLine.logic";
 
 const machine = (
   label: string,
@@ -229,5 +235,40 @@ describe("machineConnectionEmptyText", () => {
     ],
   ])("%j", (environments, text) => {
     expect(machineConnectionEmptyText(environments)).toBe(text);
+  });
+});
+
+describe("machine shell progress", () => {
+  it("remembers the first live shell only while the machine is in the catalog", () => {
+    const id = EnvironmentId.make("atlas");
+    const ids = Atom.make<ReadonlyArray<EnvironmentId>>([id]);
+    const shell = Atom.make<{ status: "cached" | "live"; error: Option.Option<string> }>({
+      status: "cached",
+      error: Option.none(),
+    });
+    const progress = createMachineShellProgressAtom(ids, () => shell);
+    const registry = AtomRegistry.make();
+    const changes: unknown[] = [];
+    const unsubscribe = registry.subscribe(progress, (value) => changes.push(value));
+    try {
+      expect(registry.get(progress).get(id)?.hasLoadedShell).toBe(false);
+      registry.set(shell, { status: "live", error: Option.none() });
+      expect(registry.get(progress).get(id)?.hasLoadedShell).toBe(true);
+      registry.set(shell, { status: "cached", error: Option.none() });
+      expect(registry.get(progress).get(id)?.hasLoadedShell).toBe(true);
+      registry.set(ids, []);
+      expect(registry.get(progress).size).toBe(0);
+      const changesAfterRemoval = changes.length;
+      registry.set(shell, { status: "cached", error: Option.some("No longer observed") });
+      expect(changes).toHaveLength(changesAfterRemoval);
+      registry.set(ids, [id]);
+      expect(registry.get(progress).get(id)).toEqual({
+        hasLoadedShell: false,
+        shellError: "No longer observed",
+      });
+    } finally {
+      unsubscribe();
+      registry.dispose();
+    }
   });
 });

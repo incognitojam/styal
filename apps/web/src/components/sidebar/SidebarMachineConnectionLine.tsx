@@ -1,14 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionRoutes } from "@t3tools/client-runtime/connection";
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import { TriangleAlertIcon } from "lucide-react";
 
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentStateHeldFor } from "../../hooks/useEnvironmentDisconnectDelay";
-import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
+import { environmentIdsKey } from "../../state/environmentAtomList";
 import { useEnvironments } from "../../state/environments";
 import { environmentUpdateStatesAtom } from "../../state/server";
 import { environmentShell } from "../../state/shell";
@@ -16,30 +14,24 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { machineConnectionEmptyText, machineConnectionLine } from "./machineConnectionLine.logic";
+import {
+  createMachineShellProgressAtom,
+  machineConnectionEmptyText,
+  machineConnectionLine,
+} from "./machineConnectionLine.logic";
 
-const shellProgressAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) => {
-    const shell = get(environmentShell.stateValueAtom(environmentId));
-    const previous = Option.getOrNull(
-      get.self<{ hasLoadedShell: boolean; shellError: string | null }>(),
-    );
-    const hasLoadedShell = previous?.hasLoadedShell === true || shell.status === "live";
-    const shellError = Option.getOrNull(shell.error);
-    return previous?.hasLoadedShell === hasLoadedShell && previous.shellError === shellError
-      ? previous
-      : { hasLoadedShell, shellError };
-  }).pipe(Atom.keepAlive),
+const shellProgressAtom = createMachineShellProgressAtom(
+  Atom.make((get) =>
+    [...get(environmentCatalog.catalogValueAtom).entries]
+      .filter(([, entry]) => entry.enabled)
+      .map(([id]) => id),
+  ),
+  environmentShell.stateValueAtom,
 );
-const shellProgressAtoms = environmentAtomList("sidebar-machine-shell-progress", shellProgressAtom);
 
 function useMachineConnections() {
   const { environments, isReady } = useEnvironments();
-  const shellProgress = useAtomValue(
-    shellProgressAtoms(
-      environmentIdsKey(environments.map((environment) => environment.environmentId)),
-    ),
-  );
+  const shellProgress = useAtomValue(shellProgressAtom);
   const updateStates = useAtomValue(
     environmentUpdateStatesAtom(
       environmentIdsKey(environments.map((environment) => environment.environmentId)),
@@ -49,8 +41,8 @@ function useMachineConnections() {
   const authLoad = useAtomValue(managedRelayAuthLoadAtom);
   const machines = environments.map((environment, index) => ({
     ...environment,
-    hasLoadedShell: shellProgress[index]?.hasLoadedShell ?? false,
-    shellError: shellProgress[index]?.shellError ?? null,
+    hasLoadedShell: shellProgress.get(environment.environmentId)?.hasLoadedShell ?? false,
+    shellError: shellProgress.get(environment.environmentId)?.shellError ?? null,
     signInLoading:
       authLoad === "loading" &&
       relaySession === null &&

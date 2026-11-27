@@ -1,9 +1,45 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
+import * as Option from "effect/Option";
+import { Atom } from "effect/reactivity";
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
+
+interface MachineShellProgress {
+  readonly hasLoadedShell: boolean;
+  readonly shellError: string | null;
+}
+
+export function createMachineShellProgressAtom(
+  environmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>,
+  shellStateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<Pick<EnvironmentShellState, "status" | "error">>,
+) {
+  return Atom.make((get) => {
+    const previous = Option.getOrNull(get.self<ReadonlyMap<EnvironmentId, MachineShellProgress>>());
+    const next = new Map<EnvironmentId, MachineShellProgress>();
+    for (const environmentId of get(environmentIdsAtom)) {
+      const shell = get(shellStateAtom(environmentId));
+      const prior = previous?.get(environmentId);
+      const hasLoadedShell = prior?.hasLoadedShell === true || shell.status === "live";
+      const shellError = Option.getOrNull(shell.error);
+      next.set(
+        environmentId,
+        prior?.hasLoadedShell === hasLoadedShell && prior.shellError === shellError
+          ? prior
+          : { hasLoadedShell, shellError },
+      );
+    }
+    return previous?.size === next.size &&
+      [...next].every(([id, value]) => previous.get(id) === value)
+      ? previous
+      : next;
+  });
+}
 
 interface MachineConnection {
   readonly environmentId: EnvironmentId;
