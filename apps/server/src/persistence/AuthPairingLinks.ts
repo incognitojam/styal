@@ -1,3 +1,4 @@
+import * as Historical from "./historical.ts";
 import * as Context from "effect/Context";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -29,7 +30,7 @@ export const AuthPairingLinkRecord = Schema.Struct({
   id: Schema.String,
   credential: Schema.String,
   method: Schema.Literals(["desktop-bootstrap", "one-time-token"]),
-  scopes: Schema.fromJsonString(AuthEnvironmentScopes),
+  scopes: Historical.authScopes,
   subject: Schema.String,
   label: Schema.NullOr(Schema.String),
   proofKeyThumbprint: Schema.NullOr(Schema.String),

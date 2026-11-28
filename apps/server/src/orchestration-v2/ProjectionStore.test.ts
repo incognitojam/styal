@@ -7334,7 +7334,17 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             assert.include(detail, "run_key=?", detail);
           }
           if (detail.includes("orchestration_v2_projection_turn_items")) {
-            // Only held input is read from the sparse index; transcript history stays unread.
+            if (
+              detail.startsWith(
+                "SEARCH item USING INDEX orchestration_v2_projection_turn_items_thread_type_idx",
+              )
+            ) {
+              assert.include(detail, "(thread_id=? AND type=?)");
+              assert.match(countQuery, /item\.type\s*=\s*'fork'/);
+              assert.include(countQuery, "$.forkHistoryMaterialized");
+              continue;
+            }
+            // Held input and materialized fork markers use sparse indexes.
             assert.include(
               detail,
               "SEARCH held USING INDEX orchestration_v2_projection_turn_items_queued_input_idx (run_id=?)",

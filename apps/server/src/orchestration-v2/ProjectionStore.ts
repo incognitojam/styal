@@ -1,3 +1,4 @@
+import * as Historical from "../persistence/historical.ts";
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
 import { applyOrchestrationV2ThreadVisit, pendingGuestMessageCount } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
@@ -1332,6 +1333,7 @@ type ShellItemCountRow = {
   readonly thread_id: string;
   readonly item_count: number;
   readonly runless_item_count: number;
+  readonly materialized_fork_marker_count: number;
 };
 
 const encodeTimelineSources = Schema.encodeEffect(
@@ -1475,15 +1477,20 @@ const decodeSubagentPayload = Schema.decodeUnknownEffect(
 const decodeProviderSessionPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJsonSchema),
 );
-const decodeProviderThreadPayload = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(OrchestrationV2ProviderThreadJsonSchema),
-);
+const decodeRawJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeProviderThread = Schema.decodeUnknownEffect(OrchestrationV2ProviderThreadJsonSchema);
+const decodeProviderThreadPayload = (json: string) =>
+  decodeRawJson(json).pipe(
+    Effect.flatMap((value) => decodeProviderThread(Historical.providerThread(value))),
+  );
 const decodeProviderTurnPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ProviderTurnJsonSchema),
 );
-const decodeRuntimeRequestPayload = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(OrchestrationV2RuntimeRequestJsonSchema),
-);
+const decodeRuntimeRequest = Schema.decodeUnknownEffect(OrchestrationV2RuntimeRequestJsonSchema);
+const decodeRuntimeRequestPayload = (json: string) =>
+  decodeRawJson(json).pipe(
+    Effect.flatMap((value) => decodeRuntimeRequest(Historical.runtimeRequest(value))),
+  );
 const decodeMessagePayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ConversationMessageJsonSchema),
 );
@@ -1664,12 +1671,13 @@ function makeForkMarkerTurnItem(input: {
 
 function isTurnItemAtOrBeforeRun(input: {
   readonly historyOrigin: OrchestrationV2ThreadProjection["thread"]["historyOrigin"];
+  readonly forkHistoryMaterialized: boolean | undefined;
   readonly itemRunId: OrchestrationV2TurnItem["runId"];
   readonly runOrdinalById: ReadonlyMap<NonNullable<OrchestrationV2TurnItem["runId"]>, number>;
   readonly sourceRunOrdinal: number;
 }): boolean {
   if (input.itemRunId === null) {
-    return input.historyOrigin === "v1_import";
+    return input.historyOrigin === "v1_import" || input.forkHistoryMaterialized === true;
   }
   const ordinal = input.runOrdinalById.get(input.itemRunId);
   return ordinal !== undefined && ordinal <= input.sourceRunOrdinal;
@@ -1760,6 +1768,7 @@ function visibleTurnItemsThroughRun(input: {
         isVisible(item) &&
         isTurnItemAtOrBeforeRun({
           historyOrigin: input.sourceProjection.thread.historyOrigin,
+          forkHistoryMaterialized: input.sourceProjection.thread.forkHistoryMaterialized,
           itemRunId: item.runId,
           runOrdinalById,
           sourceRunOrdinal: sourceRun.ordinal,
@@ -1771,8 +1780,12 @@ function visibleTurnItemsThroughRun(input: {
 }
 
 // Side chats show only their own rows; the fork transfer carries the parent's context to the model.
-function inheritedRunFork(thread: Pick<OrchestrationV2AppThread, "forkedFrom" | "lineage">) {
-  return thread.forkedFrom?.type === "run" && thread.lineage.sideChat !== true
+function inheritedRunFork(
+  thread: Pick<OrchestrationV2AppThread, "forkedFrom" | "lineage" | "forkHistoryMaterialized">,
+) {
+  return thread.forkedFrom?.type === "run" &&
+    thread.lineage.sideChat !== true &&
+    !thread.forkHistoryMaterialized
     ? thread.forkedFrom
     : null;
 }
@@ -1829,7 +1842,7 @@ function buildVisibleTurnItems(input: {
 function pendingRuntimeRequestSummary(
   request: OrchestrationV2ThreadProjection["runtimeRequests"][number] | null,
 ): OrchestrationV2PendingRuntimeRequestSummary | null {
-  if (request === null) return null;
+  if (request === null || request.status !== "pending") return null;
   return {
     id: request.id,
     kind: request.kind,
@@ -1972,6 +1985,7 @@ export function threadShellFromProjection(
       : { activeOrderKey: projection.thread.activeOrderKey }),
     lineage: projection.thread.lineage,
     forkedFrom: projection.thread.forkedFrom,
+    forkHistoryMaterialized: projection.thread.forkHistoryMaterialized,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
       ? {}
@@ -2151,6 +2165,7 @@ type ShellThreadState = {
   readonly goal: OrchestrationV2ThreadShell["goal"];
   readonly itemCount: number;
   readonly runlessItemCount: number;
+  readonly materializedForkMarkerCount: number;
   readonly updatedAt: OrchestrationV2ThreadProjection["updatedAt"];
   readonly runsById: ReadonlyMap<RunId, ShellRun>;
   readonly inheritedRunIds: ReadonlySet<RunId> | null;
@@ -2188,7 +2203,10 @@ function itemCountThroughRun(input: {
     return 0;
   }
 
-  let count = input.state.thread.historyOrigin === "v1_import" ? input.state.runlessItemCount : 0;
+  let count =
+    input.state.thread.historyOrigin === "v1_import" || input.state.thread.forkHistoryMaterialized
+      ? input.state.runlessItemCount
+      : 0;
   for (const [runId, itemCount] of input.state.itemCountByRunId) {
     const itemRun = input.state.runsById.get(runId);
     if (
@@ -2249,7 +2267,7 @@ function visibleItemCountForShell(input: {
           statesByThreadId: input.statesByThreadId,
           seenThreadIds: new Set([...seenThreadIds, state.thread.id]),
         }) - sourceState.itemCount
-      : 0;
+      : sourceState.materializedForkMarkerCount;
 
   return (
     inheritedPrefixCount +
@@ -2293,6 +2311,7 @@ function shellFromState(input: {
       : { activeOrderKey: input.state.thread.activeOrderKey }),
     lineage: input.state.thread.lineage,
     forkedFrom: input.state.thread.forkedFrom,
+    forkHistoryMaterialized: input.state.thread.forkHistoryMaterialized,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined
       ? {}
@@ -3515,7 +3534,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                           SELECT 1
                           FROM orchestration_v2_projection_threads AS source_thread
                           WHERE source_thread.thread_id = item.thread_id
-                            AND json_extract(source_thread.payload_json, '$.historyOrigin') = 'v1_import'
+                            AND (json_extract(source_thread.payload_json, '$.historyOrigin') = 'v1_import' OR json_extract(source_thread.payload_json, '$.forkHistoryMaterialized') = 1)
                         )
                       )
                       OR (
@@ -4088,7 +4107,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 OR run_id = ${window.requiredRunId ?? null})
               UNION
               SELECT node_id FROM orchestration_v2_projection_runtime_requests
-              WHERE thread_id = ${threadId} AND status IN ('pending','waiting')
+              WHERE thread_id = ${threadId} AND ${Historical.pendingRuntimeRequest(sql)}
               UNION
               SELECT parent_node_id FROM orchestration_v2_projection_subagents
               WHERE thread_id = ${threadId} AND status IN ('pending','starting','running','waiting')
@@ -4537,13 +4556,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT payload_json
             FROM orchestration_v2_projection_runtime_requests
             WHERE thread_id = ${threadId}
-              ${filter?.runtimeRequestStatuses === undefined ? sql`` : sql`AND status IN (SELECT value FROM json_each(${encodeIdList(filter.runtimeRequestStatuses)}))`}
+              ${filter?.runtimeRequestStatuses === undefined ? sql`` : sql`AND ${Historical.runtimeRequestStatus(sql)} IN (SELECT value FROM json_each(${encodeIdList(filter.runtimeRequestStatuses)}))`}
             ORDER BY created_at ASC, runtime_request_id ASC
           `
               : sql<PayloadRow>`
             SELECT payload_json FROM orchestration_v2_projection_runtime_requests
             WHERE thread_id = ${threadId}
-              AND (status IN ('pending','waiting')
+              AND (${Historical.pendingRuntimeRequest(sql)}
                 OR node_id IN (SELECT value FROM json_each(${cohortNodeIds}))
                 OR provider_turn_id IN (SELECT value FROM json_each(${cohortProviderTurnIds})))
             ORDER BY created_at ASC, runtime_request_id ASC
@@ -4892,18 +4911,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     ORDER BY run.ordinal DESC
                     LIMIT 1
                   ), effective_boundary AS (
-                    SELECT COALESCE(
-                      (SELECT ordinal FROM fork_boundary),
-                      (
-                        SELECT ordinal
-                        FROM orchestration_v2_projection_turn_items
-                        WHERE thread_id = ${forkedFrom.threadId}
-                          AND run_id IS NULL
-                          AND json_extract(payload_json, '$.historyOrigin') = 'v1_import'
-                        ORDER BY ordinal DESC, turn_item_id DESC
-                        LIMIT 1
-                      ),
-                      -1
+                    SELECT MAX(
+                      COALESCE((SELECT ordinal FROM fork_boundary), -1),
+                      COALESCE((
+                        SELECT MAX(item.ordinal)
+                        FROM orchestration_v2_projection_turn_items AS item
+                        WHERE item.thread_id = ${forkedFrom.threadId}
+                          AND item.run_id IS NULL
+                          AND EXISTS (
+                            SELECT 1 FROM orchestration_v2_projection_threads AS source
+                            WHERE source.thread_id = item.thread_id
+                              AND (json_extract(source.payload_json, '$.historyOrigin') = 'v1_import'
+                                OR json_extract(source.payload_json, '$.forkHistoryMaterialized') = 1)
+                          )
+                      ), -1)
                     ) AS ordinal
                   )
                   SELECT turn_item_id
@@ -5108,7 +5129,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             )
             AND NOT EXISTS (
               SELECT 1 FROM orchestration_v2_projection_runtime_requests request
-              WHERE request.thread_id = t.thread_id AND request.status = 'pending'
+              WHERE request.thread_id = t.thread_id AND ${Historical.pendingRuntimeRequest(sql, "request")}
             )
           ORDER BY t.thread_id
         `;
@@ -5296,7 +5317,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     ELSE 1 END
                 UNION
                 SELECT thread_id FROM orchestration_v2_projection_runtime_requests
-                WHERE status = 'pending'
+                WHERE ${Historical.pendingRuntimeRequest(sql)}
                 UNION
                 -- One bound thread stops a session; the other arms select the
                 -- bound threads with work, so idle threads on a shared session stay out.
@@ -5397,7 +5418,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               decodeThreadPayload(payload).pipe(
                 Effect.tap((thread) =>
                   Effect.sync(() => {
-                    if (thread.forkedFrom?.type !== "run") return;
+                    if (thread.forkHistoryMaterialized || thread.forkedFrom?.type !== "run") return;
                     const sourceId = thread.forkedFrom.threadId;
                     const children = forkChildren.get(sourceId) ?? [];
                     children.push(ThreadId.make(entityId));
@@ -5767,7 +5788,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   (node.run_id IS NULL AND node.kind = 'root_turn')
                   OR node.node_id IN (
                     SELECT node_id FROM orchestration_v2_projection_runtime_requests
-                    WHERE thread_id = ${threadId} AND status = 'pending' AND kind = 'user_input'
+                    WHERE thread_id = ${threadId} AND ${Historical.pendingRuntimeRequest(sql)} AND kind = 'user_input'
                   )
                   OR node.run_id IN (
                     SELECT run_id FROM orchestration_v2_projection_runs
@@ -5929,7 +5950,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             `,
             runtimeRequests: sql<PayloadRow>`
               SELECT payload_json FROM orchestration_v2_projection_runtime_requests
-              WHERE thread_id = ${threadId} AND status = 'pending'
+              WHERE thread_id = ${threadId} AND ${Historical.pendingRuntimeRequest(sql)}
               ORDER BY created_at ASC, runtime_request_id ASC
             `,
             // CROSS JOIN keeps empty run cohorts out of message history; the run index bounds each lookup.
@@ -5957,7 +5978,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     item.type = 'user_input_request'
                     AND json_extract(item.payload_json, '$.requestId') IN (
                       SELECT runtime_request_id FROM orchestration_v2_projection_runtime_requests
-                      WHERE thread_id = ${threadId} AND status = 'pending' AND kind = 'user_input'
+                      WHERE thread_id = ${threadId} AND ${Historical.pendingRuntimeRequest(sql)} AND kind = 'user_input'
                     )
                   )
                   OR (
@@ -6079,7 +6100,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             const rows = yield* sql<PayloadRow>`
           SELECT payload_json FROM orchestration_v2_projection_runtime_requests
           WHERE thread_id = ${threadId} AND provider_turn_id = ${providerTurnId}
-            AND kind = 'user_input' AND status = 'pending'
+            AND kind = 'user_input' AND ${Historical.pendingRuntimeRequest(sql)}
         `;
             const runtimeRequests = (yield* decodeRows(
               decodeRuntimeRequestPayload,
@@ -6871,25 +6892,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql<{ with_fork: number | null; without_fork: number | null }>`
         WITH RECURSIVE showing(thread_id, deleted_at, through) AS (
           SELECT fork.thread_id, fork.deleted_at, fork_run.ordinal
-          FROM orchestration_v2_projection_context_transfers AS transfer
-          JOIN orchestration_v2_projection_threads AS fork
-            ON fork.thread_id = transfer.target_thread_id
+          FROM orchestration_v2_projection_threads AS fork
           JOIN orchestration_v2_projection_runs AS fork_run
             ON fork_run.run_id = json_extract(fork.payload_json, '$.forkedFrom.runId')
-          WHERE transfer.source_thread_id = ${threadId}
-            AND transfer.type = 'fork'
-            AND fork_run.thread_id = ${threadId}
+          WHERE fork_run.thread_id = ${threadId}
+            AND json_extract(fork.payload_json, '$.forkHistoryMaterialized') IS NOT 1
             AND json_extract(fork.payload_json, '$.forkedFrom.type') = 'run'
             AND json_extract(fork.payload_json, '$.forkedFrom.threadId') = ${threadId}
             AND json_extract(fork.payload_json, '$.lineage.sideChat') IS NOT 1
           UNION
           SELECT child.thread_id, child.deleted_at, showing.through
           FROM showing
-          JOIN orchestration_v2_projection_context_transfers AS transfer
-            ON transfer.source_thread_id = showing.thread_id AND transfer.type = 'fork'
           JOIN orchestration_v2_projection_threads AS child
-            ON child.thread_id = transfer.target_thread_id
-          WHERE json_extract(child.payload_json, '$.forkedFrom.type') = 'run'
+            ON json_extract(child.payload_json, '$.forkedFrom.threadId') = showing.thread_id
+          WHERE json_extract(child.payload_json, '$.forkHistoryMaterialized') IS NOT 1
+            AND json_extract(child.payload_json, '$.forkedFrom.type') = 'run'
             AND json_extract(child.payload_json, '$.forkedFrom.threadId') = showing.thread_id
             AND json_extract(child.payload_json, '$.lineage.sideChat') IS NOT 1
         )
@@ -7261,6 +7278,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 isInheritedVisible(row.item) &&
                 isTurnItemAtOrBeforeRun({
                   historyOrigin: source.records.thread.historyOrigin,
+                  forkHistoryMaterialized: source.records.thread.forkHistoryMaterialized,
                   itemRunId: row.item.runId,
                   runOrdinalById: ordinals,
                   sourceRunOrdinal: sourceRun.ordinal,
@@ -7433,7 +7451,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         SELECT 1 FROM orchestration_v2_projection_threads
         WHERE thread_id = ${threadId}
           AND NOT (json_extract(payload_json, '$.forkedFrom.type') IS 'run'
-            AND json_extract(payload_json, '$.lineage.sideChat') IS NOT 1)`;
+            AND json_extract(payload_json, '$.lineage.sideChat') IS NOT 1
+            AND json_extract(payload_json, '$.forkHistoryMaterialized') IS NOT 1)`;
       if (ownRowsOnly.length === 0) return null;
       const records = yield* getThreadRecords(threadId, []);
       if (inheritedRunFork(records.thread) !== null) return null;
@@ -8343,7 +8362,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   ON item.node_id = request.node_id
                   AND item.type IN ('approval_request', 'user_input_request')
                   AND json_extract(item.payload_json, '$.requestId') = request.runtime_request_id
-                WHERE request.thread_id = ${threadId} AND request.status = 'pending'
+                WHERE request.thread_id = ${threadId} AND ${Historical.pendingRuntimeRequest(sql, "request")}
                   AND item.thread_id = ${threadId}
               `,
             )).filter((item) => !retainedIds.has(item.id));
@@ -8489,6 +8508,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               t.fork_run_ids_json,
               CASE
                 WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
+                  AND json_extract(t.payload_json, '$.forkHistoryMaterialized') IS NOT 1
                   AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
                   THEN json_extract(t.payload_json, '$.forkedFrom.threadId')
                 ELSE NULL
@@ -8580,7 +8600,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 SELECT request.payload_json
                 FROM orchestration_v2_projection_runtime_requests request
                 WHERE request.thread_id = t.thread_id
-                  AND request.status = 'pending'
+                  AND ${Historical.pendingRuntimeRequest(sql, "request")}
                 ORDER BY (request.kind = 'user_input') ASC,
                   request.created_at DESC, request.runtime_request_id DESC
                 LIMIT 1
@@ -8703,7 +8723,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE status IN ('preparing', 'starting', 'running', 'waiting')
                 AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
               UNION
-              SELECT thread_id FROM orchestration_v2_projection_runtime_requests WHERE status = 'pending'
+              SELECT thread_id FROM orchestration_v2_projection_runtime_requests WHERE ${Historical.pendingRuntimeRequest(sql)}
               UNION
               SELECT thread_id FROM orchestration_v2_projection_turn_items
               WHERE type IN ('command_execution', 'dynamic_tool', 'subagent')
@@ -8810,7 +8830,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT runless.item_count
             FROM orchestration_v2_projection_turn_item_counts runless
             WHERE runless.thread_id = totals.thread_id AND runless.run_key = ''
-          ), 0) AS runless_item_count
+          ), 0) AS runless_item_count,
+          CASE WHEN EXISTS (
+            SELECT 1 FROM orchestration_v2_projection_threads t WHERE t.thread_id=totals.thread_id
+              AND json_extract(t.payload_json, '$.forkHistoryMaterialized')=1
+          ) THEN (
+            SELECT count(*) FROM orchestration_v2_projection_turn_items item
+            WHERE item.thread_id=totals.thread_id AND item.type='fork'
+              AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs marker_run WHERE marker_run.run_id=item.run_id AND marker_run.status='rolled_back')
+          ) ELSE 0 END AS materialized_fork_marker_count
         FROM orchestration_v2_projection_thread_item_counts totals
         WHERE totals.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
       `;
@@ -8891,7 +8919,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           (row) =>
             [
               ThreadId.make(row.thread_id),
-              { itemCount: row.item_count, runlessItemCount: row.runless_item_count },
+              {
+                itemCount: row.item_count,
+                runlessItemCount: row.runless_item_count,
+                materializedForkMarkerCount: row.materialized_fork_marker_count,
+              },
             ] as const,
         ),
       );
@@ -9001,7 +9033,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               )
               AND NOT EXISTS (
                 SELECT 1 FROM orchestration_v2_projection_runtime_requests request
-                WHERE request.thread_id = t.thread_id AND request.status = 'pending'
+                WHERE request.thread_id = t.thread_id AND ${Historical.pendingRuntimeRequest(sql, "request")}
               )
               AND NOT EXISTS (
                 SELECT 1 FROM orchestration_v2_projection_turn_items link
@@ -9163,7 +9195,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly itemCountsByThreadId: ReadonlyMap<ThreadId, Map<RunId, number>>;
         readonly shellItemCountsByThreadId: ReadonlyMap<
           ThreadId,
-          { readonly itemCount: number; readonly runlessItemCount: number }
+          {
+            readonly itemCount: number;
+            readonly runlessItemCount: number;
+            readonly materializedForkMarkerCount: number;
+          }
         >;
         readonly providerThreadsByThreadId: ReadonlyMap<
           ThreadId,
@@ -9341,6 +9377,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
           itemCount: shellItemCountsByThreadId.get(thread.id)?.itemCount ?? 0,
           runlessItemCount: shellItemCountsByThreadId.get(thread.id)?.runlessItemCount ?? 0,
+          materializedForkMarkerCount:
+            shellItemCountsByThreadId.get(thread.id)?.materializedForkMarkerCount ?? 0,
           updatedAt: thread.updatedAt,
           runsById: runsByThreadId.get(ThreadId.make(row.thread_id)) ?? new Map(),
           inheritedRunIds:
@@ -9672,7 +9710,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             )
             OR t.thread_id IN (
               SELECT request.thread_id FROM orchestration_v2_projection_runtime_requests request
-              WHERE request.status = 'pending'
+              WHERE ${Historical.pendingRuntimeRequest(sql, "request")}
             )
             -- Same predicates as the shell's pending item and link reads, for their partial indexes.
             OR t.thread_id IN (

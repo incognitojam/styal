@@ -150,7 +150,9 @@ interface PeerLinkRow {
   readonly fenced: number;
 }
 
-const decodeUrls = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
+export const decodeStoredUrls = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
 const encodeUrls = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
 const decodeAccess = Schema.decodeUnknownEffect(AuthMcpClientAccess);
 
@@ -303,7 +305,7 @@ const make = Effect.gen(function* () {
     return {
       environmentId: EnvironmentId.make(row.environment_id),
       label: row.label,
-      urls: yield* decodeUrls(row.urls_json),
+      urls: yield* decodeStoredUrls(row.urls_json),
       access: yield* decodeAccess(row.access),
       linkedAt: DateTime.makeUnsafe(row.linked_at),
       // Its token predates link fencing, so the peer would not fence its work:
@@ -670,7 +672,7 @@ const make = Effect.gen(function* () {
   /** Best effort: a peer that is gone or too old to revoke lets its session expire instead. */
   const revokeAtPeer = Effect.fn("PeerLinks.revokeAtPeer")(
     function* (environmentId: EnvironmentId, urlsJson: string, token: string) {
-      const urls = yield* decodeUrls(urlsJson);
+      const urls = yield* decodeStoredUrls(urlsJson);
       // A race over no addresses never settles.
       if (urls.length === 0) return false;
       yield* Effect.raceAll(

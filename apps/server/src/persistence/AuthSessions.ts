@@ -1,3 +1,4 @@
+import * as Historical from "./historical.ts";
 import * as Context from "effect/Context";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -151,7 +152,7 @@ export class AuthSessionRepository extends Context.Service<
 const AuthSessionDbRow = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
-  scopes: Schema.fromJsonString(AuthEnvironmentScopes),
+  scopes: Historical.authScopes,
   method: ServerAuthSessionMethod,
   clientLabel: Schema.NullOr(Schema.String),
   clientIpAddress: Schema.NullOr(Schema.String),

@@ -113,15 +113,14 @@ export const acceptImmediateWebhookDedupe = Effect.fn(
 const PendingTaskJson = Schema.fromJsonString(ScheduledTask);
 export const encodePendingTask = Schema.encodeEffect(PendingTaskJson);
 export const decodePendingTask = Schema.decodeUnknownEffect(PendingTaskJson);
-const PendingRequestJson = Schema.fromJsonString(
-  Schema.Struct({
-    method: Schema.String,
-    path: Schema.String,
-    query: Schema.String,
-    headers: Schema.Record(Schema.String, Schema.String),
-    bodyText: Schema.String,
-  }),
-);
+export const PendingRequest = Schema.Struct({
+  method: Schema.String,
+  path: Schema.String,
+  query: Schema.String,
+  headers: Schema.Record(Schema.String, Schema.String),
+  bodyText: Schema.String,
+});
+const PendingRequestJson = Schema.fromJsonString(PendingRequest);
 const encodePendingRequest = Schema.encodeEffect(PendingRequestJson);
 export const decodePendingRequest = Schema.decodeUnknownEffect(PendingRequestJson);
 export const dedupeError = (cause: unknown) =>

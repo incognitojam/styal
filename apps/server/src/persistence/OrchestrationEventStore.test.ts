@@ -470,7 +470,7 @@ layer("OrchestrationEventStore", (it) => {
     ["application", "thread"],
     ["application", "project"],
   ] as const)(
-    "%s replay skips unknown %s types but rejects malformed known payloads",
+    "%s replay skips unknown %s types and isolates malformed client replay payloads",
     ([reader, aggregateKind]) =>
       Effect.gen(function* () {
         const store = yield* OrchestrationEventStore.OrchestrationEventStore;
@@ -549,9 +549,20 @@ layer("OrchestrationEventStore", (it) => {
           aggregateKind === "thread" ? "thread.metadata-updated" : "project.created",
           "{}",
         );
+        assert.deepEqual(yield* read(beforeBroken, broken, true), []);
         assert.isTrue(
-          isPersistenceDecodeError(yield* read(beforeBroken, broken, true).pipe(Effect.flip)),
+          isPersistenceDecodeError(yield* read(beforeBroken, broken).pipe(Effect.flip)),
         );
+        if (aggregateKind === "thread") {
+          yield* insertRow(1_006, "legacy-usage.imported", "{}");
+          yield* insertRow(1_007, "message.mentioned-times-checked", "{}");
+          const last = yield* insertRow(1_008, knownType, knownPayload);
+          assert.deepEqual(yield* read(broken, last), [last]);
+          assert.deepEqual(yield* read(beforeBroken, last, true), [last]);
+          yield* insertRow(1_009, "subagent.updated", "not JSON");
+          const final = yield* insertRow(1_010, knownType, knownPayload);
+          assert.deepEqual(yield* read(beforeBroken, final, true), [last, final]);
+        }
       }),
   );
 });

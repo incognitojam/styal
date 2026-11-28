@@ -408,7 +408,7 @@ function webhookEndpoint(
 }
 
 // Runs per task row; list and lookup operations already own the span.
-const decodeRow = Effect.fnUntraced(
+export const decodeStoredTask = Effect.fnUntraced(
   function* (row: ScheduledTaskRow, origin: WebhookOrigin | null = null) {
     const schedule = yield* decodeScheduleJson(row.schedule_json);
     const webhook = schedule.type === "webhook" ? webhookEndpoint(row, origin) : undefined;
@@ -463,7 +463,7 @@ export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(funct
   `.pipe(NodeSqliteClient.readOnly);
   const tasks: ScheduledTask[] = [];
   for (const row of rows) {
-    const decoded = yield* Effect.result(decodeRow(row));
+    const decoded = yield* Effect.result(decodeStoredTask(row));
     if (Result.isSuccess(decoded)) {
       const task = decoded.success;
       // next_run_at is freeform; skip unparseable values before they defect the poll.
@@ -573,7 +573,7 @@ export const layer = Layer.effect(
       const origin = yield* readWebhookOrigin;
       return yield* Effect.forEach(
         rows,
-        (row) => decodeRow(row, origin).pipe(Effect.map(withPolicy)),
+        (row) => decodeStoredTask(row, origin).pipe(Effect.map(withPolicy)),
         { concurrency: 1 },
       );
     });
@@ -616,7 +616,7 @@ export const layer = Layer.effect(
       );
       const row = rows[0];
       if (row === undefined) return null;
-      return withPolicy(yield* decodeRow(row, yield* readWebhookOrigin));
+      return withPolicy(yield* decodeStoredTask(row, yield* readWebhookOrigin));
     });
 
     const findWebhookCredentials = (id: ScheduledTaskId) =>
@@ -1169,7 +1169,7 @@ export const layer = Layer.effect(
         const origin = yield* readWebhookOrigin;
         const record = Effect.gen(function* () {
           const [row] = yield* getRows(task.id);
-          const current = row === undefined ? null : yield* decodeRow(row, origin);
+          const current = row === undefined ? null : yield* decodeStoredTask(row, origin);
           const scheduleSource = current ?? task;
           const completed: ScheduledTask = {
             ...scheduleSource,
@@ -1372,7 +1372,7 @@ export const layer = Layer.effect(
         stuck,
         (row) =>
           Effect.gen(function* () {
-            const decoded = yield* Effect.result(decodeRow(row));
+            const decoded = yield* Effect.result(decodeStoredTask(row));
             if (Result.isSuccess(decoded)) {
               yield* sql`
                 UPDATE scheduled_tasks
@@ -2214,7 +2214,7 @@ export const layer = Layer.effect(
       ) {
         return yield* notFound;
       }
-      const task = yield* decodeRow(row);
+      const task = yield* decodeStoredTask(row);
       yield* Effect.annotateCurrentSpan({ "scheduled_task.id": task.id });
       const schedule = task.schedule;
       if (schedule.type !== "webhook") return yield* notFound;

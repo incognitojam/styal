@@ -1,3 +1,4 @@
+import * as Historical from "../persistence/historical.ts";
 import {
   CheckpointId,
   CheckpointScopeId,
@@ -356,10 +357,12 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             : sql`candidate.available_at <= ${availableBefore}`
         }
         AND candidate.status = 'pending'
+        AND candidate.effect_type NOT IN ${sql.in(Historical.historicalEffectTypes)}
         AND NOT EXISTS (
           SELECT 1
           FROM orchestration_v2_effect_outbox AS active
           WHERE active.thread_id = candidate.thread_id
+            AND active.effect_type NOT IN ${sql.in(Historical.historicalEffectTypes)}
             AND (
               active.status = 'running'
               OR (
@@ -408,9 +411,10 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
     };
 
     const decodeRows = (operation: string, rows: ReadonlyArray<EffectRow>) =>
-      Effect.forEach(rows, rowToEffect).pipe(
-        Effect.mapError((cause) => new EffectOutboxError({ operation, cause })),
-      );
+      Effect.forEach(
+        rows.filter((row) => !Historical.isHistoricalEffectType(row.effect_type)),
+        rowToEffect,
+      ).pipe(Effect.mapError((cause) => new EffectOutboxError({ operation, cause })));
 
     const service: EffectOutboxV2Shape = {
       enqueue: Effect.fn("EffectOutbox.enqueue")(
@@ -462,7 +466,9 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           NodeSqliteClient.readOnly,
           Effect.flatMap((rows) => {
             const row = rows[0];
-            return row === undefined ? Effect.succeedNone : rowToEffect(row).pipe(Effect.asSome);
+            return row === undefined || Historical.isHistoricalEffectType(row.effect_type)
+              ? Effect.succeedNone
+              : rowToEffect(row).pipe(Effect.asSome);
           }),
           Effect.mapError((cause) => new EffectOutboxError({ operation: "get", effectId, cause })),
         ),

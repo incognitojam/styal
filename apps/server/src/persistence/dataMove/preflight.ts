@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
 import type * as Issue from "effect/SchemaIssue";
 import * as SqlClient from "effect/sql/SqlClient";
 import { SqlError } from "effect/sql/SqlError";
@@ -21,12 +22,9 @@ import {
   rowToApplicationStoredEvent,
 } from "../OrchestrationEventStore.ts";
 import { columnCodecs, projectionCodecs, schemaKeys } from "./codecs.ts";
-import {
-  backgroundCommand,
-  historicalPayloads,
-  removedFields,
-  serverCapability,
-} from "./preflightKnown.ts";
+import { historicalPayloads, removedFields } from "./preflightKnown.ts";
+import * as Historical from "../historical.ts";
+import { backgroundCommand, serverCapability } from "../historical.ts";
 import { OrchestrationEffectRequestV2 } from "../../orchestration-v2/EffectOutbox.ts";
 import { ProjectDbRow } from "../../orchestration-v2/ProjectStore.ts";
 import source from "./source.json" with { type: "json" };
@@ -171,6 +169,9 @@ type Counts = {
   rejected: number;
   failures: Record<string, number>;
   unknownFields: Record<string, number>;
+  archiveCandidateRows: number;
+  archiveCandidateBytes: number;
+  jsonColumns: Record<string, { unknownRows: number; unknownBytes: number }>;
   unexpected: number;
 };
 function issues(
@@ -209,11 +210,16 @@ const eventHeader = C.OrchestrationV2StoredEvent.mapFields(({ sequence, commandI
 const eventEnvelope = C.OrchestrationV2DomainEventJson.members[0].mapFields(
   ({ type: _type, payload: _payload, ...fields }) => fields,
 );
-const sourceEffectKinds = new Set([
-  "thread-report.check",
-  "message.mentioned-times.check",
-  "delegated-task.wake-timeout",
-]);
+const v2Metadata = eventEnvelope.mapFields(
+  ({ runId, nodeId, driver, providerInstanceId, rawEventId }) => ({
+    runId,
+    nodeId,
+    driver,
+    providerInstanceId,
+    rawEventId,
+  }),
+);
+const sourceEffectKinds = new Set<string>(Historical.historicalEffectTypes);
 const effectKinds = OrchestrationEffectRequestV2.members.map((codec) =>
   Schema.is(codec.fields.type),
 );
@@ -233,6 +239,59 @@ function knownUnknown(record: string, path: readonly PropertyKey[]) {
   return (removedFields[record] ?? []).some(
     (known) => name === known || name.startsWith(known + "."),
   );
+}
+function matchesLiteral(ast: SchemaAST.AST, value: unknown): boolean | undefined {
+  if (ast._tag === "Literal") return ast.literal === value;
+  if (ast._tag === "Null") return value === null;
+  if (ast._tag !== "Union") return undefined;
+  const matches = ast.types.map((type) => matchesLiteral(type, value));
+  return matches.includes(undefined) ? undefined : matches.includes(true);
+}
+function hasSchemaPath(
+  ast: SchemaAST.AST,
+  path: readonly PropertyKey[],
+  value: unknown,
+  depth = 0,
+): boolean {
+  if (path.length === 0 || depth > 32) return true;
+  if (ast._tag === "Suspend") return hasSchemaPath(ast.thunk(), path, value, depth + 1);
+  if (ast._tag === "Union") {
+    const matching = ast.types.filter(
+      (member) =>
+        member._tag !== "Objects" ||
+        !object(value) ||
+        member.propertySignatures.every(
+          (field) =>
+            !Object.hasOwn(value, field.name) ||
+            matchesLiteral(field.type, (value as Record<PropertyKey, unknown>)[field.name]) !==
+              false,
+        ),
+    );
+    return (matching.length ? matching : ast.types).some((member) =>
+      hasSchemaPath(member, path, value, depth + 1),
+    );
+  }
+  const [key, ...rest] = path;
+  if (ast._tag === "Objects") {
+    const field = ast.propertySignatures.find((field) => field.name === key);
+    const types = field ? [field.type] : ast.indexSignatures.map((index) => index.type);
+    return types.some((type) =>
+      hasSchemaPath(
+        type,
+        rest,
+        object(value) ? (value as Record<PropertyKey, unknown>)[key!] : undefined,
+        depth + 1,
+      ),
+    );
+  }
+  if (ast._tag === "Arrays" && typeof key === "number") {
+    const type = ast.elements[key];
+    return (type ? [type] : ast.rest).some((type) =>
+      hasSchemaPath(type, rest, Array.isArray(value) ? value[key] : undefined, depth + 1),
+    );
+  }
+  // Opaque or unsupported AST nodes cannot prove a field unknown.
+  return ["Unknown", "Any", "ObjectKeyword", "Declaration"].includes(ast._tag);
 }
 function compatibility(value: unknown, path: readonly PropertyKey[] = []): unknown {
   if (Array.isArray(value)) return value.map((v, i) => compatibility(v, [...path, i]));
@@ -264,31 +323,62 @@ function inspect(
   record: string,
   kind = record,
 ) {
-  const failures = diagnose(codec, value);
-  const historicalFields = (v: unknown, path: readonly PropertyKey[] = [], depth = 0) => {
-    if (depth > 32) {
-      counts.unexpected++;
-      return;
-    }
-    if (Array.isArray(v)) {
-      v.forEach((child, i) => historicalFields(child, [...path, i], depth + 1));
-      return;
-    }
-    if (!object(v)) return;
-    for (const [key, child] of Object.entries(v)) {
-      const shape =
-        key === "responseCapability" && object(child) && child.type === "server"
-          ? serverCapability
-          : key === "command" && path.includes("pendingBackgroundTasks") && object(child)
-            ? backgroundCommand
-            : undefined;
-      if (shape)
-        for (const failure of diagnose(shape, child))
-          failures.push({ ...failure, path: [...path, key, ...failure.path] });
-      historicalFields(child, [...path, key], depth + 1);
-    }
-  };
-  historicalFields(value);
+  const failures: { path: readonly PropertyKey[]; tag: string }[] = [];
+  const envelope =
+    object(value) && typeof value.type === "string" && Object.hasOwn(value, "payload");
+  const rawRecord = envelope ? value.payload : value;
+  const basePath: readonly PropertyKey[] = envelope ? ["payload"] : [];
+  if (
+    record === "runtime_requests" &&
+    object(rawRecord) &&
+    object(rawRecord.responseCapability) &&
+    rawRecord.responseCapability.type === "server"
+  ) {
+    const capability = rawRecord.responseCapability;
+    for (const failure of diagnose(serverCapability, capability))
+      failures.push({ ...failure, path: [...basePath, "responseCapability", ...failure.path] });
+    if (Object.hasOwn(capability, "attention"))
+      failures.push({
+        tag: "UnexpectedKey",
+        path: [...basePath, "responseCapability", "attention"],
+      });
+  }
+  if (
+    record === "provider_threads" &&
+    object(rawRecord) &&
+    Array.isArray(rawRecord.pendingBackgroundTasks)
+  ) {
+    rawRecord.pendingBackgroundTasks.forEach((task: unknown, index) => {
+      if (!object(task) || !object(task.command)) return;
+      const at = [...basePath, "pendingBackgroundTasks", index, "command"];
+      for (const failure of diagnose(backgroundCommand, task.command))
+        failures.push({ ...failure, path: [...at, ...failure.path] });
+      for (const key of Object.keys(task.command))
+        failures.push({ tag: "UnexpectedKey", path: [...at, key] });
+    });
+  }
+  const runtimeValue =
+    object(value) && typeof value.type === "string" && Object.hasOwn(value, "payload")
+      ? record === "projects"
+        ? Historical.projectEvent(value)
+        : { ...value, payload: Historical.threadEventPayload(value.type, value.payload) }
+      : record === "runtime_requests"
+        ? Historical.runtimeRequest(value)
+        : record === "provider_threads"
+          ? Historical.providerThread(value)
+          : (record === "auth_sessions.scopes" || record === "auth_pairing_links.scopes") &&
+              Array.isArray(value)
+            ? value.filter((scope) => scope !== "devices:operate")
+            : value;
+  const result = Schema.decodeUnknownResult(codec, { errors: "all" })(runtimeValue);
+  if (Result.isFailure(result)) {
+    const ast = Schema.toEncoded(codec).ast;
+    failures.push(
+      ...diagnose(codec, value).filter(
+        (failure) => failure.tag === "UnexpectedKey" && !hasSchemaPath(ast, failure.path, value),
+      ),
+    );
+  }
   const seen = new Set<string>();
   for (const failure of failures.filter((f) => f.tag === "UnexpectedKey")) {
     const path = safePath(failure.path);
@@ -324,16 +414,39 @@ function inspect(
     };
     nested(subtree, failure.path, 0);
   }
-  const result = Schema.decodeUnknownResult(codec, { errors: "all" })(value);
   if (Result.isFailure(result)) {
     counts.rejected++;
     const paths = new Set<string>();
-    issues(result.failure.issue, (path) => paths.add(safePath(path)));
+    issues(result.failure.issue, (path, reason) => paths.add(`${safePath(path)} / ${reason}`));
     for (const path of paths) bump(counts.failures, `${kind} / ${path}`);
     const fixed = Schema.decodeUnknownResult(codec)(compatibility(value));
     if (Result.isFailure(fixed)) counts.unexpected++;
   } else {
-    const encoded = Schema.encodeUnknownResult(codec)(result.success);
+    // Keep task fields visible to the census while the runtime discards the old ownership task.
+    const censusRecord =
+      record === "provider_threads" &&
+      object(rawRecord) &&
+      Array.isArray(rawRecord.pendingBackgroundTasks)
+        ? {
+            ...rawRecord,
+            pendingBackgroundTasks: rawRecord.pendingBackgroundTasks.map((task: unknown) =>
+              object(task) && isBackgroundCommand(task.command)
+                ? { ...task, command: undefined }
+                : task,
+            ),
+          }
+        : undefined;
+    const censusValue =
+      censusRecord === undefined
+        ? runtimeValue
+        : envelope
+          ? { ...value, payload: censusRecord }
+          : censusRecord;
+    const censusDecoded =
+      censusRecord === undefined ? result : Schema.decodeUnknownResult(codec)(censusValue);
+    const encoded = Schema.encodeUnknownResult(codec)(
+      Result.isSuccess(censusDecoded) ? censusDecoded.success : result.success,
+    );
     if (Result.isSuccess(encoded)) {
       const compare = (
         before: unknown,
@@ -341,29 +454,42 @@ function inspect(
         path: readonly PropertyKey[] = [],
         depth = 0,
       ) => {
+        if (before === after) return;
         if (depth > 32) {
           counts.unexpected++;
           return;
         }
-        if (Array.isArray(before) && Array.isArray(after))
-          before.forEach((v, i) => compare(v, after[i], [...path, i], depth + 1));
-        else if (object(before) && object(after))
+        if (Array.isArray(before))
+          before.forEach((v, i) => {
+            const identity = object(v) ? (v.contextId ?? v.id) : undefined;
+            const matches = (candidate: unknown) =>
+              object(candidate) && (candidate.contextId ?? candidate.id) === identity;
+            const retained = Array.isArray(after)
+              ? identity === undefined || matches(after[i])
+                ? after[i]
+                : after.find(matches)
+              : undefined;
+            compare(v, retained, [...path, i], depth + 1);
+          });
+        else if (object(before))
           for (const [key, child] of Object.entries(before)) {
             const at = [...path, key],
               name = safePath(at);
-            if (!Object.hasOwn(after, key)) {
+            if (!object(after) || !Object.hasOwn(after, key)) {
               if (!seen.has(name)) {
                 bump(counts.unknownFields, `${kind} / ${name}`);
                 seen.add(name);
                 if (!knownUnknown(record, at[0] === "payload" ? at.slice(1) : at))
                   counts.unexpected++;
               }
+              compare(child, undefined, at, depth + 1);
             } else compare(child, after[key], at, depth + 1);
           }
       };
-      compare(value, encoded.success);
+      compare(censusValue, encoded.success);
     }
   }
+  return seen.size > 0;
 }
 
 function mainRevision(filename: string) {
@@ -508,6 +634,9 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
           rejected: 0,
           failures: {},
           unknownFields: {},
+          archiveCandidateRows: 0,
+          archiveCandidateBytes: 0,
+          jsonColumns: {},
           unexpected: 0,
         };
         tables[table] = counts;
@@ -594,18 +723,20 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
               counts.rows++;
               const kind = eventKind(row.event_type);
               const failurePaths = new Set<string>();
-              const decoded = yield* rowToApplicationStoredEvent(row).pipe(Effect.result);
+              const decoded = Historical.isHistoricalEventType(row.event_type)
+                ? Result.succeed(undefined)
+                : yield* rowToApplicationStoredEvent(row).pipe(Effect.result);
               if (Result.isFailure(decoded)) {
                 counts.rejected++;
                 const paths = new Set<string>();
-                issues(decoded.failure.issue, (path) => {
+                issues(decoded.failure.issue, (path, reason) => {
                   if (
                     path.length === 1 &&
                     path[0] === "type" &&
                     C.isKnownOrchestrationV2EventType(row.event_type)
                   )
                     return;
-                  paths.add(safePath(path));
+                  paths.add(`${safePath(path)} / ${reason}`);
                 });
                 for (const path of paths) {
                   const key = `${kind} / ${path}`;
@@ -629,6 +760,9 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
                 rejected: 0,
                 failures: {},
                 unknownFields: {},
+                archiveCandidateRows: 0,
+                archiveCandidateBytes: 0,
+                jsonColumns: {},
                 unexpected: 0,
               };
               if (row.aggregate_kind === "thread") {
@@ -651,14 +785,14 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
                   kind,
                 );
                 inspect(diagnostic, eventEnvelope, envelope, "header", kind);
-                inspect(diagnostic, C.ApplicationEventMetadata, metadata, "metadata", kind);
+                inspect(diagnostic, v2Metadata, metadata, "metadata", kind);
                 if (historical) {
                   inspect(diagnostic, historical, payload, "historical", kind);
                 } else {
                   const event = { ...envelope, type: row.event_type, payload };
                   const payloadKind =
-                    row.event_type === "thread.created"
-                      ? "threads"
+                    row.event_type === "thread.pull-request-link-updated"
+                      ? row.event_type
                       : typeof row.event_type === "string"
                         ? row.event_type.split(".")[0]!.replaceAll("-", "_") + "s"
                         : "events";
@@ -722,11 +856,74 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
             for (const row of rows) {
               counts.rows++;
               const rejectedBefore = counts.rejected;
+              let rowHasUnknown = false;
+              let unknownBytes = 0;
+              const inspectColumn = (
+                column: string,
+                jsonCodec: Schema.Top & {
+                  readonly DecodingServices: never;
+                  readonly EncodingServices: never;
+                },
+              ) => {
+                const json = row[column];
+                if (typeof json !== "string") return;
+                if (table === "projection_projects" && column === "scripts_json") {
+                  bump(counts.unknownFields, "scripts_json / scripts");
+                  const bytes = Buffer.byteLength(json, "utf8");
+                  counts.jsonColumns[column] = {
+                    unknownRows: (counts.jsonColumns[column]?.unknownRows ?? 0) + 1,
+                    unknownBytes: (counts.jsonColumns[column]?.unknownBytes ?? 0) + bytes,
+                  };
+                  rowHasUnknown = true;
+                  unknownBytes += bytes;
+                  return;
+                }
+                const payload = parse(json);
+                if (payload === undefined) {
+                  counts.rejected++;
+                  counts.unexpected++;
+                  bump(counts.failures, `${column} / invalid-json`);
+                  return;
+                }
+                const found = inspect(counts, jsonCodec, payload, `${table}.${column}`, column);
+                if (found) {
+                  const bytes = Buffer.byteLength(json, "utf8");
+                  const summary = (counts.jsonColumns[column] ??= {
+                    unknownRows: 0,
+                    unknownBytes: 0,
+                  });
+                  summary.unknownRows++;
+                  summary.unknownBytes += bytes;
+                  rowHasUnknown = true;
+                  unknownBytes += bytes;
+                }
+              };
               if (table === "orchestration_v2_effect_outbox") {
                 const effect =
                   effectKinds.some((isKind) => isKind(row.effect_type)) ||
                   sourceEffectKinds.has(String(row.effect_type));
                 if (!effect) counts.unexpected++;
+                const raw = parse(String(row.payload_json));
+                if (sourceEffectKinds.has(String(row.effect_type))) {
+                  bump(counts.unknownFields, `${String(row.effect_type)} / payload`);
+                  rowHasUnknown = true;
+                  unknownBytes += Buffer.byteLength(String(row.payload_json), "utf8");
+                } else if (raw === undefined) {
+                  counts.rejected++;
+                  counts.unexpected++;
+                  bump(counts.failures, "effect-outbox / invalid-json");
+                } else if (
+                  inspect(
+                    counts,
+                    OrchestrationEffectRequestV2,
+                    raw,
+                    "effects",
+                    effect ? String(row.effect_type) : "unrecognised-effect",
+                  )
+                ) {
+                  rowHasUnknown = true;
+                  unknownBytes += Buffer.byteLength(String(row.payload_json), "utf8");
+                }
                 bump(
                   census,
                   `${table} / ${effect ? String(row.effect_type) : "unrecognised-effect"} / ${states.has(String(row.status)) ? String(row.status) : "unrecognised-state"}`,
@@ -789,7 +986,6 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
                     faviconPath: row.favicon_path,
                     additionalInstructions: row.additional_instructions,
                     projectIcon: row.project_icon_json,
-                    scripts: row.scripts_json,
                     trackedFolders: "[]",
                     pinnedAt: row.pinned_at,
                     archivedAt: row.archived_at,
@@ -808,7 +1004,10 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
                   bump(counts.failures, `${record} / invalid-json`);
                   continue;
                 }
-                inspect(counts, codec, payload, record);
+                if (inspect(counts, codec, payload, record)) {
+                  rowHasUnknown = true;
+                  unknownBytes += Buffer.byteLength(String(row.payload_json), "utf8");
+                }
                 if (object(payload))
                   for (const marker of markers)
                     if (
@@ -824,19 +1023,11 @@ export const preflight = Effect.fn("DataMove.preflight")(function* (
               }
               for (const [key, jsonCodec] of Object.entries(columnCodecs)) {
                 const [owner, column] = key.split(".");
-                if (
-                  owner === table &&
-                  table !== "projection_projects" &&
-                  row[column!] !== null &&
-                  row[column!] !== undefined
-                ) {
-                  const payload = parse(String(row[column!]));
-                  if (payload === undefined) {
-                    counts.rejected++;
-                    counts.unexpected++;
-                    bump(counts.failures, `${column} / invalid-json`);
-                  } else inspect(counts, jsonCodec, payload, key, column!);
-                }
+                if (owner === table) inspectColumn(column!, jsonCodec);
+              }
+              if (rowHasUnknown) {
+                counts.archiveCandidateRows++;
+                counts.archiveCandidateBytes += unknownBytes;
               }
               if (counts.rejected > rejectedBefore) counts.rejected = rejectedBefore + 1;
             }

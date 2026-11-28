@@ -2,24 +2,6 @@ import * as C from "@t3tools/contracts";
 import * as S from "effect/Schema";
 
 // Historical shapes from source 68e0ea592ac; these diagnose differences, never adapt stored data.
-export const serverCapability = S.Struct({
-  type: S.Literal("server"),
-  attention: S.optional(S.Literal("input")),
-});
-export const backgroundCommand = S.Struct({
-  nativeItemId: C.TrimmedNonEmptyString,
-  turnItemId: C.TurnItemId,
-  nodeId: C.NodeId,
-  threadId: C.ThreadId,
-  runId: S.NullOr(C.RunId),
-  rootNodeId: C.NodeId,
-  parentNodeId: C.NodeId,
-  providerThreadId: S.NullOr(C.ProviderThreadId),
-  providerTurnId: S.NullOr(C.ProviderTurnId),
-  ordinal: C.NonNegativeInt,
-  input: S.String,
-  startedAt: C.TrimmedNonEmptyString,
-});
 const usd = S.Number.check(S.isFinite(), S.isGreaterThanOrEqualTo(0));
 const historicalTurnUsage = C.TurnTokenUsage.mapMembers((members) =>
   members.map((member) =>
@@ -98,9 +80,30 @@ export const historicalPayloads = {
     }),
   }),
 };
+const historicalContextFields = [
+  "version",
+  "contextId",
+  "label",
+  "kind",
+  "provider",
+  "repository",
+  "number",
+  "title",
+  "url",
+  "state",
+  "author",
+  "body",
+  "comments",
+];
 export const removedFields: Record<string, readonly string[]> = {
-  projects: ["scripts"],
+  projects: ["scripts", "pinOrderKey"],
+  "thread.pull-request-link-updated": [
+    "turnContext",
+    "snapshot.autoMergeEnabled",
+    "snapshot.inMergeQueue",
+  ],
   threads: [
+    "forkHistoryMaterialized",
     "branchTurnContext",
     "reportDismissals",
     "answerNotes",
@@ -111,9 +114,19 @@ export const removedFields: Record<string, readonly string[]> = {
     "pullRequests.[].turnContext",
     "pullRequests.[].snapshot.autoMergeEnabled",
     "pullRequests.[].snapshot.inMergeQueue",
+    "guestShare.messages.[].quotes",
   ],
   runs: ["cancelledByThreadId", "restartHeldRunIds"],
-  provider_threads: ["mcpServerName", "inlineContextIds", "pendingBackgroundTasks.[].toolUseId"],
+  runtime_requests: ["responseCapability.attention"],
+  provider_threads: [
+    "nativeMetadata.mcpServerName",
+    "inlineContextIds",
+    "pendingBackgroundTasks.[].toolUseId",
+    "pendingBackgroundTasks.[].providerInstanceId",
+    "pendingBackgroundTasks.[].childThreadId",
+    "pendingBackgroundTasks.[].origin",
+    "pendingBackgroundTasks.[].command",
+  ],
   provider_turns: [
     "nativePromptRef",
     "turnModel",
@@ -124,16 +137,23 @@ export const removedFields: Record<string, readonly string[]> = {
     "turnTokenUsage.costUsd",
   ],
   "projection_thread_pull_requests.snapshot_json": ["autoMergeEnabled", "inMergeQueue"],
+  "projection_thread_messages.context_json": historicalContextFields.map(
+    (field) => `records.[].${field}`,
+  ),
   messages: [
+    ...historicalContextFields.map((field) => `context.records.[].${field}`),
     "report",
     "reportAnswer",
     "usageLimitContinuationOfRunId",
     "legacyTurnId",
     "mentionedTimes",
     "notification.source.childThreadId",
+    "notification.source.pullRequest.supersedesUpdates",
+    "notification.source.otherPullRequests.[].supersedesUpdates",
   ],
   checkpoints: ["legacyTurnId", "assistantMessageId", "legacyCheckpointTurnCount"],
   turn_items: [
+    ...historicalContextFields.map((field) => `context.records.[].${field}`),
     "report",
     "legacyTurnId",
     "legacyActivities",
@@ -144,6 +164,18 @@ export const removedFields: Record<string, readonly string[]> = {
     "providerStall",
     "viewedDocument",
     "toolName",
+    "deferredWork.typeCounts",
+    "outputOmitted",
+    "source.childThreadId",
+    "source.pullRequest.supersedesUpdates",
+    "source.otherPullRequests.[].supersedesUpdates",
+    "remoteChild.followsAfterRunId",
+    "remoteChild.followUpOf",
   ],
-  subagents: ["supersedesUpdates", "followsAfterRunId", "followUpOf", "wakeWhen"],
+  subagents: [
+    "supersedesUpdates",
+    "remoteChild.followsAfterRunId",
+    "remoteChild.followUpOf",
+    "wakeWhen",
+  ],
 };

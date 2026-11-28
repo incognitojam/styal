@@ -1,3 +1,4 @@
+import { PendingRequest } from "../../scheduledTasks/webhookDedupe.ts";
 import * as Contracts from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -21,6 +22,16 @@ export const projectionCodecs = {
 };
 
 export const columnCodecs = {
+  "auth_sessions.scopes": Contracts.AuthEnvironmentScopes,
+  "auth_pairing_links.scopes": Contracts.AuthEnvironmentScopes,
+  "peer_environment_links.urls_json": Schema.Array(Schema.String),
+  "provider_session_runtime.resume_cursor_json": Schema.Unknown,
+  "provider_session_runtime.runtime_payload_json": Schema.Unknown,
+  "scheduled_task_webhook_deliveries.headers_json": Schema.Record(Schema.String, Schema.String),
+  "scheduled_task_webhook_deliveries.missing_fields_json": Schema.Array(Schema.String),
+  "scheduled_task_webhook_pending.task_json": Contracts.ScheduledTask,
+  "scheduled_task_webhook_pending.request_json": PendingRequest,
+  "scheduled_task_webhook_pending.delivery_ids_json": Schema.Array(Schema.String),
   "projection_projects.scripts_json": Schema.Array(Contracts.ProjectScript),
   "projection_projects.default_model_selection_json": Contracts.ModelSelection,
   "projection_projects.project_icon_json": Contracts.StoredProjectIcon,

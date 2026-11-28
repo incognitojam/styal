@@ -1,3 +1,4 @@
+import * as Historical from "./historical.ts";
 import {
   ApplicationEventMetadata,
   ApplicationProjectEvent,
@@ -23,6 +24,7 @@ import { identity } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -56,7 +58,7 @@ export class OrchestrationEventStore extends Context.Service<
       readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, OrchestrationEventStoreError>;
 
-    /** Unknown event types fail unless skipUnknownEventTypes logs and drops them; only client replay may opt in. */
+    /** Historical fork events are omitted. Tolerant client replay also omits unknown or malformed rows. */
     readonly readAgentEvents: (input?: {
       readonly afterSequence?: number;
       readonly throughSequence?: number;
@@ -101,7 +103,7 @@ export class OrchestrationEventStore extends Context.Service<
     /** Replay from a cursor below this misses pruned events; resync from a snapshot instead. */
     readonly prunedThroughSequence: Effect.Effect<number, OrchestrationEventStoreError>;
 
-    /** Unknown event types fail unless skipUnknownEventTypes logs and drops them; only client replay may opt in. */
+    /** Historical fork events are omitted. Tolerant client replay also omits unknown or malformed rows. */
     readonly readApplicationEvents: (input: {
       readonly afterSequence: number;
       readonly throughSequence: number;
@@ -223,7 +225,7 @@ const rowToV2StoredEvent = Effect.fnUntraced(function* (row: ApplicationEventRow
     threadId: row.stream_id,
     type: row.event_type,
     occurredAt: row.occurred_at,
-    payload,
+    payload: Historical.threadEventPayload(row.event_type, payload),
     ...(values.runId === undefined ? {} : { runId: values.runId }),
     ...(values.nodeId === undefined ? {} : { nodeId: values.nodeId }),
     ...(values.driver === undefined ? {} : { driver: values.driver }),
@@ -240,19 +242,21 @@ const rowToV2StoredEvent = Effect.fnUntraced(function* (row: ApplicationEventRow
 });
 
 const rowToProjectEvent = Effect.fnUntraced(function* (row: ApplicationEventRow) {
-  return yield* decodeProjectEvent({
-    sequence: row.sequence,
-    eventId: row.event_id,
-    type: row.event_type,
-    aggregateKind: row.aggregate_kind,
-    aggregateId: row.stream_id,
-    occurredAt: row.occurred_at,
-    commandId: row.command_id,
-    causationEventId: row.causation_event_id,
-    correlationId: row.correlation_id,
-    payload: yield* parseJson(row.payload_json),
-    metadata: yield* parseJson(row.metadata_json),
-  });
+  return yield* decodeProjectEvent(
+    Historical.projectEvent({
+      sequence: row.sequence,
+      eventId: row.event_id,
+      type: row.event_type,
+      aggregateKind: row.aggregate_kind,
+      aggregateId: row.stream_id,
+      occurredAt: row.occurred_at,
+      commandId: row.command_id,
+      causationEventId: row.causation_event_id,
+      correlationId: row.correlation_id,
+      payload: yield* parseJson(row.payload_json),
+      metadata: yield* parseJson(row.metadata_json),
+    }),
+  );
 });
 
 export function rowToApplicationStoredEvent(
@@ -306,11 +310,14 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 function makeRestoredPayload(sql: SqlClient.SqlClient) {
   return sql`CASE
     WHEN orchestration_events.event_type IN ('subagent.updated', 'turn-item.updated')
-      AND json_type(orchestration_events.payload_json, '$.promptSequence') = 'integer'
+      AND CASE WHEN json_valid(orchestration_events.payload_json)
+        THEN json_type(orchestration_events.payload_json, '$.promptSequence') = 'integer'
+        ELSE 0 END
     THEN json_set(
       json_remove(orchestration_events.payload_json, '$.promptSequence'),
       '$.prompt',
-      (SELECT json_extract(anchor.payload_json, '$.prompt')
+      (SELECT CASE WHEN json_valid(anchor.payload_json)
+         THEN json_extract(anchor.payload_json, '$.prompt') END
        FROM orchestration_events AS anchor
        WHERE anchor.sequence = json_extract(orchestration_events.payload_json, '$.promptSequence'))
     )
@@ -605,14 +612,24 @@ const makeEventStore = Effect.gen(function* () {
     ).pipe(
       // Query the next page on the reader while this one decodes.
       Stream.bufferArray({ capacity: 1 }),
+      Stream.filter((row) => !Historical.isHistoricalEventType(row.event_type)),
       input?.skipUnknownEventTypes === true ? Stream.filterEffect(keepKnownEventTypeRow) : identity,
       Stream.mapEffect((row) =>
         rowToV2StoredEvent(row).pipe(
+          Effect.map(Result.succeed),
+          Effect.catchIf(
+            () => input?.skipUnknownEventTypes === true,
+            () =>
+              Effect.logWarning("Skipping malformed historical event during client replay", {
+                sequence: row.sequence,
+              }).pipe(Effect.as(Result.fail(undefined))),
+          ),
           Effect.mapError(
             toPersistenceDecodeError("OrchestrationEventStore.readAgentEvents:decode"),
           ),
         ),
       ),
+      Stream.filterMap(identity),
       Stream.withSpan("OrchestrationEventStore.readAgentEvents"),
     );
   };
@@ -743,14 +760,24 @@ const makeEventStore = Effect.gen(function* () {
     ).pipe(
       // Query the next page on the reader while this one decodes.
       Stream.bufferArray({ capacity: 1 }),
+      Stream.filter((row) => !Historical.isHistoricalEventType(row.event_type)),
       input.skipUnknownEventTypes === true ? Stream.filterEffect(keepKnownEventTypeRow) : identity,
       Stream.mapEffect((row) =>
         rowToApplicationStoredEvent(row).pipe(
+          Effect.map(Result.succeed),
+          Effect.catchIf(
+            () => input.skipUnknownEventTypes === true,
+            () =>
+              Effect.logWarning("Skipping malformed historical event during client replay", {
+                sequence: row.sequence,
+              }).pipe(Effect.as(Result.fail(undefined))),
+          ),
           Effect.mapError(
             toPersistenceDecodeError("OrchestrationEventStore.readApplicationEvents:decode"),
           ),
         ),
       ),
+      Stream.filterMap(identity),
       Stream.withSpan("OrchestrationEventStore.readApplicationEvents"),
     );
 

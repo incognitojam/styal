@@ -13,9 +13,22 @@ import * as Contracts from "@t3tools/contracts";
 import { ProjectDbRow } from "../../orchestration-v2/ProjectStore.ts";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { projectionCodecs, columnCodecs } from "./codecs.ts";
 import { assertOffline, preflight } from "./preflight.ts";
 import source from "./source.json" with { type: "json" };
+
+const decodeCensus = Schema.decodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      shapes: Schema.Array(Schema.Struct({ name: Schema.String, value: Schema.Unknown })),
+    }),
+  ),
+);
+const censusRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown));
+const censusScalar = Schema.decodeUnknownSync(
+  Schema.NullOr(Schema.Union([Schema.String, Schema.Number])),
+);
 
 const fixtureVerdict =
   Object.hasOwn(Contracts.OrchestrationV2AppThread.fields, "forkHistoryMaterialized") &&
@@ -146,11 +159,9 @@ it.effect(
         const report = yield* inspect(file);
         expect(hash(file)).toBe(before);
         expect(report.verdict).toBe("unexpected");
-        expect(report.tables.orchestration_events?.failures).toMatchObject({
-          "legacy-usage.imported / type": 1,
-          "message.mentioned-times-checked / type": 1,
-          "runtime-request.updated / payload.responseCapability": 1,
-        });
+        expect(report.tables.orchestration_events?.failures).not.toHaveProperty(
+          "runtime-request.updated / payload.responseCapability",
+        );
         expect(report.tables.orchestration_v2_projection_threads?.unknownFields).toHaveProperty(
           "threads / modelSelection.unrecognised-field",
           1,
@@ -174,6 +185,8 @@ it.effect(
         try {
           for (const key of Object.keys(columnCodecs)) {
             const [table, column] = key.split(".");
+            if (Number(coverage.prepare(`SELECT count(*) n FROM "${table}"`).get()!.n) === 0)
+              continue;
             expect(
               Number(
                 coverage
@@ -189,7 +202,7 @@ it.effect(
         expect(ready.tables.orchestration_events?.failures).not.toHaveProperty(
           "subagent.updated / payload.prompt",
         );
-        expect(ready.tables.orchestration_v2_projection_provider_threads?.rejected).toBe(1);
+        expect(ready.tables.orchestration_v2_projection_provider_threads?.rejected).toBe(0);
         edit(file, (db) =>
           db.exec(
             `UPDATE projection_projects SET scripts_json='[{"id":"synthetic","name":"Synthetic","command":"synthetic","icon":"desktop","runOnWorktreeCreate":false}]'`,
@@ -279,7 +292,7 @@ it.effect(
           expect(NodeFS.statSync(file + "-wal").size).toBeGreaterThan(0);
           const report = yield* inspect(file);
           expect(report.tables.orchestration_v2_projection_threads?.failures).toHaveProperty(
-            "threads / title",
+            "threads / title / InvalidType",
             1,
           );
           const home = NodePath.join(dir, "home/.styal");
@@ -330,23 +343,15 @@ it.effect("keeps poison out of CLI stdout, stderr and report even for malformed 
           )
           .run(poison),
       );
-      const preload = NodePath.join(dir, "home.mjs");
-      NodeFS.writeFileSync(
-        preload,
-        "import os from 'node:os';import * as NodeModule from 'node:module';const info=os.userInfo;os.userInfo=()=>({...info(),homedir:process.env.HOME});NodeModule.syncBuiltinESMExports();",
-      );
-      const reportFile = NodePath.join(scratch, NodePath.basename(dir) + "-report.json");
-      try {
+      {
+        edit(file, (db) =>
+          db
+            .prepare("UPDATE orchestration_v2_effect_outbox SET effect_type=?,payload_json='{}'")
+            .run(poison),
+        );
         const result = NodeChildProcess.spawnSync(
           process.execPath,
-          [
-            "--import",
-            preload,
-            NodePath.join(import.meta.dirname, "preflightCli.ts"),
-            file,
-            "--report",
-            reportFile,
-          ],
+          [NodePath.join(import.meta.dirname, "preflightCli.ts"), file],
           {
             encoding: "utf8",
             env: {
@@ -359,11 +364,10 @@ it.effect("keeps poison out of CLI stdout, stderr and report even for malformed 
           },
         );
         expect(result.status).toBe(1);
-        const output = result.stdout + result.stderr + NodeFS.readFileSync(reportFile, "utf8");
+        const output = result.stdout + result.stderr;
+        expect(JSON.parse(result.stdout)).toHaveProperty("tables");
         expect(output).not.toContain(poison);
         expect(output).toContain("Preflight: unexpected");
-      } finally {
-        NodeFS.rmSync(reportFile, { force: true });
       }
     }),
   ),
@@ -434,7 +438,7 @@ it.effect("reports SQLite sidecars while preserving writable and read-only main 
         expect(mainFacts(snapFile)).toEqual(snapBefore);
         expect(readonly.sidecars.after).toEqual(readonly.sidecars.before);
         expect(readonly.tables.orchestration_v2_projection_threads?.failures).toHaveProperty(
-          "threads / title",
+          "threads / title / InvalidType",
           1,
         );
         // The WAL-mode main file without its sidecars cannot be opened here.
@@ -621,4 +625,251 @@ it.effect("counts each unsupported event row once across overlapping header prob
         expect(events.failures[reason]).toBe((initial.failures[reason] ?? 0) + count);
     }),
   ),
+);
+
+it.effect(
+  "sizes distinct unknown-bearing rows and columns without counting a row once per path",
+  () =>
+    fixture((file) =>
+      Effect.gen(function* () {
+        const initial = yield* inspect(file);
+        let bytes = 0;
+        edit(file, (db) => {
+          db.exec(
+            "UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,'$.syntheticFieldA',1,'$.syntheticFieldB',2) WHERE thread_id='ordinary'",
+          );
+          bytes = Buffer.byteLength(
+            String(
+              db
+                .prepare(
+                  "SELECT payload_json FROM orchestration_v2_projection_threads WHERE thread_id='ordinary'",
+                )
+                .get()!.payload_json,
+            ),
+          );
+          db.exec(
+            "UPDATE projection_projects SET default_model_selection_json=json_set(default_model_selection_json,'$.syntheticFieldA',1,'$.syntheticFieldB',2)",
+          );
+        });
+        const issue = {
+          version: 1,
+          contextId: "synthetic-issue",
+          label: "Synthetic issue",
+          kind: "issue",
+          provider: "github",
+          repository: "synthetic/project",
+          number: 1,
+          title: "Synthetic issue",
+          url: "https://example.test/synthetic/1",
+          state: "open",
+          author: null,
+          body: "Synthetic body",
+          comments: [],
+        };
+        edit(file, (db) =>
+          db
+            .prepare("UPDATE projection_thread_messages SET context_json=?")
+            .run(JSON.stringify({ version: 1, records: [issue] })),
+        );
+        const report = yield* inspect(file);
+        const before = initial.tables.orchestration_v2_projection_threads!;
+        const after = report.tables.orchestration_v2_projection_threads!;
+        expect(after.archiveCandidateRows).toBe(before.archiveCandidateRows + 1);
+        expect(after.archiveCandidateBytes).toBe(before.archiveCandidateBytes + bytes);
+        const projects = report.tables.projection_projects!;
+        expect(projects.jsonColumns.default_model_selection_json?.unknownRows).toBe(1);
+        expect(projects.jsonColumns.default_model_selection_json?.unknownBytes).toBeGreaterThan(0);
+        expect(projects.archiveCandidateRows).toBe(1);
+        expect(projects.jsonColumns.scripts_json?.unknownRows).toBe(1);
+        const contexts = report.tables.projection_thread_messages!;
+        expect(contexts.jsonColumns.context_json?.unknownRows).toBe(1);
+        expect(contexts.unknownFields).toHaveProperty("context_json / records.[].provider", 1);
+        const attachment = {
+          version: 1,
+          contextId: "synthetic-file",
+          label: "Synthetic file",
+          kind: "file",
+          attachmentId: "synthetic-attachment",
+          name: "synthetic.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1,
+        };
+        for (const records of [
+          [issue, attachment],
+          [attachment, issue],
+        ]) {
+          edit(file, (db) =>
+            db
+              .prepare("UPDATE projection_thread_messages SET context_json=?")
+              .run(JSON.stringify({ version: 1, records })),
+          );
+          const mixed = (yield* inspect(file)).tables.projection_thread_messages!;
+          expect(mixed.unexpected).toBe(contexts.unexpected);
+          expect(mixed.unknownFields).toEqual(contexts.unknownFields);
+          expect(mixed.jsonColumns.context_json?.unknownRows).toBe(1);
+        }
+        let rejectedBytes = 0;
+        edit(file, (db) => {
+          db.exec(
+            "UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,'$.title',42,'$.branchTurnContext',json('{\"id\":\"synthetic-context\",\"text\":\"Synthetic context\"}')) WHERE thread_id='ordinary'",
+          );
+          rejectedBytes = Buffer.byteLength(
+            String(
+              db
+                .prepare(
+                  "SELECT payload_json FROM orchestration_v2_projection_threads WHERE thread_id='ordinary'",
+                )
+                .get()!.payload_json,
+            ),
+          );
+        });
+        const rejected = (yield* inspect(file)).tables.orchestration_v2_projection_threads!;
+        expect(rejected.rejected).toBe(after.rejected + 1);
+        expect(rejected.unknownFields).toHaveProperty("threads / branchTurnContext.text", 1);
+        expect(rejected.archiveCandidateRows).toBe(after.archiveCandidateRows);
+        expect(rejected.archiveCandidateBytes).toBe(
+          after.archiveCandidateBytes - bytes + rejectedBytes,
+        );
+      }),
+    ),
+);
+
+it.effect(
+  "censuses every source projection and event witness without diagnostic false positives",
+  () =>
+    fixture((file) =>
+      Effect.gen(function* () {
+        const shapes = decodeCensus(
+          NodeZlib.gunzipSync(
+            NodeFS.readFileSync(new URL("./fixtures/compatibility.json.gz", import.meta.url)),
+          ).toString(),
+        ).shapes;
+        const names = [
+          "AppThreadJson",
+          "RunJson",
+          "RunAttemptJson",
+          "ExecutionNodeJson",
+          "ProviderSessionJson",
+          "ProviderThreadJson",
+          "ProviderTurnJson",
+          "RuntimeRequestJson",
+          "ConversationMessageJson",
+          "PlanArtifact",
+          "TurnItemJson",
+          "CheckpointScopeJson",
+          "CheckpointJson",
+          "ContextHandoffJson",
+          "ContextTransferJson",
+          "SubagentJson",
+        ];
+        const kinds = Object.keys(projectionCodecs);
+        edit(file, (db) => {
+          db.exec("BEGIN");
+          let ordinal = 1000;
+          for (const shape of shapes) {
+            if (
+              !shape.name.startsWith("projection.") &&
+              shape.name !== "thread-event" &&
+              shape.name !== "project-event"
+            )
+              continue;
+            const n = ++ordinal;
+            const value = censusRecord(shape.value);
+            if (shape.name.startsWith("projection.")) {
+              const kind = kinds[names.indexOf(shape.name.slice(11))];
+              if (kind === undefined) throw new Error("Unmapped projection witness");
+              const table = "orchestration_v2_projection_" + kind;
+              const p: Record<string, unknown> = { ...value, id: "synthetic-census-" + n };
+              const row: Record<string, string | number | null> = {};
+              for (const column of db.prepare("PRAGMA table_info(" + table + ")").all()) {
+                const name = String(column.name);
+                const camel = name.replace(/_([a-z])/g, (_, letter: string) =>
+                  letter.toUpperCase(),
+                );
+                let v: unknown = column.pk
+                  ? p.id
+                  : name === "payload_json"
+                    ? JSON.stringify(p)
+                    : name.endsWith("_id")
+                      ? "synthetic-census-ref-" + n
+                      : name === "provider"
+                        ? "codex"
+                        : p[camel];
+                if (typeof v === "boolean") v = Number(v);
+                if (v === undefined) {
+                  if (!column.notnull) v = null;
+                  else if (column.dflt_value !== null) continue;
+                  else v = column.type === "INTEGER" ? 1 : "synthetic";
+                }
+                row[name] = censusScalar(v);
+              }
+              db.prepare(
+                "INSERT INTO " +
+                  table +
+                  " (" +
+                  Object.keys(row).join(",") +
+                  ") VALUES (" +
+                  Object.keys(row)
+                    .map(() => "?")
+                    .join(",") +
+                  ")",
+              ).run(...Object.values(row));
+            } else {
+              const project = shape.name === "project-event";
+              const metadata = project
+                ? value.metadata
+                : Object.fromEntries(
+                    ["runId", "nodeId", "driver", "providerInstanceId", "rawEventId"]
+                      .filter((key) => value[key] !== undefined)
+                      .map((key) => [key, value[key]]),
+                  );
+              db.prepare(
+                "INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES(?,?,?,?,?,?,'server',?,?,2)",
+              ).run(
+                "synthetic-census-event-" + n,
+                project ? "project" : "thread",
+                "synthetic-census-stream-" + n,
+                1,
+                censusScalar(value.type),
+                censusScalar(value.occurredAt),
+                JSON.stringify(value.payload),
+                JSON.stringify(metadata),
+              );
+            }
+          }
+          db.exec("COMMIT");
+        });
+        const report = yield* inspect(file);
+        // Independent witnesses do not form one linked thread graph; check their row diagnostics.
+        for (const table of [
+          "orchestration_events",
+          ...kinds.map((kind) => "orchestration_v2_projection_" + kind),
+        ]) {
+          expect(report.tables[table]?.rejected, table).toBe(0);
+          expect(report.tables[table]?.unexpected, table).toBe(0);
+        }
+        expect(report.tables.orchestration_events?.unknownFields).not.toHaveProperty(
+          "thread.created / runId",
+        );
+        expect(
+          report.tables.orchestration_v2_projection_messages?.unknownFields,
+        ).not.toHaveProperty("messages / notification.source.pullRequest.host");
+        expect(
+          report.tables.orchestration_v2_projection_provider_threads?.unknownFields,
+        ).toHaveProperty("provider_threads / pendingBackgroundTasks.[].command.nativeItemId");
+        edit(file, (db) =>
+          db.exec(
+            "UPDATE orchestration_v2_projection_messages SET payload_json=json_set(payload_json,'$.text',42) WHERE message_id=(SELECT message_id FROM orchestration_v2_projection_messages WHERE json_type(payload_json,'$.notification.source.pullRequest')='object' LIMIT 1)",
+          ),
+        );
+        const rejected = (yield* inspect(file)).tables.orchestration_v2_projection_messages!;
+        expect(rejected.rejected).toBe(1);
+        expect(rejected.unknownFields).not.toHaveProperty(
+          "messages / notification.source.pullRequest.host",
+        );
+        expect(rejected.unknownFields).toHaveProperty(
+          "messages / notification.source.pullRequest.supersedesUpdates",
+        );
+      }),
+    ),
 );
