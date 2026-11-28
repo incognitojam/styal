@@ -18,7 +18,7 @@ import {
   registrationRetirements,
   registrations,
   registrationRemoval,
-  registrationRemovalStamp,
+  registrationRemovalMatches,
   confirmRegistrationEnds,
   endSessionRegistrations,
   registrationInventory,
@@ -148,7 +148,7 @@ export class AccountObject extends DurableObject<unknown> {
       return { registrationPending: true };
     return this.ctx.storage.transactionSync(() => {
       const guard = request.registrationGuard;
-      if (guard && registrationRemovalStamp(this.ctx.storage, guard.sessionIds) !== guard.stamp)
+      if (guard && !registrationRemovalMatches(this.ctx.storage, guard.sessionIds, guard.stamp))
         return { registrationsChanged: true };
       const removal = registrationRemoval(this.ctx.storage, request.command);
       if (removal.records.some((record) => record.pending)) return { registrationPending: true };

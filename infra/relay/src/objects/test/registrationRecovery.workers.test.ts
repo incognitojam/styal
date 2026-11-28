@@ -390,3 +390,90 @@ it.effect.each(["mark", "invalidate"] as const)(
     }).pipe(Effect.provide(layer));
   },
 );
+
+it.effect.each([
+  { operation: "revoke", markKind: "live_activity_update" },
+  { operation: "prune", markKind: "live_activity_update" },
+  { operation: "revoke", markKind: "live_activity_end" },
+  { operation: "prune", markKind: "live_activity_end" },
+] as const)(
+  "removes a session while every queued end interleaves a delivery mark: %o",
+  ({ operation, markKind }) => {
+    let activities: LiveActivityPersistence["Service"] | undefined;
+    let sent = 0;
+    const queue = Layer.succeed(
+      ApnsDeliveryQueue,
+      ApnsDeliveryQueue.of({
+        enqueueLiveActivity: (input) =>
+          Effect.suspend(() => {
+            const current = activities;
+            if (!current) return Effect.die("Synthetic fixture not initialized");
+            sent++;
+            return current
+              .markDelivery({
+                userId: input.userId,
+                deviceId: input.deviceId,
+                kind: markKind,
+                aggregate: null,
+                deliveredAt: DateTime.formatIso(DateTime.makeUnsafe(sent * 1000)),
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ApnsDeliveryQueueSendError({
+                      operation: "send",
+                      jobId: "synthetic-mark-race",
+                      kind: input.kind,
+                      userId: input.userId,
+                      deviceId: input.deviceId,
+                      cause,
+                    }),
+                ),
+                Effect.as({
+                  deviceId: input.deviceId,
+                  kind: input.kind,
+                  ok: true,
+                  queued: true,
+                  apnsStatus: null,
+                  apnsReason: null,
+                  apnsId: null,
+                }),
+              );
+          }),
+        enqueuePushNotification: () => Effect.die("Unexpected notification"),
+      }),
+    );
+    const layer = Layer.mergeAll(identityLayer(env, options), registrationLayer(env)).pipe(
+      Layer.provide(Layer.mergeAll(SecureRandom.layerWebCrypto, Config.layer(config), queue)),
+    );
+    return Effect.gen(function* () {
+      yield* Effect.promise(resetRegistrationObjects);
+      const accounts = yield* AccountPersistence;
+      const sessions = yield* SessionPersistence;
+      const devices = yield* DevicePersistence;
+      activities = yield* LiveActivityPersistence;
+      const userId = (yield* accounts.findOrCreateByEmail("mark-race@example.test")).userId;
+      const session = yield* sessions.create({
+        userId,
+        clientId: "t3-mobile",
+        thumbprint: "mark-race-key",
+      });
+      yield* devices.register({
+        userId,
+        sessionId: session.sessionId,
+        registration: registration("mark-race-phone"),
+      });
+      yield* activities.register({
+        userId,
+        sessionId: session.sessionId,
+        registration: { deviceId: "mark-race-phone", activityPushToken: "mark-race-card" },
+      });
+      if (operation === "prune") yield* TestClock.adjust("90 days");
+      if (operation === "revoke")
+        expect(yield* sessions.revoke({ userId, sessionId: session.sessionId })).toBe(true);
+      else yield* sessions.pruneExpired;
+      expect(sent).toBe(1);
+      expect(yield* devices.listForUser({ userId })).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  },
+);

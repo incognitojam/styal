@@ -806,14 +806,70 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
     stamp: registrationRemovalStamp(storage, sessionIds),
   };
 }
+function removalAuthority(records: RegistrationRecord[], ends: RegistrationEnd[]) {
+  return {
+    tokens: [
+      ...new Set(
+        [
+          ...records.flatMap((record) => [
+            record.active.activity?.token,
+            record.pending?.candidate?.activity?.token,
+          ]),
+          ...ends.map((end) => end.reference),
+        ]
+          .filter((reference): reference is TokenReference => !!reference)
+          .map(canonicalJson),
+      ),
+    ].sort(),
+    pending: records
+      .flatMap((record) =>
+        record.pending
+          ? [
+              canonicalJson({
+                deviceId: record.deviceId,
+                id: record.pending.id,
+                ready: !!record.pending.candidate,
+                cancelling: record.pending.cancelling ?? null,
+              }),
+            ]
+          : [],
+      )
+      .sort(),
+  };
+}
 export function registrationRemovalStamp(
   storage: DurableObjectStorage,
   sessionIds: readonly string[],
 ) {
-  return canonicalJson({
-    records: removalRecords(storage, sessionIds),
-    ends: registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
-  });
+  return canonicalJson(
+    removalAuthority(
+      removalRecords(storage, sessionIds),
+      registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
+    ),
+  );
+}
+export function registrationRemovalMatches(
+  storage: DurableObjectStorage,
+  sessionIds: readonly string[],
+  stamp: string,
+) {
+  const previous = JSON.parse(stamp) as
+    | ReturnType<typeof removalAuthority>
+    | { records: RegistrationRecord[]; ends: RegistrationEnd[] }
+    | RegistrationRecord[];
+  const expected = Array.isArray(previous)
+    ? removalAuthority(previous, [])
+    : "records" in previous
+      ? removalAuthority(previous.records, previous.ends)
+      : previous;
+  const current = removalAuthority(
+    removalRecords(storage, sessionIds),
+    registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
+  );
+  return (
+    canonicalJson(current.pending) === canonicalJson(expected.pending) &&
+    current.tokens.every((token) => expected.tokens.includes(token))
+  );
 }
 export function removalRecords(storage: DurableObjectStorage, sessionIds: readonly string[]) {
   return registrationRecords(storage).filter(
