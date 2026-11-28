@@ -10,6 +10,7 @@ import { accountName } from "./names.ts";
 import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
 import {
   registrationMigration,
+  registrationOutcomeMigration,
   registrations,
   registrationRemoval,
   removalRecords,
@@ -28,6 +29,7 @@ export const accountMigrations = [
   linkMigration,
   tunnelMigration,
   registrationMigration,
+  registrationOutcomeMigration,
 ];
 
 export type { JournalResult } from "./AccountJournal.ts";

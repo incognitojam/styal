@@ -8,6 +8,14 @@ import { canonicalJson, summarize } from "./storage.ts";
 
 export const registrationMigration =
   "CREATE TABLE account_registrations (device_id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE account_registration_owner (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), user_id TEXT NOT NULL); CREATE TABLE registration_token_references (operation_id TEXT PRIMARY KEY, reference TEXT NOT NULL)";
+export const registrationOutcomeMigration =
+  "CREATE TABLE registration_outcomes (operation_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('completed', 'cancelled')), input TEXT NOT NULL, reason TEXT)";
+type Rejection = "session-revoked" | "device-not-owned";
+type Outcome = {
+  status: "completed" | "cancelled";
+  input: string;
+  reason: Rejection | null;
+};
 export interface RegisteredDevice {
   registration: RelayDeviceRegistrationRequest;
   sessionId: string | null;
@@ -43,6 +51,7 @@ export interface RegistrationIntent {
   now: string;
   candidate: RegistrationCandidate | null;
   claims: Array<{ reference: TokenReference; expected: number }>;
+  cancelling?: Rejection;
 }
 export interface RegistrationRecord {
   deviceId: string;
@@ -90,6 +99,26 @@ const save = (storage: DurableObjectStorage, record: RegistrationRecord) =>
     "INSERT INTO account_registrations VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET value = excluded.value",
     record.deviceId,
     canonicalJson(record),
+  );
+const outcome = (storage: DurableObjectStorage, id: string) =>
+  storage.sql
+    .exec<Outcome>(
+      "SELECT status, input, reason FROM registration_outcomes WHERE operation_id = ?",
+      id,
+    )
+    .toArray()[0];
+const settleOutcome = (
+  storage: DurableObjectStorage,
+  intent: RegistrationIntent,
+  status: Outcome["status"],
+  reason: Rejection | null = null,
+) =>
+  storage.sql.exec(
+    "INSERT INTO registration_outcomes VALUES (?, ?, ?, ?)",
+    intent.id,
+    status,
+    canonicalJson(intent.input),
+    reason,
   );
 export function liveRegistrationSession(
   storage: DurableObjectStorage,
@@ -143,6 +172,22 @@ export function registrations(
       pending: null,
     };
     if (command.kind === "begin") {
+      const previous = outcome(storage, command.id);
+      if (previous) {
+        if (previous.input !== canonicalJson(command.input))
+          throw new Error("Registration operation intent mismatch");
+        return previous.status === "completed"
+          ? { completed: true }
+          : { error: previous.reason ?? ("operation-cancelled" as const) };
+      }
+      if (record.pending) {
+        if (
+          record.pending.id === command.id &&
+          canonicalJson(record.pending.input) !== canonicalJson(command.input)
+        )
+          throw new Error("Registration operation intent mismatch");
+        return { record };
+      }
       const error = validate(storage, command.input, record.active, command.now);
       if (error) return { error };
       if (
@@ -166,48 +211,64 @@ export function registrations(
       return { record };
     }
     switch (command.kind) {
-      case "check":
-        return {
-          valid:
-            record.pending?.id === command.id &&
-            validate(storage, record.pending.input, record.active, command.now) === null,
-        };
+      case "check": {
+        const pending = record.pending;
+        if (pending?.id !== command.id || !pending.candidate) {
+          const previous = outcome(storage, command.id);
+          return { status: previous?.status ?? "stale", reason: previous?.reason ?? null };
+        }
+        if (pending.cancelling) return { status: "cancel", reason: pending.cancelling } as const;
+        const reason = validate(storage, pending.input, record.active, command.now);
+        if (reason !== null) {
+          pending.cancelling = reason;
+          save(storage, record);
+          return { status: "cancel", reason } as const;
+        }
+        return { status: "ready" } as const;
+      }
       case "abort":
-        if (record.pending?.id === command.id) {
+        if (record.pending?.id === command.id && record.pending.cancelling) {
+          settleOutcome(storage, record.pending, "cancelled", record.pending.cancelling);
           record.pending = null;
           save(storage, record);
         }
         return { applied: true };
       case "ready": {
         if (record.pending?.id !== command.id) return { applied: false };
+        if (record.pending.candidate) return { applied: true, record };
         const error = validate(storage, record.pending.input, record.active, command.now);
         if (error) {
+          settleOutcome(storage, record.pending, "cancelled", error);
           record.pending = null;
           save(storage, record);
           return { error };
         }
-        if (!record.pending.candidate) {
-          record.pending.candidate = command.candidate;
-          record.pending.claims = command.claims;
-          for (const reference of tokenReferences(command.candidate))
-            storage.sql.exec(
-              "INSERT OR IGNORE INTO registration_token_references VALUES (?, ?)",
-              reference.operationId,
-              canonicalJson(reference),
-            );
-          save(storage, record);
-        }
+        record.pending.candidate = command.candidate;
+        record.pending.claims = command.claims;
+        for (const reference of tokenReferences(command.candidate))
+          storage.sql.exec(
+            "INSERT OR IGNORE INTO registration_token_references VALUES (?, ?)",
+            reference.operationId,
+            canonicalJson(reference),
+          );
+        save(storage, record);
         return { applied: true, record };
       }
       case "finish":
-        if (record.pending?.id !== command.id || !record.pending.candidate)
+        if (
+          record.pending?.id !== command.id ||
+          !record.pending.candidate ||
+          record.pending.cancelling
+        )
           return { applied: false };
         record.active = record.pending.candidate;
+        settleOutcome(storage, record.pending, "completed");
         record.pending = null;
         save(storage, record);
         return { applied: true };
       case "cancel":
         if (record.pending?.id === command.id && !record.pending.candidate) {
+          settleOutcome(storage, record.pending, "cancelled");
           record.pending = null;
           save(storage, record);
         }
@@ -322,6 +383,10 @@ export function endSessionRegistrations(
 export function registrationInventory(storage: DurableObjectStorage) {
   const records = registrationRecords(storage);
   return [
+    summarize(
+      "registration_outcomes",
+      storage.sql.exec("SELECT * FROM registration_outcomes ORDER BY operation_id"),
+    ),
     summarize(
       "registration_token_references",
       storage.sql.exec("SELECT reference FROM registration_token_references ORDER BY operation_id"),

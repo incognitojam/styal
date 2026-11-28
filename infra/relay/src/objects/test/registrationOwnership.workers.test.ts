@@ -100,6 +100,270 @@ function loseReadyOnce() {
   };
 }
 
+it.each(["completed", "later-registration-retains-start"])(
+  "leaves activated tokens intact when old recovery resumes after restart: %s",
+  async (state) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    const input = deviceInput("phone-a");
+    await expect(
+      new RegistrationCoordinator(loseReadyOnce()).register("account-a", input, "original", now),
+    ).rejects.toThrow("Synthetic lost ready");
+    const captured = (await c.snapshot("account-a", now)).records[0]!;
+    const entered = milestone();
+    const release = milestone();
+    const older = new RegistrationCoordinator({
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                if (request.command.kind === "check") {
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.registrations(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const resumed = older.resume("account-a", captured, now).then(
+      () => null,
+      (error) => error,
+    );
+    let before;
+    let result;
+    try {
+      await entered.promise;
+      await abortAllDurableObjects();
+      await c.register("account-a", input, "recovery", now);
+      if (state === "later-registration-retains-start")
+        await c.register("account-a", deviceInput("phone-a", "later-push"), "later", now);
+      before = await c.views("account-a", now);
+    } finally {
+      release.resolve();
+      result = await resumed;
+    }
+    expect(await c.views("account-a", now)).toEqual(before);
+    expect(result).toBeNull();
+  },
+);
+
+it("records an identical successor before success so its retry cannot reclaim a moved token", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  const input = deviceInput("phone-a");
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register("account-a", input, "predecessor", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  await abortAllDurableObjects();
+  const lostSuccess = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrationGate")
+            return async (...args: Parameters<typeof stub.registrationGate>) => {
+              await stub.registrationGate(...args);
+              throw new Error("Synthetic lost success response");
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  await expect(lostSuccess.register("account-a", input, "successor", now)).rejects.toThrow(
+    "Synthetic lost success response",
+  );
+  await c.register("account-b", deviceInput("phone-b"), "other-owner", now);
+  const before = await c.views("account-b", now);
+  await abortAllDurableObjects();
+  await c.register("account-a", input, "successor", now);
+  expect(await c.views("account-b", now)).toEqual(before);
+  expect((await c.views("account-a", now))[0]?.candidate.device?.push).toBeNull();
+  expect(
+    await c.command("account-a", { kind: "check", deviceId: "phone-a", id: "successor", now }),
+  ).toMatchObject({ status: "completed" });
+});
+
+it("does not let a checked callback complete after cancellation becomes durable", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "original", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+  const pending = captured.pending!;
+  const entered = milestone();
+  const release = milestone();
+  const older = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              if (request.command.kind === "finish") {
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const resumed = older.resume(owner.userId, captured, now).then(
+    () => null,
+    (error) => error,
+  );
+  let result;
+  try {
+    await entered.promise;
+    await abortAllDurableObjects();
+    const expired = "2026-04-01T00:00:00.000Z";
+    expect(
+      await c.command(owner.userId, {
+        kind: "check",
+        deviceId: "phone-a",
+        id: pending.id,
+        now: expired,
+      }),
+    ).toEqual({ status: "cancel", reason: "session-revoked" });
+    expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
+    expect(
+      await c.command(owner.userId, {
+        kind: "ready",
+        deviceId: "phone-a",
+        id: pending.id,
+        candidate: pending.candidate!,
+        claims: pending.claims,
+        now: expired,
+      }),
+    ).toMatchObject({ record: { pending: { cancelling: "session-revoked" } } });
+  } finally {
+    release.resolve();
+    result = await resumed;
+  }
+  expect(result).toMatchObject({ _tag: "DeviceSessionRevoked" });
+  expect((await c.snapshot(owner.userId, now)).records[0]?.pending).toBeNull();
+  expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
+});
+
+it("lets an older preparation observe completion after another recovery finishes", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await c.command(owner.userId, { kind: "begin", id: "original", input, now });
+  const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+  const entered = milestone();
+  const release = milestone();
+  const older = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              if (request.command.kind === "ready") {
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const resumed = older.resume(owner.userId, captured, now).then(
+    () => null,
+    (error) => error,
+  );
+  let result;
+  try {
+    await entered.promise;
+    await abortAllDurableObjects();
+    await c.register(owner.userId, input, "recovery", now);
+  } finally {
+    release.resolve();
+    result = await resumed;
+  }
+  expect(result).toBeNull();
+  expect((await c.views(owner.userId, now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  expect(
+    await c.command(owner.userId, { kind: "check", deviceId: "phone-a", id: "original", now }),
+  ).toMatchObject({ status: "completed" });
+  await expect(
+    c.register(
+      owner.userId,
+      { ...deviceInput("phone-a", "mismatched-push"), sessionId: owner.sessionId },
+      "original",
+      now,
+    ),
+  ).rejects.toThrow("Registration operation intent mismatch");
+});
+
+it("settles an expired predecessor before registering a different live session", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register("old-account", deviceInput("old-phone"), "old-owner", now);
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(
+      owner.userId,
+      { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+      "expired-predecessor",
+      now,
+    ),
+  ).rejects.toThrow("Synthetic lost ready");
+  await abortAllDurableObjects();
+  const refreshed = "2026-04-01T00:00:00.000Z";
+  await new IdentityCoordinator(env, options.emailKey).openSession({
+    sessionId: "session-b",
+    userId: owner.userId,
+    tokenHash: "synthetic-new-hash",
+    thumbprint: "new-session-key",
+    clientId: "t3-mobile",
+    label: null,
+    createdAt: refreshed,
+    lastUsedAt: refreshed,
+    expiresAt: "2026-07-01T00:00:00.000Z",
+    published: false,
+    revoked: false,
+  });
+  await c.register(
+    owner.userId,
+    { ...deviceInput("phone-a"), sessionId: "session-b" },
+    "live-successor",
+    refreshed,
+  );
+  expect((await c.views(owner.userId, refreshed))[0]?.candidate.device).toMatchObject({
+    sessionId: "session-b",
+    push: { token: "shared-push" },
+  });
+  expect(
+    await c.command(owner.userId, {
+      kind: "check",
+      deviceId: "phone-a",
+      id: "expired-predecessor",
+      now: refreshed,
+    }),
+  ).toMatchObject({ status: "cancelled", reason: "session-revoked" });
+  expect((await c.snapshot(owner.userId, refreshed)).records[0]?.pending).toBeNull();
+});
+
 it.each(["revoke", "expire"] as const)(
   "ends session registrations inside a direct account %s transition",
   async (operation) => {
@@ -693,63 +957,100 @@ it("skips an unreachable token without denying another valid device", async () =
   expect(await c.cleanup({ kind: "account", userId: "account-a" }, now)).toHaveLength(2);
 });
 
-it("upgrades account version 4 with all existing rows preserved", async () => {
-  await resetRegistrationObjects();
-  const userId = "account-upgrade";
-  const account = () => env.ACCOUNTS.getByName(accountName(userId));
-  const before = await runInDurableObject(account(), async (_instance, ctx) => {
-    await ctx.storage.deleteAll();
-    migrate(ctx.storage, accountMigrations.slice(0, 4));
-    identity(ctx.storage, {
-      version,
-      command: {
-        kind: "create",
-        state: {
-          userId,
-          email: "upgrade@example.test",
-          epoch: 1,
-          mapping: null,
-          pending: null,
-          createdAt: now,
-          updatedAt: now,
-          lastSignInAt: now,
+it.each([4, 5])(
+  "upgrades account version %s with all existing rows preserved",
+  async (oldVersion) => {
+    await resetRegistrationObjects();
+    const userId = "account-upgrade";
+    const account = () => env.ACCOUNTS.getByName(accountName(userId));
+    const before = await runInDurableObject(account(), async (_instance, ctx) => {
+      await ctx.storage.deleteAll();
+      migrate(ctx.storage, accountMigrations.slice(0, oldVersion));
+      identity(ctx.storage, {
+        version,
+        command: {
+          kind: "create",
+          state: {
+            userId,
+            email: "upgrade@example.test",
+            epoch: 1,
+            mapping: null,
+            pending: null,
+            createdAt: now,
+            updatedAt: now,
+            lastSignInAt: now,
+          },
         },
-      },
+      });
+      ctx.storage.sql.exec(
+        "INSERT INTO tunnel_operations VALUES ('environment-a', 'operation-a', ?, 'endpoint.example.test', 'tunnel-a', '{}', 'complete', '{}', ?)",
+        userId,
+        now,
+      );
+      if (oldVersion === 5)
+        ctx.storage.sql.exec(
+          "INSERT INTO account_registrations VALUES (?, ?)",
+          "legacy-pending",
+          JSON.stringify({
+            deviceId: "legacy-pending",
+            active: { device: null, activity: null },
+            pending: {
+              id: "pending-v5",
+              input: deviceInput("legacy-pending", "pending-push"),
+              now,
+              candidate: null,
+              claims: [],
+            },
+          }),
+        );
+      const tables = ctx.storage.sql
+        .exec<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'relay_object_schema' ORDER BY name",
+        )
+        .toArray();
+      return Object.fromEntries(
+        tables.map(({ name }) => [name, ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray()]),
+      );
     });
-    ctx.storage.sql.exec(
-      "INSERT INTO tunnel_operations VALUES ('environment-a', 'operation-a', ?, 'endpoint.example.test', 'tunnel-a', '{}', 'complete', '{}', ?)",
-      userId,
-      now,
+    await abortAllDurableObjects();
+    expect((await account().inventory({ version })).schemaVersion).toBe(accountMigrations.length);
+    const after = await runInDurableObject(account(), (_instance, ctx) =>
+      Object.fromEntries(
+        Object.keys(before).map((name) => [
+          name,
+          ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray(),
+        ]),
+      ),
     );
-    const tables = ctx.storage.sql
-      .exec<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'relay_object_schema' ORDER BY name",
-      )
-      .toArray();
-    return Object.fromEntries(
-      tables.map(({ name }) => [name, ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray()]),
-    );
-  });
-  await abortAllDurableObjects();
-  expect((await account().inventory({ version })).schemaVersion).toBe(5);
-  const after = await runInDurableObject(account(), (_instance, ctx) =>
-    Object.fromEntries(
-      Object.keys(before).map((name) => [
-        name,
-        ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray(),
-      ]),
-    ),
-  );
-  expect(after).toEqual(before);
-  const c = new RegistrationCoordinator(env);
-  await c.register(userId, deviceInput("phone-a"), "new-registration", now);
-  expect((await c.views(userId, now))[0]!.candidate.device!.push?.token).toBe("shared-push");
-  expect(
-    await env.INVENTORY.getByName(
-      inventoryShardName("push-token", pushTokenName("push", "shared-push")),
-    ).list({ version, kind: "push-token", after: "", limit: 1000 }),
-  ).toContainEqual({ name: pushTokenName("push", "shared-push") });
-});
+    expect(after).toEqual(before);
+    const c = new RegistrationCoordinator(env);
+    if (oldVersion === 5) {
+      await c.settle(userId, "legacy-pending", now);
+      expect(
+        (await c.views(userId, now)).find((row) => row.deviceId === "legacy-pending")?.candidate
+          .device?.push?.token,
+      ).toBe("pending-push");
+      expect(
+        await c.command(userId, {
+          kind: "check",
+          deviceId: "legacy-pending",
+          id: "pending-v5",
+          now,
+        }),
+      ).toMatchObject({ status: "completed" });
+    }
+    await c.register(userId, deviceInput("phone-a"), "new-registration", now);
+    expect(
+      (await c.views(userId, now)).find((row) => row.deviceId === "phone-a")?.candidate.device?.push
+        ?.token,
+    ).toBe("shared-push");
+    expect(
+      await env.INVENTORY.getByName(
+        inventoryShardName("push-token", pushTokenName("push", "shared-push")),
+      ).list({ version, kind: "push-token", after: "", limit: 1000 }),
+    ).toContainEqual({ name: pushTokenName("push", "shared-push") });
+  },
+);
 
 it("discovers a cold legacy orphan activity after its first delivery mark", async () => {
   await resetRegistrationObjects();

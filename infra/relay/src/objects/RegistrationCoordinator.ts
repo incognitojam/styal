@@ -17,7 +17,7 @@ import {
   inventoryShardNames,
   credentialRouteName,
 } from "./names.ts";
-import { canonicalJson, RPC_VERSION as version } from "./storage.ts";
+import { RPC_VERSION as version } from "./storage.ts";
 import type { RegistrationCleanupScope } from "../persistence/DeliveryTargetPersistence.ts";
 
 export interface RegistrationBindings extends Pick<
@@ -59,6 +59,7 @@ export class RegistrationCoordinator {
     if ("error" in result) {
       if (result.error === "session-revoked") throw new DeviceSessionRevoked({});
       if (result.error === "device-not-owned") throw new DeviceNotOwnedBySession({});
+      throw new Error("Registration operation was cancelled");
     }
     return result;
   }
@@ -114,7 +115,9 @@ export class RegistrationCoordinator {
       let view: RegistrationCandidate = { device: null, activity: null };
       for (const candidate of [
         record.active,
-        ...(record.pending?.candidate ? [record.pending.candidate] : []),
+        ...(record.pending?.candidate && !record.pending.cancelling
+          ? [record.pending.candidate]
+          : []),
       ]) {
         if (
           candidate.device &&
@@ -140,27 +143,59 @@ export class RegistrationCoordinator {
   async register(userId: string, input: RegistrationInput, id: string, now: string) {
     const deviceId = input.registration.deviceId;
     await this.gate(userId, deviceId, async () => {
-      const previous = (await this.snapshot(userId, now)).records.find(
-        (row) => row.deviceId === deviceId,
-      );
-      if (previous?.pending) {
-        const same = canonicalJson(previous.pending.input) === canonicalJson(input);
-        await this.resume(userId, previous, now);
-        if (same) return;
+      for (let predecessor = 0; predecessor < 2; predecessor++) {
+        let result = await this.command(userId, { kind: "begin", input, id, now });
+        if ("needsRegistration" in result) {
+          await this.registerReference("account", accountName(userId));
+          result = await this.command(userId, { kind: "begin", input, id, now, registered: true });
+        }
+        if ("completed" in result && result.completed) return;
+        if (!("record" in result) || !result.record?.pending)
+          throw new Error("Registration intent unavailable");
+        const pending = result.record.pending;
+        try {
+          await this.resume(userId, result.record, now);
+        } catch (error) {
+          const terminal = await this.command(userId, {
+            kind: "check",
+            deviceId,
+            id: pending.id,
+            now,
+          });
+          if (!("status" in terminal) || terminal.status !== "cancelled" || pending.id === id)
+            throw error;
+          continue;
+        }
+        if (pending.id === id) return;
       }
-      let result = await this.command(userId, { kind: "begin", input, id, now });
-      if ("needsRegistration" in result) {
-        await this.registerReference("account", accountName(userId));
-        result = await this.command(userId, { kind: "begin", input, id, now, registered: true });
-      }
-      if (!("record" in result) || !result.record)
-        throw new Error("Registration intent unavailable");
-      await this.resume(userId, result.record, now);
+      throw new Error("Concurrent registration changed");
     });
   }
+
   async resume(userId: string, record: RegistrationRecord, now: string) {
     let intent = record.pending;
     if (!intent) return;
+    const check = async (pending: RegistrationIntent) => {
+      const current = await this.command(userId, {
+        kind: "check",
+        deviceId: record.deviceId,
+        id: pending.id,
+        now,
+      });
+      if ("status" in current && current.status === "completed") return "completed" as const;
+      if ("status" in current && current.status === "ready") return "ready" as const;
+      if ("status" in current && current.status === "cancel") {
+        for (const claim of pending.claims)
+          await this.token(claim.reference).fence({ version, ...claim, now, registered: true });
+        await this.command(userId, { kind: "abort", deviceId: record.deviceId, id: pending.id });
+      }
+      if ("status" in current && (current.status === "cancel" || current.status === "cancelled")) {
+        if (current.reason === "device-not-owned") throw new DeviceNotOwnedBySession({});
+        if (current.reason === "session-revoked") throw new DeviceSessionRevoked({});
+        throw new Error("Registration operation was cancelled");
+      }
+      throw new Error("Registration operation changed");
+    };
     if (!intent.candidate) {
       let prepared: { candidate: RegistrationCandidate; claims: RegistrationIntent["claims"] };
       try {
@@ -176,21 +211,13 @@ export class RegistrationCoordinator {
         ...prepared,
         now,
       });
-      if (!("record" in ready) || !ready.record?.pending) throw new DeviceSessionRevoked({});
+      if (!("record" in ready) || !ready.record?.pending) {
+        if ((await check(intent)) === "completed") return;
+        throw new Error("Registration readiness changed");
+      }
       intent = ready.record.pending;
     }
-    const current = await this.command(userId, {
-      kind: "check",
-      deviceId: record.deviceId,
-      id: intent.id,
-      now,
-    });
-    if (!("valid" in current) || !current.valid) {
-      for (const claim of intent.claims)
-        await this.token(claim.reference).fence({ version, ...claim, now, registered: true });
-      await this.command(userId, { kind: "abort", deviceId: record.deviceId, id: intent.id });
-      throw new DeviceSessionRevoked({});
-    }
+    if ((await check(intent)) === "completed") return;
     for (const claim of intent.claims) {
       const result = await this.token(claim.reference).transfer({
         version,
@@ -200,7 +227,14 @@ export class RegistrationCoordinator {
       });
       if ("needsRegistration" in result) throw new Error("Push token initialization changed");
     }
-    await this.command(userId, { kind: "finish", deviceId: record.deviceId, id: intent.id });
+    const finished = await this.command(userId, {
+      kind: "finish",
+      deviceId: record.deviceId,
+      id: intent.id,
+    });
+    if (!("applied" in finished) || !finished.applied) {
+      if ((await check(intent)) !== "completed") throw new Error("Registration completion changed");
+    }
   }
   async settle(userId: string, deviceId: string, now: string) {
     await this.gate(userId, deviceId, async () => {
@@ -358,7 +392,9 @@ export class RegistrationCoordinator {
       for (const record of (await this.snapshot(userId, now)).records)
         for (const candidate of [
           record.active,
-          ...(record.pending?.candidate ? [record.pending.candidate] : []),
+          ...(record.pending?.candidate && !record.pending.cancelling
+            ? [record.pending.candidate]
+            : []),
         ]) {
           const device = candidate.device;
           const reference = candidate.activity?.token;
