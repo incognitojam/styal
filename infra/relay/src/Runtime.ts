@@ -1,3 +1,4 @@
+import * as PostgresDeliveryAttempts from "./persistence/PostgresDeliveryAttempts.ts";
 import * as PostgresLiveActivities from "./persistence/PostgresLiveActivities.ts";
 import * as PostgresDevices from "./persistence/PostgresDevices.ts";
 import * as PostgresEnvironmentLinkCompletion from "./persistence/PostgresEnvironmentLinkCompletion.ts";
@@ -128,7 +129,7 @@ export const layerServices = Layer.empty.pipe(
     ),
   ),
   Layer.provideMerge(Accounts.layer.pipe(Layer.provide(PostgresAccounts.layer))),
-  Layer.provideMerge(DeliveryAttempts.layer),
+  Layer.provideMerge(DeliveryAttempts.layer.pipe(Layer.provide(PostgresDeliveryAttempts.layer))),
   Layer.provideMerge(RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer))),
   Layer.provideMerge(RelayDb.RelayTransactions.layer),
 );
