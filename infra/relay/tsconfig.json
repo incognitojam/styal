@@ -3,7 +3,7 @@
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023", "WebWorker"],
-    "types": ["@cloudflare/workers-types", "node"]
+    "types": ["@cloudflare/workers-types", "node", "@cloudflare/vitest-plugin/types"]
   },
   "include": ["alchemy.run.ts", "scripts/**/*.ts", "src/**/*.ts"]
 }

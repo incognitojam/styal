@@ -169,7 +169,13 @@
     },
     "infra/relay": {
       // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
+      "entry": [
+        "alchemy.run.ts!",
+        "src/persistence/schema.ts!",
+        "src/worker.ts!",
+        // The local Workers test config loads this entry by path.
+        "src/objects/test/worker.ts",
+      ],
     },
     "infra/web": {
       // Alchemy loads the stack, and the stack names its worker by path.
