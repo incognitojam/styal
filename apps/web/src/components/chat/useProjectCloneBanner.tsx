@@ -14,7 +14,11 @@ import {
   projectCloneProgressSummary,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
-import { dismissProjectFileCopy, useProjectFileCopy } from "../../lib/addProjectToMachine";
+import {
+  dismissProjectFileCopy,
+  usePreparingAdd,
+  useProjectFileCopy,
+} from "../../lib/addProjectToMachine";
 import { type ComposerBannerStackItem } from "./ComposerBannerStack";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -22,7 +26,10 @@ import { Button } from "../ui/button";
  * A project still being cloned or copied into place: the composer banner with its cancel,
  * retry, and remove actions, and the reason sending waits until it is done.
  */
-export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null) {
+export function useProjectCloneBanner(
+  activeProjectRef: ScopedProjectRef | null,
+  draftId: string | null,
+) {
   const activeProjectClone = useProjectClone(activeProjectRef);
   const cancelProjectClone = useAtomCommand(sourceControlEnvironment.cancelProjectClone, {
     reportFailure: false,
@@ -49,15 +56,32 @@ export function useProjectCloneBanner(activeProjectRef: ScopedProjectRef | null)
   };
   const runProjectCloneActionStable = useStableCallback(runProjectCloneAction);
   const activeProjectFileCopy = useProjectFileCopy(activeProjectRef);
+  const preparingAdd = usePreparingAdd(draftId, activeProjectRef);
   const projectCloneSendBlockReason =
-    activeProjectClone?.phase === "running"
-      ? "Cloning repository"
-      : activeProjectClone !== null && activeProjectClone.phase !== "done"
-        ? "Repository not cloned"
-        : activeProjectFileCopy?.phase === "copying"
-          ? "Copying files"
-          : null;
+    preparingAdd !== null
+      ? "Adding to another machine"
+      : activeProjectClone?.phase === "running"
+        ? "Cloning repository"
+        : activeProjectClone !== null && activeProjectClone.phase !== "done"
+          ? "Repository not cloned"
+          : activeProjectFileCopy?.phase === "copying"
+            ? "Copying files"
+            : null;
   const projectCloneBannerItem = (() => {
+    if (preparingAdd !== null && activeProjectRef) {
+      return {
+        id: `project-clone-preparing:${activeProjectRef.projectId}`,
+        variant: "info",
+        icon: <DownloadIcon />,
+        title: preparingAdd.title,
+        description: "Preparing…",
+        actions: (
+          <Button size="xs" variant="ghost" onClick={preparingAdd.onCancel}>
+            Cancel
+          </Button>
+        ),
+      };
+    }
     if (activeProjectFileCopy?.phase === "failed" && activeProjectRef) {
       return {
         id: `project-file-copy:${activeProjectRef.projectId}`,

@@ -6,10 +6,11 @@ import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { PlusIcon, ScaleIcon } from "lucide-react";
+import { PlusIcon, ScaleIcon, SlidersHorizontalIcon } from "lucide-react";
 import { memo } from "react";
 
-import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
+import type { AddProjectTarget } from "../hooks/useAddProjectTargets";
+import type { EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
@@ -18,6 +19,7 @@ import {
   SelectGroupLabel,
   SelectItem,
   SelectPopup,
+  SelectSeparator,
   SelectValue,
 } from "./ui/select";
 
@@ -28,12 +30,17 @@ interface BranchToolbarEnvironmentSelectorProps {
   environmentId: EnvironmentId;
   availableEnvironments: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
-  onAddToMachine?: (() => void) | undefined;
+  addTargets?: readonly AddProjectTarget[] | undefined;
+  /** Adds to the named machine, or opens the dialog for null. */
+  onAddToMachine?: ((environmentId: EnvironmentId | null) => void) | undefined;
+  /** Why the Add rows are unavailable, while a one-click add is decided or sent. */
+  addBusyReason?: string | null | undefined;
 }
 
 // Action values cannot collide with server-minted environment IDs.
 const AUTO_VALUE = "action:auto";
-const ADD_MACHINE_VALUE = "action:add-machine";
+const ADD_OPTIONS_VALUE = "action:add-options";
+const addValue = (id: EnvironmentId) => `add:${id}`;
 const environmentValue = (id: EnvironmentId) => `env:${id}`;
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
@@ -43,7 +50,9 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   environmentId,
   availableEnvironments,
   onEnvironmentChange,
+  addTargets = [],
   onAddToMachine,
+  addBusyReason = null,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
@@ -61,7 +70,15 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       value: environmentValue(env.environmentId),
       label: env.label,
     })),
-    ...(onAddToMachine ? [{ value: ADD_MACHINE_VALUE, label: "Add to another machine" }] : []),
+    ...(onAddToMachine
+      ? [
+          ...addTargets.map((target) => ({
+            value: addValue(target.environmentId),
+            label: `Add to ${target.label}`,
+          })),
+          { value: ADD_OPTIONS_VALUE, label: "Add with options…" },
+        ]
+      : []),
   ];
 
   // Match the xs control's height and padding: the composer strip has no min-height,
@@ -92,8 +109,10 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       modal={false}
       value={autoEnvironmentLabel ? AUTO_VALUE : environmentValue(environmentId)}
       onValueChange={(value) => {
-        if (value === ADD_MACHINE_VALUE) {
-          onAddToMachine?.();
+        if (value === ADD_OPTIONS_VALUE) {
+          onAddToMachine?.(null);
+        } else if (value?.startsWith("add:")) {
+          onAddToMachine?.(value.slice(4) as EnvironmentId);
         } else if (value === AUTO_VALUE) {
           onAutoEnvironment?.();
         } else if (value?.startsWith("env:")) {
@@ -160,16 +179,62 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               </span>
             </SelectItem>
           ))}
-          {onAddToMachine ? (
-            <SelectItem value={ADD_MACHINE_VALUE}>
-              <span className={ADD_TO_MACHINE_LABEL_CLASS}>
-                <PlusIcon aria-hidden="true" className="size-3" />
-                Add to another machine
-              </span>
-            </SelectItem>
-          ) : null}
         </SelectGroup>
+        {onAddToMachine ? (
+          <>
+            <SelectSeparator />
+            <SelectGroup>
+              {addTargets.map((target) => (
+                <SelectItem
+                  key={target.environmentId}
+                  value={addValue(target.environmentId)}
+                  disabled={addBusyReason !== null}
+                >
+                  <AddTargetLabel target={target} busyReason={addBusyReason} />
+                </SelectItem>
+              ))}
+              <SelectItem value={ADD_OPTIONS_VALUE} disabled={addBusyReason !== null}>
+                <AddWithOptionsLabel />
+              </SelectItem>
+            </SelectGroup>
+          </>
+        ) : null}
       </SelectPopup>
     </Select>
   );
 });
+
+/** Adding the project to one machine, with the folder the clone lands in or why it cannot start yet. */
+export function AddTargetLabel({
+  target,
+  busyReason = null,
+}: {
+  target: AddProjectTarget;
+  busyReason?: string | null;
+}) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 items-center gap-1.5">
+        <PlusIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">Add to {target.label}</span>
+      </span>
+      {busyReason === null ? (
+        <span className="truncate ps-4.5 font-mono text-muted-foreground text-xs">
+          {target.destinationPath}
+        </span>
+      ) : (
+        <span className="truncate ps-4.5 text-muted-foreground text-xs">{busyReason}</span>
+      )}
+    </span>
+  );
+}
+
+/** Opens the dialog to pick the machine, folder, protocol and files to copy. */
+export function AddWithOptionsLabel() {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <SlidersHorizontalIcon aria-hidden="true" className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">Add with options…</span>
+    </span>
+  );
+}
