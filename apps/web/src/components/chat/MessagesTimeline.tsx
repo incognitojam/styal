@@ -253,6 +253,7 @@ interface MessagesTimelineProps {
   ) => boolean;
   onReplyToResponse?: TimelineRowSharedState["onReplyToResponse"];
   isWorking: boolean;
+  showLiveActivity?: boolean;
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   /** Replaces "Thinking" while the active run's provider has not started a turn. */
@@ -384,6 +385,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCiteAssistantText,
   onReplyToResponse,
   isWorking,
+  showLiveActivity = true,
   runlessWorkActive = false,
   activeTurnStartedAt = null,
   providerStartingLabel = null,
@@ -787,6 +789,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     expandedAttemptIds: visibleExpandedAttemptIds,
     expandedWorkGroupIds,
     isWorking,
+    showLiveActivity,
     runlessWorkActive,
     activeTurnStartedAt,
     turnDiffSummaries,
@@ -1210,7 +1213,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       ? worktreeSetup
       : null;
   const activityState: TimelineRowActivityState = {
-    isWorking,
+    isWorking: isWorking && showLiveActivity,
     isCompacting: compactionAwaitingRow,
     isRevertingCheckpoint,
     backgroundWorktreeSetup,
@@ -1225,7 +1228,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // starts from a baseline instead of a fresh, silent region.
   const activityAnnouncer = (
     <ThreadActivityAnnouncer
-      threadKey={announceTurnStatus ? listIdentityKey : null}
+      threadKey={announceTurnStatus && showLiveActivity ? listIdentityKey : null}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
       requestId={awaitingRequestId}
       runId={announcedRun?.runId ?? null}

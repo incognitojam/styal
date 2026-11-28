@@ -3422,7 +3422,8 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const shownThreadSyncPhase = activeEnvironmentUnavailable ? null : delayedThreadSyncPhase;
-  const threadNowWork = workflowRunReviewIncludesBackgroundWork ? null : workNow;
+  const threadNowWork =
+    threadActivityState !== "live" || workflowRunReviewIncludesBackgroundWork ? null : workNow;
   const hasThreadNow =
     attentionNow !== null ||
     threadNowWork !== null ||
@@ -3837,6 +3838,7 @@ export default function ChatView(props: ChatViewProps) {
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
                   isWorking={isWorking}
+                  showLiveActivity={threadActivityState === "live"}
                   runlessWorkActive={runlessWorkStartedAt !== null}
                   isCompacting={isCompacting}
                   awaitingUser={
