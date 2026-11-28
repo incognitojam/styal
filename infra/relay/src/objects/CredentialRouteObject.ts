@@ -5,14 +5,9 @@ export const credentialRouteMigrations = [
   "CREATE TABLE credential_route (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), destination TEXT NOT NULL)",
 ];
 export class CredentialRouteObject extends DurableObject<unknown> {
-  constructor(ctx: DurableObjectState, env: unknown) {
-    super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => {
-      migrate(ctx.storage, credentialRouteMigrations);
-    });
-  }
   async publish(request: { version: number; destination: string }) {
     checkRpc(request.version);
+    migrate(this.ctx.storage, credentialRouteMigrations);
     this.ctx.storage.transactionSync(() => {
       const sql = this.ctx.storage.sql;
       sql.exec("INSERT OR IGNORE INTO credential_route VALUES (1, ?)", request.destination);
@@ -25,6 +20,13 @@ export class CredentialRouteObject extends DurableObject<unknown> {
   }
   async resolve(request: { version: number }) {
     checkRpc(request.version);
+    if (
+      !this.ctx.storage.sql
+        .exec("SELECT name FROM sqlite_master WHERE name = 'credential_route'")
+        .toArray().length
+    )
+      return null;
+    migrate(this.ctx.storage, credentialRouteMigrations);
     return (
       this.ctx.storage.sql
         .exec<{ destination: string }>("SELECT destination FROM credential_route")
@@ -33,13 +35,18 @@ export class CredentialRouteObject extends DurableObject<unknown> {
   }
   async inventory(request: { version: number }) {
     checkRpc(request.version);
+    const initialized =
+      this.ctx.storage.sql
+        .exec("SELECT name FROM sqlite_master WHERE name = 'credential_route'")
+        .toArray().length > 0;
+    if (initialized) migrate(this.ctx.storage, credentialRouteMigrations);
     return {
       version: request.version,
-      schemaVersion: credentialRouteMigrations.length,
+      schemaVersion: initialized ? credentialRouteMigrations.length : 0,
       tables: [
         summarize(
           "credential_route",
-          this.ctx.storage.sql.exec("SELECT destination FROM credential_route"),
+          initialized ? this.ctx.storage.sql.exec("SELECT destination FROM credential_route") : [],
         ),
       ],
     };

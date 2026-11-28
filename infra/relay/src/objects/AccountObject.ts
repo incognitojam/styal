@@ -6,6 +6,8 @@ import type {
 } from "../persistence/TunnelOperationPersistence.ts";
 import { identity, identityMigration, identityInventory } from "./AccountIdentity.ts";
 import type { IdentityCommand } from "./AccountIdentity.ts";
+import { links, linkMigration, linkInventory } from "./AccountLinks.ts";
+import type { LinkCommand } from "./AccountLinks.ts";
 import { accountName } from "./names.ts";
 import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
 
@@ -16,6 +18,7 @@ export const accountMigrations = [
     desired TEXT NOT NULL, phase TEXT NOT NULL, resources TEXT NOT NULL, updated_at TEXT NOT NULL
   ); CREATE INDEX tunnel_operations_pending ON tunnel_operations(phase, updated_at, operation_id);`,
   identityMigration,
+  linkMigration,
 ];
 
 type Command =
@@ -63,6 +66,13 @@ export class AccountObject extends DurableObject<unknown> {
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, accountMigrations);
     });
+  }
+
+  async links(request: { version: number; userId: string; command: LinkCommand }) {
+    if (this.ctx.id.name !== accountName(request.userId)) throw new Error("Link account mismatch");
+    if (request.command.kind === "begin" && request.command.intent.userId !== request.userId)
+      throw new Error("Link owner mismatch");
+    return links(this.ctx.storage, request);
   }
 
   async identity(request: { version: number; userId: string; command: IdentityCommand }) {
@@ -221,6 +231,7 @@ export class AccountObject extends DurableObject<unknown> {
       tables: [
         summarize("relay_tunnel_operations", contents()),
         ...identityInventory(this.ctx.storage),
+        ...linkInventory(this.ctx.storage),
       ],
     };
   }

@@ -1,3 +1,4 @@
+import * as PostgresEnvironmentLinkCompletion from "./persistence/PostgresEnvironmentLinkCompletion.ts";
 import * as PostgresManagedTunnelLimits from "./persistence/PostgresManagedTunnelLimits.ts";
 import * as PostgresManagedEndpointAllocations from "./persistence/PostgresManagedEndpointAllocations.ts";
 import * as PostgresAgentActivityRows from "./persistence/PostgresAgentActivityRows.ts";
@@ -75,7 +76,9 @@ export const layerServices = Layer.empty.pipe(
   ),
   Layer.provideMerge(AgentActivityPublisher.layer),
   Layer.provideMerge(EnvironmentConnector.layer),
-  Layer.provideMerge(EnvironmentLinker.layer),
+  Layer.provideMerge(
+    EnvironmentLinker.layer.pipe(Layer.provide(PostgresEnvironmentLinkCompletion.layer)),
+  ),
   Layer.provideMerge(
     Layer.mergeAll(
       EnvironmentPublishSignatures.layer,
