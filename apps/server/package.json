@@ -18,6 +18,7 @@
     "dev": "node scripts/dev.ts",
     "data-move:compatibility-fixtures": "node src/persistence/dataMove/generateCompatibility.mjs",
     "data-move:preflight-fixtures": "node src/persistence/dataMove/generatePreflight.mjs",
+    "data-move:archive": "node src/persistence/dataMove/archiveCli.ts",
     "data-move:preflight": "node src/persistence/dataMove/preflightCli.ts",
     "data-move:inventory": "node src/persistence/dataMove/cli.ts",
     "data-move:fixtures": "node src/persistence/dataMove/generateSource.ts",
