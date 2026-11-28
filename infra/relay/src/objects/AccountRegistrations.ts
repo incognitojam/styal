@@ -52,6 +52,7 @@ export interface RegistrationIntent {
   candidate: RegistrationCandidate | null;
   claims: Array<{ reference: TokenReference; expected: number }>;
   cancelling?: Rejection;
+  committed?: true;
 }
 export interface RegistrationRecord {
   deviceId: string;
@@ -71,7 +72,7 @@ export type RegistrationCommand =
     }
   | { kind: "finish"; deviceId: string; id: string }
   | { kind: "cancel"; deviceId: string; id: string }
-  | { kind: "check"; deviceId: string; id: string; now: string }
+  | { kind: "check" | "commit"; deviceId: string; id: string; now: string }
   | { kind: "abort"; deviceId: string; id: string }
   | { kind: "remove"; deviceId: string }
   | {
@@ -211,18 +212,25 @@ export function registrations(
       return { record };
     }
     switch (command.kind) {
-      case "check": {
+      case "check":
+      case "commit": {
         const pending = record.pending;
         if (pending?.id !== command.id || !pending.candidate) {
           const previous = outcome(storage, command.id);
           return { status: previous?.status ?? "stale", reason: previous?.reason ?? null };
         }
+        if (pending.committed) return { status: "committed" } as const;
         if (pending.cancelling) return { status: "cancel", reason: pending.cancelling } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason !== null) {
           pending.cancelling = reason;
           save(storage, record);
           return { status: "cancel", reason } as const;
+        }
+        if (command.kind === "commit") {
+          pending.committed = true;
+          save(storage, record);
+          return { status: "committed" } as const;
         }
         return { status: "ready" } as const;
       }
@@ -258,6 +266,7 @@ export function registrations(
         if (
           record.pending?.id !== command.id ||
           !record.pending.candidate ||
+          !record.pending.committed ||
           record.pending.cancelling
         )
           return { applied: false };

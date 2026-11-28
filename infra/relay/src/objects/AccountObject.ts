@@ -1,4 +1,4 @@
-// @effect-diagnostics globalDate:off cryptoRandomUUID:off - Synchronous workerd transitions cannot yield to Effect services.
+// @effect-diagnostics globalDate:off cryptoRandomUUID:off globalTimers:off - Durable Object transitions and deadlines run outside Effect services.
 import { DEFAULT_MANAGED_TUNNEL_LIMIT } from "@t3tools/contracts/relay";
 import { DurableObject } from "cloudflare:workers";
 import type { TunnelOperation } from "../persistence/TunnelOperationPersistence.ts";
@@ -71,6 +71,21 @@ function decode(row: Row): TunnelOperation {
   };
 }
 
+export const REGISTRATION_WAIT_MS = 5_000;
+async function waitForRegistration(pending: Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), REGISTRATION_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export class AccountObject extends DurableObject<unknown> {
   private reservations = new Map<string, Promise<void>>();
   private registrationTails = new Map<string, Promise<void>>();
@@ -116,9 +131,11 @@ export class AccountObject extends DurableObject<unknown> {
     )
       return identity(this.ctx.storage, request);
     const initial = registrationRemoval(this.ctx.storage, request.command);
-    await Promise.all(
-      initial.records.flatMap((record) => this.registrationTails.get(record.deviceId) ?? []),
+    const tails = initial.records.flatMap(
+      (record) => this.registrationTails.get(record.deviceId) ?? [],
     );
+    if (tails.length && !(await waitForRegistration(Promise.all(tails))))
+      return { registrationPending: true };
     return this.ctx.storage.transactionSync(() => {
       const guard = request.registrationGuard;
       if (
@@ -165,14 +182,20 @@ export class AccountObject extends DurableObject<unknown> {
     const completion = new Promise<void>((resolve) => {
       finish = resolve;
     });
-    this.registrationTails.set(request.deviceId, completion);
+    const tail = previous ? previous.then(() => completion) : completion;
+    this.registrationTails.set(request.deviceId, tail);
+    let acquired = false;
     try {
-      if (previous) await previous;
+      if (previous && !(await waitForRegistration(previous)))
+        throw new Error("Registration callback wait expired");
+      acquired = true;
       await callback();
     } finally {
       finish();
-      if (this.registrationTails.get(request.deviceId) === completion)
-        this.registrationTails.delete(request.deviceId);
+      if (this.registrationTails.get(request.deviceId) === tail) {
+        if (!acquired && previous) this.registrationTails.set(request.deviceId, previous);
+        else this.registrationTails.delete(request.deviceId);
+      }
     }
   }
 

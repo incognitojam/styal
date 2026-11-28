@@ -69,16 +69,11 @@ export class RegistrationCoordinator {
       references: [{ kind, name }],
     });
   }
-  async resolve(candidate: RegistrationCandidate, strict = false): Promise<RegistrationCandidate> {
+  async resolve(candidate: RegistrationCandidate): Promise<RegistrationCandidate> {
     const next = structuredClone(candidate);
     const status = async (reference: TokenReference | null | undefined) => {
       if (!reference) return null;
-      try {
-        return await this.token(reference).status({ version, reference });
-      } catch (error) {
-        if (strict) throw error;
-        return { live: false, lostAt: null };
-      }
+      return this.token(reference).status({ version, reference });
     };
     const [push, start, activity] = await Promise.all([
       status(next.device?.push),
@@ -115,7 +110,7 @@ export class RegistrationCoordinator {
       let view: RegistrationCandidate = { device: null, activity: null };
       for (const candidate of [
         record.active,
-        ...(record.pending?.candidate && !record.pending.cancelling
+        ...(record.pending?.candidate && record.pending.committed && !record.pending.cancelling
           ? [record.pending.candidate]
           : []),
       ]) {
@@ -175,15 +170,15 @@ export class RegistrationCoordinator {
   async resume(userId: string, record: RegistrationRecord, now: string) {
     let intent = record.pending;
     if (!intent) return;
-    const check = async (pending: RegistrationIntent) => {
+    const commit = async (pending: RegistrationIntent) => {
       const current = await this.command(userId, {
-        kind: "check",
+        kind: "commit",
         deviceId: record.deviceId,
         id: pending.id,
         now,
       });
       if ("status" in current && current.status === "completed") return "completed" as const;
-      if ("status" in current && current.status === "ready") return "ready" as const;
+      if ("status" in current && current.status === "committed") return "ready" as const;
       if ("status" in current && current.status === "cancel") {
         for (const claim of pending.claims)
           await this.token(claim.reference).fence({ version, ...claim, now, registered: true });
@@ -212,12 +207,12 @@ export class RegistrationCoordinator {
         now,
       });
       if (!("record" in ready) || !ready.record?.pending) {
-        if ((await check(intent)) === "completed") return;
+        if ((await commit(intent)) === "completed") return;
         throw new Error("Registration readiness changed");
       }
       intent = ready.record.pending;
     }
-    if ((await check(intent)) === "completed") return;
+    if ((await commit(intent)) === "completed") return;
     for (const claim of intent.claims) {
       const result = await this.token(claim.reference).transfer({
         version,
@@ -233,7 +228,8 @@ export class RegistrationCoordinator {
       id: intent.id,
     });
     if (!("applied" in finished) || !finished.applied) {
-      if ((await check(intent)) !== "completed") throw new Error("Registration completion changed");
+      if ((await commit(intent)) !== "completed")
+        throw new Error("Registration completion changed");
     }
   }
   async settle(userId: string, deviceId: string, now: string) {
@@ -256,7 +252,7 @@ export class RegistrationCoordinator {
     });
   }
   private async prepare(userId: string, record: RegistrationRecord, intent: RegistrationIntent) {
-    const old = await this.resolve(record.active, true);
+    const old = await this.resolve(record.active);
     const candidate = structuredClone(old);
     const claims: RegistrationIntent["claims"] = [];
     const claim = async (
@@ -392,7 +388,7 @@ export class RegistrationCoordinator {
       for (const record of (await this.snapshot(userId, now)).records)
         for (const candidate of [
           record.active,
-          ...(record.pending?.candidate && !record.pending.cancelling
+          ...(record.pending?.candidate && record.pending.committed && !record.pending.cancelling
             ? [record.pending.candidate]
             : []),
         ]) {
