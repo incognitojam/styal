@@ -1,3 +1,5 @@
+import * as PostgresLiveActivities from "./persistence/PostgresLiveActivities.ts";
+import * as PostgresDevices from "./persistence/PostgresDevices.ts";
 import * as PostgresEnvironmentLinkCompletion from "./persistence/PostgresEnvironmentLinkCompletion.ts";
 import * as PostgresManagedTunnelLimits from "./persistence/PostgresManagedTunnelLimits.ts";
 import * as PostgresManagedEndpointAllocations from "./persistence/PostgresManagedEndpointAllocations.ts";
@@ -104,7 +106,7 @@ export const layerServices = Layer.empty.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       AgentActivityRows.layer.pipe(Layer.provide(PostgresAgentActivityRows.layer)),
-      Devices.layer,
+      Devices.layer.pipe(Layer.provide(PostgresDevices.layer)),
     ),
   ),
   Layer.provideMerge(
@@ -119,7 +121,12 @@ export const layerServices = Layer.empty.pipe(
       ManagedTunnelLimits.layer.pipe(Layer.provide(PostgresManagedTunnelLimits.layer)),
     ),
   ),
-  Layer.provideMerge(Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      LiveActivities.layer.pipe(Layer.provide(PostgresLiveActivities.layer)),
+      T3ChatAccounts.layer,
+    ),
+  ),
   Layer.provideMerge(Accounts.layer.pipe(Layer.provide(PostgresAccounts.layer))),
   Layer.provideMerge(DeliveryAttempts.layer),
   Layer.provideMerge(RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer))),
