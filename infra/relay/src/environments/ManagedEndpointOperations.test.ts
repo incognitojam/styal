@@ -1,3 +1,5 @@
+import * as PostgresManagedEndpointAllocations from "../persistence/PostgresManagedEndpointAllocations.ts";
+import * as PostgresManagedTunnelLimits from "../persistence/PostgresManagedTunnelLimits.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -179,9 +181,13 @@ function fixture(hooks?: {
             ),
         });
       }),
-    ).pipe(Layer.provide(Allocations.layer)),
+    ).pipe(
+      Layer.provide(
+        Allocations.layer.pipe(Layer.provide(PostgresManagedEndpointAllocations.layer)),
+      ),
+    ),
     PostgresTunnelOperations.layer,
-    Limits.layer,
+    Limits.layer.pipe(Layer.provide(PostgresManagedTunnelLimits.layer)),
   ).pipe(
     Layer.provide(
       Layer.mock(T3ChatAccounts.T3ChatAccounts, {
