@@ -132,7 +132,7 @@ export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<ServerUpd
   get i18nMessage(): MarkedText {
     return [
       msg(
-        "Could not confirm that the server resumed on t3@{version}. Reconnect to check the update outcome.",
+        "Could not confirm that the server resumed on styal@{version}. Reconnect to check the update outcome.",
         { version: this.targetVersion },
       ),
     ];
@@ -151,7 +151,7 @@ export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<Serv
 
   get i18nMessage(): MarkedText {
     return [
-      msg("The t3@{version} update ended before the server accepted the restart.", {
+      msg("The styal@{version} update ended before the server accepted the restart.", {
         version: this.targetVersion,
       }),
     ];
@@ -186,11 +186,11 @@ export class ServerUpdateTerminalError extends Schema.TaggedError<ServerUpdateTe
     const version = this.targetVersion;
     switch (this.status) {
       case "committed":
-        return [msg("The t3@{version} update committed.", { version })];
+        return [msg("The styal@{version} update committed.", { version })];
       case "rolled-back":
-        return [msg("The t3@{version} update rolled-back.", { version })];
+        return [msg("The styal@{version} update rolled-back.", { version })];
       case "failed":
-        return [msg("The t3@{version} update failed.", { version })];
+        return [msg("The styal@{version} update failed.", { version })];
     }
   }
 }

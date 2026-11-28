@@ -1738,7 +1738,7 @@ it.effect("offers agent feedback tools only while the setting is on, to every cl
         capabilities: new Set(["orchestration"]),
         issuedAt: 1,
       };
-      // Any OAuth client can register under the label `t3 feedback` signs in with.
+      // Any OAuth client can register under the label `styal feedback` signs in with.
       const cliScope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         requestNamespace: "cliToken",
@@ -1837,7 +1837,7 @@ it.effect("offers agent feedback tools only while the setting is on, to every cl
       expect(yield* found).toEqual([]);
       for (const token of ["agentToken", "cliToken"]) {
         expect(yield* listed(token)).toEqual([]);
-        // `t3 feedback` turns exactly this answer into the Labs message.
+        // `styal feedback` turns exactly this answer into the Labs message.
         expect(yield* report(token)).toMatchObject({
           error: { code: -32602, message: "Tool 't3_feedback' not found" },
         });
@@ -1984,7 +1984,7 @@ it.effect(
           environmentId,
           requestNamespace: "client:linked",
           thread: undefined,
-          client: { sessionId: "linked", label: "T3 Code · laptop", access: "auto" },
+          client: { sessionId: "linked", label: "styal · laptop", access: "auto" },
           capabilities: new Set(["orchestration"]),
           issuedAt: 1,
         };

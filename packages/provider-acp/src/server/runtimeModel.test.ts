@@ -1620,7 +1620,7 @@ describe("extractMcpToolCallIdentity", () => {
     expect(extractMcpToolCallIdentity(docRead), "doc read").toBeUndefined();
   });
 
-  it("does not claim an agent's own tool that shares a T3 tool name", () => {
+  it("does not claim an agent's own tool that shares a styal tool name", () => {
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "own-delegate-1",

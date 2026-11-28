@@ -23,10 +23,10 @@ describe("sourceControlClients.parseChangeRequestUrl", () => {
 
   it("reads a GitCafe pull request at its canonical /pull/ path and the older /pulls/ path", () => {
     for (const path of ["pull", "pulls"]) {
-      const url = `https://git.cafe/PingDotGG/T3Code/${path}/23897`;
+      const url = `https://git.cafe/Incognitojam/Styal/${path}/23897`;
       expect(parse(url), path).toEqual({
         host: "git.cafe",
-        repository: "pingdotgg/t3code",
+        repository: "incognitojam/styal",
         number: 23897,
       });
       expect(kindOf(url), path).toBe("gitcafe");
@@ -180,9 +180,9 @@ describe("sourceControlClients.parseChangeRequestUrl", () => {
   it("claims nothing it cannot be sure of", () => {
     for (const link of [
       "https://github.com/t3tools/t3code/issues/123",
-      "https://git.cafe/pingdotgg/t3code/issues/23897",
-      "https://git.cafe/pingdotgg/t3code/pull/abc",
-      "https://git.cafe/pingdotgg/t3code",
+      "https://git.cafe/incognitojam/styal/issues/23897",
+      "https://git.cafe/incognitojam/styal/pull/abc",
+      "https://git.cafe/incognitojam/styal",
       "https://github.com/t3tools/t3code/commit/0a1b2c3",
       "https://github.com/t3tools/t3code",
       "https://github.com/t3tools/t3code/pull/abc",
@@ -203,13 +203,13 @@ describe("sourceControlClients.parseChangeRequestUrl", () => {
 });
 
 describe("sourceControlClients.isSameChangeRequest", () => {
-  const linked = "https://github.com/pingdotgg/t3code/pull/42";
+  const linked = "https://github.com/incognitojam/styal/pull/42";
 
   it("matches the same pull request whatever its case or trailing path", () => {
     expect(
       sourceControlClients.isSameChangeRequest(
         linked,
-        "https://github.com/PingDotGG/T3Code/pull/42/files",
+        "https://github.com/Incognitojam/Styal/pull/42/files",
       ),
     ).toBe(true);
   });
@@ -287,7 +287,7 @@ describe("sourceControlClients.recognizeRemote", () => {
     expect(kindOfRemote("https://gitlab.github.example/o/r")).toBe("github");
     expect(kindOfRemote("https://bitbucket.gitlab.example/o/r")).toBe("gitlab");
     expect(kindOfRemote("https://bitbucket.visualstudio.com/p/_git/r")).toBe("azure-devops");
-    expect(kindOfRemote("git@git.cafe:pingdotgg/t3code.git")).toBe("gitcafe");
+    expect(kindOfRemote("git@git.cafe:incognitojam/styal.git")).toBe("gitcafe");
     expect(kindOfRemote("https://origin.cursor.com/acme/web.git")).toBe("cursor-origin");
     expect(kindOfRemote("https://source.tanstack.com/@TanStack/router.git")).toBe(
       "tanstack-source",

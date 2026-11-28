@@ -20,7 +20,7 @@ import WorkflowMailSenderMigration from "../persistence/Migrations/117_WorkflowM
 import * as MilestoneHub from "../milestones/MilestoneHub.ts";
 import * as WorkflowStore from "./WorkflowStore.ts";
 
-const sender = { answeredBy: "t3 CLI", answeredAt: "2026-01-01T00:00:00.000Z" };
+const sender = { answeredBy: "styal CLI", answeredAt: "2026-01-01T00:00:00.000Z" };
 
 const withStore = <A, E>(
   use: Effect.Effect<

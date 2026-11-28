@@ -182,7 +182,7 @@ export function layer(
       serviceName: resource.serviceName,
       serviceVersion: resource.serviceVersion,
       attributes: {
-        "service.namespace": "t3code",
+        "service.namespace": "styal",
         "service.instance.id": resource.serviceInstanceId,
         "service.runtime": resource.runtime,
         "t3code.component": resource.component ?? "relay-client",

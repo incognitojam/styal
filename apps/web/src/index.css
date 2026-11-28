@@ -1,6 +1,7 @@
 /* Clerk injects its component styles into the clerk layer (clerkAppearance.cssLayerName). */
 @layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
+@import "./styal-artwork.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
@@ -704,8 +705,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     background-color: color-mix(in oklab, var(--primary) 45%, transparent);
   }
   :root {
-    /* Keep the original T3 Code artwork palettes as the defaults. Built-in
-       themes override them with their own pigments in the components layer. */
+    /* Named themes override these pigments; styal supplies the default artwork colorway. */
     --stage-art-top: oklch(0.782169 0.123386 240.226);
     --stage-art-mid: oklch(0.616111 0.195824 259.735);
     --stage-art-bottom: oklch(0.441553 0.232394 265.474);

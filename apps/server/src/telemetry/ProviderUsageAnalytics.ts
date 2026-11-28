@@ -158,7 +158,7 @@ function selectionProperties(
 
 function childKind(context: ProviderTurnAnalyticsContext | undefined) {
   if (context?.segment === "native_child") return "native";
-  return context?.origin?.subagent === true ? "t3" : undefined;
+  return context?.origin?.subagent === true ? "styal" : undefined;
 }
 
 function counters(usage: TurnTokenUsage | undefined): Properties {

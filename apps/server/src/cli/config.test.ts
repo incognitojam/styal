@@ -195,7 +195,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       Effect.result,
     );
 
-  it.effect("refuses a manual web launch while a lock-aware server owns the T3 home", () =>
+  it.effect("refuses a manual web launch while a lock-aware server owns the styal home", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -213,7 +213,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       const cwd = path.join(baseDir, "project");
       const result = yield* resolveManualWebLaunch(baseDir, cwd);
       assert(Result.isFailure(result));
-      expect(result.failure).toContain("A T3 Code server is already running");
+      expect(result.failure).toContain("A styal server is already running");
       expect(result.failure).toContain(`pid ${child.pid}`);
       expect(yield* fs.exists(cwd)).toBe(false);
     }),
@@ -282,7 +282,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       assert(child.pid !== undefined);
       for (const source of ["flag", "T3CODE_HOME", "default"] as const) {
         const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-preflight-pair-" });
-        const baseDir = source === "default" ? path.join(home, ".t3") : home;
+        const baseDir = source === "default" ? path.join(home, ".styal") : home;
         const stateDir = path.join(baseDir, "userdata");
         yield* fs.makeDirectory(stateDir, { recursive: true });
         yield* fs.writeFileString(

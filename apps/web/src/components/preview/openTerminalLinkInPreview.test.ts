@@ -81,7 +81,7 @@ describe("openTerminalLinkInPreview", () => {
     );
 
     await openTerminalLinkInPreview({
-      url: "https://t3.chat/",
+      url: "https://restart.styal.invalid/",
       threadRef,
       openPreview,
       fallbackToBrowser: vi.fn(),

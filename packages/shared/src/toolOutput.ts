@@ -206,7 +206,7 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
   return Object.keys(output).length === 0 ? undefined : output;
 }
 
-// OpenCode 2 Code Mode reports a script's nested T3 tool calls as one item with the script's result.
+// OpenCode 2 Code Mode reports a script's nested styal tool calls as one item with the script's result.
 const OPENCODE_CODE_MODE_TOOL_NAME = "execute";
 
 export function htmlRenderFromToolItem(item: {

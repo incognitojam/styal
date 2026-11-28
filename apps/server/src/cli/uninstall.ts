@@ -66,7 +66,7 @@ export const findOwnedLauncher = Effect.fn("cli.uninstall.find_launcher")(functi
   return yield* findPosixLauncher({ launchedAs: input.launchedAs, versionsDir: input.versionsDir });
 });
 
-/** Whether `launcher` is a link, unedited `t3` script, or unedited `t3.cmd` into this home's runtime/versions. */
+/** Whether `launcher` is a link, unedited `styal` script, or unedited `styal.cmd` into this home's runtime/versions. */
 const ownsLauncher = Effect.fn("cli.uninstall.owns_launcher")(function* (
   launcher: string,
   versionsDir: string,
@@ -79,7 +79,7 @@ const ownsLauncher = Effect.fn("cli.uninstall.owns_launcher")(function* (
     .pipe(Effect.orElseSucceed(() => versionsDir));
   const scriptTarget = platform === "win32" ? undefined : yield* readPosixLauncherTarget(launcher);
   // The link or script text keeps a pruned (dangling) target; the real path sees through a
-  // symlinked T3 home.
+  // symlinked styal home.
   const targets =
     platform === "win32"
       ? [
@@ -108,7 +108,7 @@ const ownsLauncher = Effect.fn("cli.uninstall.owns_launcher")(function* (
 });
 
 /**
- * Launchers recorded in `runtime/launchers` by the install scripts and `t3 install` that still
+ * Launchers recorded in `runtime/launchers` by the install scripts and `styal install` that still
  * point into this home's runtime/versions. npx can run a different version than the installed
  * one, so the launcher this process started from does not always name them.
  */
@@ -128,7 +128,7 @@ export const findRecordedLaunchers = Effect.fn("cli.uninstall.find_recorded_laun
 });
 
 // cmd.exe needs verbatim quoting and literal paths, with delayed expansion disabled. The shell
-// starts in System32 and runs ping from there, whatever directory `t3 uninstall` was run in.
+// starts in System32 and runs ping from there, whatever directory `styal uninstall` was run in.
 export function spawnWindowsRemoval(environment: NodeJS.ProcessEnv, dir: string) {
   const ping = windowsSystem32Path(environment, "ping.exe");
   return NodeChildProcess.spawn(
@@ -211,7 +211,7 @@ const logOtherHomeService = (plan: UninstallPlan) =>
   plan.otherHomeService === undefined
     ? Effect.void
     : Console.log(
-        `The T3 Code service serves ${plan.otherHomeService}, so it was not removed. Pass \`${BootService.formatBootServiceBaseDirOption(plan.otherHomeService)}\` to remove it.`,
+        `The styal service serves ${plan.otherHomeService}, so it was not removed. Pass \`${BootService.formatBootServiceBaseDirOption(plan.otherHomeService)}\` to remove it.`,
       );
 
 const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
@@ -263,7 +263,7 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
 
   // The prompt can wait a long time; keep a service or launcher that changed hands meanwhile.
   if (plan.service && (yield* service.status).otherBaseDir !== undefined) {
-    yield* Console.log("Left the background service: it now serves another T3 home.");
+    yield* Console.log("Left the background service: it now serves another styal home.");
   } else if (plan.service) {
     yield* service.uninstall;
     yield* Console.log("Removed the background service.");
@@ -306,6 +306,6 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
     }
   }
   yield* Console.log("");
-  yield* Console.log("t3 is uninstalled. Thanks for trying T3 Code.");
+  yield* Console.log("styal is uninstalled. Thanks for trying styal.");
   yield* logOtherHomeService(plan);
 });

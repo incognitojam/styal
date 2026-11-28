@@ -106,7 +106,7 @@ export const make = Effect.gen(function* () {
   const isOurLink = Effect.fn("DesktopCliCommand.isOurLink")(
     function* (link: string) {
       yield* fs.readLink(link);
-      // The launcher is a few KB; never read a large binary another `t3` links to.
+      // The launcher is a few KB; never read a large binary another `styal` links to.
       const info = yield* fs.stat(link);
       if (info.type !== "File" || Number(info.size) > 16_384) return false;
       const content = yield* fs.readFileString(link);
@@ -117,7 +117,7 @@ export const make = Effect.gen(function* () {
 
   // PATH can reach the regular launcher directly; removal still requires isOurLink.
   const runsOurLauncher = Effect.fn("DesktopCliCommand.runsOurLauncher")(
-    // Another T3 home's link is marked too, so compare where it leads, not the marker alone.
+    // Another styal home's link is marked too, so compare where it leads, not the marker alone.
     function* (candidate: string) {
       const [resolved, ours] = yield* Effect.all([fs.realPath(candidate), fs.realPath(launcher)]);
       if (resolved !== ours) return false;
@@ -172,7 +172,7 @@ export const make = Effect.gen(function* () {
 
   const firstOnPath = Effect.gen(function* () {
     for (const directory of pathEntries(env.PATH, ":")) {
-      const candidate = path.join(directory, "t3");
+      const candidate = path.join(directory, "styal");
       if (yield* isExecutableFile(candidate)) return Option.some(candidate);
     }
     return Option.none<string>();
@@ -201,7 +201,7 @@ export const make = Effect.gen(function* () {
         : Option.none<string>();
     }
     for (const directory of knownLocations(environment.homeDirectory, environment.platform)) {
-      const link = path.join(directory, "t3");
+      const link = path.join(directory, "styal");
       if (yield* isOurLink(link)) return Option.some(link);
     }
     return Option.none<string>();
@@ -240,7 +240,7 @@ export const make = Effect.gen(function* () {
     }
     const launcherPath = (yield* exists(launcher)) ? launcher : null;
     const found = yield* installedAt;
-    // Our link into another T3 home is not this app's command; Install updates it in place.
+    // Our link into another styal home is not this app's command; Install updates it in place.
     const installed =
       windows || (Option.isSome(found) && (yield* leadsHere(found.value)))
         ? found
@@ -299,7 +299,7 @@ export const make = Effect.gen(function* () {
       // PATH would split the folder at the `;`, leaving two wrong entries behind.
       if (binDirectory.includes(";")) {
         return yield* fail(
-          `T3 Code cannot put ${binDirectory} on PATH because it has a ";". Run ${launcher} directly.`,
+          `styal cannot put ${binDirectory} on PATH because it has a ";". Run ${launcher} directly.`,
         );
       }
       const entries = pathEntries(yield* readUserPath, ";");
@@ -318,7 +318,7 @@ export const make = Effect.gen(function* () {
       if (Option.getOrUndefined(target) === launcher) return yield* state;
     }
     const shadowedBy = yield* foreignFirstOnPath;
-    // Our own link into another T3 home runs first too; it is the one this install updates.
+    // Our own link into another styal home runs first too; it is the one this install updates.
     if (Option.isSome(shadowedBy) && shadowedBy.value !== replaced) {
       return yield* fail(
         `Another t3 at ${shadowedBy.value} runs first in a new terminal. Remove it, or run the launcher directly at ${launcher}.`,
@@ -332,7 +332,7 @@ export const make = Effect.gen(function* () {
       ...candidates.filter((candidate) => onPath.includes(candidate)),
       ...candidates.filter((candidate) => !onPath.includes(candidate)),
     ])) {
-      const link = path.join(directory, "t3");
+      const link = path.join(directory, "styal");
       const created = (yield* exists(directory))
         ? yield* writableDirectory(directory)
         : yield* fs.makeDirectory(directory, { recursive: true }).pipe(
@@ -382,7 +382,7 @@ export const make = Effect.gen(function* () {
       return yield* state;
     }
     for (const directory of knownLocations(environment.homeDirectory, environment.platform)) {
-      const link = path.join(directory, "t3");
+      const link = path.join(directory, "styal");
       if (yield* isOurLink(link)) {
         yield* fs.remove(link).pipe(Effect.mapError(() => fail(`Could not remove ${link}.`)));
       }
@@ -398,17 +398,15 @@ export const make = Effect.gen(function* () {
       return yield* fail("Install the t3 command first.");
     }
     const setup = startupLine(installed.value);
-    if (setup === undefined) return yield* fail("T3 Code cannot add t3 to this shell's PATH.");
+    if (setup === undefined) return yield* fail("styal cannot add t3 to this shell's PATH.");
     const shadowedBy = yield* foreignFirstOnPath;
     if (Option.isSome(shadowedBy)) {
-      return yield* fail(
-        `Another t3 at ${shadowedBy.value} runs first; T3 Code leaves it in place.`,
-      );
+      return yield* fail(`Another t3 at ${shadowedBy.value} runs first; styal leaves it in place.`);
     }
     if (!(yield* folderOnPath(installed.value)) && !(yield* hasLine(setup))) {
       yield* fs.makeDirectory(path.dirname(setup.path), { recursive: true }).pipe(
         Effect.andThen(
-          fs.writeFileString(setup.path, `\n# Added by T3 Code\n${setup.line}\n`, { flag: "a" }),
+          fs.writeFileString(setup.path, `\n# Added by styal\n${setup.line}\n`, { flag: "a" }),
         ),
         Effect.mapError(() => fail(`Could not add t3 to ${setup.file}.`)),
       );
@@ -424,12 +422,12 @@ export const make = Effect.gen(function* () {
       if (!freshInstall) {
         return yield* logInfo("left the t3 command to Settings on an existing install");
       }
-      // Another T3 home's app owns the existing link; only Install in Settings may take it over.
+      // Another styal home's app owns the existing link; only Install in Settings may take it over.
       const existing = Option.getOrUndefined(yield* installedAt);
       if (existing !== undefined) {
         const target = yield* fs.readLink(existing).pipe(Effect.option);
         if (Option.getOrUndefined(target) !== launcher) {
-          return yield* logInfo("left another T3 Code app's t3 command in place", {
+          return yield* logInfo("left another styal app's t3 command in place", {
             existing,
           });
         }
@@ -437,7 +435,7 @@ export const make = Effect.gen(function* () {
       // A t3 that is not ours in these folders, even off PATH, means the user has one already. On
       // Windows the app never writes there, so any t3 there is someone else's.
       for (const directory of userCandidates(environment.homeDirectory)) {
-        for (const name of windows ? ["t3.cmd", "t3.exe"] : ["t3"]) {
+        for (const name of windows ? ["styal.cmd", "styal.exe"] : ["styal"]) {
           const other = path.join(directory, name);
           const present =
             (yield* exists(other)) || Option.isSome(yield* fs.readLink(other).pipe(Effect.option));

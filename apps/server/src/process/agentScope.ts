@@ -20,9 +20,9 @@ import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProviderProcesses from "./providerProcesses.ts";
 
-const AGENT_SLICE = "app-t3code-agents.slice";
+const AGENT_SLICE = "app-styal-agents.slice";
 // Owns every agent slice and competes with the server's unit or scope under app.slice.
-const AGENTS_PARENT_SLICE = "app-t3code.slice";
+const AGENTS_PARENT_SLICE = "app-styal.slice";
 // Low weights yield CPU and disk to the server under contention, where the user manager
 // has those controllers: current systemd delegates cpu, rarely io. TasksMax keeps agents
 // below logind's 33% per-user task limit, leaving forks for the server.
@@ -30,7 +30,7 @@ const AGENTS_PARENT_PROPERTIES = ["CPUWeight=10", "IOWeight=10", "TasksMax=25%"]
 
 export function ownedAgentSlice(stateDir: string): string {
   const hash = NodeCrypto.createHash("sha256").update(stateDir).digest("hex").slice(0, 12);
-  return `app-t3code-agents-${hash}.slice`;
+  return `app-styal-agents-${hash}.slice`;
 }
 
 const GiB = 1024 ** 3;

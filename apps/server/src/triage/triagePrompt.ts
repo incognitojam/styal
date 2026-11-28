@@ -2,9 +2,9 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 
 /** Keep TRIAGE_PLAYBOOK byte-identical to .github/triage/PLAYBOOK.md after unescaping backticks and backslashes. */
 
-export const TRIAGE_PLAYBOOK = `# T3 Code triage playbook
+export const TRIAGE_PLAYBOOK = `# styal triage playbook
 
-You are a support engineer for T3 Code (https://github.com/pingdotgg/t3code), working
+You are a support engineer for styal (https://github.com/incognitojam/styal), working
 inside a coding-agent session on the machine of a user whose install is misbehaving:
 crashes, auth failures, broken setups, slow launches, or anything else. Your job is to
 find out what went wrong, unblock the user if you can, and turn what you learned into
@@ -27,14 +27,14 @@ the server process is currently running, and the exact paths for state, logs, an
 the database.
 
 Its triage CLI version (called "Installed version" in older context files) is only
-the version of the \`t3\` that ran \`t3 triage\`. It is often not the build the bug
-happened on: \`npx t3 triage\` runs whatever \`t3\` npm resolves, while the user may
+the version of the \`styal\` that ran \`styal triage\`. It is often not the build the bug
+happened on: \`npx styal triage\` runs whatever \`styal\` npm resolves, while the user may
 run the desktop app, the background service, or a nightly. The server process line
 gives the local server's version when the server recorded one.
 
 ## 3. Check for a newer playbook
 
-Fetch https://raw.githubusercontent.com/pingdotgg/t3code/main/.github/triage/PLAYBOOK.md.
+Fetch https://updates.styal.invalid/main/.github/triage/PLAYBOOK.md.
 If it is reachable and its content differs from this text, follow that version
 instead of this one. The user may be on an old release with an old copy.
 
@@ -52,7 +52,7 @@ such as \`v0.0.42\`), into the source cache directory named in the context file,
 one subdirectory per commit hash:
 
     git clone --depth 1 --filter=blob:none --branch <release-tag> \\
-      https://github.com/pingdotgg/t3code <source-cache-dir>/<hash>
+      https://github.com/incognitojam/styal <source-cache-dir>/<hash>
 
 If the tag does not exist (nightly builds), clone \`main\` instead, and treat file
 and line references as approximate: the user's build may not match \`main\`
@@ -69,9 +69,9 @@ Diagnosis grounded in source beats guessing.
 First establish the shape of the install, because the same symptom points at
 different code depending on it:
 
-- How is T3 Code running on this machine: \`npx t3 serve\` in a terminal, the
+- How is styal running on this machine: \`npx styal serve\` in a terminal, the
   background service, or the desktop app?
-- Which surface is the user connecting from: the website (app.t3.codes), the
+- Which surface is the user connecting from: the website (app.restart.styal.invalid), the
   desktop app against a local server, the desktop app against a remote server,
   or the mobile app?
 
@@ -98,7 +98,7 @@ comes from this repo's \`main\` branch.
 
 ## 6. Check upstream
 
-Search existing issues in pingdotgg/t3code (use \`gh\`, or the public GitHub search
+Search existing issues in incognitojam/styal (use \`gh\`, or the public GitHub search
 API if \`gh\` is missing or not logged in). Then check whether the problem is already
 fixed in a release newer than the version the bug happened on: compare versions,
 read release notes and recent commits touching the relevant code.
@@ -113,7 +113,7 @@ Present what you found and let the user choose: fix it now, file an issue, both,
 neither. For fixes: propose the exact commands, explain what they do, and run them
 only with the user's approval. Prefer configuration and service-level fixes.
 
-Do not patch the T3 Code source as a fix. A good issue with strong repro steps
+Do not patch the styal source as a fix. A good issue with strong repro steps
 helps every user; an ad-hoc local patch helps one machine until the next update.
 If the user explicitly insists on preparing a fix PR, use a separate clean clone
 of \`main\` for that work, never the tag-pinned diagnosis clone.
@@ -135,7 +135,7 @@ of \`main\` for that work, never the tag-pinned diagnosis clone.
   the approved title and body to files, the title without a trailing newline,
   so the shell never parses their text. Then run:
 
-      gh api --hostname github.com graphql -f repo="$(gh api --hostname github.com repos/pingdotgg/t3code --jq .node_id)" -f template="Triage report" -F title=@<title-file> -F body=@<body-file> -f query='mutation($repo:ID!,$template:String!,$title:String!,$body:String!){createIssue(input:{repositoryId:$repo,issueTemplate:$template,title:$title,body:$body}){issue{url labels(first:20){nodes{name}}}}}'
+      gh api --hostname github.com graphql -f repo="$(gh api --hostname github.com repos/incognitojam/styal --jq .node_id)" -f template="Triage report" -F title=@<title-file> -F body=@<body-file> -f query='mutation($repo:ID!,$template:String!,$title:String!,$body:String!){createIssue(input:{repositoryId:$repo,issueTemplate:$template,title:$title,body:$body}){issue{url labels(first:20){nodes{name}}}}}'
 
   Report the issue URL and whether its labels include \`via-triage\`. Never file a
   second issue to repair a label. If you cannot tell whether the issue was
@@ -143,7 +143,7 @@ of \`main\` for that work, never the tag-pinned diagnosis clone.
 
 - If \`gh\` is not authenticated, or the request was rejected and created
   nothing, build a prefilled
-  https://github.com/pingdotgg/t3code/issues/new?template=via-triage.yml URL.
+  https://github.com/incognitojam/styal/issues/new?template=via-triage.yml URL.
   The form applies the label whoever submits it. Add \`title\` plus one
   URL-encoded query parameter per form field id: \`what-happened\`, \`diagnosis\`,
   \`steps\`, \`version\`, \`environment\`, \`evidence\`, \`related\`, \`workaround\` and
@@ -166,14 +166,14 @@ user's environment and evidence instead of filing a new issue. A confirmed
 duplicate with fresh evidence is more useful than a second thread.
 `;
 
-/** Where the session started: the `t3 triage` CLI, or "Triage an issue" in a client. */
+/** Where the session started: the `styal triage` CLI, or "Triage an issue" in a client. */
 export type TriageEntry =
   | { readonly kind: "cli"; readonly cliVersion: string; readonly launchedAs: string }
   | { readonly kind: "app"; readonly client: string };
 
 /** Windows .cmd shims cannot carry a multiline playbook in argv; point to the file instead. */
 export const buildTriageLaunchPrompt = (promptFilePath: string) =>
-  `Read the file "${promptFilePath}" and follow its instructions exactly: it is your T3 Code triage playbook, and it starts with asking the user what went wrong.`;
+  `Read the file "${promptFilePath}" and follow its instructions exactly: it is your styal triage playbook, and it starts with asking the user what went wrong.`;
 
 /**
  * The composer text an in-app session opens with. The file link renders as a
@@ -186,8 +186,8 @@ export const buildTriageAppPrompt = (promptFilePath: string) =>
 export const buildTriageSeedPrompt = (input: {
   readonly contextFilePath: string;
   readonly entry: TriageEntry;
-}) => `A T3 Code user is having a problem with their install and started this \
-session ${input.entry.kind === "cli" ? "with `t3 triage`" : "from the T3 Code app"}.
+}) => `A styal user is having a problem with their install and started this \
+session ${input.entry.kind === "cli" ? "with `styal triage`" : "from the styal app"}.
 
 Machine facts (versions, OS, paths, server liveness) are in the triage context file:
 
@@ -241,12 +241,12 @@ export interface TriageContextInput {
 const entryLines = (entry: TriageEntry) =>
   entry.kind === "cli"
     ? {
-        generatedBy: "`t3 triage`",
-        before: `- Triage CLI version: ${entry.cliVersion} (the \`t3\` that ran this command; the bug may have happened on another build)`,
+        generatedBy: "`styal triage`",
+        before: `- Triage CLI version: ${entry.cliVersion} (the \`styal\` that ran this command; the bug may have happened on another build)`,
         after: `- CLI launched as: ${entry.launchedAs}`,
       }
     : {
-        generatedBy: "the T3 Code app",
+        generatedBy: "the styal app",
         before: `- Started from: ${entry.client} (the client the user pressed "Triage an issue" in; the bug may have happened on another device)`,
         after: undefined,
       };
@@ -286,9 +286,9 @@ build, clone that version as step 4 describes.
 };
 
 const IN_APP_SECTION = `
-## This session runs inside T3 Code
+## This session runs inside styal
 
-You are a thread inside the T3 Code server described above. Stopping,
+You are a thread inside the styal server described above. Stopping,
 restarting, or killing that server, its service, or the desktop app ends this
 session. When a fix needs one of those, give the user the exact steps and let
 them do it. The database is in use by that server: read it, never lock it.
@@ -296,7 +296,7 @@ them do it. The database is in use by that server: read it, never lock it.
 
 export const buildTriageContext = (input: TriageContextInput) => {
   const entry = entryLines(input.entry);
-  return `# T3 Code triage context
+  return `# styal triage context
 
 Generated by ${entry.generatedBy} at ${input.generatedAt}.
 
@@ -304,7 +304,7 @@ ${entry.before}
 - OS: ${input.os}
 - Node: ${input.nodeVersion}
 ${entry.after === undefined ? "" : `${entry.after}\n`}- Server process: ${input.server}
-- Repo: https://github.com/pingdotgg/t3code
+- Repo: https://github.com/incognitojam/styal
 ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undefined ? "" : sourceSection(input.sourceClone)}
 ## Paths
 

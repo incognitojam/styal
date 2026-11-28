@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
-// Launches a packaged desktop app against a seeded T3 home, opens a thread, and checks its
+// Launches a packaged desktop app against a seeded styal home, opens a thread, and checks its
 // messages render. Release jobs run it so a build whose backend or bundle cannot start fails
 // before it is published.
 import * as NodeFS from "node:fs";
@@ -32,7 +32,7 @@ if (!executable)
 const artifactsDir = NodePath.resolve(values["artifacts-dir"] ?? "desktop-launch-check");
 
 const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-desktop-launch-"));
-const t3Home = NodePath.join(home, "t3");
+const t3Home = NodePath.join(home, "styal");
 NodeFS.mkdirSync(NodePath.join(t3Home, "userdata"), { recursive: true });
 NodeFS.copyFileSync(FIXTURE_DB, NodePath.join(t3Home, "userdata/statev2.sqlite"));
 

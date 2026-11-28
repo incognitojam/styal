@@ -38,7 +38,8 @@ import {
   workflowRunInvolves,
 } from "@t3tools/client-runtime/workflows";
 
-const WORKFLOWS_GUIDE_URL = "https://github.com/pingdotgg/t3code/blob/main/docs/user/workflows.md";
+const WORKFLOWS_GUIDE_URL =
+  "https://github.com/incognitojam/styal/blob/main/docs/user/workflows.md";
 const EVERY_WORKFLOW = "";
 // Never a kind: the questions of no kind are filtered by the empty kind.
 const EVERY_KIND = "*";

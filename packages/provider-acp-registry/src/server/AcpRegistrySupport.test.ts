@@ -408,7 +408,7 @@ describe("AcpRegistrySupport", () => {
         source: "local",
         commandPath: "node.exe",
         commandArgs: [
-          "C:\\Users\\me\\.t3\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
+          "C:\\Users\\me\\.styal\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
           "acp",
         ],
       });
@@ -523,7 +523,7 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
-  it.effect("installs into T3 home a package and launches its exposed command", () => {
+  it.effect("installs into styal home a package and launches its exposed command", () => {
     const agent = makeAgent({
       npx: { package: "@example/acp@V1.2.3", args: ["--stdio"] },
     });

@@ -792,7 +792,7 @@ const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
 /** How long automatic settlement waits for a queued turn to start. */
 export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const RUNTIME_REQUEST_DELIVERY_FAILED_MESSAGE =
-  "T3 Code could not confirm that your answer reached the agent. If the run stays stuck, stop it and try again.";
+  "styal could not confirm that your answer reached the agent. If the run stays stuck, stop it and try again.";
 
 function withoutPreparationResult(
   item: Extract<OrchestrationV2TurnItem, { readonly type: "command_execution" }>,
@@ -11326,7 +11326,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : command.feedbackStatus === "sent"
               ? "completed"
               : "cancelled",
-          title: "Feedback for the T3 team",
+          title: "Feedback for the styal team",
           startedAt: existing?.startedAt ?? now,
           completedAt: pending ? null : now,
           updatedAt: now,

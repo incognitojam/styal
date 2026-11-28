@@ -199,9 +199,9 @@ describe("scoreThreadSearch", () => {
   });
 
   it("finds a branch pasted with the app's worktree prefix", () => {
-    const subject = thread("Cmd+K search", { branch: "t3/cmdk-search-v2" });
-    expect(scoreThreadSearch(foldSearchQuery("t3/cmdk-search-v2"), subject, NOW)).not.toBeNull();
-    expect(scoreThreadSearch(foldSearchQuery("t3/cmdk"), subject, NOW)).not.toBeNull();
+    const subject = thread("Cmd+K search", { branch: "styal/cmdk-search-v2" });
+    expect(scoreThreadSearch(foldSearchQuery("styal/cmdk-search-v2"), subject, NOW)).not.toBeNull();
+    expect(scoreThreadSearch(foldSearchQuery("styal/cmdk"), subject, NOW)).not.toBeNull();
   });
 
   it("ranks a title holding the words above the app's own branch prefix and project name", () => {
@@ -210,7 +210,7 @@ describe("scoreThreadSearch", () => {
       rankTitles("t3 connect", [
         thread("Diagnose Connect provisioning failures", {
           ...busy,
-          branch: "t3/diagnose-connect",
+          branch: "styal/diagnose-connect",
           projectTitle: "t3code",
         }),
         thread("T3 Connect Tunnel Lifecycle Review", { projectTitle: "t3code" }),
@@ -226,7 +226,7 @@ describe("scoreThreadSearch", () => {
 
   it("matches pull request numbers, branches, and projects with every token somewhere", () => {
     const subject = thread("Trim model lists", {
-      branch: "t3/trim-mcp-models",
+      branch: "styal/trim-mcp-models",
       projectTitle: "t3code",
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
@@ -317,7 +317,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
 
   it("says which field matched when the title does not", () => {
     const subject = thread("Trim model lists", {
-      branch: "t3/cleanup-payloads",
+      branch: "styal/cleanup-payloads",
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
     for (const query of ["#22889", "pr 22889", "pr22889", "pull request #22889"]) {
@@ -336,12 +336,12 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
       ranges: [{ start: 0, end: 7 }],
     });
     expect(scoreThreadSearch("trim", subject, NOW)?.explain?.()).toBeUndefined();
-    // Nor is it in the flat t3-<hex> form used when a `t3` branch blocks nested refs.
-    const flat = thread("Add search", { branch: "t3-abcd1234" });
-    expect(scoreThreadSearch("t3", flat, NOW)).toBeNull();
-    expect(scoreThreadSearch("t3 connect", flat, NOW)).toBeNull();
+    // Nor is it in the flat styal-<hex> form used when a `styal` branch blocks nested refs.
+    const flat = thread("Add search", { branch: "styal-abcd1234" });
+    expect(scoreThreadSearch("styal", flat, NOW)).toBeNull();
+    expect(scoreThreadSearch("styal connect", flat, NOW)).toBeNull();
     expect(scoreThreadSearch("abcd1234", flat, NOW)).not.toBeNull();
-    for (const query of ["t3-abcd", "t3-abcd1234 connect", "connect t3-abcd1234"]) {
+    for (const query of ["styal-abcd", "styal-abcd1234 connect", "connect styal-abcd1234"]) {
       expect(scoreThreadSearch(query, { ...flat, projectTitle: "connect" }, NOW)).not.toBeNull();
     }
   });
@@ -414,7 +414,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
     // A query folded elsewhere may hold stray spaces.
     expect(scoreThreadSearch('" lag"', thread("Fix sidebar lag"), NOW)).not.toBeNull();
     const subject = thread("Trim model lists", {
-      branch: "t3/cleanup-payloads",
+      branch: "styal/cleanup-payloads",
       pullRequests: [{ number: 22889, title: "Smaller MCP payloads" }],
     });
     expect(
@@ -426,7 +426,7 @@ describe("scoreThreadSearch beyond Latin text and titles", () => {
     });
     expect(scoreThreadSearch(foldSearchQuery('"payloads mcp"'), subject, NOW)).toBeNull();
     // A branch or pull request pasted in quotes still finds its thread.
-    for (const query of ['"t3/cleanup-payloads"', '"#22889"', '"pr 22889"']) {
+    for (const query of ['"styal/cleanup-payloads"', '"#22889"', '"pr 22889"']) {
       expect(scoreThreadSearch(foldSearchQuery(query), subject, NOW), query).not.toBeNull();
     }
     expect(scoreSearchTerms(foldSearchQuery('"pull requests"'), ["Open pull requests"])).not.toBe(

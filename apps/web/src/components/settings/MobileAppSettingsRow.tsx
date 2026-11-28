@@ -11,13 +11,13 @@ const stores = [
   {
     label: msg("iPhone and iPad"),
     store: "App Store",
-    url: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
+    url: "https://restart.styal.invalid/us/app/t3-code-remote-claude-more/id6787819824",
     Icon: AppleIcon,
   },
   {
     label: "Android",
     store: "Google Play",
-    url: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
+    url: "https://restart.styal.invalid/store/apps/details?id=build.styal.app",
     Icon: AndroidIcon,
   },
 ];

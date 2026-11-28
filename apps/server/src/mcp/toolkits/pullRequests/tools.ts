@@ -90,7 +90,7 @@ export class PullRequestThreadRequiredError extends Schema.TaggedError<PullReque
   {},
 ) {
   override get message(): string {
-    return "Pass threadId: this MCP client is not running inside a T3 thread.";
+    return "Pass threadId: this MCP client is not running inside a styal thread.";
   }
 }
 

@@ -2,16 +2,16 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-repo='pingdotgg/t3code'
+repo='incognitojam/styal'
 tag="${RELEASE_TAG:?RELEASE_TAG is required}"
 pkgrel="${PKGREL:-1}"
 
 if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   pkgname='t3code-bin'
-  asset_prefix='T3-Code'
+  asset_prefix='styal'
 elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.[0-9]+$ ]]; then
   pkgname='t3code-nightly-bin'
-  asset_prefix='T3-Code-Nightly'
+  asset_prefix='styal-Nightly'
 else
   echo "Release $tag does not publish an AUR package."
   exit 0
@@ -23,7 +23,7 @@ release_json="$(gh api "repos/$repo/releases/tags/$tag")"
 declare -A appimage_names appimage_checksums
 for architecture in x86_64 aarch64; do
   upstream_arch="${architecture/aarch64/arm64}"
-  versioned_name="T3-Code-${version}-${upstream_arch}.AppImage"
+  versioned_name="styal-${version}-${upstream_arch}.AppImage"
   versionless_name="${asset_prefix}-${upstream_arch}.AppImage"
   if ! asset="$(jq -er --arg versioned "$versioned_name" \
     --arg versionless "$versionless_name" '

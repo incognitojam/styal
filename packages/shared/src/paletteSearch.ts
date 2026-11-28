@@ -1090,8 +1090,8 @@ export interface SearchMatchHint {
 }
 
 // Most threads' branches start with the app's own worktree prefix ("t3/", and
-// "t3code/" before it, "t3-<hex>" when a "t3" branch blocks nested refs), so
-// "t3 connect" would match nearly every thread.
+// "t3code/" before it, "t3-<hex>" when a "styal" branch blocks nested refs), so
+// "styal connect" would match nearly every thread.
 // Only before more text, so typing "t3/" does not empty the list for a keystroke.
 const WORKTREE_BRANCH_PREFIX_PATTERN = new RegExp(
   `^(?:(?:${WORKTREE_BRANCH_PREFIX}|t3code)/(?=\\S)|${WORKTREE_BRANCH_PREFIX}-(?=[0-9a-f]{8}$))`,

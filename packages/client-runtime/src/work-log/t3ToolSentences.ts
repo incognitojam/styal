@@ -242,50 +242,50 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
-    "Create\nCreating\nCreated\nT3 threads",
+    "Create\nCreating\nCreated\nstyal threads",
     {
       detail: msg(
-        "{status, select, inProgress {Creating T3 threads} completed {Created T3 threads} failed {Failed to create T3 threads} declined {Declined to create T3 threads} stopped {Stopped creating T3 threads} other {Creating T3 threads}}",
+        "{status, select, inProgress {Creating styal threads} completed {Created styal threads} failed {Failed to create styal threads} declined {Declined to create styal threads} stopped {Stopped creating styal threads} other {Creating styal threads}}",
       ),
     },
   ],
   [
-    "Start\nStarting\nStarted\na T3 thread",
+    "Start\nStarting\nStarted\na styal thread",
     {
       detail: msg(
-        "{status, select, inProgress {Starting a T3 thread} completed {Started a T3 thread} failed {Failed to start a T3 thread} declined {Declined to start a T3 thread} stopped {Stopped starting a T3 thread} other {Starting a T3 thread}}",
+        "{status, select, inProgress {Starting a styal thread} completed {Started a styal thread} failed {Failed to start a styal thread} declined {Declined to start a styal thread} stopped {Stopped starting a styal thread} other {Starting a styal thread}}",
       ),
     },
   ],
   [
-    "List\nListing\nListed\nT3 threads",
+    "List\nListing\nListed\nstyal threads",
     {
       detail: msg(
-        "{status, select, inProgress {Listing T3 threads} completed {Listed T3 threads} failed {Failed to list T3 threads} declined {Declined to list T3 threads} stopped {Stopped listing T3 threads} other {Listing T3 threads}}",
+        "{status, select, inProgress {Listing styal threads} completed {Listed styal threads} failed {Failed to list styal threads} declined {Declined to list styal threads} stopped {Stopped listing styal threads} other {Listing styal threads}}",
       ),
     },
   ],
   [
-    "Read\nReading\nRead\na T3 thread",
+    "Read\nReading\nRead\na styal thread",
     {
       detail: msg(
-        "{status, select, inProgress {Reading a T3 thread} completed {Read a T3 thread} failed {Failed to read a T3 thread} declined {Declined to read a T3 thread} stopped {Stopped reading a T3 thread} other {Reading a T3 thread}}",
+        "{status, select, inProgress {Reading a styal thread} completed {Read a styal thread} failed {Failed to read a styal thread} declined {Declined to read a styal thread} stopped {Stopped reading a styal thread} other {Reading a styal thread}}",
       ),
     },
   ],
   [
-    "Send\nSending\nSent\nto a T3 thread",
+    "Send\nSending\nSent\nto a styal thread",
     {
       detail: msg(
-        "{status, select, inProgress {Sending to a T3 thread} completed {Sent to a T3 thread} failed {Failed to send to a T3 thread} declined {Declined to send to a T3 thread} stopped {Stopped sending to a T3 thread} other {Sending to a T3 thread}}",
+        "{status, select, inProgress {Sending to a styal thread} completed {Sent to a styal thread} failed {Failed to send to a styal thread} declined {Declined to send to a styal thread} stopped {Stopped sending to a styal thread} other {Sending to a styal thread}}",
       ),
     },
   ],
   [
-    "Wait\nWaiting\nWaited\nfor a T3 thread",
+    "Wait\nWaiting\nWaited\nfor a styal thread",
     {
       detail: msg(
-        "{status, select, inProgress {Waiting for a T3 thread} completed {Waited for a T3 thread} failed {Failed to wait for a T3 thread} declined {Declined to wait for a T3 thread} stopped {Stopped waiting for a T3 thread} other {Waiting for a T3 thread}}",
+        "{status, select, inProgress {Waiting for a styal thread} completed {Waited for a styal thread} failed {Failed to wait for a styal thread} declined {Declined to wait for a styal thread} stopped {Stopped waiting for a styal thread} other {Waiting for a styal thread}}",
       ),
     },
   ],
@@ -306,10 +306,10 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
-    "Interrupt\nInterrupting\nRequested an interrupt of\na T3 thread",
+    "Interrupt\nInterrupting\nRequested an interrupt of\na styal thread",
     {
       detail: msg(
-        "{status, select, inProgress {Interrupting a T3 thread} completed {Requested an interrupt of a T3 thread} failed {Failed to interrupt a T3 thread} declined {Declined to interrupt a T3 thread} stopped {Stopped interrupting a T3 thread} other {Interrupting a T3 thread}}",
+        "{status, select, inProgress {Interrupting a styal thread} completed {Requested an interrupt of a styal thread} failed {Failed to interrupt a styal thread} declined {Declined to interrupt a styal thread} stopped {Stopped interrupting a styal thread} other {Interrupting a styal thread}}",
       ),
     },
   ],
@@ -682,10 +682,10 @@ const T3_TOOL_SENTENCES: ReadonlyMap<string, T3ToolSentence> = new Map<string, T
     },
   ],
   [
-    "Update\nUpdating\nUpdated\nT3 thread metadata",
+    "Update\nUpdating\nUpdated\nstyal thread metadata",
     {
       detail: msg(
-        "{status, select, inProgress {Updating T3 thread metadata} completed {Updated T3 thread metadata} failed {Failed to update T3 thread metadata} declined {Declined to update T3 thread metadata} stopped {Stopped updating T3 thread metadata} other {Updating T3 thread metadata}}",
+        "{status, select, inProgress {Updating styal thread metadata} completed {Updated styal thread metadata} failed {Failed to update styal thread metadata} declined {Declined to update styal thread metadata} stopped {Stopped updating styal thread metadata} other {Updating styal thread metadata}}",
       ),
     },
   ],

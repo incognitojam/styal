@@ -112,7 +112,7 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
     if (reserved !== undefined) {
       return {
         ok: false,
-        message: `Pi launch argument '${reserved}' is controlled by T3 Code and cannot be overridden.`,
+        message: `Pi launch argument '${reserved}' is controlled by styal and cannot be overridden.`,
       };
     }
     if (arg === "--") {
@@ -146,7 +146,7 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
       continue;
     }
     if (arg.startsWith("-")) {
-      return { ok: false, message: `Pi launch argument '${arg}' is not supported by T3 Code.` };
+      return { ok: false, message: `Pi launch argument '${arg}' is not supported by styal.` };
     }
     return {
       ok: false,
@@ -253,7 +253,7 @@ export function buildPiRpcLaunch(input: {
   readonly extensionPath: string | undefined;
   readonly sessionPath?: string | undefined;
   readonly ephemeral?: boolean;
-  // T3 stops these processes as soon as they answer. They run --offline because Pi's startup
+  // styal stops these processes as soon as they answer. They run --offline because Pi's startup
   // catalog refresh renews expired OAuth tokens, and a stop mid-request loses the rotated one.
   readonly shortLived?: boolean;
   readonly disableExtensions?: boolean;

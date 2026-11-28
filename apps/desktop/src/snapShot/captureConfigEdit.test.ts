@@ -7,7 +7,7 @@ import {
 } from "./captureConfigEdit.ts";
 import { readKdlNodes } from "./captureConfigKdl.ts";
 
-const app = "com.t3tools.T3Code";
+const app = "build.styal.app";
 const binding = captureConfigBinding("niri", app, "Ctrl+Shift+2");
 
 describe("Niri capture config edits", () => {
@@ -105,7 +105,7 @@ describe("Hyprland capture config edits", () => {
   it.each([
     "return {}",
     "local M = {}\n  return M",
-    '--[[\nhl.bind("CTRL + SHIFT + 2", hl.dsp.global("com.t3tools.T3Code:capture-window"))\n]]',
+    '--[[\nhl.bind("CTRL + SHIFT + 2", hl.dsp.global("build.styal.app:capture-window"))\n]]',
   ])("does not guess how to edit complex Lua", (source) => {
     expect(() => editCaptureConfig(source, "hyprland-lua", app, "install")).toThrow("manual edit");
   });

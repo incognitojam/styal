@@ -26,7 +26,7 @@ vi.hoisted(() => {
   electronModule.exports = {
     app: {
       getVersion: () => "1.0.0",
-      getName: () => "T3 Code",
+      getName: () => "styal",
       isPackaged: true,
       quit: () => undefined,
       once: () => undefined,
@@ -54,8 +54,8 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const dir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-appimage-install-" });
-        const appImagePath = path.join(dir, "T3-Code.AppImage");
-        const stagedPath = path.join(dir, "T3-Code-1.0.1.AppImage");
+        const appImagePath = path.join(dir, "styal.AppImage");
+        const stagedPath = path.join(dir, "styal-1.0.1.AppImage");
         const fdReportPath = path.join(dir, "relaunched-fds.txt");
         yield* fileSystem.writeFileString(appImagePath, "old AppImage");
         yield* fileSystem.writeFileString(

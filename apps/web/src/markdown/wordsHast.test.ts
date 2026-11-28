@@ -108,8 +108,8 @@ const CASES: ReadonlyArray<readonly [markdown: string, html: string]> = [
     '<div data-codex-artifact-template="true" data-artifact-kind="document" data-display-name="Doc" data-skill-directory="/s" data-skill-name="artifact-template-doc"></div>\n<p dir="ltr">::artifact-template{bad="x"}</p>',
   ],
   [
-    "[file](C:\\work\\a.ts) and C:\\Users\\me\\.t3\\shot.png and \\*kept\\*",
-    '<p dir="ltr"><a href="file:///C:/work/a.ts">file</a> and C:\\Users\\me\\.t3\\shot.png and *kept*</p>',
+    "[file](C:\\work\\a.ts) and C:\\Users\\me\\.styal\\shot.png and \\*kept\\*",
+    '<p dir="ltr"><a href="file:///C:/work/a.ts">file</a> and C:\\Users\\me\\.styal\\shot.png and *kept*</p>',
   ],
   [
     '```ts title="a.ts"\nconst a = 1;\n```',

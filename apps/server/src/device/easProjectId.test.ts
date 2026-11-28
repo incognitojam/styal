@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 
 import { findEasProjectId } from "./easProjectId.ts";
 
-const ID_A = "d763fcb8-d37c-41ea-a773-b54a0ab4a454";
+const ID_A = "00000000-0000-4000-8000-000000000001";
 const ID_B = "54d70eaf-b0a3-477a-a9cd-2cf81a5c84c9";
 
 const workspace = (files: Record<string, string>) =>

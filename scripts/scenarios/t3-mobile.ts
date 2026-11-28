@@ -1,4 +1,4 @@
-// `test` for iOS scenarios: e2e's mobile test plus `t3`, which seeds state like the web one and
+// `test` for iOS scenarios: e2e's mobile test plus `styal`, which seeds state like the web one and
 // opens the dev client paired with the scenario's server.
 import { test as base } from "@e2e-dev/mobile";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -11,8 +11,8 @@ import { APP_DIR, MOBILE, MOBILE_T3_HOME } from "../e2e.config.ts";
 import { run, ScenarioError } from "./shell.ts";
 import { makeState, runPromise, type T3State } from "./t3.ts";
 
-const APP_ID = "com.t3tools.t3code.dev";
-const SCHEME = "t3code-dev";
+const APP_ID = "build.styal.app.dev";
+const SCHEME = "styal-dev";
 
 export interface MobileT3 extends T3State {
   /** Installs the dev client if the device lacks it, loads it from Metro, and pairs it. */

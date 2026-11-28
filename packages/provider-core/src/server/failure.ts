@@ -79,7 +79,7 @@ const PERMISSION_DENIED_OUTPUT = /\bEPERM\b|Operation not permitted/u;
  */
 export function providerProcessExitGuidance(output: unknown): string {
   return typeof output === "string" && PERMISSION_DENIED_OUTPUT.test(output)
-    ? "It was denied access to a file or folder (EPERM). On macOS, allow T3 Code under System Settings > Privacy & Security > Files and Folders, or move the project out of Desktop, Documents, or Downloads, then retry the turn."
+    ? "It was denied access to a file or folder (EPERM). On macOS, allow styal under System Settings > Privacy & Security > Files and Folders, or move the project out of Desktop, Documents, or Downloads, then retry the turn."
     : "Check the server logs for the provider's output, then retry the turn.";
 }
 
@@ -190,7 +190,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ContextHandoffDeliveryUncertainError":
           return {
             known:
-              "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.",
+              "styal could not confirm whether conversation history reached the provider. Retry the turn to recover the session.",
             category: categoryMessage(),
           };
         case "ProviderAdapterProtocolError": {

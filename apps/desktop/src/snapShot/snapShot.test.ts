@@ -272,7 +272,7 @@ describe("findAccessibleWindow", () => {
   };
 
   const chromeCapture = {
-    title: "Issues · pingdotgg/t3code",
+    title: "Issues · pingdotgg/styal",
     bounds: captured.bounds,
     platform: "darwin" as const,
     bundleId: "com.google.Chrome",
@@ -446,8 +446,8 @@ describe("findAccessibleWindow", () => {
   });
 
   it.each([
-    ["⠋ t3code", "t3code"],
-    ["t3code", "⠙ t3code"],
+    ["⠋ styal", "styal"],
+    ["styal", "⠙ styal"],
   ])("matches a Wayland spinner starting or stopping: %s → %s", (title, name) => {
     const windows = [{ name, bounds: captured.bounds }];
 
@@ -455,10 +455,10 @@ describe("findAccessibleWindow", () => {
   });
 
   it.each([
-    ["⠋ t3code", "⠙ private"],
-    ["t3code ⠋", "t3code ⠙"],
-    ["⠋t3code", "⠙t3code"],
-    ["⠁ t3code", "⠙ t3code"],
+    ["⠋ styal", "⠙ private"],
+    ["styal ⠋", "styal ⠙"],
+    ["⠋styal", "⠙styal"],
+    ["⠁ styal", "⠙ styal"],
     ["⠋", "⠋"],
   ])("does not guess a Wayland title match: %s → %s", (title, name) => {
     expect(

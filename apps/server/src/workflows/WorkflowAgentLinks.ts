@@ -1,4 +1,4 @@
-// Agent steps in a linked environment: the same three operations, as that environment's T3 tools.
+// Agent steps in a linked environment: the same three operations, as that environment's styal tools.
 import {
   type EnvironmentId,
   OrchestratorMcpFailure,

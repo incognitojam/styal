@@ -124,7 +124,7 @@ describe("mobile DPoP", () => {
     Effect.gen(function* () {
       secureStore.clear();
       const key = yield* loadOrCreateProofKey();
-      const url = "https://relay.t3.codes/v1/environments";
+      const url = "https://relay.restart.styal.invalid/v1/environments";
       const proof = yield* DpopProof.createProof({
         method: "GET",
         url,

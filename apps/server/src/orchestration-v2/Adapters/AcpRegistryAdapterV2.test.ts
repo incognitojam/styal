@@ -1664,7 +1664,7 @@ describe("AcpRegistryAdapterV2", () => {
       });
       // Several agents can run from one directory at once; the spawn env is how
       // a process the agent starts (an MCP server, a shell tool) finds its own
-      // T3 thread, the same way Claude and Codex sessions do.
+      // styal thread, the same way Claude and Codex sessions do.
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const spawnEnvironments: Array<Record<string, unknown> | undefined> = [];
       const capturingSpawner = ChildProcessSpawner.make((command) =>

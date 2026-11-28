@@ -32,6 +32,13 @@ export function loadRepoEnv({
   const localEnv = readEnvFile(NodePath.join(repoRoot, ".env.local"));
   const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
 
+  for (const source of [rootEnv, localEnv, baseEnv]) {
+    for (const [key, value] of Object.entries(source)) {
+      if (value && /(?:RELAY|CLERK|POSTHOG|OTLP|OBSERVE)/.test(key)) {
+        throw new Error(`Restart builds require unset service configuration: ${key}`);
+      }
+    }
+  }
   return {
     ...rootEnv,
     ...localEnv,

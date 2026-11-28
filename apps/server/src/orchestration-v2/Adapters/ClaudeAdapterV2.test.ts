@@ -919,7 +919,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `t3_background_wait`");
-    assert.notInclude(systemPrompt.append ?? "", "## T3 Code devices");
+    assert.notInclude(systemPrompt.append ?? "", "## styal devices");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
@@ -939,7 +939,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
   });
 });
 
-describe("ClaudeAdapterV2 T3 tool instructions", () => {
+describe("ClaudeAdapterV2 styal tool instructions", () => {
   const options = (input: {
     readonly mcp: boolean;
     readonly deviceToolsAvailable: boolean;
@@ -969,12 +969,12 @@ describe("ClaudeAdapterV2 T3 tool instructions", () => {
     assert.include(text, "Use `delegate_task`");
   });
 
-  it("leaves the device block out without device access or without T3 tools", () => {
-    assert.notInclude(append({ mcp: true, deviceToolsAvailable: false }), "## T3 Code devices");
-    assert.notInclude(append({ mcp: false, deviceToolsAvailable: true }), "## T3 Code devices");
+  it("leaves the device block out without device access or without styal tools", () => {
+    assert.notInclude(append({ mcp: true, deviceToolsAvailable: false }), "## styal devices");
+    assert.notInclude(append({ mcp: false, deviceToolsAvailable: true }), "## styal devices");
   });
 
-  it("gives the agent feedback line only to a session with T3 tools", () => {
+  it("gives the agent feedback line only to a session with styal tools", () => {
     const feedback = (mcp: boolean, agentFeedback: "off" | "auto") =>
       append({ mcp, deviceToolsAvailable: false, agentFeedback }).includes("t3_feedback");
     assert.include(
@@ -1016,7 +1016,7 @@ describe("ClaudeAdapterV2 T3 tool instructions", () => {
     ]);
     assert.deepEqual(await subagentContext({ mcp: true, deviceToolsAvailable: false }), []);
     assert.deepEqual(await subagentContext({ mcp: false, deviceToolsAvailable: true }), []);
-    // A custom subagent can lack T3 tools even when this session has them.
+    // A custom subagent can lack styal tools even when this session has them.
     assert.notInclude(
       JSON.stringify(
         await subagentContext({

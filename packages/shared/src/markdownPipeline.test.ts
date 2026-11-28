@@ -565,14 +565,14 @@ it("keeps backslashes that CommonMark would read as escapes in prose Windows pat
   const render = (markdown: string) => text(processor.runSync(processor.parse(markdown)) as Node);
 
   expect(
-    render(String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`),
-  ).toBe(String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`);
+    render(String.raw`Saved to C:\Users\me\.styal\_build and (C:\.scratch) and C:/work\.config.`),
+  ).toBe(String.raw`Saved to C:\Users\me\.styal\_build and (C:\.scratch) and C:/work\.config.`);
   expect(render(String.raw`Escaped C:\\Users\\me`)).toBe(String.raw`Escaped C:\\Users\\me`);
   expect(render(String.raw`See C:\x and \*this\* and Note:\*that\*.`)).toBe(
     String.raw`See C:\x and *this* and Note:*that*.`,
   );
-  expect(render(String.raw`${"`"}C:\me\.t3${"`"} and C:\me\.t3`)).toBe(
-    String.raw`<code>C:\me\.t3</code> and C:\me\.t3`,
+  expect(render(String.raw`${"`"}C:\me\.t3${"`"} and C:\me\.styal`)).toBe(
+    String.raw`<code>C:\me\.t3</code> and C:\me\.styal`,
   );
 });
 
@@ -947,7 +947,7 @@ it("links complete absolute paths in prose and skips shortened ones", () => {
     ),
   ).toEqual([]);
   expect(
-    links("Config lives in /Users/me/Library/Application Support/T3 Code/settings.json now."),
+    links("Config lives in /Users/me/Library/Application Support/styal/settings.json now."),
   ).toEqual([]);
   expect(links(`/chat/settings and https://example.com${path}`)).toEqual([
     `https://example.com${path}`,
