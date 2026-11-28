@@ -71,7 +71,7 @@ const make = Effect.gen(function* () {
     ),
     deleteForUser: Effect.fn("relay.account_data.delete_for_user")(
       function* (input) {
-        yield* cleanup.removeAfterEnds(eq(relayMobileDevices.userId, input.userId), (confirm) =>
+        yield* cleanup.removeAfterEnds({ kind: "account", userId: input.userId }, (confirm) =>
           db.$client.withTransaction(
             Effect.gen(function* () {
               // Waits for a session being opened and stops new ones; see AuthSessions.create.

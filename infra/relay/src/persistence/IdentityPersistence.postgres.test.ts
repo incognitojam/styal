@@ -1,3 +1,4 @@
+import * as PostgresRegistrationCleanup from "./PostgresRegistrationCleanup.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as PgClient from "@effect/sql-pg/PgClient";
 import { describe, expect, it } from "@effect/vitest";
@@ -31,7 +32,7 @@ const layerDb = Layer.effect(RelayDb.RelayDb, PgDrizzle.makeWithDefaults()).pipe
 );
 const layer = Layer.mergeAll(
   PostgresAccounts.layer,
-  PostgresAuthSessions.layer,
+  PostgresAuthSessions.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
   PostgresEmailSignInCodes.layer,
   PostgresReplay.layer,
 ).pipe(

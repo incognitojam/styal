@@ -1,3 +1,4 @@
+import * as PostgresRegistrationCleanup from "../persistence/PostgresRegistrationCleanup.ts";
 import * as PostgresLiveActivities from "../persistence/PostgresLiveActivities.ts";
 import * as PostgresDevices from "../persistence/PostgresDevices.ts";
 import * as Cloudflare from "@alchemy.run/cloudflare";
@@ -43,7 +44,11 @@ const queueFailures = new Set<string>();
 // Runs inside a queue send, before the job is recorded.
 const sendHooks = new Map<string, (job: SignedApnsDeliveryJob) => Effect.Effect<void>>();
 const layer = Layer.mergeAll(
-  AuthSessions.layer.pipe(Layer.provide(PostgresAuthSessions.layer)),
+  AuthSessions.layer.pipe(
+    Layer.provide(
+      PostgresAuthSessions.layer.pipe(Layer.provide(PostgresRegistrationCleanup.layer)),
+    ),
+  ),
   Devices.layer.pipe(Layer.provide(PostgresDevices.layer)),
   LiveActivities.layer.pipe(Layer.provide(PostgresLiveActivities.layer)),
 ).pipe(
