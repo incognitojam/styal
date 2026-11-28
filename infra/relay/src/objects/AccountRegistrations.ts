@@ -18,6 +18,8 @@ export interface RegisteredDevice {
 }
 export interface RegisteredActivity {
   token: TokenReference | null;
+  createdAt: string;
+  remoteStartQueuedAt: string | null;
   remoteStartedAt: string | null;
   endedAt: string | null;
   aggregate: RelayAgentActivityAggregateState | null;
@@ -106,9 +108,10 @@ function validate(
   active: RegistrationCandidate,
   now: string,
 ) {
-  if (input.sessionId !== undefined) {
-    if (!liveRegistrationSession(storage, input.sessionId, now)) return "session-revoked" as const;
-    if (input.kind === "activity" && active.device?.sessionId !== input.sessionId)
+  if (input.kind === "device" ? !!input.sessionId : input.sessionId !== undefined) {
+    const sessionId = input.sessionId ?? "";
+    if (!liveRegistrationSession(storage, sessionId, now)) return "session-revoked" as const;
+    if (input.kind === "activity" && active.device?.sessionId !== sessionId)
       return "device-not-owned" as const;
   }
   return null;
@@ -226,6 +229,8 @@ export function registrations(
         const old = record.active.activity;
         record.active.activity = {
           token: command.keepToken ? (old?.token ?? null) : null,
+          createdAt: old?.createdAt ?? command.now,
+          remoteStartQueuedAt: null,
           remoteStartedAt: old?.remoteStartedAt ?? null,
           endedAt: command.end ? command.now : (old?.endedAt ?? null),
           aggregate: command.aggregate,
@@ -247,6 +252,7 @@ export function registrations(
           }
         } else if (record.active.activity) {
           record.active.activity.token = null;
+          record.active.activity.remoteStartQueuedAt = null;
           record.active.activity.remoteStartedAt = null;
           record.active.activity.endedAt = command.now ?? record.active.activity.endedAt;
           if (command.now) record.active.activity.updatedAt = command.now;

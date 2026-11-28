@@ -656,11 +656,27 @@ it("skips an unreachable token without denying another valid device", async () =
   const c = new RegistrationCoordinator(env);
   await c.register("account-a", deviceInput("phone-a", "push-a"), "first", now);
   await c.register("account-a", deviceInput("phone-b", "push-b"), "second", now);
+  await c.register(
+    "account-a",
+    { kind: "activity", registration: { deviceId: "phone-a", activityPushToken: "card-a" } },
+    "first-card",
+    now,
+  );
+  await c.register(
+    "account-a",
+    { kind: "activity", registration: { deviceId: "phone-b", activityPushToken: "card-b" } },
+    "second-card",
+    now,
+  );
   const unavailable = new RegistrationCoordinator({
     ...env,
     PUSH_TOKENS: {
       getByName(name: string) {
-        if (name === pushTokenName("push", "push-a")) throw new Error("Synthetic token outage");
+        if (
+          name === pushTokenName("push", "push-a") ||
+          name === pushTokenName("live-activity", "card-a")
+        )
+          throw new Error("Synthetic token outage");
         return env.PUSH_TOKENS.getByName(name);
       },
     },
@@ -671,6 +687,10 @@ it("skips an unreachable token without denying another valid device", async () =
     "push-b",
   );
   expect((await c.views("account-a", now))[0]!.candidate.device!.push?.token).toBe("push-a");
+  await expect(unavailable.cleanup({ kind: "account", userId: "account-a" }, now)).rejects.toThrow(
+    "Synthetic token outage",
+  );
+  expect(await c.cleanup({ kind: "account", userId: "account-a" }, now)).toHaveLength(2);
 });
 
 it("upgrades account version 4 with all existing rows preserved", async () => {
@@ -763,5 +783,46 @@ it("discovers a cold legacy orphan activity after its first delivery mark", asyn
   const orphan = (await c.views("orphan-account", now, true))[0]!;
   expect(orphan.candidate.device).toBeNull();
   expect(orphan.candidate.activity?.token?.token).toBe("orphan-card");
+  await c.register(
+    "orphan-account",
+    {
+      kind: "activity",
+      registration: { deviceId: "orphan-phone", activityPushToken: "orphan-card" },
+    },
+    "orphan-refresh",
+    "2026-01-01T00:01:00.000Z",
+  );
+  expect((await c.snapshot("orphan-account", now)).records[0]?.active.activity).toMatchObject({
+    createdAt: now,
+    remoteStartedAt: now,
+    remoteStartQueuedAt: null,
+  });
   expect(await c.cleanup({ kind: "account", userId: "orphan-account" }, now)).toEqual([]);
+  await c.register(
+    "orphan-account",
+    { ...deviceInput("empty-session", "empty-session-push"), sessionId: "" },
+    "empty-session-registration",
+    now,
+  );
+  expect(
+    (await c.snapshot("orphan-account", now)).records.find(
+      (row) => row.deviceId === "empty-session",
+    )?.active.device?.sessionId,
+  ).toBe("");
+  expect((await c.views("orphan-account", now)).filter((row) => row.candidate.device)).toEqual([]);
+  await expect(
+    c.register(
+      "orphan-account",
+      {
+        kind: "activity",
+        sessionId: "",
+        registration: {
+          deviceId: "empty-session",
+          activityPushToken: "invalid-empty-session-card",
+        },
+      },
+      "invalid-empty-session-card",
+      now,
+    ),
+  ).rejects.toMatchObject({ _tag: "DeviceSessionRevoked" });
 });

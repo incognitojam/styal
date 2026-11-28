@@ -93,6 +93,7 @@ export class RegistrationCoordinator {
     if (next.activity && next.activity.token && !activity?.live) {
       next.activity.token = null;
       if (activity?.lostAt) {
+        next.activity.remoteStartQueuedAt = null;
         next.activity.remoteStartedAt = null;
         next.activity.endedAt = activity.lostAt;
         next.activity.updatedAt = activity.lostAt;
@@ -116,7 +117,8 @@ export class RegistrationCoordinator {
         ...(record.pending?.candidate ? [record.pending.candidate] : []),
       ]) {
         if (
-          candidate.device?.sessionId &&
+          candidate.device &&
+          candidate.device.sessionId !== null &&
           !includeExpired &&
           !snapshot.liveSessionIds.includes(candidate.device.sessionId)
         )
@@ -275,6 +277,8 @@ export class RegistrationCoordinator {
     } else {
       const token = intent.input.registration.activityPushToken;
       candidate.activity = {
+        createdAt: old.activity?.createdAt ?? intent.now,
+        remoteStartQueuedAt: null,
         token: await claim(
           "live-activity",
           token,
