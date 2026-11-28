@@ -1,0 +1,2509 @@
+// @effect-diagnostics globalTimers:off - Native deadline tests control workerd timers in their owning I/O context.
+import { expect, it } from "@effect/vitest";
+import { vi } from "vitest";
+import { env } from "cloudflare:workers";
+import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
+import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
+import { RegistrationCoordinator } from "../RegistrationCoordinator.ts";
+import type { RegistrationBindings } from "../RegistrationCoordinator.ts";
+import type { PushTokenObject } from "../PushTokenObject.ts";
+import { identity } from "../AccountIdentity.ts";
+import { IdentityCoordinator } from "../IdentityCoordinator.ts";
+import { accountMigrations, REGISTRATION_WAIT_MS } from "../AccountObject.ts";
+import { accountName, pushTokenName, inventoryShardName } from "../names.ts";
+import { migrate, RPC_VERSION as version } from "../storage.ts";
+import { resetRegistrationObjects, namespaceWith } from "./resetRegistrationObjects.ts";
+
+declare global {
+  namespace Cloudflare {
+    interface Env extends RegistrationBindings {
+      PUSH_TOKENS: DurableObjectNamespace<PushTokenObject>;
+    }
+  }
+}
+
+function milestone() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+const now = "2026-01-01T00:00:00.000Z";
+const options = { emailKey: new Uint8Array(32).fill(1), signInCodeSecret: "synthetic-code-secret" };
+const registration = (
+  deviceId: string,
+  pushToken = "shared-push",
+): RelayDeviceRegistrationRequest => ({
+  deviceId,
+  label: "Synthetic phone",
+  platform: "ios",
+  pushToken,
+  pushToStartToken: `start-${deviceId}`,
+  bundleId: "test.example.phone",
+  apsEnvironment: "sandbox",
+  preferences: {
+    notificationsEnabled: true,
+    liveActivitiesEnabled: true,
+    notifyOnApproval: true,
+    notifyOnInput: true,
+    notifyOnCompletion: true,
+    notifyOnFailure: true,
+    attendedAlertDelaySeconds: 90,
+  },
+});
+const deviceInput = (deviceId: string, pushToken = "shared-push") => ({
+  kind: "device" as const,
+  registration: registration(deviceId, pushToken),
+});
+
+async function sessionOwner() {
+  const userId = "account-session";
+  const id = new IdentityCoordinator(env, options.emailKey);
+  await id.signup("session@example.test", userId, "create-session-owner", now, false);
+  await id.openSession({
+    sessionId: "session-a",
+    userId,
+    tokenHash: "synthetic-hash",
+    thumbprint: "session-key",
+    clientId: "t3-mobile",
+    label: null,
+    createdAt: now,
+    lastUsedAt: now,
+    expiresAt: "2026-04-01T00:00:00.000Z",
+    published: false,
+    revoked: false,
+  });
+  return { userId, sessionId: "session-a" };
+}
+
+function loseReadyOnce() {
+  let lose = true;
+  return {
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              const result = await stub.registrations(request);
+              if (lose && request.command.kind === "ready") {
+                lose = false;
+                throw new Error("Synthetic lost ready response");
+              }
+              return result;
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  };
+}
+
+it.each(["completed", "later-registration-retains-start"])(
+  "leaves activated tokens intact when old recovery resumes after restart: %s",
+  async (state) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    const input = deviceInput("phone-a");
+    await expect(
+      new RegistrationCoordinator(loseReadyOnce()).register("account-a", input, "original", now),
+    ).rejects.toThrow("Synthetic lost ready");
+    const captured = (await c.snapshot("account-a", now)).records[0]!;
+    const entered = milestone();
+    const release = milestone();
+    const older = new RegistrationCoordinator({
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                if (request.command.kind === "commit") {
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.registrations(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const resumed = older.resume("account-a", captured, now).then(
+      () => null,
+      (error) => error,
+    );
+    let before;
+    let result;
+    try {
+      await entered.promise;
+      await abortAllDurableObjects();
+      await c.register("account-a", input, "recovery", now);
+      if (state === "later-registration-retains-start")
+        await c.register("account-a", deviceInput("phone-a", "later-push"), "later", now);
+      before = await c.views("account-a", now);
+    } finally {
+      release.resolve();
+      result = await resumed;
+    }
+    expect(await c.views("account-a", now)).toEqual(before);
+    expect(result).toBeNull();
+  },
+);
+
+it("records an identical successor before success so its retry cannot reclaim a moved token", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  const input = deviceInput("phone-a");
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register("account-a", input, "predecessor", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  await abortAllDurableObjects();
+  const lostSuccess = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrationGate")
+            return async (...args: Parameters<typeof stub.registrationGate>) => {
+              await stub.registrationGate(...args);
+              throw new Error("Synthetic lost success response");
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  await expect(lostSuccess.register("account-a", input, "successor", now)).rejects.toThrow(
+    "Synthetic lost success response",
+  );
+  await c.register("account-b", deviceInput("phone-b"), "other-owner", now);
+  const before = await c.views("account-b", now);
+  await abortAllDurableObjects();
+  await c.register("account-a", input, "successor", now);
+  expect(await c.views("account-b", now)).toEqual(before);
+  expect((await c.views("account-a", now))[0]?.candidate.device?.push).toBeNull();
+  expect(
+    await c.command("account-a", { kind: "check", deviceId: "phone-a", id: "successor", now }),
+  ).toMatchObject({ status: "completed" });
+});
+
+it("does not let a prepared callback commit after cancellation becomes durable", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "original", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+  const pending = captured.pending!;
+  const entered = milestone();
+  const release = milestone();
+  const older = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              if (request.command.kind === "commit") {
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const resumed = older.resume(owner.userId, captured, now).then(
+    () => null,
+    (error) => error,
+  );
+  let result;
+  try {
+    await entered.promise;
+    await abortAllDurableObjects();
+    const expired = "2026-04-01T00:00:00.000Z";
+    expect(
+      await c.command(owner.userId, {
+        kind: "check",
+        deviceId: "phone-a",
+        id: pending.id,
+        now: expired,
+      }),
+    ).toEqual({ status: "cancel", reason: "session-revoked" });
+    expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
+    expect(
+      await c.command(owner.userId, {
+        kind: "ready",
+        deviceId: "phone-a",
+        id: pending.id,
+        candidate: pending.candidate!,
+        claims: pending.claims,
+        now: expired,
+      }),
+    ).toMatchObject({ record: { pending: { cancelling: "session-revoked" } } });
+  } finally {
+    release.resolve();
+    result = await resumed;
+  }
+  expect(result).toMatchObject({ _tag: "DeviceSessionRevoked" });
+  expect((await c.snapshot(owner.userId, now)).records[0]?.pending).toBeNull();
+  expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
+});
+
+it("lets an older preparation observe completion after another recovery finishes", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await c.command(owner.userId, { kind: "begin", id: "original", input, now });
+  const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+  const entered = milestone();
+  const release = milestone();
+  const older = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              if (request.command.kind === "ready") {
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const resumed = older.resume(owner.userId, captured, now).then(
+    () => null,
+    (error) => error,
+  );
+  let result;
+  try {
+    await entered.promise;
+    await abortAllDurableObjects();
+    await c.register(owner.userId, input, "recovery", now);
+  } finally {
+    release.resolve();
+    result = await resumed;
+  }
+  expect(result).toBeNull();
+  expect((await c.views(owner.userId, now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  expect(
+    await c.command(owner.userId, { kind: "check", deviceId: "phone-a", id: "original", now }),
+  ).toMatchObject({ status: "completed" });
+  await expect(
+    c.register(
+      owner.userId,
+      { ...deviceInput("phone-a", "mismatched-push"), sessionId: owner.sessionId },
+      "original",
+      now,
+    ),
+  ).rejects.toThrow("Registration operation intent mismatch");
+});
+
+it("settles an expired predecessor before registering a different live session", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register("old-account", deviceInput("old-phone"), "old-owner", now);
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(
+      owner.userId,
+      { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+      "expired-predecessor",
+      now,
+    ),
+  ).rejects.toThrow("Synthetic lost ready");
+  await abortAllDurableObjects();
+  const refreshed = "2026-04-01T00:00:00.000Z";
+  await new IdentityCoordinator(env, options.emailKey).openSession({
+    sessionId: "session-b",
+    userId: owner.userId,
+    tokenHash: "synthetic-new-hash",
+    thumbprint: "new-session-key",
+    clientId: "t3-mobile",
+    label: null,
+    createdAt: refreshed,
+    lastUsedAt: refreshed,
+    expiresAt: "2026-07-01T00:00:00.000Z",
+    published: false,
+    revoked: false,
+  });
+  await c.register(
+    owner.userId,
+    { ...deviceInput("phone-a"), sessionId: "session-b" },
+    "live-successor",
+    refreshed,
+  );
+  expect((await c.views(owner.userId, refreshed))[0]?.candidate.device).toMatchObject({
+    sessionId: "session-b",
+    push: { token: "shared-push" },
+  });
+  expect(
+    await c.command(owner.userId, {
+      kind: "check",
+      deviceId: "phone-a",
+      id: "expired-predecessor",
+      now: refreshed,
+    }),
+  ).toMatchObject({ status: "cancelled", reason: "session-revoked" });
+  expect((await c.snapshot(owner.userId, refreshed)).records[0]?.pending).toBeNull();
+});
+
+it.each(["revoke", "expire"] as const)(
+  "ends session registrations inside a direct account %s transition",
+  async (operation) => {
+    await resetRegistrationObjects();
+    const owner = await sessionOwner();
+    const c = new RegistrationCoordinator(env);
+    expect(
+      await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).read({ version }),
+    ).toMatchObject({ generation: 0, initialized: false });
+    await c.register(
+      owner.userId,
+      { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+      "phone",
+      now,
+    );
+    await c.register(
+      owner.userId,
+      {
+        kind: "activity",
+        sessionId: owner.sessionId,
+        registration: { deviceId: "phone-a", activityPushToken: "card-a" },
+      },
+      "card",
+      now,
+    );
+    await c.register(owner.userId, deviceInput("legacy", "legacy-push"), "legacy", now);
+    await abortAllDurableObjects();
+    const account = () => env.ACCOUNTS.getByName(accountName(owner.userId));
+    const result = await account().identity({
+      version,
+      userId: owner.userId,
+      command:
+        operation === "revoke"
+          ? { kind: "revoke-session", sessionId: owner.sessionId }
+          : { kind: "prune-sessions", now: "2026-04-01T00:00:00.000Z" },
+    });
+    if (operation === "revoke") expect(result).toMatchObject({ revoked: true });
+    await abortAllDurableObjects();
+    expect((await c.snapshot(owner.userId, now)).records.map((row) => row.deviceId)).toEqual([
+      "legacy",
+    ]);
+    expect(
+      await account().identity({
+        version,
+        userId: owner.userId,
+        command: { kind: "session", sessionId: owner.sessionId },
+      }),
+    ).toMatchObject({ session: { revoked: true } });
+  },
+);
+
+it("requires recovery before revoking a registration with an unsettled claim", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register("old-account", deviceInput("old-phone"), "old-registration", now);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "pending", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  await abortAllDurableObjects();
+  expect(
+    await env.ACCOUNTS.getByName(accountName(owner.userId)).identity({
+      version,
+      userId: owner.userId,
+      command: { kind: "revoke-session", sessionId: owner.sessionId },
+    }),
+  ).toEqual({ registrationPending: true });
+  expect((await c.views("old-account", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+  await c.settle(owner.userId, "phone-a", now);
+  expect((await c.views(owner.userId, now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+  expect(
+    await env.ACCOUNTS.getByName(accountName(owner.userId)).identity({
+      version,
+      userId: owner.userId,
+      command: { kind: "revoke-session", sessionId: owner.sessionId },
+    }),
+  ).toMatchObject({ revoked: true });
+  expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
+});
+
+it("fences an expired pending claim across lost fence responses and restart", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register("old-account", deviceInput("old-phone"), "old-registration", now);
+  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+  await expect(
+    new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "pending", now),
+  ).rejects.toThrow("Synthetic lost ready");
+  const pending = (await c.snapshot(owner.userId, now)).records[0]!.pending!;
+  const claim = pending.claims.find((row) => row.reference.kind === "push")!;
+  await abortAllDurableObjects();
+  let lose = true;
+  const interrupted = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "cancel")
+              return async (request: Parameters<typeof stub.cancel>[0]) => {
+                const result = await stub.cancel(request);
+                if (lose) {
+                  lose = false;
+                  throw new Error("Synthetic lost fence response");
+                }
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    },
+  });
+  const expired = "2026-04-01T00:00:00.000Z";
+  await expect(interrupted.settle(owner.userId, "phone-a", expired)).rejects.toThrow(
+    "Synthetic lost fence",
+  );
+  await abortAllDurableObjects();
+  await c.settle(owner.userId, "phone-a", expired);
+  expect((await c.snapshot(owner.userId, expired)).records[0]?.pending).toBeNull();
+  expect(
+    await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).transfer({
+      version,
+      ...claim,
+      now: expired,
+    }),
+  ).toEqual({ applied: false });
+  expect((await c.views("old-account", expired))[0]!.candidate.device!.push?.token).toBe(
+    "shared-push",
+  );
+});
+
+it.each(["one-account", "two-accounts"])(
+  "keeps one owner under concurrent token registrations in %s",
+  async (mode) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    const b = mode === "one-account" ? "account-a" : "account-b";
+    await Promise.all([
+      c.register("account-a", deviceInput("phone-a"), "register-a", now),
+      c.register(b, deviceInput("phone-b"), "register-b", now),
+    ]);
+    const views = [
+      ...(await c.views("account-a", now)),
+      ...(b === "account-a" ? [] : await c.views(b, now)),
+    ];
+    expect(views).toHaveLength(2);
+    expect(views.filter((row) => row.candidate.device?.push?.token === "shared-push")).toHaveLength(
+      1,
+    );
+    expect(views.every((row) => row.candidate.device?.start)).toBe(true);
+    await Promise.all([
+      c.register(
+        "account-a",
+        {
+          kind: "activity",
+          registration: { deviceId: "phone-a", activityPushToken: "shared-card" },
+        },
+        "card-a",
+        now,
+      ),
+      c.register(
+        b,
+        {
+          kind: "activity",
+          registration: { deviceId: "phone-b", activityPushToken: "shared-card" },
+        },
+        "card-b",
+        now,
+      ),
+    ]);
+    await abortAllDurableObjects();
+    const after = [
+      ...(await c.views("account-a", now)),
+      ...(b === "account-a" ? [] : await c.views(b, now)),
+    ];
+    expect(
+      after.filter((row) => row.candidate.activity?.token?.token === "shared-card"),
+    ).toHaveLength(1);
+    const owner = await env.PUSH_TOKENS.getByName(
+      pushTokenName("live-activity", "shared-card"),
+    ).read({ version });
+    expect(owner.owner).toBeTruthy();
+  },
+);
+
+it("never steals a moved token back with an old claim or clears its later owner", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original", now);
+  const original = (await c.views("account-a", now))[0]!.candidate.device!.push!;
+  await c.register("account-b", deviceInput("phone-b"), "replacement", now);
+  await abortAllDurableObjects();
+  const token = env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push"));
+  expect(
+    await token.transfer({ version, reference: original, expected: original.generation - 1, now }),
+  ).toEqual({ applied: true });
+  expect(await token.status({ version, reference: original })).toEqual({
+    live: false,
+    lostAt: now,
+  });
+  expect(await token.clear({ version, reference: original, now })).toBe(false);
+  expect((await c.views("account-a", now))[0]!.candidate.device!.push).toBeNull();
+  expect((await c.views("account-b", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+});
+
+it.each(["begin", "ready", "commit", "transfer", "finish"] as const)(
+  "recovers a lost %s response after object restart",
+  async (phase) => {
+    await resetRegistrationObjects();
+    let lose = true;
+    const bindings = {
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                const result = await stub.registrations(request);
+                if (lose && request.command.kind === phase) {
+                  lose = false;
+                  throw new Error("Synthetic lost account response");
+                }
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+      PUSH_TOKENS: {
+        getByName(name: string) {
+          const stub = env.PUSH_TOKENS.getByName(name);
+          return new Proxy(stub, {
+            get(target, method) {
+              if (method === "transfer")
+                return async (request: Parameters<typeof stub.transfer>[0]) => {
+                  const result = await stub.transfer(request);
+                  if (lose && phase === "transfer") {
+                    lose = false;
+                    throw new Error("Synthetic lost token response");
+                  }
+                  return result;
+                };
+              return Reflect.get(target, method, target);
+            },
+          });
+        },
+      },
+    };
+    const interrupted = new RegistrationCoordinator(bindings);
+    await expect(
+      interrupted.register("account-a", deviceInput("phone-a"), "original", now),
+    ).rejects.toThrow("Synthetic lost");
+    await abortAllDurableObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "retry", now);
+    const record = (await c.snapshot("account-a", now)).records[0]!;
+    expect(record.pending).toBeNull();
+    expect((await c.views("account-a", now))[0]!.candidate.device?.push?.token).toBe("shared-push");
+    const before = await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).inventory({
+      version,
+    });
+    await c.register("account-a", deviceInput("phone-a"), "identical", now);
+    expect(
+      await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).inventory({ version }),
+    ).toEqual(before);
+  },
+);
+
+it("keeps the working registration when preflight fails and releases its uncommitted intent", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original", now);
+  const blocked = new RegistrationCoordinator({
+    ...env,
+    INVENTORY: namespaceWith(env.INVENTORY, () => {
+      throw new Error("Synthetic inventory outage");
+    }),
+  });
+  await expect(
+    blocked.register("account-a", deviceInput("phone-a", "new-push"), "failed", now),
+  ).rejects.toThrow("Synthetic inventory outage");
+  expect((await c.snapshot("account-a", now)).records[0]?.pending?.cancelling).toBe(
+    "preflight-failed",
+  );
+  await c.settle("account-a", "phone-a", now);
+  expect((await c.snapshot("account-a", now)).records[0]?.pending).toBeNull();
+  expect((await c.views("account-a", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+  expect(
+    (await env.PUSH_TOKENS.getByName(pushTokenName("push", "new-push")).inventory({ version }))
+      .schemaVersion,
+  ).toBe(0);
+});
+
+it("makes the replacement usable before its old owner loses delivery authority", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original", now);
+  const before = milestone();
+  const allow = milestone();
+  const after = milestone();
+  const finish = milestone();
+  let paused = false;
+  const replacement = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "transfer")
+              return async (request: Parameters<typeof stub.transfer>[0]) => {
+                if (request.reference.kind !== "push" || paused) return stub.transfer(request);
+                paused = true;
+                before.resolve();
+                await allow.promise;
+                const result = await stub.transfer(request);
+                after.resolve();
+                await finish.promise;
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    },
+  });
+  const pending = replacement.register("account-b", deviceInput("phone-b"), "replacement", now);
+  try {
+    await before.promise;
+    expect((await c.views("account-a", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+    expect((await c.views("account-b", now))[0]!.candidate.device!.push).toBeNull();
+    allow.resolve();
+    await after.promise;
+    expect((await c.views("account-a", now))[0]!.candidate.device!.push).toBeNull();
+    expect((await c.views("account-b", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+  } finally {
+    allow.resolve();
+    finish.resolve();
+    await pending;
+  }
+});
+
+it("keeps the working token's routing while a different replacement is stalled", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original-routing", now);
+  const entered = milestone();
+  const release = milestone();
+  let pause = true;
+  const delayed = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "transfer")
+              return async (request: Parameters<typeof stub.transfer>[0]) => {
+                if (pause) {
+                  pause = false;
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.transfer(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    },
+  });
+  const pending = delayed.register(
+    "account-a",
+    {
+      kind: "device",
+      registration: {
+        ...registration("phone-a", "replacement-push"),
+        pushToStartToken: "replacement-start",
+        bundleId: "test.example.replacement",
+        apsEnvironment: "production",
+      },
+    },
+    "replacement-routing",
+    now,
+  );
+  try {
+    await entered.promise;
+    const working = (await c.views("account-a", now))[0]!.candidate.device!;
+    expect(working.push?.token).toBe("shared-push");
+    expect(working.registration).toMatchObject({
+      bundleId: "test.example.phone",
+      apsEnvironment: "sandbox",
+    });
+  } finally {
+    release.resolve();
+    await pending;
+  }
+});
+
+it("settles a multi-token registration when a competing transfer wins one domain", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register(
+    "account-a",
+    {
+      kind: "device",
+      registration: { ...registration("phone-a"), pushToStartToken: "shared-start" },
+    },
+    "first-owner",
+    now,
+  );
+  await c.register("account-b", deviceInput("phone-b", "old-push-b"), "working-b", now);
+  const entered = milestone();
+  const release = milestone();
+  let pause = true;
+  let rejected: Parameters<PushTokenObject["transfer"]>[0]["reference"] | undefined;
+  const competing = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "transfer")
+              return async (request: Parameters<typeof stub.transfer>[0]) => {
+                if (pause && request.reference.kind === "push") {
+                  pause = false;
+                  rejected = request.reference;
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.transfer(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    },
+  });
+  const pending = competing.register(
+    "account-b",
+    {
+      kind: "device",
+      registration: { ...registration("phone-b"), pushToStartToken: "shared-start" },
+    },
+    "competing-b",
+    now,
+  );
+  try {
+    await entered.promise;
+    await c.register("account-c", deviceInput("phone-c"), "later-c", now);
+  } finally {
+    release.resolve();
+    await pending;
+  }
+  await abortAllDurableObjects();
+  const b = (await c.views("account-b", now))[0]!.candidate.device!;
+  expect(b.push).toBeNull();
+  expect(b.start?.token).toBe("shared-start");
+  expect((await c.views("account-c", now))[0]!.candidate.device!.push?.token).toBe("shared-push");
+  expect((await c.snapshot("account-b", now)).records[0]!.active.device!.push).toBeNull();
+  if (!rejected) throw new Error("Missing rejected claim fixture");
+  expect(
+    await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).transfer({
+      version,
+      reference: rejected,
+      expected: rejected.generation - 1,
+      now,
+    }),
+  ).toEqual({ applied: false });
+  expect((await c.snapshot("account-b", now)).records[0]!.pending).toBeNull();
+});
+
+it("orders a direct revocation after the currently running registration callback", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const entered = milestone();
+  const release = milestone();
+  let pause = true;
+  const c = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "transfer")
+              return async (request: Parameters<typeof stub.transfer>[0]) => {
+                if (pause) {
+                  pause = false;
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.transfer(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      },
+    },
+  });
+  const pending = c.register(
+    owner.userId,
+    { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+    "in-flight",
+    now,
+  );
+  await entered.promise;
+  const account = env.ACCOUNTS.getByName(accountName(owner.userId));
+  const revoke = Promise.resolve(
+    account.identity({
+      version,
+      userId: owner.userId,
+      command: { kind: "revoke-session", sessionId: owner.sessionId },
+    }),
+  );
+  try {
+    expect(
+      await account.registrations({
+        version,
+        userId: owner.userId,
+        command: { kind: "read", now },
+      }),
+    ).toMatchObject({ records: [{ pending: { id: "in-flight" } }] });
+  } finally {
+    release.resolve();
+    await pending;
+  }
+  expect(await revoke).toMatchObject({ revoked: true });
+  expect((await c.snapshot(owner.userId, now)).records).toEqual([]);
+});
+
+it("keeps the committed owner usable while previous-owner cleanup requires recovery", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original", now);
+  await c.register("account-b", deviceInput("phone-b", "other-push"), "other", now);
+  await c.register("account-c", deviceInput("phone-c", "working-c"), "original-c", now);
+  const isolated = new RegistrationCoordinator({
+    ...env,
+    INVENTORY: namespaceWith(env.INVENTORY, (name: string) => {
+      const stub = env.INVENTORY.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "register")
+            return () => {
+              throw new Error("Unneeded inventory registration");
+            };
+          if (method === "tokens")
+            return async (request: Parameters<typeof stub.tokens>[0]) => {
+              if (request.command.kind === "ticket" || request.command.kind === "activate")
+                throw new Error("Unneeded token inventory initialization");
+              return stub.tokens(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      if (name === accountName("account-a")) throw new Error("Synthetic old account outage");
+      return env.ACCOUNTS.getByName(name);
+    }),
+  });
+  await expect(
+    isolated.register("account-b", deviceInput("phone-b"), "replacement", now),
+  ).rejects.toMatchObject({ _tag: "RegistrationRecoveryRequired", committed: true });
+  expect((await isolated.views("account-b", now))[0]!.candidate.device!.push?.token).toBe(
+    "shared-push",
+  );
+  expect((await c.views("account-a", now))[0]!.candidate.device!.push).toBeNull();
+  await expect(
+    isolated.register("account-c", deviceInput("phone-c"), "waiting-c", now),
+  ).rejects.toMatchObject({ _tag: "RegistrationRecoveryRequired", committed: true });
+  expect((await isolated.views("account-b", now))[0]!.candidate.device!.push?.token).toBe(
+    "shared-push",
+  );
+  expect((await isolated.views("account-c", now))[0]!.candidate.device!.push?.token).toBe(
+    "working-c",
+  );
+  await abortAllDurableObjects();
+  await c.register("account-c", deviceInput("phone-c"), "waiting-c", now);
+  await c.register("account-b", deviceInput("phone-b"), "replacement", now);
+  expect((await isolated.views("account-c", now))[0]!.candidate.device!.push?.token).toBe(
+    "shared-push",
+  );
+  expect((await isolated.views("account-b", now))[0]!.candidate.device!.push).toBeNull();
+});
+
+it("propagates token read failures without changing either device's authority", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a", "push-a"), "first", now);
+  await c.register("account-a", deviceInput("phone-b", "push-b"), "second", now);
+  await c.register(
+    "account-a",
+    { kind: "activity", registration: { deviceId: "phone-a", activityPushToken: "card-a" } },
+    "first-card",
+    now,
+  );
+  await c.register(
+    "account-a",
+    { kind: "activity", registration: { deviceId: "phone-b", activityPushToken: "card-b" } },
+    "second-card",
+    now,
+  );
+  const unavailable = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: {
+      getByName(name: string) {
+        if (
+          name === pushTokenName("push", "push-a") ||
+          name === pushTokenName("live-activity", "card-a")
+        )
+          throw new Error("Synthetic token outage");
+        return env.PUSH_TOKENS.getByName(name);
+      },
+    },
+  });
+  await expect(unavailable.views("account-a", now)).rejects.toThrow("Synthetic token outage");
+  const views = await c.views("account-a", now);
+  expect(views.find((row) => row.deviceId === "phone-a")!.candidate.activity?.token?.token).toBe(
+    "card-a",
+  );
+  expect(views.find((row) => row.deviceId === "phone-b")!.candidate.device!.push?.token).toBe(
+    "push-b",
+  );
+  expect((await c.views("account-a", now))[0]!.candidate.device!.push?.token).toBe("push-a");
+  await expect(unavailable.cleanup({ kind: "account", userId: "account-a" }, now)).rejects.toThrow(
+    "Synthetic token outage",
+  );
+  expect(await c.cleanup({ kind: "account", userId: "account-a" }, now)).toHaveLength(2);
+});
+
+it.each([4, 5])(
+  "upgrades account version %s with all existing rows preserved",
+  async (oldVersion) => {
+    await resetRegistrationObjects();
+    const userId = "account-upgrade";
+    const account = () => env.ACCOUNTS.getByName(accountName(userId));
+    const before = await runInDurableObject(account(), async (_instance, ctx) => {
+      await ctx.storage.deleteAll();
+      migrate(ctx.storage, accountMigrations.slice(0, oldVersion));
+      identity(ctx.storage, {
+        version,
+        command: {
+          kind: "create",
+          state: {
+            userId,
+            email: "upgrade@example.test",
+            epoch: 1,
+            mapping: null,
+            pending: null,
+            createdAt: now,
+            updatedAt: now,
+            lastSignInAt: now,
+          },
+        },
+      });
+      ctx.storage.sql.exec(
+        "INSERT INTO tunnel_operations VALUES ('environment-a', 'operation-a', ?, 'endpoint.example.test', 'tunnel-a', '{}', 'complete', '{}', ?)",
+        userId,
+        now,
+      );
+      if (oldVersion === 5)
+        ctx.storage.sql.exec(
+          "INSERT INTO account_registrations VALUES (?, ?)",
+          "legacy-pending",
+          JSON.stringify({
+            deviceId: "legacy-pending",
+            active: { device: null, activity: null },
+            pending: {
+              id: "pending-v5",
+              input: deviceInput("legacy-pending", "pending-push"),
+              now,
+              candidate: null,
+              claims: [],
+            },
+          }),
+        );
+      const tables = ctx.storage.sql
+        .exec<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'relay_object_schema' ORDER BY name",
+        )
+        .toArray();
+      return Object.fromEntries(
+        tables.map(({ name }) => [name, ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray()]),
+      );
+    });
+    await abortAllDurableObjects();
+    expect((await account().inventory({ version })).schemaVersion).toBe(accountMigrations.length);
+    const after = await runInDurableObject(account(), (_instance, ctx) =>
+      Object.fromEntries(
+        Object.keys(before).map((name) => [
+          name,
+          ctx.storage.sql.exec(`SELECT * FROM ${name}`).toArray(),
+        ]),
+      ),
+    );
+    expect(after).toEqual(before);
+    const c = new RegistrationCoordinator(env);
+    if (oldVersion === 5) {
+      await c.settle(userId, "legacy-pending", now);
+      expect(
+        (await c.views(userId, now)).find((row) => row.deviceId === "legacy-pending")?.candidate
+          .device?.push?.token,
+      ).toBe("pending-push");
+      expect(
+        await c.command(userId, {
+          kind: "check",
+          deviceId: "legacy-pending",
+          id: "pending-v5",
+          now,
+        }),
+      ).toMatchObject({ status: "completed" });
+    }
+    await c.register(userId, deviceInput("phone-a"), "new-registration", now);
+    expect(
+      (await c.views(userId, now)).find((row) => row.deviceId === "phone-a")?.candidate.device?.push
+        ?.token,
+    ).toBe("shared-push");
+    expect(
+      await env.INVENTORY.getByName(
+        inventoryShardName("push-token", pushTokenName("push", "shared-push")),
+      ).list({ version, kind: "push-token", after: "", limit: 1000 }),
+    ).toContainEqual({ name: pushTokenName("push", "shared-push") });
+  },
+);
+
+it("discovers a cold legacy orphan activity after its first delivery mark", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.mutate(
+    "orphan-account",
+    "orphan-phone",
+    { kind: "mark", deviceId: "orphan-phone", end: false, keepToken: false, aggregate: null, now },
+    now,
+  );
+  const name = accountName("orphan-account");
+  expect(
+    await env.INVENTORY.getByName(inventoryShardName("account", name)).list({
+      version,
+      kind: "account",
+      after: "",
+      limit: 1000,
+    }),
+  ).toContainEqual({ name });
+  await abortAllDurableObjects();
+  await c.register(
+    "orphan-account",
+    {
+      kind: "activity",
+      registration: { deviceId: "orphan-phone", activityPushToken: "orphan-card" },
+    },
+    "orphan-registration",
+    now,
+  );
+  expect(await c.accountIds()).toContain("orphan-account");
+  const orphan = (await c.views("orphan-account", now, true))[0]!;
+  expect(orphan.candidate.device).toBeNull();
+  expect(orphan.candidate.activity?.token?.token).toBe("orphan-card");
+  await c.register(
+    "orphan-account",
+    {
+      kind: "activity",
+      registration: { deviceId: "orphan-phone", activityPushToken: "orphan-card" },
+    },
+    "orphan-refresh",
+    "2026-01-01T00:01:00.000Z",
+  );
+  expect((await c.snapshot("orphan-account", now)).records[0]?.active.activity).toMatchObject({
+    createdAt: now,
+    remoteStartedAt: now,
+    remoteStartQueuedAt: null,
+  });
+  expect(await c.cleanup({ kind: "account", userId: "orphan-account" }, now)).toEqual([]);
+  await c.register(
+    "orphan-account",
+    { ...deviceInput("empty-session", "empty-session-push"), sessionId: "" },
+    "empty-session-registration",
+    now,
+  );
+  expect(
+    (await c.snapshot("orphan-account", now)).records.find(
+      (row) => row.deviceId === "empty-session",
+    )?.active.device?.sessionId,
+  ).toBe("");
+  expect((await c.views("orphan-account", now)).filter((row) => row.candidate.device)).toEqual([]);
+  await expect(
+    c.register(
+      "orphan-account",
+      {
+        kind: "activity",
+        sessionId: "",
+        registration: {
+          deviceId: "empty-session",
+          activityPushToken: "invalid-empty-session-card",
+        },
+      },
+      "invalid-empty-session-card",
+      now,
+    ),
+  ).rejects.toMatchObject({ _tag: "DeviceSessionRevoked" });
+});
+
+it("keeps preference changes private until the registration commits", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "working-preferences", now);
+  const entered = milestone();
+  const release = milestone();
+  let pause = true;
+  const delayed = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              const stage: string = request.command.kind;
+              if (pause && (stage === "check" || stage === "commit")) {
+                pause = false;
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const original = deviceInput("phone-a");
+  const input = {
+    ...original,
+    registration: {
+      ...original.registration,
+      preferences: { ...original.registration.preferences, notificationsEnabled: false },
+    },
+  };
+  const pending = delayed.register("account-a", input, "new-preferences", now);
+  try {
+    await entered.promise;
+    expect(
+      (await c.views("account-a", now))[0]?.candidate.device?.registration.preferences
+        .notificationsEnabled,
+    ).toBe(true);
+  } finally {
+    release.resolve();
+    await pending;
+  }
+  expect(
+    (await c.views("account-a", now))[0]?.candidate.device?.registration.preferences
+      .notificationsEnabled,
+  ).toBe(false);
+});
+
+it("bounds revocation and queued gate waits without letting a waiter escape the held lock", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register(
+    owner.userId,
+    { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+    "working-gate",
+    now,
+  );
+  const account = env.ACCOUNTS.getByName(accountName(owner.userId));
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    await runInDurableObject(account, async (instance) => {
+      const deadlines: Array<() => void> = [];
+      const fakeTimeout = globalThis.setTimeout;
+      using _timeout = vi
+        .spyOn(globalThis, "setTimeout")
+        .mockImplementation((handler, delay, ...args) => {
+          const id = fakeTimeout(handler, delay, ...args);
+          if (delay === REGISTRATION_WAIT_MS && typeof handler === "function")
+            deadlines.push(() => handler(...args));
+          return id;
+        });
+      const release = milestone();
+      const request = { version, userId: owner.userId, deviceId: "phone-a" };
+      const held = instance.registrationGate(request, () => release.promise);
+      let failure: unknown;
+      let waiterEntered = false;
+      let laterEntered = false;
+      const revoke = instance.identity({
+        version,
+        userId: owner.userId,
+        command: { kind: "revoke-session", sessionId: owner.sessionId },
+      });
+      const waiter = instance
+        .registrationGate(request, async () => {
+          waiterEntered = true;
+        })
+        .catch((error) => {
+          failure = error;
+        });
+      let later: Promise<void> | undefined;
+      try {
+        expect(deadlines).toHaveLength(2);
+        // All deadline callbacks and continuations stay in their owning object's I/O context.
+        for (const deadline of deadlines.splice(0)) deadline();
+        expect(await revoke).toEqual({ registrationPending: true });
+        await waiter;
+        expect(failure).toBeInstanceOf(Error);
+        expect(waiterEntered).toBe(false);
+        expect(
+          await instance.identity({
+            version,
+            userId: owner.userId,
+            command: { kind: "session", sessionId: owner.sessionId },
+          }),
+        ).toMatchObject({ session: { revoked: false } });
+        later = instance.registrationGate(request, async () => {
+          laterEntered = true;
+        });
+        expect(laterEntered).toBe(false);
+        release.resolve();
+        await held;
+        await later;
+        expect(laterEntered).toBe(true);
+      } finally {
+        release.resolve();
+        await Promise.allSettled([held, revoke, waiter, later]);
+      }
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("recovers when Account restarts while a registration holds its device gate", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register(
+    "account-a",
+    deviceInput("phone-a", "working-push"),
+    "working-before-restart",
+    now,
+  );
+  const entered = milestone();
+  const release = milestone();
+  const callbackDone = milestone();
+  let pause = true;
+  const delayed = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrationGate")
+            return (
+              request: Parameters<typeof stub.registrationGate>[0],
+              callback: () => Promise<void>,
+            ) =>
+              stub.registrationGate(request, async () => {
+                try {
+                  await callback();
+                } finally {
+                  callbackDone.resolve();
+                }
+              });
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+    PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+      const stub = env.PUSH_TOKENS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "transfer")
+            return async (request: Parameters<typeof stub.transfer>[0]) => {
+              if (pause) {
+                pause = false;
+                entered.resolve();
+                await release.promise;
+              }
+              return stub.transfer(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const older = delayed
+    .register("account-a", deviceInput("phone-a"), "interrupted-gate", now)
+    .catch(() => undefined);
+  try {
+    await entered.promise;
+    await abortAllDurableObjects();
+    const original = deviceInput("phone-a");
+    const input = {
+      ...original,
+      registration: { ...original.registration, label: "Recovered phone" },
+    };
+    await c.register("account-a", input, "after-gate-restart", now);
+  } finally {
+    release.resolve();
+    await callbackDone.promise;
+    await older;
+  }
+  expect((await c.views("account-a", now))[0]?.candidate.device).toMatchObject({
+    registration: { label: "Recovered phone" },
+    push: { token: "shared-push" },
+  });
+  expect((await c.snapshot("account-a", now)).records[0]?.pending).toBeNull();
+});
+
+it.each(["unregister", "activity-end"] as const)(
+  "erases retired token storage and references after %s",
+  async (operation) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "erase-phone", now);
+    await c.register(
+      "account-a",
+      { kind: "activity", registration: { deviceId: "phone-a", activityPushToken: "erase-card" } },
+      "erase-activity",
+      now,
+    );
+    await c.mutate(
+      "account-a",
+      "phone-a",
+      operation === "unregister"
+        ? { kind: "remove", deviceId: "phone-a" }
+        : { kind: "mark", deviceId: "phone-a", end: true, keepToken: false, aggregate: null, now },
+      now,
+    );
+    const tokens =
+      operation === "unregister"
+        ? ([
+            ["push", "shared-push"],
+            ["push-to-start", "start-phone-a"],
+            ["live-activity", "erase-card"],
+          ] as const)
+        : ([["live-activity", "erase-card"]] as const);
+    for (const [kind, token] of tokens) {
+      const name = pushTokenName(kind, token);
+      const stored = await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+        ctx.storage.sql
+          .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+          .toArray(),
+      );
+      expect(stored).toEqual([]);
+      expect(
+        await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
+          version,
+          kind: "push-token",
+          after: "",
+          limit: 1000,
+        }),
+      ).not.toContainEqual({ name });
+    }
+    const stored = await runInDurableObject(
+      env.ACCOUNTS.getByName(accountName("account-a")),
+      (_instance, ctx) => ({
+        refs: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
+        outcomes: ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+      }),
+    );
+    expect(JSON.stringify(stored)).not.toContain("erase-card");
+    if (operation === "unregister") expect(JSON.stringify(stored)).not.toContain("shared-push");
+  },
+);
+
+it.each(["cancel", "freeze", "inventory-retire", "retire", "complete", "ack"] as const)(
+  "finishes token erasure after a lost %s response and restart",
+  async (phase) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "retire-phone", now);
+    let lose = true;
+    const lost = (step: typeof phase) => {
+      if (lose && phase === step) {
+        lose = false;
+        throw new Error("Synthetic lost retirement reply");
+      }
+    };
+    const interrupted = new RegistrationCoordinator({
+      ...env,
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "cancel")
+              return async (request: Parameters<typeof stub.cancel>[0]) => {
+                const result = await stub.cancel(request);
+                lost("cancel");
+                return result;
+              };
+            if (method === "freeze")
+              return async (request: Parameters<typeof stub.freeze>[0]) => {
+                const result = await stub.freeze(request);
+                lost("freeze");
+                return result;
+              };
+            if (method === "retire")
+              return async (request: Parameters<typeof stub.retire>[0]) => {
+                const result = await stub.retire(request);
+                lost("retire");
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+      INVENTORY: namespaceWith(env.INVENTORY, (name: string) => {
+        const stub = env.INVENTORY.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "tokens")
+              return async (request: Parameters<typeof stub.tokens>[0]) => {
+                const result = await stub.tokens(request);
+                if (request.command.kind === "retire") lost("inventory-retire");
+                if (request.command.kind === "complete") lost("complete");
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                const result = await stub.registrations(request);
+                if (request.command.kind === "retired") lost("ack");
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    await expect(
+      interrupted.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now),
+    ).rejects.toThrow("Synthetic lost retirement");
+    await abortAllDurableObjects();
+    await c.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now);
+    expect((await c.snapshot("account-a", now)).retirements).toEqual([]);
+    for (const [kind, token] of [
+      ["push", "shared-push"],
+      ["push-to-start", "start-phone-a"],
+    ] as const) {
+      const name = pushTokenName(kind, token);
+      expect(
+        await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+          ctx.storage.sql
+            .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+            .toArray(),
+        ),
+      ).toEqual([]);
+      expect(
+        await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
+          version,
+          kind: "push-token",
+          after: "",
+          limit: 1000,
+        }),
+      ).not.toContainEqual({ name });
+    }
+    await c.register("account-b", deviceInput("phone-b"), "new-incarnation", now);
+    await c.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now);
+    expect((await c.views("account-b", now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  },
+);
+
+it.each(["before", "after"] as const)(
+  "fences a delayed preparation %s reservation across cancellation and restart",
+  async (phase) => {
+    await resetRegistrationObjects();
+    const owner = await sessionOwner();
+    const c = new RegistrationCoordinator(env);
+    const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+    await c.command(owner.userId, { kind: "begin", input, id: "delayed-prepare", now });
+    const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+    const entered = milestone();
+    const release = milestone();
+    let pause = true;
+    const delayed = new RegistrationCoordinator({
+      ...env,
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "prepare")
+              return async (request: Parameters<typeof stub.prepare>[0]) => {
+                if (!pause) return stub.prepare(request);
+                pause = false;
+                const result = phase === "after" ? await stub.prepare(request) : null;
+                entered.resolve();
+                await release.promise;
+                return result ?? stub.prepare(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const pending = delayed.resume(owner.userId, captured, now).then(
+      () => null,
+      (error) => error,
+    );
+    try {
+      await entered.promise;
+      await abortAllDurableObjects();
+      await c.settle(owner.userId, "phone-a", "2026-04-01T00:00:00.000Z");
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    await abortAllDurableObjects();
+    expect((await c.snapshot(owner.userId, now)).records[0]?.pending).toBeNull();
+    const name = pushTokenName("push", "shared-push");
+    expect(
+      await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+        ctx.storage.sql
+          .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+          .toArray(),
+      ),
+    ).toEqual([]);
+    expect(
+      await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
+        version,
+        kind: "push-token",
+        after: "",
+        limit: 1000,
+      }),
+    ).not.toContainEqual({ name });
+    await c.register("account-b", deviceInput("phone-b"), "usable-after-cancel", now);
+    expect((await c.views("account-b", now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  },
+);
+
+it("releases only its own reservation when another registration acquires the same token", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a", "working-old-push"), "working", now);
+  const entered = milestone();
+  const release = milestone();
+  const failed = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+      const stub = env.PUSH_TOKENS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "prepare")
+            return async (request: Parameters<typeof stub.prepare>[0]) => {
+              const result = await stub.prepare(request);
+              if (request.preparation.reference.token === "shared-push") {
+                entered.resolve();
+                await release.promise;
+                throw new Error("Synthetic failed preflight");
+              }
+              return result;
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const pending = failed.register("account-a", deviceInput("phone-a"), "failed", now).then(
+    () => null,
+    (error) => error,
+  );
+  try {
+    await entered.promise;
+    await c.register("account-b", deviceInput("phone-b"), "winner", now);
+  } finally {
+    release.resolve();
+    await pending;
+  }
+  expect((await c.views("account-a", now))[0]?.candidate.device?.push?.token).toBe(
+    "working-old-push",
+  );
+  expect((await c.views("account-b", now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  expect((await c.snapshot("account-a", now)).records[0]?.pending).toBeNull();
+});
+
+it("prunes hashed terminal outcomes behind a monotonic admission cutoff", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  const input = deviceInput("phone-a");
+  await c.register("account-a", input, "old-operation", now);
+  await c.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now);
+  const account = () => env.ACCOUNTS.getByName(accountName("account-a"));
+  const read = () =>
+    runInDurableObject(account(), (_instance, ctx) =>
+      ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+    );
+  expect(JSON.stringify(await read())).not.toContain("shared-push");
+  const later = "2026-01-10T00:00:00.000Z";
+  await account().identity({
+    version,
+    userId: "account-a",
+    command: { kind: "prune-sessions", now: later },
+  });
+  expect(await read()).toEqual([]);
+  await abortAllDurableObjects();
+  await account().identity({
+    version,
+    userId: "account-a",
+    command: { kind: "prune-sessions", now },
+  });
+  expect(
+    await account().registrations({
+      version,
+      userId: "account-a",
+      command: { kind: "begin", input, id: "old-operation", now },
+    }),
+  ).toEqual({ error: "operation-expired" });
+  await c.register("account-b", deviceInput("phone-b"), "new-owner", later);
+  expect((await c.views("account-b", later))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  expect(
+    await account().registrations({
+      version,
+      userId: "account-a",
+      command: { kind: "begin", input, id: "old-operation", now },
+    }),
+  ).toEqual({ error: "operation-expired" });
+});
+
+it.each(["live", "expired"] as const)(
+  "preserves a retired claim deadline through failed preparation: %s",
+  async (state) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "claim-a", now);
+    const original = (await c.views("account-a", now))[0]!.candidate.device!.push!;
+    await c.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now);
+    const probeAt = state === "live" ? now : "2026-01-01T00:11:00.000Z";
+    const name = pushTokenName("push", "shared-push");
+    const inventory = () => env.INVENTORY.getByName(inventoryShardName("push-token", name));
+    expect(await c.tokens.canEnd(original, probeAt)).toBe(state === "live");
+    const first = await inventory().tokens({ version, command: { kind: "read", name } });
+    expect(first).toMatchObject({ head: { lastClaim: { incarnation: original.incarnation } } });
+    const failed = new RegistrationCoordinator({
+      ...env,
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (tokenName: string) => {
+        const stub = env.PUSH_TOKENS.getByName(tokenName);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "publish")
+              return async (request: Parameters<typeof stub.publish>[0]) => {
+                await stub.publish(request);
+                expect(await c.tokens.canEnd(original, probeAt)).toBe(state === "live");
+                throw new Error("Synthetic failed preparation reply");
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    await expect(
+      failed.register("account-b", deviceInput("phone-b"), "failed-b", probeAt),
+    ).rejects.toThrow("Synthetic failed preparation");
+    expect(await c.tokens.canEnd(original, probeAt)).toBe(state === "live");
+    const afterFailure = await inventory().tokens({ version, command: { kind: "read", name } });
+    expect("head" in afterFailure && afterFailure.head?.lastClaim).toEqual(
+      "head" in first && first.head?.lastClaim,
+    );
+    await abortAllDurableObjects();
+    await c.register("account-b", deviceInput("phone-b"), "claim-b", probeAt);
+    const replacement = (await c.views("account-b", probeAt))[0]!.candidate.device!.push!;
+    await c.mutate("account-b", "phone-b", { kind: "remove", deviceId: "phone-b" }, probeAt);
+    expect(await c.tokens.canEnd(original, now)).toBe(false);
+    expect(await c.tokens.canEnd(replacement, probeAt)).toBe(true);
+    const last = await inventory().tokens({ version, command: { kind: "read", name } });
+    expect(last).toMatchObject({ head: { lastClaim: { incarnation: replacement.incarnation } } });
+    expect("head" in last && last.head?.lastClaim).not.toEqual(
+      "head" in first && first.head?.lastClaim,
+    );
+    const token = () => env.PUSH_TOKENS.getByName(name);
+    expect(
+      await token().transfer({
+        version,
+        reference: original,
+        expected: original.generation - 1,
+        now,
+      }),
+    ).toMatchObject({ applied: false });
+    expect(await token().read({ version })).toMatchObject({ initialized: false });
+    await inventory().tokens({
+      version,
+      command: {
+        kind: "prune",
+        expiresBefore: "2026-01-10T00:00:00.000Z",
+        admissionBefore: "2026-01-03T00:00:00.000Z",
+      },
+    });
+    expect(
+      await inventory().tokens({
+        version,
+        command: { kind: "read", name, incarnation: original.incarnation! },
+      }),
+    ).toEqual({ head: null, lifecycle: null });
+  },
+);
+
+it("upgrades legacy token receipts and version 7 account records without retaining raw outcome inputs", async () => {
+  await resetRegistrationObjects();
+  const reference = {
+    kind: "push" as const,
+    token: "legacy-push",
+    userId: "account-a",
+    deviceId: "legacy-phone",
+    sessionId: null,
+    operationId: "legacy-operation:push",
+    generation: 1,
+  };
+  const tokenName = pushTokenName(reference.kind, reference.token);
+  await runInDurableObject(env.PUSH_TOKENS.getByName(tokenName), async (_instance, ctx) => {
+    await ctx.storage.deleteAll();
+    migrate(ctx.storage, [
+      "CREATE TABLE token_owner (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), generation INTEGER NOT NULL, owner TEXT); CREATE TABLE token_claims (operation_id TEXT PRIMARY KEY, request TEXT NOT NULL, applied INTEGER NOT NULL, lost_at TEXT)",
+    ]);
+    ctx.storage.sql.exec("INSERT INTO token_owner VALUES (1, 1, ?)", JSON.stringify(reference));
+    ctx.storage.sql.exec(
+      "INSERT INTO token_claims VALUES (?, ?, 1, NULL)",
+      reference.operationId,
+      JSON.stringify({ reference, expected: 0 }),
+    );
+  });
+  const input = deviceInput("legacy-phone", "legacy-push");
+  const candidate = {
+    device: {
+      registration: input.registration,
+      push: reference,
+      start: null,
+      sessionId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    activity: null,
+  };
+  const end = { reference, device: candidate.device };
+  const account = () => env.ACCOUNTS.getByName(accountName("account-a"));
+  await runInDurableObject(account(), async (_instance, ctx) => {
+    await ctx.storage.deleteAll();
+    migrate(ctx.storage, accountMigrations.slice(0, 7));
+    ctx.storage.sql.exec(
+      "INSERT INTO account_registrations VALUES (?, ?)",
+      "legacy-phone",
+      JSON.stringify({ deviceId: "legacy-phone", active: candidate, pending: null }),
+    );
+    ctx.storage.sql.exec(
+      "INSERT INTO registration_token_references VALUES (?, ?)",
+      reference.operationId,
+      JSON.stringify(reference),
+    );
+    ctx.storage.sql.exec(
+      "INSERT INTO registration_outcomes VALUES ('legacy-operation', 'completed', ?, NULL)",
+      JSON.stringify(input),
+    );
+    ctx.storage.sql.exec(
+      "INSERT INTO registration_ends VALUES ('legacy-end', ?)",
+      JSON.stringify(end),
+    );
+  });
+  await abortAllDurableObjects();
+  const c = new RegistrationCoordinator(env);
+  expect((await c.views("account-a", now))[0]?.candidate.device?.push?.token).toBe("legacy-push");
+  expect(await env.PUSH_TOKENS.getByName(tokenName).status({ version, reference })).toEqual({
+    live: true,
+    lostAt: null,
+  });
+  const stored = await runInDurableObject(account(), (_instance, ctx) => ({
+    outcome: ctx.storage.sql
+      .exec<{ input: string }>("SELECT input FROM registration_outcomes")
+      .one().input,
+    ends: ctx.storage.sql.exec<{ value: string }>("SELECT value FROM registration_ends").one()
+      .value,
+    registration: ctx.storage.sql
+      .exec<{ value: string }>("SELECT value FROM account_registrations")
+      .one().value,
+  }));
+  expect(JSON.parse(stored.outcome)).toMatchObject({ version: 1, issuedAt: null, createdAt: null });
+  expect(stored.outcome).not.toContain("legacy-push");
+  expect(JSON.parse(stored.registration).active.device.registration).not.toHaveProperty(
+    "pushToken",
+  );
+  expect(JSON.parse(stored.ends)).toEqual(end);
+  expect(
+    await runInDurableObject(
+      env.PUSH_TOKENS.getByName(tokenName),
+      (_instance, ctx) =>
+        ctx.storage.sql.exec<{ request: string }>("SELECT request FROM token_claims").one().request,
+    ),
+  ).toMatch(/^sha256:/);
+  await c.mutate("account-a", "legacy-phone", { kind: "remove", deviceId: "legacy-phone" }, now);
+  expect(
+    await runInDurableObject(env.PUSH_TOKENS.getByName(tokenName), (_instance, ctx) =>
+      ctx.storage.sql
+        .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+        .toArray(),
+    ),
+  ).toEqual([]);
+  expect(
+    await env.PUSH_TOKENS.getByName(tokenName).transfer({
+      version,
+      reference,
+      expected: 0,
+      now,
+      registered: true,
+    }),
+  ).toMatchObject({ applied: false });
+});
+
+it.each(["one-account", "two-accounts"] as const)(
+  "erases losing-owner raw references and preserves activity end state after winning-owner retirement: %s",
+  async (scope) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    const winner = scope === "one-account" ? "account-a" : "account-b";
+    await c.register("account-a", deviceInput("phone-a"), "old-phone", now);
+    await c.register(
+      "account-a",
+      { kind: "activity", registration: { deviceId: "phone-a", activityPushToken: "shared-card" } },
+      "old-card",
+      now,
+    );
+    const movedAt = "2026-01-01T00:00:01.000Z";
+    await c.register(winner, deviceInput("phone-b"), "new-phone", movedAt);
+    await c.register(
+      winner,
+      { kind: "activity", registration: { deviceId: "phone-b", activityPushToken: "shared-card" } },
+      "new-card",
+      movedAt,
+    );
+    await c.mutate(winner, "phone-b", { kind: "remove", deviceId: "phone-b" }, movedAt);
+    await abortAllDurableObjects();
+    const stored = await runInDurableObject(
+      env.ACCOUNTS.getByName(accountName("account-a")),
+      (_instance, ctx) => ({
+        records: ctx.storage.sql.exec("SELECT * FROM account_registrations").toArray(),
+        references: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
+        outcomes: ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+        retirements: ctx.storage.sql.exec("SELECT * FROM registration_retirements").toArray(),
+      }),
+    );
+    expect(JSON.stringify(stored)).not.toContain("shared-push");
+    expect(JSON.stringify(stored)).not.toContain("shared-card");
+    const losing = (await c.views("account-a", movedAt)).find(
+      (view) => view.deviceId === "phone-a",
+    )!;
+    expect(losing.candidate.device?.push).toBeNull();
+    expect(losing.candidate.device?.start?.token).toBe("start-phone-a");
+    expect(losing.candidate.activity).toMatchObject({
+      token: null,
+      remoteStartQueuedAt: null,
+      remoteStartedAt: null,
+      endedAt: movedAt,
+      updatedAt: movedAt,
+    });
+  },
+);
+
+it.each(["before-account-loss", "after-account-loss", "after-token-ack"] as const)(
+  "recovers previous-owner cleanup after %s and restart",
+  async (phase) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "owner-a", now);
+    let lose = true;
+    const interrupted = new RegistrationCoordinator({
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                if (lose && phase !== "after-token-ack" && request.command.kind === "lose-token") {
+                  lose = false;
+                  if (phase === "after-account-loss") await stub.registrations(request);
+                  throw new Error("Synthetic interrupted owner cleanup");
+                }
+                return stub.registrations(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "acknowledgeLoss")
+              return async (request: Parameters<typeof stub.acknowledgeLoss>[0]) => {
+                const result = await stub.acknowledgeLoss(request);
+                if (lose && phase === "after-token-ack") {
+                  lose = false;
+                  throw new Error("Synthetic lost cleanup acknowledgement");
+                }
+                return result;
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const movedAt = "2026-01-01T00:00:01.000Z";
+    await expect(
+      interrupted.register("account-b", deviceInput("phone-b"), "owner-b", movedAt),
+    ).rejects.toMatchObject({ _tag: "RegistrationRecoveryRequired", committed: true });
+    expect((await c.views("account-b", movedAt))[0]?.candidate.device?.push?.token).toBe(
+      "shared-push",
+    );
+    expect((await c.views("account-a", movedAt))[0]?.candidate.device?.push).toBeNull();
+    await abortAllDurableObjects();
+    await c.register("account-b", deviceInput("phone-b"), "owner-b", movedAt);
+    const stored = await runInDurableObject(
+      env.ACCOUNTS.getByName(accountName("account-a")),
+      (_instance, ctx) => ({
+        records: ctx.storage.sql.exec("SELECT * FROM account_registrations").toArray(),
+        references: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
+      }),
+    );
+    expect(JSON.stringify(stored)).not.toContain("shared-push");
+    expect((await c.views("account-a", movedAt))[0]?.candidate.device?.updatedAt).toBe(movedAt);
+    expect((await c.snapshot("account-b", movedAt)).records[0]?.pending).toBeNull();
+  },
+);
+
+it.each([
+  { candidateState: "reference", restart: false, kind: "device" },
+  { candidateState: "already-null", restart: false, kind: "device" },
+  { candidateState: "reference", restart: true, kind: "device" },
+  { candidateState: "reference", restart: true, kind: "activity" },
+] as const)(
+  "fences a captured ready after ownership cleanup and deletion: %o",
+  async ({ candidateState, restart, kind }) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "old-phone", now);
+    await c.register(
+      "account-a",
+      { kind: "activity", registration: { deviceId: "phone-a", activityPushToken: "shared-card" } },
+      "old-card",
+      now,
+    );
+    const entered = milestone();
+    const release = milestone();
+    const delayed = new RegistrationCoordinator({
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "registrations")
+              return async (request: Parameters<typeof stub.registrations>[0]) => {
+                if (request.command.kind === "ready") {
+                  if (candidateState === "already-null" && request.command.candidate.activity)
+                    request.command.candidate.activity.token = null;
+                  entered.resolve();
+                  await release.promise;
+                  if (restart) throw new Error("Synthetic abandoned registration callback");
+                }
+                return stub.registrations(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const input =
+      kind === "device"
+        ? deviceInput("phone-a")
+        : {
+            kind: "activity" as const,
+            registration: { deviceId: "phone-a", activityPushToken: "shared-card" },
+          };
+    const pending = delayed.register("account-a", input, "captured-ready", now).then(
+      () => null,
+      (error) => error,
+    );
+    const movedAt = "2026-01-01T00:00:01.000Z";
+    try {
+      await entered.promise;
+      await c.register(
+        "account-b",
+        {
+          kind: "device",
+          registration: { ...registration("phone-b"), pushToStartToken: "start-phone-a" },
+        },
+        "new-phone",
+        movedAt,
+      );
+      await c.register(
+        "account-b",
+        {
+          kind: "activity",
+          registration: { deviceId: "phone-b", activityPushToken: "shared-card" },
+        },
+        "new-card",
+        movedAt,
+      );
+      await c.mutate("account-b", "phone-b", { kind: "remove", deviceId: "phone-b" }, movedAt);
+      const stored = await runInDurableObject(
+        env.ACCOUNTS.getByName(accountName("account-a")),
+        (_instance, ctx) =>
+          ctx.storage.sql.exec<{ value: string }>("SELECT value FROM account_registrations").one()
+            .value,
+      );
+      expect(stored).not.toContain("shared-push");
+      expect(stored).not.toContain("start-phone-a");
+      expect(stored).not.toContain("shared-card");
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    expect(await pending).toEqual(
+      restart
+        ? expect.objectContaining({ message: "Synthetic abandoned registration callback" })
+        : null,
+    );
+    if (restart) {
+      await abortAllDurableObjects();
+      await c.register("account-a", input, "captured-ready", now);
+    }
+    const losing = (await c.views("account-a", movedAt))[0]!.candidate;
+    expect(losing.device?.push).toBeNull();
+    expect(losing.activity).toMatchObject({
+      token: null,
+      remoteStartedAt: null,
+      endedAt: movedAt,
+      updatedAt: movedAt,
+    });
+    expect(
+      await runInDurableObject(
+        env.ACCOUNTS.getByName(accountName("account-a")),
+        (_instance, ctx) =>
+          ctx.storage.sql.exec<{ value: string }>("SELECT value FROM account_registrations").one()
+            .value,
+      ),
+    ).not.toContain("shared-card");
+  },
+);
+
+it("does not let an old cleanup acknowledgement discard a newer ownership loss", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "owner-a", now);
+  const token = env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push"));
+  const entered = milestone();
+  const release = milestone();
+  let captured: Awaited<ReturnType<typeof token.read>>["pendingLoss"] = null;
+  let delayOwner = "account-a";
+  let currentEntered = entered;
+  let currentRelease = release;
+  const delayed = new RegistrationCoordinator({
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "registrations")
+            return async (request: Parameters<typeof stub.registrations>[0]) => {
+              if (request.command.kind === "lose-token" && request.userId === delayOwner) {
+                currentEntered.resolve();
+                await currentRelease.promise;
+              }
+              return stub.registrations(request);
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const first = delayed.register("account-b", deviceInput("phone-b"), "owner-b", now);
+  try {
+    await entered.promise;
+    captured = (await token.read({ version })).pendingLoss;
+  } finally {
+    release.resolve();
+    await first;
+  }
+  if (!captured) throw new Error("Missing captured loss fixture");
+  const nextEntered = milestone();
+  const nextRelease = milestone();
+  currentEntered = nextEntered;
+  currentRelease = nextRelease;
+  delayOwner = "account-b";
+  const next = delayed.register("account-c", deviceInput("phone-c"), "owner-c", now);
+  try {
+    await nextEntered.promise;
+    const before = (await token.read({ version })).pendingLoss;
+    expect(before?.reference.userId).toBe("account-b");
+    expect(
+      await token.acknowledgeLoss({
+        version,
+        incarnation: captured.reference.incarnation!,
+        id: captured.id,
+      }),
+    ).toBe(false);
+    expect((await token.read({ version })).pendingLoss).toEqual(before);
+  } finally {
+    nextRelease.resolve();
+    await next;
+  }
+  expect((await c.views("account-c", now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+  await c.register("account-b", deviceInput("phone-b"), "owner-b", now);
+  expect((await c.views("account-c", now))[0]?.candidate.device?.push?.token).toBe("shared-push");
+});
+
+it.each(["raw-receipts", "unpublished-hashes"] as const)(
+  "handles legacy previous-owner recovery safely: %s",
+  async (history) => {
+    await resetRegistrationObjects();
+    const references = Array.from({ length: 5 }, (_, index) => ({
+      kind: "push" as const,
+      token: "legacy-shared",
+      userId: `legacy-account-${index}`,
+      deviceId: `legacy-phone-${index}`,
+      sessionId: null,
+      operationId: `legacy-claim-${index}`,
+      generation: index + 1,
+    }));
+    const losses = [
+      "2026-01-01T00:00:01.000Z",
+      "2026-01-01T00:00:02.000Z",
+      "2026-01-01T00:00:03.000Z",
+      "2026-01-01T00:00:04.000Z",
+    ];
+    for (const reference of references)
+      await runInDurableObject(
+        env.ACCOUNTS.getByName(accountName(reference.userId)),
+        async (_instance, ctx) => {
+          await ctx.storage.deleteAll();
+          migrate(ctx.storage, accountMigrations.slice(0, 7));
+          const { pushToStartToken: _start, ...metadata } = registration(
+            reference.deviceId,
+            reference.token,
+          );
+          ctx.storage.sql.exec(
+            "INSERT INTO account_registrations VALUES (?, ?)",
+            reference.deviceId,
+            JSON.stringify({
+              deviceId: reference.deviceId,
+              active: {
+                device: {
+                  registration: metadata,
+                  push: reference,
+                  start: null,
+                  sessionId: null,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                activity: null,
+              },
+              pending: null,
+            }),
+          );
+          ctx.storage.sql.exec(
+            "INSERT INTO registration_token_references VALUES (?, ?)",
+            reference.operationId,
+            JSON.stringify(reference),
+          );
+        },
+      );
+    const name = pushTokenName("push", "legacy-shared");
+    await runInDurableObject(env.PUSH_TOKENS.getByName(name), async (_instance, ctx) => {
+      await ctx.storage.deleteAll();
+      migrate(ctx.storage, [
+        "CREATE TABLE token_owner (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), generation INTEGER NOT NULL, owner TEXT); CREATE TABLE token_claims (operation_id TEXT PRIMARY KEY, request TEXT NOT NULL, applied INTEGER NOT NULL, lost_at TEXT)",
+      ]);
+      ctx.storage.sql.exec(
+        "INSERT INTO token_owner VALUES (1, 5, ?)",
+        JSON.stringify(references[4]),
+      );
+      for (const [index, reference] of references.entries())
+        ctx.storage.sql.exec(
+          "INSERT INTO token_claims VALUES (?, ?, 1, ?)",
+          reference.operationId,
+          JSON.stringify({ reference, expected: reference.generation - 1 }),
+          losses[index] ?? null,
+        );
+    });
+    await abortAllDurableObjects();
+    if (history === "unpublished-hashes") {
+      await env.PUSH_TOKENS.getByName(name).read({ version });
+      await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) => {
+        const previous = JSON.parse(
+          ctx.storage.sql.exec<{ value: string }>("SELECT value FROM token_metadata").one().value,
+        );
+        const { losses: _losses, ...hashOnlyDraft } = previous;
+        ctx.storage.sql.exec("UPDATE token_metadata SET value = ?", JSON.stringify(hashOnlyDraft));
+      });
+      await abortAllDurableObjects();
+    }
+    const c = new RegistrationCoordinator(env);
+    const owner = references[4]!;
+    const remove = () =>
+      c.mutate(owner.userId, owner.deviceId, { kind: "remove", deviceId: owner.deviceId }, now);
+    if (history === "unpublished-hashes") {
+      await expect(remove()).rejects.toMatchObject({
+        _tag: "RegistrationRecoveryRequired",
+        cause: "Unsupported experimental token history: previous-owner destinations were erased",
+      });
+      expect((await env.PUSH_TOKENS.getByName(name).read({ version })).owner?.userId).toBe(
+        owner.userId,
+      );
+      return;
+    }
+    await expect(remove()).rejects.toMatchObject({
+      _tag: "RegistrationRecoveryRequired",
+      committed: true,
+    });
+    expect((await c.snapshot(owner.userId, now)).retirements).toHaveLength(1);
+    expect((await env.PUSH_TOKENS.getByName(name).read({ version })).initialized).toBe(true);
+    await abortAllDurableObjects();
+    await remove();
+    expect(
+      await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+        ctx.storage.sql
+          .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+          .toArray(),
+      ),
+    ).toEqual([]);
+    for (const [index, reference] of references.slice(0, 4).entries()) {
+      const view = (await c.views(reference.userId, now))[0]!.candidate.device!;
+      expect(view.push).toBeNull();
+      expect(view.updatedAt).toBe(losses[index]);
+      expect(
+        await runInDurableObject(
+          env.ACCOUNTS.getByName(accountName(reference.userId)),
+          (_instance, ctx) =>
+            ctx.storage.sql.exec<{ value: string }>("SELECT value FROM account_registrations").one()
+              .value,
+        ),
+      ).not.toContain("legacy-shared");
+    }
+  },
+);
+
+it("finishes prior device cleanup before admitting another registration", async () => {
+  await resetRegistrationObjects();
+  const c = new RegistrationCoordinator(env);
+  await c.register("account-a", deviceInput("phone-a"), "original", now);
+  let lose = true;
+  const interrupted = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+      const stub = env.PUSH_TOKENS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "cancel")
+            return async (request: Parameters<typeof stub.cancel>[0]) => {
+              const result = await stub.cancel(request);
+              if (lose) {
+                lose = false;
+                throw new Error("Synthetic interrupted cleanup");
+              }
+              return result;
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  await expect(
+    interrupted.mutate("account-a", "phone-a", { kind: "remove", deviceId: "phone-a" }, now),
+  ).rejects.toThrow("Synthetic interrupted cleanup");
+  const unavailable = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+      if (name === pushTokenName("push", "shared-push"))
+        throw new Error("Synthetic pending cleanup outage");
+      return env.PUSH_TOKENS.getByName(name);
+    }),
+  });
+  await expect(
+    unavailable.register("account-a", deviceInput("phone-a", "new-push"), "new-registration", now),
+  ).rejects.toThrow("Synthetic pending cleanup outage");
+  expect((await c.snapshot("account-a", now)).records).toEqual([]);
+  expect(
+    await env.PUSH_TOKENS.getByName(pushTokenName("push", "new-push")).read({ version }),
+  ).toMatchObject({ initialized: false });
+  await abortAllDurableObjects();
+  await c.register("account-a", deviceInput("phone-a", "new-push"), "new-registration", now);
+  expect((await c.views("account-a", now))[0]?.candidate.device?.push?.token).toBe("new-push");
+  expect((await c.snapshot("account-a", now)).retirements).toEqual([]);
+});
+
+it.each(["omitted", "explicit"] as const)(
+  "keeps loss time and erasure when status arrives after retirement with %s token input",
+  async (tokens) => {
+    await resetRegistrationObjects();
+    const c = new RegistrationCoordinator(env);
+    await c.register("account-a", deviceInput("phone-a"), "initial", now);
+    const entered = milestone();
+    const release = milestone();
+    let pause = true;
+    const delayed = new RegistrationCoordinator({
+      ...env,
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        const stub = env.PUSH_TOKENS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (method === "status")
+              return async (request: Parameters<typeof stub.status>[0]) => {
+                if (
+                  pause &&
+                  request.reference.kind === "push" &&
+                  request.reference.userId === "account-a"
+                ) {
+                  pause = false;
+                  entered.resolve();
+                  await release.promise;
+                }
+                return stub.status(request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+    });
+    const { pushToken: _push, pushToStartToken: _start, ...metadata } = registration("phone-a");
+    const input =
+      tokens === "explicit"
+        ? deviceInput("phone-a")
+        : { kind: "device" as const, registration: metadata };
+    const pending = delayed.register("account-a", input, "delayed-status", now);
+    const movedAt = "2026-01-01T00:00:01.000Z";
+    try {
+      await entered.promise;
+      await c.register("account-b", deviceInput("phone-b"), "move", movedAt);
+      await c.mutate("account-b", "phone-b", { kind: "remove", deviceId: "phone-b" }, movedAt);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    expect((await c.views("account-a", movedAt))[0]?.candidate.device).toMatchObject({
+      push: null,
+      updatedAt: movedAt,
+    });
+    expect(
+      await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).read({ version }),
+    ).toMatchObject({ initialized: false });
+  },
+);
+
+it("resumes an independent preparation after erasing the lost token from its input", async () => {
+  await resetRegistrationObjects();
+  const owner = await sessionOwner();
+  const c = new RegistrationCoordinator(env);
+  await c.register(
+    owner.userId,
+    { ...deviceInput("phone-a"), sessionId: owner.sessionId },
+    "original",
+    now,
+  );
+  await new IdentityCoordinator(env, options.emailKey).openSession({
+    sessionId: "session-b",
+    userId: owner.userId,
+    tokenHash: "synthetic-new-hash",
+    thumbprint: "session-b-key",
+    clientId: "t3-mobile",
+    label: null,
+    createdAt: now,
+    lastUsedAt: now,
+    expiresAt: "2026-04-01T00:00:00.000Z",
+    published: false,
+    revoked: false,
+  });
+  await c.command(owner.userId, {
+    kind: "begin",
+    id: "independent",
+    input: { ...deviceInput("phone-a"), sessionId: "session-b" },
+    now,
+  });
+  const captured = (await c.snapshot(owner.userId, now)).records[0]!;
+  const entered = milestone();
+  const release = milestone();
+  let pause = true;
+  const delayed = new RegistrationCoordinator({
+    ...env,
+    PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+      const stub = env.PUSH_TOKENS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "prepare")
+            return async (request: Parameters<typeof stub.prepare>[0]) => {
+              const result = await stub.prepare(request);
+              if (pause && request.preparation.reference.kind === "push") {
+                pause = false;
+                entered.resolve();
+                await release.promise;
+              }
+              return result;
+            };
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  });
+  const older = delayed.resume(owner.userId, captured, now).then(
+    () => null,
+    (error) => error,
+  );
+  const movedAt = "2026-01-01T00:00:01.000Z";
+  try {
+    await entered.promise;
+    await c.register("account-b", deviceInput("phone-b"), "other-owner", movedAt);
+    await c.mutate("account-b", "phone-b", { kind: "remove", deviceId: "phone-b" }, movedAt);
+    const pending = (await c.snapshot(owner.userId, movedAt)).records[0]!.pending!;
+    expect(pending.input.registration).not.toHaveProperty("pushToken");
+    expect(pending.preparations?.some((ticket) => ticket.reference.token === "shared-push")).toBe(
+      true,
+    );
+    await abortAllDurableObjects();
+    await c.settle(owner.userId, "phone-a", movedAt);
+  } finally {
+    release.resolve();
+    await older;
+  }
+  expect(await older).toBeNull();
+  expect((await c.snapshot(owner.userId, movedAt)).records[0]?.pending).toBeNull();
+  expect((await c.views(owner.userId, movedAt))[0]?.candidate.device).toMatchObject({
+    sessionId: "session-b",
+    push: null,
+  });
+  expect(
+    await runInDurableObject(
+      env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")),
+      (_instance, ctx) =>
+        ctx.storage.sql
+          .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+          .toArray(),
+    ),
+  ).toEqual([]);
+});

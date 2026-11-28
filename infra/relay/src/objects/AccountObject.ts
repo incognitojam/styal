@@ -1,4 +1,4 @@
-// @effect-diagnostics globalDate:off cryptoRandomUUID:off - Synchronous workerd transitions cannot yield to Effect services.
+// @effect-diagnostics globalDate:off cryptoRandomUUID:off globalTimers:off - Durable Object transitions and deadlines run outside Effect services.
 import { DEFAULT_MANAGED_TUNNEL_LIMIT } from "@t3tools/contracts/relay";
 import { DurableObject } from "cloudflare:workers";
 import type { TunnelOperation } from "../persistence/TunnelOperationPersistence.ts";
@@ -8,6 +8,21 @@ import { links, linkMigration, linkInventory } from "./AccountLinks.ts";
 import type { LinkCommand } from "./AccountLinks.ts";
 import { accountName } from "./names.ts";
 import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
+import {
+  registrationMigration,
+  registrationOutcomeMigration,
+  registrationEndMigration,
+  registrationHistoryMigration,
+  prepareRegistrationStorage,
+  pruneRegistrationOutcomes,
+  registrationRetirements,
+  registrations,
+  registrationRemoval,
+  removalRecords,
+  endSessionRegistrations,
+  registrationInventory,
+} from "./AccountRegistrations.ts";
+import type { RegistrationCommand } from "./AccountRegistrations.ts";
 
 export const accountMigrations = [
   `CREATE TABLE tunnel_operations (
@@ -18,6 +33,10 @@ export const accountMigrations = [
   identityMigration,
   linkMigration,
   tunnelMigration,
+  registrationMigration,
+  registrationOutcomeMigration,
+  registrationEndMigration,
+  registrationHistoryMigration,
 ];
 
 export type { JournalResult } from "./AccountJournal.ts";
@@ -59,12 +78,29 @@ function decode(row: Row): TunnelOperation {
   };
 }
 
+export const REGISTRATION_WAIT_MS = 5_000;
+async function waitForRegistration(pending: Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), REGISTRATION_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export class AccountObject extends DurableObject<unknown> {
   private reservations = new Map<string, Promise<void>>();
+  private registrationTails = new Map<string, Promise<void>>();
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, accountMigrations);
+      prepareRegistrationStorage(ctx.storage);
       ctx.storage.sql.exec("DELETE FROM account_capacity_claims");
     });
   }
@@ -76,7 +112,13 @@ export class AccountObject extends DurableObject<unknown> {
     return links(this.ctx.storage, request);
   }
 
-  async identity(request: { version: number; userId: string; command: IdentityCommand }) {
+  async identity(request: {
+    version: number;
+    userId: string;
+    command: IdentityCommand;
+    registrationGuard?: { sessionIds: string[]; stamp: string };
+  }) {
+    checkRpc(request.version);
     if (this.ctx.id.name !== accountName(request.userId))
       throw new Error("Identity account mismatch");
     if (request.command.kind === "create" && request.command.state.userId !== request.userId)
@@ -88,8 +130,89 @@ export class AccountObject extends DurableObject<unknown> {
       throw new Error("Session owner mismatch");
     if (request.command.kind === "begin-email" && request.command.userId !== request.userId)
       throw new Error("Email owner mismatch");
-    const result = identity(this.ctx.storage, request);
-    return result;
+    const command = request.command;
+    if (command.kind === "prune-sessions") pruneRegistrationOutcomes(this.ctx.storage, command.now);
+    if (
+      command.kind !== "revoke-session" &&
+      command.kind !== "prune-sessions" &&
+      command.kind !== "publish-session" &&
+      !(command.kind === "use-session" && command.revoke)
+    )
+      return identity(this.ctx.storage, request);
+    const initial = registrationRemoval(this.ctx.storage, request.command);
+    const tails = initial.records.flatMap(
+      (record) => this.registrationTails.get(record.deviceId) ?? [],
+    );
+    if (tails.length && !(await waitForRegistration(Promise.all(tails))))
+      return { registrationPending: true };
+    return this.ctx.storage.transactionSync(() => {
+      const guard = request.registrationGuard;
+      if (
+        guard &&
+        canonicalJson(removalRecords(this.ctx.storage, guard.sessionIds)) !== guard.stamp
+      )
+        return { registrationsChanged: true };
+      const removal = registrationRemoval(this.ctx.storage, request.command);
+      if (removal.records.some((record) => record.pending)) return { registrationPending: true };
+      const result = identity(this.ctx.storage, request);
+      if (command.kind !== "publish-session" || ("session" in result && result.session?.revoked))
+        endSessionRegistrations(this.ctx.storage, removal.sessionIds);
+      return {
+        ...result,
+        retirements: registrationRetirements(this.ctx.storage).filter(
+          (reference) =>
+            command.kind === "prune-sessions" ||
+            removal.sessionIds.includes(reference.sessionId ?? ""),
+        ),
+      };
+    });
+  }
+
+  async registrations(request: { version: number; userId: string; command: RegistrationCommand }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    return registrations(this.ctx.storage, request.userId, request.command);
+  }
+
+  async registrationRemoval(request: {
+    version: number;
+    userId: string;
+    command: IdentityCommand;
+  }) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    return registrationRemoval(this.ctx.storage, request.command);
+  }
+
+  async registrationGate(
+    request: { version: number; userId: string; deviceId: string },
+    callback: () => Promise<void>,
+  ) {
+    checkRpc(request.version);
+    if (this.ctx.id.name !== accountName(request.userId))
+      throw new Error("Registration account mismatch");
+    const previous = this.registrationTails.get(request.deviceId);
+    let finish!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const tail = previous ? previous.then(() => completion) : completion;
+    this.registrationTails.set(request.deviceId, tail);
+    let acquired = false;
+    try {
+      if (previous && !(await waitForRegistration(previous)))
+        throw new Error("Registration callback wait expired");
+      acquired = true;
+      await callback();
+    } finally {
+      finish();
+      if (this.registrationTails.get(request.deviceId) === tail) {
+        if (!acquired && previous) this.registrationTails.set(request.deviceId, previous);
+        else this.registrationTails.delete(request.deviceId);
+      }
+    }
   }
 
   async identityOwner(request: { version: number }) {
@@ -97,7 +220,13 @@ export class AccountObject extends DurableObject<unknown> {
       version: request.version,
       command: { kind: "read" },
     });
-    return "state" in result ? (result.state?.userId ?? null) : null;
+    return "state" in result
+      ? (result.state?.userId ??
+          this.ctx.storage.sql
+            .exec<{ user_id: string }>("SELECT user_id FROM account_registration_owner")
+            .toArray()[0]?.user_id ??
+          null)
+      : null;
   }
 
   async allocation(request: {
@@ -384,6 +513,7 @@ export class AccountObject extends DurableObject<unknown> {
         ...identityInventory(this.ctx.storage),
         ...linkInventory(this.ctx.storage),
         ...tunnelInventory(this.ctx.storage),
+        ...registrationInventory(this.ctx.storage),
       ],
     };
   }

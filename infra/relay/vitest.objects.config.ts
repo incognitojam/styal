@@ -8,6 +8,7 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-06-01",
         durableObjects: {
+          PUSH_TOKENS: { className: "PushTokenObject", useSQLite: true },
           REPLAYS: { className: "ReplayObject", useSQLite: true },
           API_PAUSES: { className: "ApiPauseObject", useSQLite: true },
           ALLOCATION_ROUTES: { className: "AllocationRouteObject", useSQLite: true },

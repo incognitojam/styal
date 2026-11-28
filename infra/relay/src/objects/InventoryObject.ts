@@ -1,5 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { checkLimit, checkRpc, migrate, summarize } from "./storage.ts";
+import { tokenInventoryMigration, tokenInventory } from "./InventoryTokens.ts";
+import type { TokenInventoryCommand } from "./TokenProtocol.ts";
 
 export const inventoryMigrations = [
   "CREATE TABLE object_references (kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(kind, name))",
@@ -7,6 +9,7 @@ export const inventoryMigrations = [
    INSERT INTO replay_references SELECT name, row_number() OVER (ORDER BY name), 0 FROM object_references WHERE kind = 'replay';
    CREATE TABLE replay_epoch_counter (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), epoch INTEGER NOT NULL);
    INSERT INTO replay_epoch_counter VALUES (1, (SELECT coalesce(max(epoch), 0) FROM replay_references))`,
+  tokenInventoryMigration,
 ];
 export class InventoryObject extends DurableObject<unknown> {
   constructor(ctx: DurableObjectState, env: unknown) {
@@ -14,6 +17,11 @@ export class InventoryObject extends DurableObject<unknown> {
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, inventoryMigrations);
     });
+  }
+
+  async tokens(request: { version: number; command: TokenInventoryCommand }) {
+    checkRpc(request.version);
+    return tokenInventory(this.ctx.storage, request.command);
   }
   async register(request: {
     version: number;
@@ -124,6 +132,9 @@ export class InventoryObject extends DurableObject<unknown> {
         summarize(
           "replay_epoch_counter",
           this.ctx.storage.sql.exec("SELECT epoch FROM replay_epoch_counter"),
+        ),
+        ...["token_lifecycles", "token_heads", "token_epoch_counter"].map((table) =>
+          summarize(table, this.ctx.storage.sql.exec("SELECT * FROM " + table + " ORDER BY rowid")),
         ),
       ],
     };
