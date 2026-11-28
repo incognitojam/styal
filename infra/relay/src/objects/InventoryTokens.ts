@@ -19,6 +19,7 @@ export interface TokenLifecycle {
 export interface TokenHead {
   epoch: number;
   lastClaim: SuccessfulTokenClaim | null;
+  lastClaimExpiresAt: string | null;
   expiresAt: string | null;
 }
 const life = (storage: DurableObjectStorage, name: string, incarnation: string) => {
@@ -35,7 +36,9 @@ const head = (storage: DurableObjectStorage, name: string) => {
   const row = storage.sql
     .exec<{ value: string }>("SELECT value FROM token_heads WHERE name = ?", name)
     .toArray()[0];
-  return row ? (JSON.parse(row.value) as TokenHead) : null;
+  if (!row) return null;
+  const value = JSON.parse(row.value) as TokenHead;
+  return { ...value, lastClaimExpiresAt: value.lastClaimExpiresAt ?? value.expiresAt };
 };
 const save = (storage: DurableObjectStorage, value: TokenLifecycle) =>
   storage.sql.exec(
@@ -146,6 +149,7 @@ export function tokenInventory(storage: DurableObjectStorage, command: TokenInve
       saveHead(storage, command.name, {
         epoch: command.epoch,
         lastClaim: previous?.lastClaim ?? null,
+        lastClaimExpiresAt: previous?.lastClaimExpiresAt ?? null,
         expiresAt: null,
       });
       return { applied: true };
@@ -175,6 +179,9 @@ export function tokenInventory(storage: DurableObjectStorage, command: TokenInve
       saveHead(storage, command.name, {
         epoch: retirement.epoch,
         lastClaim: retirement.lastClaim ?? previous.lastClaim,
+        lastClaimExpiresAt: retirement.lastClaim
+          ? retirement.expiresAt
+          : previous.lastClaimExpiresAt,
         expiresAt: retirement.expiresAt,
       });
       storage.sql.exec(

@@ -1,14 +1,22 @@
 import * as DateTime from "effect/DateTime";
 import type { PushTokenObject } from "./PushTokenObject.ts";
 import type { InventoryObject } from "./InventoryObject.ts";
-import type { TokenPreparation, TokenReference, TokenRetirement } from "./TokenProtocol.ts";
+import type { AccountObject } from "./AccountObject.ts";
+import type {
+  TokenPreparation,
+  TokenReference,
+  TokenRetirement,
+  TokenLoss,
+} from "./TokenProtocol.ts";
+import { RegistrationRecoveryRequired } from "./TokenProtocol.ts";
 import { tokenClaimDigest } from "./TokenProtocol.ts";
-import { inventoryShardName, inventoryShardNames, pushTokenName } from "./names.ts";
+import { accountName, inventoryShardName, inventoryShardNames, pushTokenName } from "./names.ts";
 import { RPC_VERSION as version } from "./storage.ts";
 
 export interface TokenBindings {
   PUSH_TOKENS: Pick<DurableObjectNamespace<PushTokenObject>, "getByName">;
   INVENTORY: Pick<DurableObjectNamespace<InventoryObject>, "getByName">;
+  ACCOUNTS: Pick<DurableObjectNamespace<AccountObject>, "getByName">;
 }
 export class TokenCoordinator {
   readonly bindings: TokenBindings;
@@ -25,6 +33,27 @@ export class TokenCoordinator {
     return this.bindings.INVENTORY.getByName(
       inventoryShardName("push-token", this.name(reference)),
     );
+  }
+  async settleLoss(loss: TokenLoss) {
+    try {
+      await this.bindings.ACCOUNTS.getByName(accountName(loss.reference.userId)).registrations({
+        version,
+        userId: loss.reference.userId,
+        command: {
+          kind: "lose-token",
+          deviceId: loss.reference.deviceId,
+          reference: loss.reference,
+          at: loss.at,
+        },
+      });
+      await this.token(loss.reference).acknowledgeLoss({
+        version,
+        incarnation: loss.reference.incarnation ?? "legacy",
+        id: loss.id,
+      });
+    } catch (cause) {
+      throw new RegistrationRecoveryRequired({ cause });
+    }
   }
   async canEnd(reference: TokenReference, now: string) {
     const state = await this.token(reference).read({ version });
@@ -43,7 +72,8 @@ export class TokenCoordinator {
     return !!(
       "head" in result &&
       result.head?.lastClaim?.digest === digest &&
-      (result.head.expiresAt === null || result.head.expiresAt > now)
+      result.head.lastClaimExpiresAt !== null &&
+      result.head.lastClaimExpiresAt > now
     );
   }
   async pruneHistory(now: string) {
@@ -135,72 +165,96 @@ export class TokenCoordinator {
       throw new Error("Token retirement completion changed");
   }
   async release(reference: TokenReference, now: string, initialization?: string | null) {
-    const result = await this.token(reference).cancel({
-      version,
-      reference,
-      expected: reference.generation - 1,
-      now,
-      initialization: initialization ?? null,
-    });
-    if ("retiring" in result) {
-      await this.finishRetirement(reference, result.retiring);
-      return;
-    }
-    const instant = DateTime.makeUnsafe(now);
-    const expiresAt = DateTime.formatIso(DateTime.add(instant, { minutes: 10 }));
-    const admissionExpiresAt = DateTime.formatIso(DateTime.add(instant, { days: 7 }));
-    if ("absent" in result || "stale" in result) {
-      const previous = await this.inventory(reference).tokens({
+    for (let help = 0; help < 3; help++) {
+      const result = await this.token(reference).cancel({
         version,
-        command: {
-          kind: "read",
-          name: this.name(reference),
-          incarnation: reference.incarnation ?? "legacy",
-        },
+        reference,
+        expected: reference.generation - 1,
+        now,
+        initialization: initialization ?? null,
       });
-      if (
-        "lifecycle" in previous &&
-        previous.lifecycle?.phase === "retiring" &&
-        previous.lifecycle.retirement
-      ) {
-        await this.finishRetirement(reference, previous.lifecycle.retirement);
+      if ("unsupportedHistory" in result)
+        throw new RegistrationRecoveryRequired({
+          cause: "Unsupported experimental token history: previous-owner destinations were erased",
+        });
+      if ("pendingLoss" in result) {
+        await this.settleLoss(result.pendingLoss);
+        continue;
+      }
+      if ("retiring" in result) {
+        await this.finishRetirement(reference, result.retiring);
         return;
       }
-      const cancelled = await this.inventory(reference).tokens({
+      const instant = DateTime.makeUnsafe(now);
+      const expiresAt = DateTime.formatIso(DateTime.add(instant, { minutes: 10 }));
+      const admissionExpiresAt = DateTime.formatIso(DateTime.add(instant, { days: 7 }));
+      if ("absent" in result || "stale" in result) {
+        const previous = await this.inventory(reference).tokens({
+          version,
+          command: {
+            kind: "read",
+            name: this.name(reference),
+            incarnation: reference.incarnation ?? "legacy",
+          },
+        });
+        if (
+          "lifecycle" in previous &&
+          previous.lifecycle?.phase === "retiring" &&
+          previous.lifecycle.retirement
+        ) {
+          await this.finishRetirement(reference, previous.lifecycle.retirement);
+          return;
+        }
+        const cancelled = await this.inventory(reference).tokens({
+          version,
+          command: {
+            kind: "cancel-ticket",
+            name: this.name(reference),
+            incarnation: reference.incarnation ?? "legacy",
+            expiresAt: admissionExpiresAt,
+          },
+        });
+        if (!("applied" in cancelled) || !cancelled.applied)
+          throw new Error("Token initialization cancellation changed");
+        return;
+      }
+      let state = await this.token(reference).read({ version });
+      if (state.owner) return;
+      if (state.pendingLoss) {
+        await this.settleLoss(state.pendingLoss);
+        continue;
+      }
+      if (!state.published) {
+        const ticket = await this.ticket({
+          reference: { ...reference, incarnation: state.incarnation },
+          expected: reference.generation - 1,
+          initialization: null,
+          epoch: state.epoch,
+          admittedAt: now,
+        });
+        if (!ticket?.epoch || !(await this.publish(ticket.reference, ticket.epoch)))
+          throw new Error("Token initialization publication changed");
+        state = await this.token(reference).read({ version });
+      }
+      if (state.incarnation !== (reference.incarnation ?? "legacy")) return;
+      const frozen = await this.token(reference).freeze({
         version,
-        command: {
-          kind: "cancel-ticket",
-          name: this.name(reference),
-          incarnation: reference.incarnation ?? "legacy",
-          expiresAt: admissionExpiresAt,
-        },
+        incarnation: state.incarnation,
+        expiresAt,
+        admissionExpiresAt,
       });
-      if (!("applied" in cancelled) || !cancelled.applied)
-        throw new Error("Token initialization cancellation changed");
+      if ("unsupportedHistory" in frozen)
+        throw new RegistrationRecoveryRequired({
+          cause: "Unsupported experimental token history: previous-owner destinations were erased",
+        });
+      if ("retirement" in frozen) await this.finishRetirement(reference, frozen.retirement);
+      else if ("pendingLoss" in frozen) {
+        await this.settleLoss(frozen.pendingLoss);
+        continue;
+      } else if (!("busy" in frozen) && !("stale" in frozen))
+        throw new Error("Token retirement is not ready");
       return;
     }
-    let state = await this.token(reference).read({ version });
-    if (!state.published) {
-      const ticket = await this.ticket({
-        reference: { ...reference, incarnation: state.incarnation },
-        expected: reference.generation - 1,
-        initialization: null,
-        epoch: state.epoch,
-        admittedAt: now,
-      });
-      if (!ticket?.epoch || !(await this.publish(ticket.reference, ticket.epoch)))
-        throw new Error("Token initialization publication changed");
-      state = await this.token(reference).read({ version });
-    }
-    if (state.incarnation !== (reference.incarnation ?? "legacy")) return;
-    const frozen = await this.token(reference).freeze({
-      version,
-      incarnation: state.incarnation,
-      expiresAt,
-      admissionExpiresAt,
-    });
-    if ("retirement" in frozen) await this.finishRetirement(reference, frozen.retirement);
-    else if (!("busy" in frozen) && !("stale" in frozen))
-      throw new Error("Token retirement is not ready");
+    throw new RegistrationRecoveryRequired({ cause: "Token cleanup repeatedly changed" });
   }
 }

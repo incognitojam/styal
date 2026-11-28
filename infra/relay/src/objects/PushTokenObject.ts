@@ -12,6 +12,7 @@ import type {
   TokenPreparation,
   TokenRetirement,
   SuccessfulTokenClaim,
+  TokenLoss,
 } from "./TokenProtocol.ts";
 export type { TokenReference, TokenKind } from "./TokenProtocol.ts";
 
@@ -26,6 +27,8 @@ type Metadata = {
   published: boolean;
   lastClaim: SuccessfulTokenClaim | null;
   retirement: TokenRetirement | null;
+  losses?: TokenLoss[];
+  unrecoverableLosses?: true;
 };
 type Receipt = {
   request: string;
@@ -43,8 +46,25 @@ export class PushTokenObject extends DurableObject<unknown> {
       if (!this.initialized()) return;
       this.ctx.storage.transactionSync(() => {
         migrate(ctx.storage, migrations);
-        if (this.metadata()) return;
+        const existing = this.metadata();
+        if (existing) {
+          if (existing.losses === undefined) {
+            const unknown =
+              this.ctx.storage.sql
+                .exec(
+                  "SELECT 1 FROM token_claims WHERE applied = 1 AND lost_at IS NOT NULL LIMIT 1",
+                )
+                .toArray().length > 0;
+            this.saveMetadata({
+              ...existing,
+              losses: [],
+              ...(unknown ? { unrecoverableLosses: true } : {}),
+            });
+          }
+          return;
+        }
         let last: TokenReference | null = null;
+        const losses: TokenLoss[] = [];
         const rows = this.ctx.storage.sql
           .exec<Receipt & { operation_id: string }>("SELECT * FROM token_claims")
           .toArray();
@@ -54,6 +74,8 @@ export class PushTokenObject extends DurableObject<unknown> {
             expected: number;
           };
           const reference = normalizedTokenReference(previous.reference);
+          if (row.applied && row.lost_at)
+            losses.push({ id: tokenClaimDigest(reference), reference, at: row.lost_at });
           this.ctx.storage.sql.exec(
             "UPDATE token_claims SET request = ? WHERE operation_id = ?",
             tokenPreparationDigest(reference, previous.expected),
@@ -71,6 +93,7 @@ export class PushTokenObject extends DurableObject<unknown> {
           epoch: 0,
           published: false,
           retirement: null,
+          losses,
           lastClaim: last
             ? {
                 digest: tokenClaimDigest(last),
@@ -146,6 +169,7 @@ export class PushTokenObject extends DurableObject<unknown> {
       published: meta?.published ?? false,
       retirement: meta?.retirement ?? null,
       lastClaim: meta?.lastClaim ?? null,
+      pendingLoss: meta?.losses?.[0] ?? null,
     };
   }
   async status(request: { version: number; reference: TokenReference }) {
@@ -201,6 +225,7 @@ export class PushTokenObject extends DurableObject<unknown> {
           published: false,
           lastClaim: null,
           retirement: null,
+          losses: [],
         });
       }
       const meta = this.metadata()!;
@@ -243,6 +268,15 @@ export class PushTokenObject extends DurableObject<unknown> {
     });
     return true;
   }
+  async acknowledgeLoss(request: { version: number; incarnation: string; id: string }) {
+    checkRpc(request.version);
+    if (!this.initialized()) return false;
+    const meta = this.metadata()!;
+    if (meta.incarnation !== request.incarnation || meta.losses?.[0]?.id !== request.id)
+      return false;
+    this.saveMetadata({ ...meta, losses: meta.losses.slice(1) });
+    return true;
+  }
   async transfer(request: {
     version: number;
     reference: TokenReference;
@@ -260,6 +294,8 @@ export class PushTokenObject extends DurableObject<unknown> {
       const meta = this.metadata()!;
       if (meta.incarnation !== reference.incarnation)
         return { applied: false, stale: true } as const;
+      if (meta.unrecoverableLosses) return { unsupportedHistory: true } as const;
+      if (meta.losses?.length) return { pendingLoss: meta.losses[0]! } as const;
       const receipt = this.receipt(reference);
       if (!receipt) return { applied: false, stale: true } as const;
       if (receipt.request !== tokenPreparationDigest(reference, request.expected))
@@ -297,6 +333,15 @@ export class PushTokenObject extends DurableObject<unknown> {
           },
         });
       }
+      if (applied && current.owner) {
+        const pendingLoss: TokenLoss = {
+          id: tokenClaimDigest(current.owner),
+          reference: current.owner,
+          at: request.now,
+        };
+        this.saveMetadata({ ...this.metadata()!, losses: [pendingLoss] });
+        return { applied, pendingLoss };
+      }
       return { applied };
     });
   }
@@ -321,6 +366,10 @@ export class PushTokenObject extends DurableObject<unknown> {
       const meta = this.metadata()!;
       if (meta.incarnation !== reference.incarnation) return { stale: true } as const;
       if (meta.retirement) return { retiring: meta.retirement } as const;
+      if (meta.unrecoverableLosses && this.matches(this.owner().owner, reference))
+        return { unsupportedHistory: true } as const;
+      if (meta.losses?.length && this.matches(this.owner().owner, reference))
+        return { pendingLoss: meta.losses[0]! } as const;
       const old = this.receipt(reference);
       const digest = tokenPreparationDigest(reference, request.expected);
       if (old && old.request !== digest) throw new Error("Push token intent mismatch");
@@ -369,6 +418,8 @@ export class PushTokenObject extends DurableObject<unknown> {
       const meta = this.metadata()!;
       if (meta.incarnation !== request.incarnation) return { stale: true } as const;
       if (meta.retirement) return { retirement: meta.retirement };
+      if (meta.unrecoverableLosses) return { unsupportedHistory: true } as const;
+      if (meta.losses?.length) return { pendingLoss: meta.losses[0]! } as const;
       if (
         this.owner().owner ||
         this.ctx.storage.sql

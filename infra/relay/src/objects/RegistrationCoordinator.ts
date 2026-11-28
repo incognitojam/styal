@@ -1,6 +1,7 @@
 import type { IdentityBindings } from "./IdentityCoordinator.ts";
 import type { PushTokenObject, TokenReference, TokenKind } from "./PushTokenObject.ts";
 import type { TokenPreparation } from "./TokenProtocol.ts";
+import { RegistrationRecoveryRequired } from "./TokenProtocol.ts";
 import { TokenCoordinator } from "./TokenCoordinator.ts";
 import type {
   RegistrationCandidate,
@@ -150,6 +151,10 @@ export class RegistrationCoordinator {
           await this.registerReference("account", accountName(userId));
           result = await this.command(userId, { kind: "begin", input, id, now, registered: true });
         }
+        if ("retirements" in result && result.retirements) {
+          await this.drainDevice(userId, result.retirements, now);
+          continue;
+        }
         if ("completed" in result && result.completed) {
           await this.recoverRetirements(userId, deviceId, now);
           return;
@@ -182,8 +187,15 @@ export class RegistrationCoordinator {
       await this.command(userId, { kind: "retired", deviceId: reference.deviceId, reference });
     }
   }
+  private async drainDevice(userId: string, references: TokenReference[], now: string) {
+    await this.drain(userId, references.slice(0, 3), now);
+    if (references.length > 3)
+      throw new RegistrationRecoveryRequired({
+        cause: "Legacy device cleanup requires another bounded retry",
+      });
+  }
   private async recoverRetirements(userId: string, deviceId: string, now: string) {
-    await this.drain(
+    await this.drainDevice(
       userId,
       (await this.snapshot(userId, now)).retirements.filter(
         (reference) => reference.deviceId === deviceId,
@@ -300,12 +312,33 @@ export class RegistrationCoordinator {
     }
     if ((await commit(intent)) === "completed") return;
     for (const claim of intent.claims) {
-      const result = await this.token(claim.reference).transfer({
-        version,
-        ...claim,
-        now: intent.now,
-      });
-      if (!("applied" in result)) throw new Error("Push token transfer is not ready");
+      let settled = false;
+      for (let help = 0; help < 3; help++) {
+        const result = await this.token(claim.reference).transfer({
+          version,
+          ...claim,
+          now: intent.now,
+        });
+        if ("pendingLoss" in result && result.pendingLoss)
+          await this.tokens.settleLoss(result.pendingLoss);
+        if (!("applied" in result)) {
+          if ("pendingLoss" in result) continue;
+          throw new RegistrationRecoveryRequired({ cause: "Push token transfer is not ready" });
+        }
+        if (!result.applied)
+          await this.command(userId, {
+            kind: "lose-token",
+            deviceId: record.deviceId,
+            reference: claim.reference,
+            at: null,
+          });
+        settled = true;
+        break;
+      }
+      if (!settled)
+        throw new RegistrationRecoveryRequired({
+          cause: "Push token ownership repeatedly changed",
+        });
     }
     const finished = await this.command(userId, {
       kind: "finish",
@@ -316,7 +349,7 @@ export class RegistrationCoordinator {
       if ((await commit(intent)) !== "completed")
         throw new Error("Registration completion changed");
     } else if ("retirements" in finished && finished.retirements)
-      await this.drain(userId, finished.retirements, now);
+      await this.drainDevice(userId, finished.retirements, now);
   }
   private async settleRecord(userId: string, record: RegistrationRecord, now: string) {
     if (!record.pending) return;
@@ -539,7 +572,7 @@ export class RegistrationCoordinator {
       }
       if ("busy" in result) throw new Error("Concurrent registration mutation");
       if ("retirements" in result && result.retirements)
-        await this.drain(userId, result.retirements, now);
+        await this.drainDevice(userId, result.retirements, now);
     });
   }
   async accountIds() {

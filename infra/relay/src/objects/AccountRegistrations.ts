@@ -67,6 +67,8 @@ export interface RegistrationIntent {
   cancelling?: Rejection;
   committed?: true;
   preparations?: TokenPreparation[];
+  inputDigest?: string;
+  losses?: Array<{ digest: string; kind: TokenReference["kind"]; at: string | null }>;
 }
 export interface RegistrationRecord {
   deviceId: string;
@@ -101,6 +103,7 @@ export type RegistrationCommand =
       now: string;
     }
   | { kind: "retired"; deviceId: string; reference: TokenReference }
+  | { kind: "lose-token"; deviceId: string; reference: TokenReference; at: string | null }
   | { kind: "finish"; deviceId: string; id: string }
   | { kind: "cancel"; deviceId: string; id: string }
   | { kind: "check" | "commit"; deviceId: string; id: string; now: string }
@@ -151,21 +154,68 @@ const settleOutcome = (
     status,
     canonicalJson({
       version: 1,
-      digest: registrationDigest(intent.input),
+      digest: intent.inputDigest ?? registrationDigest(intent.input),
       issuedAt: intent.now,
       createdAt: intent.now,
     } satisfies OutcomeInput),
     reason,
   );
+function sealInput(intent: RegistrationIntent) {
+  intent.inputDigest ??= registrationDigest(intent.input);
+  if (intent.input.kind === "device") {
+    const {
+      pushToken: _push,
+      pushToStartToken: _start,
+      ...registration
+    } = intent.input.registration;
+    intent.input = { ...intent.input, registration };
+  } else
+    intent.input = {
+      ...intent.input,
+      registration: { ...intent.input.registration, activityPushToken: "" },
+    };
+}
+function applyLoss(
+  candidate: RegistrationCandidate,
+  loss: NonNullable<RegistrationIntent["losses"]>[number],
+  staleReady = false,
+) {
+  const matches = (reference: TokenReference | null) =>
+    reference && tokenClaimDigest(reference) === loss.digest;
+  if (candidate.device) {
+    const field = loss.kind === "push" ? "push" : loss.kind === "push-to-start" ? "start" : null;
+    if (field && matches(candidate.device[field])) {
+      candidate.device[field] = null;
+      if (loss.at && loss.at > candidate.device.updatedAt) candidate.device.updatedAt = loss.at;
+    }
+  }
+  if (
+    candidate.activity &&
+    loss.kind === "live-activity" &&
+    (matches(candidate.activity.token) || (staleReady && candidate.activity.token === null))
+  ) {
+    candidate.activity.token = null;
+    candidate.activity.remoteStartQueuedAt = null;
+    candidate.activity.remoteStartedAt = null;
+    if (loss.at) {
+      candidate.activity.endedAt = loss.at;
+      candidate.activity.updatedAt = loss.at;
+    }
+  }
+}
 export function prepareRegistrationStorage(storage: DurableObjectStorage) {
-  if (storage.sql.exec<{ codec: number }>("SELECT codec FROM registration_retention").one().codec)
-    return;
+  const codec = storage.sql
+    .exec<{ codec: number }>("SELECT codec FROM registration_retention")
+    .one().codec;
+  if (codec >= 2) return;
   storage.transactionSync(() => {
-    for (const row of storage.sql
-      .exec<{ operation_id: string; input: string }>(
-        "SELECT operation_id, input FROM registration_outcomes",
-      )
-      .toArray()) {
+    for (const row of codec === 0
+      ? storage.sql
+          .exec<{ operation_id: string; input: string }>(
+            "SELECT operation_id, input FROM registration_outcomes",
+          )
+          .toArray()
+      : []) {
       const input: unknown = JSON.parse(row.input);
       storage.sql.exec(
         "UPDATE registration_outcomes SET input = ? WHERE operation_id = ?",
@@ -180,6 +230,10 @@ export function prepareRegistrationStorage(storage: DurableObjectStorage) {
     }
     for (const record of registrationRecords(storage)) {
       let changed = false;
+      if (record.pending?.candidate && !record.pending.inputDigest) {
+        sealInput(record.pending);
+        changed = true;
+      }
       for (const candidate of [
         record.active,
         ...(record.pending?.candidate ? [record.pending.candidate] : []),
@@ -196,7 +250,7 @@ export function prepareRegistrationStorage(storage: DurableObjectStorage) {
       }
       if (changed) save(storage, record);
     }
-    storage.sql.exec("UPDATE registration_retention SET codec = 1");
+    storage.sql.exec("UPDATE registration_retention SET codec = 2");
   });
 }
 export function pruneRegistrationOutcomes(storage: DurableObjectStorage, now: string) {
@@ -311,7 +365,8 @@ export function registrations(
       if (record.pending) {
         if (
           record.pending.id === command.id &&
-          (canonicalJson(record.pending.input) !== canonicalJson(command.input) ||
+          ((record.pending.inputDigest ?? registrationDigest(record.pending.input)) !==
+            registrationDigest(command.input) ||
             record.pending.now !== command.now)
         )
           throw new Error("Registration operation intent mismatch");
@@ -323,6 +378,8 @@ export function registrations(
       if (command.now <= cutoff) return { error: "operation-expired" } as const;
       const error = validate(storage, command.input, record.active, command.now);
       if (error) return { error };
+      const retirements = deviceRetirements(storage, deviceId);
+      if (retirements.length) return { retirements };
       if (
         !command.registered &&
         !records.length &&
@@ -348,6 +405,12 @@ export function registrations(
       case "bind-token": {
         const pending = record.pending;
         if (pending?.id !== command.id || pending.candidate || pending.cancelling)
+          return { bound: false } as const;
+        if (
+          pending.losses?.some(
+            (loss) => loss.digest === tokenClaimDigest(command.preparation.reference),
+          )
+        )
           return { bound: false } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason) {
@@ -381,6 +444,63 @@ export function registrations(
                 !pending?.candidate &&
                 validate(storage, pending.input, record.active, command.now) === null)),
         };
+      }
+      case "lose-token": {
+        const reference = command.reference;
+        if (reference.userId !== userId || reference.deviceId !== deviceId)
+          throw new Error("Token loss owner mismatch");
+        const digest = tokenClaimDigest(reference);
+        const loss = { digest, kind: reference.kind, at: command.at };
+        const relevant = [
+          ...tokenReferences(record.active),
+          ...(record.pending?.candidate ? tokenReferences(record.pending.candidate) : []),
+          ...(record.pending?.claims.map((claim) => claim.reference) ?? []),
+          ...(record.pending?.preparations?.map((claim) => claim.reference) ?? []),
+        ].some((claim) => tokenClaimDigest(claim) === digest);
+        applyLoss(record.active, loss);
+        if (record.pending) {
+          const losses = (record.pending.losses ??= []);
+          if (relevant && !losses.some((previous) => previous.digest === digest)) losses.push(loss);
+          if (record.pending.candidate) applyLoss(record.pending.candidate, loss);
+          record.pending.claims = record.pending.claims.filter(
+            (claim) => tokenClaimDigest(claim.reference) !== digest,
+          );
+          record.pending.preparations = (record.pending.preparations ?? []).filter(
+            (claim) => tokenClaimDigest(claim.reference) !== digest,
+          );
+        }
+        const previous = storage.sql
+          .exec<{ reference: string }>(
+            "SELECT reference FROM registration_token_references WHERE operation_id = ?",
+            reference.operationId,
+          )
+          .toArray()[0];
+        if (
+          previous &&
+          tokenClaimDigest(JSON.parse(previous.reference) as TokenReference) === digest
+        )
+          storage.sql.exec(
+            "DELETE FROM registration_token_references WHERE operation_id = ?",
+            reference.operationId,
+          );
+        storage.sql.exec("DELETE FROM registration_retirements WHERE reference_id = ?", digest);
+        const end = storage.sql
+          .exec<{ value: string }>(
+            "SELECT value FROM registration_ends WHERE reference_id = ?",
+            reference.operationId,
+          )
+          .toArray()[0];
+        if (
+          end &&
+          tokenClaimDigest((JSON.parse(end.value) as { reference: TokenReference }).reference) ===
+            digest
+        )
+          storage.sql.exec(
+            "DELETE FROM registration_ends WHERE reference_id = ?",
+            reference.operationId,
+          );
+        if (records.some((row) => row.deviceId === deviceId)) save(storage, record);
+        return { applied: true };
       }
       case "retired": {
         const reference = command.reference;
@@ -449,8 +569,15 @@ export function registrations(
           return { applied: false };
         }
         record.pending.candidate = command.candidate;
-        record.pending.claims = command.claims;
-        for (const reference of tokenReferences(command.candidate))
+        for (const loss of record.pending.losses ?? [])
+          applyLoss(record.pending.candidate, loss, true);
+        record.pending.claims = command.claims.filter((claim) =>
+          tokenReferences(record.pending!.candidate!).some(
+            (reference) => tokenClaimDigest(reference) === tokenClaimDigest(claim.reference),
+          ),
+        );
+        sealInput(record.pending);
+        for (const reference of tokenReferences(record.pending.candidate))
           storage.sql.exec(
             "INSERT OR IGNORE INTO registration_token_references VALUES (?, ?)",
             reference.operationId,

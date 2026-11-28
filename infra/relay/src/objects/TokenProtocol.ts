@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { sha256 } from "@noble/hashes/sha256";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 import { canonicalJson } from "./storage.ts";
@@ -19,6 +20,20 @@ export interface TokenPreparation {
   initialization: string | null;
   epoch: number | null;
   admittedAt: string;
+}
+export interface TokenLoss {
+  id: string;
+  reference: TokenReference;
+  at: string;
+}
+export class RegistrationRecoveryRequired extends Schema.TaggedError<RegistrationRecoveryRequired>()(
+  "RegistrationRecoveryRequired",
+  { cause: Schema.Defect() },
+) {
+  readonly committed = true;
+  override get message() {
+    return "Committed registration requires recovery";
+  }
 }
 export interface SuccessfulTokenClaim {
   digest: string;
