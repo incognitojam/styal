@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
+import * as SqlError from "effect/sql/SqlError";
 
 import { RelayDb } from "../db.ts";
 
@@ -43,13 +44,18 @@ export const layerLocalRelayDb = Layer.effect(
       });
     const client = {
       unsafe: (query: string, params: ReadonlyArray<unknown>) => ({
-        values: Effect.promise(() => pg.query(query, [...params], { rowMode: "array" })).pipe(
-          Effect.map((result) => result.rows),
-        ),
-        withoutTransform: Effect.promise(() => pg.query(query, [...params])).pipe(
-          Effect.map((result) => result.rows),
-        ),
-        raw: Effect.promise(() => pg.query(query, [...params])),
+        values: Effect.tryPromise({
+          try: () => pg.query(query, [...params], { rowMode: "array" }),
+          catch: (cause) => new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause }) }),
+        }).pipe(Effect.map((result) => result.rows)),
+        withoutTransform: Effect.tryPromise({
+          try: () => pg.query(query, [...params]),
+          catch: (cause) => new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause }) }),
+        }).pipe(Effect.map((result) => result.rows)),
+        raw: Effect.tryPromise({
+          try: () => pg.query(query, [...params]),
+          catch: (cause) => new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause }) }),
+        }),
       }),
       withTransaction,
     } as unknown as PgClient.PgClient;

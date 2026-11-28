@@ -133,6 +133,8 @@ export function apiPauseContract<E>(name: string, layer: Layer.Layer<ApiPausePer
           expect(yield* first.pausedUntilMillis).toBe(3000);
           yield* second.pauseUntil(5000);
           expect(yield* first.pausedUntilMillis).toBe(5000);
+          yield* second.pauseUntil(1e100);
+          expect(yield* first.pausedUntilMillis).toBe(5000);
         }).pipe(Effect.provide(layer)),
     );
   });
