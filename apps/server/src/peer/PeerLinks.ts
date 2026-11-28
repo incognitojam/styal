@@ -156,6 +156,35 @@ export const decodeStoredUrls = Schema.decodeUnknownEffect(
 const encodeUrls = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
 const decodeAccess = Schema.decodeUnknownEffect(AuthMcpClientAccess);
 
+export const decodeStoredLink = Effect.fn("PeerLinks.decodeStoredLink")(function* (
+  row: PeerLinkRow,
+) {
+  const urls = yield* decodeStoredUrls(row.urls_json);
+  const access = yield* decodeAccess(row.access);
+  return yield* Effect.try({
+    try: () =>
+      ({
+        environmentId: EnvironmentId.make(row.environment_id),
+        label: row.label,
+        urls,
+        access,
+        linkedAt: DateTime.makeUnsafe(row.linked_at),
+        // Its token predates link fencing, so the peer would not fence its work:
+        // like an expired link, only a new pairing code brings it back.
+        expiresAt: DateTime.makeUnsafe(row.fenced === 1 ? row.expires_at : row.linked_at),
+        lastReachedAt:
+          row.last_reached_at === null ? null : DateTime.makeUnsafe(row.last_reached_at),
+        lastError: row.last_error,
+      }) satisfies PeerLink,
+    catch: (cause) =>
+      new PeerLinkError({
+        reason: "storage",
+        message: "Stored linked environment timestamps are invalid.",
+        cause,
+      }),
+  });
+});
+
 /** Fails with a fixed storage error that keeps its cause; the log gets the details. */
 const failStorage = (cause: unknown) =>
   Effect.logWarning("Peer link storage failed", cause).pipe(
@@ -301,20 +330,7 @@ const make = Effect.gen(function* () {
     return Option.filter(found, (peer) => peer.environmentId === environmentId);
   });
 
-  const toLink = Effect.fn("PeerLinks.toLink")(function* (row: PeerLinkRow) {
-    return {
-      environmentId: EnvironmentId.make(row.environment_id),
-      label: row.label,
-      urls: yield* decodeStoredUrls(row.urls_json),
-      access: yield* decodeAccess(row.access),
-      linkedAt: DateTime.makeUnsafe(row.linked_at),
-      // Its token predates link fencing, so the peer would not fence its work:
-      // like an expired link, only a new pairing code brings it back.
-      expiresAt: DateTime.makeUnsafe(row.fenced === 1 ? row.expires_at : row.linked_at),
-      lastReachedAt: row.last_reached_at === null ? null : DateTime.makeUnsafe(row.last_reached_at),
-      lastError: row.last_error,
-    } satisfies PeerLink;
-  }, Effect.catch(failStorage));
+  const toLink = (row: PeerLinkRow) => decodeStoredLink(row).pipe(Effect.catch(failStorage));
 
   const readRows = sql<PeerLinkRow>`
     SELECT * FROM peer_environment_links ORDER BY label, environment_id

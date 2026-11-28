@@ -378,7 +378,7 @@ it.effect(
     fixture((file) =>
       Effect.gen(function* () {
         const before = yield* archive(file);
-        yield* runAllMigrations().pipe(
+        yield* runAllMigrations({ offlineDataMove: true }).pipe(
           Effect.provide(
             NodeSqliteClient.layer({ filename: file, readerWorker: false, writerWorker: false }),
           ),

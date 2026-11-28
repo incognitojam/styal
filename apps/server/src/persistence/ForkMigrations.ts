@@ -1,3 +1,4 @@
+import { guardDataMove } from "./DataMoveGuard.ts";
 import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -31,8 +32,11 @@ export const hasPendingAllMigrations = Effect.fn("hasPendingAllMigrations")(func
   return (yield* hasPendingMigrations()) || (yield* hasPendingForkMigrations());
 });
 
-export const runAllMigrations = Effect.fn("runAllMigrations")(function* () {
-  const upstream = yield* runMigrations();
+export const runAllMigrations = Effect.fn("runAllMigrations")(function* (
+  options: { readonly offlineDataMove?: boolean } = {},
+) {
+  yield* guardDataMove(options.offlineDataMove);
+  const upstream = yield* runMigrations(options);
   const pending = yield* hasPendingForkMigrations();
   if (pending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
   const fork = yield* runFork({

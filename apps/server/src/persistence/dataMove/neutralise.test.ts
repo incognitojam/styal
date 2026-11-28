@@ -68,6 +68,7 @@ import * as Scheduler from "../../scheduling/Scheduler.ts";
 import { runAllMigrations } from "../ForkMigrations.ts";
 import { archive } from "./archive.ts";
 import { neutralise } from "./neutralise.ts";
+import { migrate } from "./migrate.ts";
 import { preflight } from "./preflight.ts";
 import source from "./source.json" with { type: "json" };
 
@@ -1112,7 +1113,7 @@ it.effect.each([
               source.definitions.filter((d) => d.type === "table").map((d) => d.name),
             ),
           ).toBe(firstHash);
-
+          yield* migrate(file);
           const sqlite = NodeSqliteClient.layer({
             filename: file,
             readerWorker: false,
@@ -1310,7 +1311,7 @@ it.effect(
                   )!.n,
               ).toBe(0);
           });
-
+          yield* migrate(file);
           const sqlite = NodeSqliteClient.layer({
             filename: file,
             readerWorker: false,

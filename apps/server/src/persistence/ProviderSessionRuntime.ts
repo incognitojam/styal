@@ -88,7 +88,7 @@ export class ProviderSessionRuntimeRepository extends Context.Service<
   }
 >()("t3/persistence/ProviderSessionRuntime/ProviderSessionRuntimeRepository") {}
 
-const ProviderSessionRuntimeDbRowSchema = ProviderSessionRuntime.mapFields(
+export const ProviderSessionRuntimeDbRowSchema = ProviderSessionRuntime.mapFields(
   Struct.assign({
     resumeCursor: Schema.NullOr(Schema.fromJsonString(Schema.Unknown)),
     runtimePayload: Schema.NullOr(Schema.fromJsonString(Schema.Unknown)),

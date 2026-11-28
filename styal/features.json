@@ -156,5 +156,10 @@
     "name": "data-move-neutralise",
     "subject": "feat(server): neutralise copied styal state before the restart",
     "dependsOn": ["data-move-raw-archive"]
+  },
+  {
+    "name": "data-move-bridge",
+    "subject": "feat(server): bridge archived styal copies to restart migrations",
+    "dependsOn": ["data-move-neutralise"]
   }
 ]

@@ -18,6 +18,8 @@
     "dev": "node scripts/dev.ts",
     "data-move:compatibility-fixtures": "node src/persistence/dataMove/generateCompatibility.mjs",
     "data-move:preflight-fixtures": "node src/persistence/dataMove/generatePreflight.mjs",
+    "data-move:migrate": "node src/persistence/dataMove/migrateCli.ts",
+    "data-move:bridge-schema": "node src/persistence/dataMove/generateBridgeSchema.ts",
     "data-move:archive": "node src/persistence/dataMove/archiveCli.ts",
     "data-move:neutralise": "node src/persistence/dataMove/neutraliseCli.ts",
     "data-move:preflight": "node src/persistence/dataMove/preflightCli.ts",

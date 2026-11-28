@@ -1,0 +1,42 @@
+{
+  "hardware_audit_events": {
+    "table": true,
+    "columns": []
+  },
+  "hardware_leases": {
+    "table": true,
+    "columns": []
+  },
+  "projection_projects": {
+    "table": false,
+    "columns": ["pin_order_key"]
+  },
+  "projection_threads": {
+    "table": false,
+    "columns": ["latest_message_at", "token_usage_json"]
+  },
+  "styal_legacy_v1_thread_activities": {
+    "table": true,
+    "columns": []
+  },
+  "styal_legacy_v1_rederived_items": {
+    "table": true,
+    "columns": []
+  },
+  "styal_legacy_v1_turns": {
+    "table": true,
+    "columns": []
+  },
+  "styal_projection_legacy_turn_usage": {
+    "table": true,
+    "columns": []
+  },
+  "workspace_port_allocations": {
+    "table": true,
+    "columns": []
+  },
+  "worktree_stripped": {
+    "table": true,
+    "columns": []
+  }
+}

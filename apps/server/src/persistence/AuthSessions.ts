@@ -149,7 +149,7 @@ export class AuthSessionRepository extends Context.Service<
   }
 >()("t3/persistence/AuthSessions/AuthSessionRepository") {}
 
-const AuthSessionDbRow = Schema.Struct({
+export const AuthSessionDbRow = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
   scopes: Historical.authScopes,

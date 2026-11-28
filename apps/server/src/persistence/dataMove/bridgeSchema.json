@@ -1,0 +1,1416 @@
+[
+  {
+    "type": "index",
+    "name": "agent_feedback_run_idx",
+    "table": "agent_feedback",
+    "hash": "8f5e34c9a1962d0c2fd6ed85391258b95626edaace86d13f05d8cfc2abef426f"
+  },
+  {
+    "type": "index",
+    "name": "idx_auth_pairing_links_active",
+    "table": "auth_pairing_links",
+    "hash": "1530350e10d6622ed3363f61fabe4ffb3196785dc537ac0a6b835e2435e178fb"
+  },
+  {
+    "type": "index",
+    "name": "idx_auth_sessions_active",
+    "table": "auth_sessions",
+    "hash": "75bedc087546e871cc55cb40e8ba7fe4b45304a4f239b2ee33e408a437865f79"
+  },
+  {
+    "type": "index",
+    "name": "idx_hardware_audit_events_device",
+    "table": "hardware_audit_events",
+    "hash": "7be461b4cc3c125de76cf9e3d9b9dd93be9a30c7313f3a8b91d51f9c8a18f9b7"
+  },
+  {
+    "type": "index",
+    "name": "idx_orch_command_receipts_aggregate",
+    "table": "orchestration_command_receipts",
+    "hash": "d6fe86373ec261117e5a9c68f6199721d68711fb7c130dd2595936d7f038036f"
+  },
+  {
+    "type": "index",
+    "name": "idx_orch_command_receipts_sequence",
+    "table": "orchestration_command_receipts",
+    "hash": "3de487aa5e31af980dbc0ede3372c3b30e3392494f03cb20bf5d8b69b39bfbf4"
+  },
+  {
+    "type": "index",
+    "name": "idx_orch_events_command_id",
+    "table": "orchestration_events",
+    "hash": "8648d19dd9b4fee6c3134ec10924ab793150e3e0ed822b44b21ec9baecd33577"
+  },
+  {
+    "type": "index",
+    "name": "idx_orch_events_stream_sequence",
+    "table": "orchestration_events",
+    "hash": "c1d9e4a30a34c4af9c22ae85e46b411c858c6ec45c22e5cc588edb326367ac44"
+  },
+  {
+    "type": "index",
+    "name": "idx_orch_events_stream_version",
+    "table": "orchestration_events",
+    "hash": "667354cac63ba5346134f64dd1ceb1204e299a2f4b4126d7ec34b9fb98df2f5e"
+  },
+  {
+    "type": "index",
+    "name": "idx_orchestration_events_agent_stream_sequence",
+    "table": "orchestration_events",
+    "hash": "571b9c9558fa0237c51a813849e68022645cb7d2c9802c6d427bbbc66a3726d6"
+  },
+  {
+    "type": "index",
+    "name": "idx_orchestration_events_application_high_water",
+    "table": "orchestration_events",
+    "hash": "16cc247caa2bde6b78c952a0ec04cb73f87ffae124b2a263d9bff298261fdb5b"
+  },
+  {
+    "type": "index",
+    "name": "idx_orchestration_events_application_sequence",
+    "table": "orchestration_events",
+    "hash": "95d195a5179f747605bde75c4fd45d28f24090d08f7838ae978d748b423dedca"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_projects_updated_at",
+    "table": "projection_projects",
+    "hash": "ec04734afe8f362e66c96a3d12b46694cb5ea6c72469777e173d522f4b673a7d"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_projects_workspace_root_deleted_at",
+    "table": "projection_projects",
+    "hash": "0681a53165fe7e82cf9b20a9f1ea982d0fd142479cdfc94cc326adceade4d87e"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_activities_thread_created",
+    "table": "styal_legacy_v1_thread_activities",
+    "hash": "3dfe4853d919a68132e027071d4f16aa000dfed91b29680a1cd9445710fabf61"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_activities_thread_sequence_created_id",
+    "table": "styal_legacy_v1_thread_activities",
+    "hash": "478312c8c91d30d41c2d4680e5e8fb0a962ad714c2e846ae3fab8effb32f2fd5"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_messages_thread_created_id",
+    "table": "projection_thread_messages",
+    "hash": "654cab7c8868919bd5aa6ac81d8f990e79d60045a393f011cd6921e86c20b1a5"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_pull_requests_pr",
+    "table": "projection_thread_pull_requests",
+    "hash": "66833dae6a7c763bb53337e7239ef185c10e63e8c3e2c6c5f8bbeafd1ac07095"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_sessions_instance",
+    "table": "projection_thread_sessions",
+    "hash": "71e06d7e0da98e5b9a1f7c73f37a87167fb98ddb9bd8878c48d8cdd64b1cc3be"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_thread_sessions_provider_session",
+    "table": "projection_thread_sessions",
+    "hash": "b4d5e81968b0948f09d3acc1d1c8d59636575bf6e7328f299e0f3eca8c86b20e"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_threads_project_archived_at",
+    "table": "projection_threads",
+    "hash": "9c45312c4223949a21b83350f4769cef4683154e239a617a7f25341d17649cc3"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_threads_project_deleted_created",
+    "table": "projection_threads",
+    "hash": "09c876c10cd638eabeea76c1ae105806f8c1e52f823772d6db58957d875185a6"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_threads_shell_active",
+    "table": "projection_threads",
+    "hash": "fd07e633d36e50fd751547859cc12363e49a14a65c776ea86b2e41032cde671f"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_threads_shell_archived",
+    "table": "projection_threads",
+    "hash": "a7637d1fa59cfa6c63434c5270bd3c52cc3cddb2eafa35466b86948f4ffe1e11"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_turns_thread_checkpoint_completed",
+    "table": "styal_legacy_v1_turns",
+    "hash": "f6ccb603b6f71f55e74428e6024eaf26c745ceff89f8c5d97ae5e9fe9c80c8dd"
+  },
+  {
+    "type": "index",
+    "name": "idx_projection_turns_thread_keyset",
+    "table": "styal_legacy_v1_turns",
+    "hash": "1ade91a58322221114cff27ac2abc745197600e430deb7028e3e8f20479c3af4"
+  },
+  {
+    "type": "index",
+    "name": "idx_provider_session_runtime_instance",
+    "table": "provider_session_runtime",
+    "hash": "86cf324c438340627aa3c406675fd3f018ca290977bf7e4dd8ea20665c8d5099"
+  },
+  {
+    "type": "index",
+    "name": "idx_provider_session_runtime_provider",
+    "table": "provider_session_runtime",
+    "hash": "2407051bb6b937a92b4f86ec1d5f4798e6b38778280efed8b062b42e06d98cf4"
+  },
+  {
+    "type": "index",
+    "name": "idx_provider_session_runtime_status",
+    "table": "provider_session_runtime",
+    "hash": "6eb55b6df2d9ceb54035fea52000d230738a33d608c9108bb702fb70f30e0783"
+  },
+  {
+    "type": "index",
+    "name": "idx_scheduled_task_webhook_deliveries_task",
+    "table": "scheduled_task_webhook_deliveries",
+    "hash": "b180417433bdd9305c762da500ef4efc83ea798fcde81a2609bd33d4c8504943"
+  },
+  {
+    "type": "index",
+    "name": "idx_scheduled_task_webhook_relay_deliveries_seen",
+    "table": "scheduled_task_webhook_relay_deliveries",
+    "hash": "478a49c630dab15992a6849021d1b0ee7e750476f6ddf0ef1e8548e457403a11"
+  },
+  {
+    "type": "index",
+    "name": "idx_scheduled_tasks_due",
+    "table": "scheduled_tasks",
+    "hash": "0c9eb24d978b0035306e8408a64c5602794a40b3095531c922b08585730bee17"
+  },
+  {
+    "type": "index",
+    "name": "idx_scheduled_tasks_project",
+    "table": "scheduled_tasks",
+    "hash": "2fcf37571cec9f77207339a5a84c466acd53f32ec8b36628e7268be8c72f6f35"
+  },
+  {
+    "type": "index",
+    "name": "idx_task_folders_real_root",
+    "table": "task_folders",
+    "hash": "c4d434573912b26bdafaedf9bd1e8184b47c41e1f1f83c9cfbf55c0d4e5a1b8f"
+  },
+  {
+    "type": "index",
+    "name": "idx_webhook_pending_due",
+    "table": "scheduled_task_webhook_pending",
+    "hash": "f9563894e04247d73f9f852b93a5dc57f345abf96f5af1854f813ffb4a464607"
+  },
+  {
+    "type": "index",
+    "name": "idx_webhook_pending_key",
+    "table": "scheduled_task_webhook_pending",
+    "hash": "8ded437aa85d1fbdc312de26a83bb60b73686f11dcb246c2b76494d944e3cc18"
+  },
+  {
+    "type": "index",
+    "name": "idx_webhook_replay_delivery",
+    "table": "scheduled_task_webhook_replay_keys",
+    "hash": "215429606e34da46504e118e86b2f07564b9e14798f75591738c98cc78adf5da"
+  },
+  {
+    "type": "index",
+    "name": "idx_webhook_replay_expiry",
+    "table": "scheduled_task_webhook_replay_keys",
+    "hash": "2509b2c6fa171901accbc7323d95d7a26e219a1dc7a6eb50d3167184b63d78ea"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_events_v2_created_threads_idx",
+    "table": "orchestration_events",
+    "hash": "f1cbfcd0c58554da1d4323de4e91086c8ccf28b089a791a87cb34943ecf1135f"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_command_receipts_thread_sequence_idx",
+    "table": "orchestration_v2_command_receipts",
+    "hash": "319d38f2f0a6ce4463d41f774f5c95219dae664c81a75e64b6845948e877cfeb"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_effect_outbox_claim_idx",
+    "table": "orchestration_v2_effect_outbox",
+    "hash": "aa395a31e29a878bef361a87ba215fef575e2dc43d4fdfae5371451c1021513d"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_effect_outbox_command_idx",
+    "table": "orchestration_v2_effect_outbox",
+    "hash": "867a97b420aa9e4662c0068bc7ae4e7c40893954251edf34777d1a95547f94e2"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_effect_outbox_thread_status_idx",
+    "table": "orchestration_v2_effect_outbox",
+    "hash": "9356c0a91f264c7d7c3c6031e30e25cc84164a9a0ef2a53de763643087a626b6"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_command_idx",
+    "table": "orchestration_v2_events",
+    "hash": "17f49adbb4f312bb493ce7b574b373df5d1e666514085ebfc6ecd6db4325b37f"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_instance_sequence_idx",
+    "table": "orchestration_v2_events",
+    "hash": "0985efd31524632754f93f399dbf5450933889f839cb00ceb60eb8d4d95c08f1"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_node_sequence_idx",
+    "table": "orchestration_v2_events",
+    "hash": "b1d5935e8425f92d3e5972d999a4bf12e38d3bd53e2dd1883b34cbffe47a036b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_raw_event_idx",
+    "table": "orchestration_v2_events",
+    "hash": "2ab496d379f188ec5a4c0857d4209075761072c55411c1f048da594d1c02bc00"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_run_sequence_idx",
+    "table": "orchestration_v2_events",
+    "hash": "10d3dd5a795d7c193549f2e804160655915eef4da5f3f6a095e4b1b8397a0c32"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_thread_sequence_idx",
+    "table": "orchestration_v2_events",
+    "hash": "d49d0f4ba98e438e01b5e28a1bf46a6a52a6781b774f546dc5ff487ef66d2b65"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_events_thread_type_sequence_idx",
+    "table": "orchestration_v2_events",
+    "hash": "8b004b115166a4b6c446e13748859664a6d87816b3aa50e61cb6a27edd301e88"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_legacy_imports_pending_transcript_idx",
+    "table": "orchestration_v2_legacy_imports",
+    "hash": "a819ce93d123d1e753356dce1097ab42f5f945c7d548a88c76b44c243c79802a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_checkpoint_scopes_parent_idx",
+    "table": "orchestration_v2_projection_checkpoint_scopes",
+    "hash": "45b436f8b43d35f3dbc69e5ac91b8a7d01955cc9cdd8b271ee0020896bc56088"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_checkpoint_scopes_thread_idx",
+    "table": "orchestration_v2_projection_checkpoint_scopes",
+    "hash": "e50fd58b501fe23be3a12d9112cc6a326e77e837cd189b704abe6da0f80b0e8c"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_checkpoints_parent_idx",
+    "table": "orchestration_v2_projection_checkpoints",
+    "hash": "0cae8cad737375abddc40d2535f3c4a473ac03962a068d5cfa7451e55aff6890"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_checkpoints_scope_ordinal_idx",
+    "table": "orchestration_v2_projection_checkpoints",
+    "hash": "b3502d8749b4eca382c6b39af61336bbbd2bd04d12fc56158ead170c0357b0fa"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_checkpoints_thread_idx",
+    "table": "orchestration_v2_projection_checkpoints",
+    "hash": "c29623ee274f5a8a3c09b12f0c20a35f9c62d39e71924c5cf9962ea5a656ee9f"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_handoffs_target_run_idx",
+    "table": "orchestration_v2_projection_context_handoffs",
+    "hash": "be54f7b5a464390aad35256d7a289b7b92347f4c4ab4963ff35d168f32e622f4"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_handoffs_thread_idx",
+    "table": "orchestration_v2_projection_context_handoffs",
+    "hash": "949b1ae673548ffc6a0a0ebac6ab16daa68b89fb460781d0d8b38bbdcd6ae70b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_transfers_fork_idx",
+    "table": "orchestration_v2_projection_context_transfers",
+    "hash": "956b7770b869c5ddf68c66313160e5286bc75206cdb8644918df4fda2fd243cc"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_transfers_source_thread_status_idx",
+    "table": "orchestration_v2_projection_context_transfers",
+    "hash": "961a2f279c6ac8f09b7f8d50e6e9f27fd3e20101cb210f5674d2d1f4b6024831"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_transfers_target_run_idx",
+    "table": "orchestration_v2_projection_context_transfers",
+    "hash": "cc21a7018dd47306a310423cf90fa208a7d123a57a3cdafcde0cf63560e62edb"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_context_transfers_target_thread_idx",
+    "table": "orchestration_v2_projection_context_transfers",
+    "hash": "786ae77ab916660e00a824014cead2c9f477e2978404507a1cf2fab049a14206"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_deferred_command_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "d994b31307e4da8a46a9d03b0dcfa24d06a0e6d881cfd60dd2e3cb22ecb503bb"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_delegated_task_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "18fe49427fed97f27bebb778ac772dffa9b01b9a4b42d44c78fff5f268d95b0b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_latest_user_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "c2f88de5b60d68a0cfcb1a950ed43df3219e77b903f21a3b654eb89358c1f9f7"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_node_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "38ac317a327defaf4763123070865a44ab3235aa0d4718f421ac6acddceb8364"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_report_answer_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "b527e6e45ae04e82afbf13e98754483f2a678e9a2cbd61ff4d957d0804709bf2"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_report_key_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "eefecf3915e9e8b058872679a217b9796110e3bc3bf1b6bb44efaef7e863c353"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_run_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "fe71cf08ab1d0145ec65ef8ad92ef8b37b497ab370ca205737d25ee0c56d5503"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_messages_thread_created_idx",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "5f995ec396825b36f5aba60b637ea8d9f0b1dbfea57d82cfd272459f0d8529d1"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_nodes_live_idx",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "ad368280dc5f8253a3f4edefbd72bd6862a09a787e28965979aaab1a74996d6e"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_nodes_parent_idx",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "4ded4af9afdac43ee880ed2e546d327061513b51d2063db1aa1464d99fe35c05"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_nodes_provider_turn_idx",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "b535d92706b6129404c5b3cd2fd5abf05e3621629e5d0840f3dcd16a6873da69"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_nodes_settled_leaf_idx",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "52b7e57e07aeb8e7d5118c18285c3e49499e2524ec33452d0c2259e1d526a9e5"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_nodes_thread_run_idx",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "5ee883e261c914c4e456a0f32580261bbb587a47423213c857e29fce63fd75df"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_plans_run_idx",
+    "table": "orchestration_v2_projection_plans",
+    "hash": "c0e7f8e4a2a9b9b602c6f00e6473dee9f887d36b8bec3d62db22ee9f89861807"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_plans_thread_idx",
+    "table": "orchestration_v2_projection_plans",
+    "hash": "23d6bb8d242d8380dfc0469d114012bf0d3e93d870d329b8b3c48fb9305f6f61"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_session_bindings_thread_idx",
+    "table": "orchestration_v2_projection_provider_session_bindings",
+    "hash": "554ffc3080a2c60eae62dae8e41da4479fa86fbf3607f38d481326c691875ed2"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_sessions_instance_status_idx",
+    "table": "orchestration_v2_projection_provider_sessions",
+    "hash": "516a42057e20d58609192380eb3391ddd56de549baa1f23e59ef874364001ccc"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_sessions_provider_status_idx",
+    "table": "orchestration_v2_projection_provider_sessions",
+    "hash": "4f9d6a860f778a1dafae272ef3c1a73b00db6185406d94646bce9195d794938a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_sessions_thread_idx",
+    "table": "orchestration_v2_projection_provider_sessions",
+    "hash": "2908e3b39b73cc4359a832dd5a113d8277bf9b874bb3ce040446653305b1b8f3"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_threads_instance_status_idx",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "c90be6a67930547fadc4795a34fb8896ce1e14b4f0143a90a270391f810fac30"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_threads_owner_idx",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "9c6857648eae17f1d0494dbf3029521642250dc47805e8303b4b5fa4421f0dca"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_threads_pending_tasks_idx",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "f458476518242778e2dd06e0d1672d37ec8cf2d94eb91530459fe667ae9d2c0a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_threads_session_idx",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "a4e89450da7980f68d7f35ba07aac00a3af5f51ad643bbc94288b3ed36827f8b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_threads_thread_idx",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "ca93a48ec4fd6458ecb6f2b5e6ab8c06ef64b2bd160e4c029aca8b98d6af2e2a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_turns_attempt_idx",
+    "table": "orchestration_v2_projection_provider_turns",
+    "hash": "86fc9a897fa3d45a05c1bfa364ad547613e8fd1d6a8dd2bf2813314247337f65"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_turns_thread_idx",
+    "table": "orchestration_v2_projection_provider_turns",
+    "hash": "12d41248dc1a181c3bd24f79132aff76a01b68b40b923295d25776eea065ca76"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_provider_turns_thread_ordinal_idx",
+    "table": "orchestration_v2_projection_provider_turns",
+    "hash": "3b8ac965da977893955501dc413787779846830c269e1f4111b95f6278688e7a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_requests_recovery_idx",
+    "table": "orchestration_v2_projection_runtime_requests",
+    "hash": "303da3fcf44b26f6bdd4eb12944ea37655cfe9cc440dc475a9c0b39cf2e96e8d"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_run_attempts_run_ordinal_idx",
+    "table": "orchestration_v2_projection_run_attempts",
+    "hash": "8662760cb3ea84c92aaab2ad7b3128a8249a8be690c570a8bf8417a6991fb883"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_run_attempts_superseded_idx",
+    "table": "orchestration_v2_projection_run_attempts",
+    "hash": "0a6911a424185dd6f447bf590d9aa931256fb1f8e892c7abb1d70fbee74b2be7"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_run_attempts_thread_idx",
+    "table": "orchestration_v2_projection_run_attempts",
+    "hash": "ec4eb0d4295ae3fb7e6ec1630d46185c30ca93e55a76bfcf20157135c3abb2f5"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_delegated_delivery_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "91e910cce9a570d8284202d1aec5d45f490bbe482d89a62a576ec84b79a307c0"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_delegated_task_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "05e6d9fac522e7c85913404a29cf83e7280f8d19a11510945e488be2b817f1ed"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_hidden_items_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "671ae5ad797d2f9851df0e82d93236988d3305242e7caf80b2473409a52fd624"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_last_executed_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "cc6a38bab5d017242cb9e137babb9fe08eb58e113cdd1b193e00b5fed07d0bf6"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_provider_thread_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "22602f5a6061b7a7802892459f586384982a4d2c453ca28c84e791df6444f5d9"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_recovery_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "3e4b0461dcbce7a5cff82f5f8ed02a56c68cb9cb163912c789ce663e4f1b3a26"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_run_status_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "cd1efde564ccf44aad80ea243959fb6bd6c298aca1e02f2f59dc52b7bb8cd9f6"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_thread_ordinal_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "028b5f7b097a5f8876a410ce4804f3305453afd5471720670c7fd7bfeaa2baf3"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runs_thread_status_idx",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "0a6c4ff96e29084750abd4d92d1ca49eb2390de2e1a46c4722230a9af052d302"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runtime_requests_provider_turn_idx",
+    "table": "orchestration_v2_projection_runtime_requests",
+    "hash": "c2ceee0d9f47b8a21b312b90d01176df0ea4ff5439a5f4ca9e75836c4ae8c717"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_runtime_requests_thread_status_idx",
+    "table": "orchestration_v2_projection_runtime_requests",
+    "hash": "23174ddf22c2ad95b8e258730f95a4e915f0666280dc1f3bbfbd73d9d4879ab1"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_child_thread_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "a3838130687572ce8e8664201bc6b75571c16150609eef1703e2c629d2a93aab"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_parent_node_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "6a13836c219190368510f1b5a03d523687d204c3c04b076ceb455be9a5c7355b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_provider_thread_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "be161340f6d7ebda0f7b1535179010951d7ba32646d33179f8fcda0eea008fda"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_routable_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "9bd974334b763338d58529d5e231efce2db634bde883b2cc8c144b8ddd118f2d"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_settled_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "d88b6a7484fd0a340e3c40d26519cb888b1c2b0ebdb09bf2bf003a83c083a928"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_subagents_thread_idx",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "0c7840f6e9d566d7c3becaa5358af1cedeef6b126f659e7467a09e35b9df270d"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_active_shell_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "bd86423e82f32a58c8279c9133db2bde44662a3b713c8cafa394320e45c1f074"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_project_updated_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "fe4f8132c1a66df429444cf375ed5622a3eeadd7ecac72b86043000287bf0f0e"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_root_thread_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "03069af5f74c512962406e42a364edf7c19dac34cc4bdca4e983ed711003d082"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_subagent_result_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "7615506feb55097a81e31cb9633795b4a73485c20714570e4fb1b5d591949c1c"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_worktree_path_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "e558e602fce9274b598604445dfb7b8e7d952f69c911fc23951d77628966f946"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_threads_worktree_path_key_idx",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "dce7767c2406fa2135724633e8c52c6640c2983941487b4e73c88497ea4e8b21"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_active_ordinal_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "a3f951c6dc057bf1dbbb75c6a96c383ebbfd286754854a6c73b9b209118743e0"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_active_run_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "3726124aee85c58a8d27bcd3b8f7d97cd1b4018d5f64ff8180992098f7bc0d8b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_conversation_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "93a1384d64c6c3130afe2a58b79f2915583a7b263ce7b5ef9c80697b944ecb57"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_failed_error_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "c13a5553c7f8ba0b5d49f58fbcf3add319f4b634d2dbcd8ffd1b06fd3f545feb"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_message_ordinal_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "42bd78305e2b65d04ca0e27a771be5e99013269dd8e4ae98ba560f1eb25d31aa"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_node_ordinal_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "1a99b11e97a04cd185697fa88ad87a21208dcee96b16f35bfb3ceac975eabe8d"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_provider_turn_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "f8966fdaf8c5955587fccce2d7fd1e86c773c8ab6c9def65cc90ac6b3b87696a"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_queued_input_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "16e1d9a31ffdb863f4deb7e561d5f53b6cac70cbf5fe819ccf9c00a09f0cf155"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_recovery_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "1803459a40299ec6613c4ab2c9f1d23081ce18dcd81b31e10269a498f6647524"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_run_ordinal_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "ea71fedade42867d0d746335c0252c6cbc8bdc8ff077cd153c4d192f74fc88e1"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_shell_pending_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "5ed43dab2189608dc24802e1035b72e6f2a747c03f85771fdb3dd19d878d1084"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_stop_request_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "e4eae56807d5cbfd2a331547eb5acadf7f1ff5071989e32ced9fbc88ed6d45da"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_thread_ordinal_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "6cbcbc347528940b494f27803806619e315f14f70719a414ed7609d41d68fae2"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_thread_run_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "f29e1847c357f9016a5e0a6d534f5ebd818506fa602e422c523ea22aa13d46fa"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_thread_type_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "862616eef7b2c80645e1b0599b1aad61361f1aa509edecd46f2cb6b6d8df110b"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_usage_limit_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "6b6d48d48550cdc93f59246e4906742716d7f88c3382b7d7adf10333e444281f"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_user_message_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "cc2350b560737f221ace88e372a3ef1eaec7990832c4bcb5e62043461bb37b73"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_projection_turn_items_waiting_link_idx",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "fadb690a3d873127c921ba059bcc1339295b9a6f542c8764b3f8276274b22136"
+  },
+  {
+    "type": "index",
+    "name": "orchestration_v2_provider_turns_codex_native_id_idx",
+    "table": "orchestration_v2_projection_provider_turns",
+    "hash": "4c41232a60a00de8594878fb35623768d5fa8812ed538120695bf68ca0038706"
+  },
+  {
+    "type": "index",
+    "name": "workflow_mail_address",
+    "table": "workflow_mail",
+    "hash": "caa67fa120046df4bdcaaeb2650295feb9857f614eedfaa8a36f1c8730140ba4"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_key",
+    "table": "workflow_runs",
+    "hash": "acb93fc4925ecdb5dad7e9c05c578d6b48887bcdb2ed086b1b0e26e43b565ae4"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_listed",
+    "table": "workflow_runs",
+    "hash": "1c658a0f3509ef95ac0ff07f8f9ebde31c9e60bffefb054916d71ef1f8adfed6"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_parent",
+    "table": "workflow_runs",
+    "hash": "95568ed2341ab3f0c1c14b0f5b24cfeb5c1467015e1fa0bd36650d01a91edbec"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_skipped",
+    "table": "workflow_runs",
+    "hash": "6a0af715dcaf997924a6df406b2c96927a7317666e29ed17faeb3c66db83907a"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_status_started",
+    "table": "workflow_runs",
+    "hash": "382439c8092e4d68987823340c8a32c947e586339ecbfb81af01b70678152c8c"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_unfinished",
+    "table": "workflow_runs",
+    "hash": "8b8bd2d219ee3507af8369ad67fb5f551a12b6e7e7f413221da63154055faef5"
+  },
+  {
+    "type": "index",
+    "name": "workflow_runs_unpruned",
+    "table": "workflow_runs",
+    "hash": "e09dc98f66072a83afd15210d95fee26427c9945f8e78d60ba5c3900974dea59"
+  },
+  {
+    "type": "index",
+    "name": "workflow_waits_key",
+    "table": "workflow_waits",
+    "hash": "a71a71c31c484f3ca0c8fff0833d85a3125a7a52df83897185f62037c6d85d26"
+  },
+  {
+    "type": "table",
+    "name": "agent_feedback",
+    "table": "agent_feedback",
+    "hash": "5731e799208402fdd9aacf014a7a3c0a35a61e7990cb33b6d227bb571e9bdf45"
+  },
+  {
+    "type": "table",
+    "name": "auth_connect_devices",
+    "table": "auth_connect_devices",
+    "hash": "1daf88443ececbbf5ddd6e03a51e602b9596a57e3a3d1b5a215333170a8237db"
+  },
+  {
+    "type": "table",
+    "name": "auth_pairing_links",
+    "table": "auth_pairing_links",
+    "hash": "e20693bcc73f3839e2744e0bac004ca95dd8160b6f12b7893e4f606267334d9c"
+  },
+  {
+    "type": "table",
+    "name": "auth_sessions",
+    "table": "auth_sessions",
+    "hash": "553a62274258fe45a34d507d059240d3f4a959820a84c74258b0150cb9ddf985"
+  },
+  {
+    "type": "table",
+    "name": "effect_sql_migrations",
+    "table": "effect_sql_migrations",
+    "hash": "1759da1cf7cb751ea19c7b1fc08a7eb390ead9949db2b953d840f974a3ad289e"
+  },
+  {
+    "type": "table",
+    "name": "hardware_audit_events",
+    "table": "hardware_audit_events",
+    "hash": "741bd942fbf2b42c6e1be3ad663ddd9e6ea91704ab870bc31aa95b1f2fe9a419"
+  },
+  {
+    "type": "table",
+    "name": "hardware_leases",
+    "table": "hardware_leases",
+    "hash": "0444a89cfaa70b19e7eacea268044e9b0d62064aa26cc9273a42fd33ee98ca54"
+  },
+  {
+    "type": "table",
+    "name": "issue_tracker_accounts",
+    "table": "issue_tracker_accounts",
+    "hash": "2474f27925325174284d0fe2b1475b493555af1c047441a39e385eae7db5249b"
+  },
+  {
+    "type": "table",
+    "name": "issue_tracker_bindings",
+    "table": "issue_tracker_bindings",
+    "hash": "a342be0e1760be87e959b59061a56c4d0011a0e9b29520767d6c7a27900b391b"
+  },
+  {
+    "type": "table",
+    "name": "layout_action_command_approvals",
+    "table": "layout_action_command_approvals",
+    "hash": "16071e29a964762df29fe584f2ad02386d70dfa2c6076ea34a1b00ca8f5b0320"
+  },
+  {
+    "type": "table",
+    "name": "layout_command_approvals",
+    "table": "layout_command_approvals",
+    "hash": "46c31f948109af72d12a47781e870cc8390f231b302d8927e28fd29db5aa9043"
+  },
+  {
+    "type": "table",
+    "name": "mcp_app_model_context",
+    "table": "mcp_app_model_context",
+    "hash": "93f7a6cceb962847c46b39396dff33eec640fc9a13c5a5c877cca280737e6187"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_command_receipts",
+    "table": "orchestration_command_receipts",
+    "hash": "25440fb6cfd7603154d14dfc6e43a8c5fdbe61d1f3b526ef876e34656f15c10b"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_events",
+    "table": "orchestration_events",
+    "hash": "40c8b17a1c9b017e39662a1b52501c662c9838c9237ac02915d49b40e951bc2f"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_command_receipts",
+    "table": "orchestration_v2_command_receipts",
+    "hash": "2eb8a4c4716bcf7f99d6f946d8ba51587fda0dc6390996c261357a5ff5567bfb"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_effect_outbox",
+    "table": "orchestration_v2_effect_outbox",
+    "hash": "74b92fb7879a8adc0bb2ec77714f324c32989c30a0f90692f37128a963f731cb"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_events",
+    "table": "orchestration_v2_events",
+    "hash": "85fab3eb8d7dca0534608c00ab1b8a53a2f203156c4dc9b9d4914cbca957de09"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_legacy_imports",
+    "table": "orchestration_v2_legacy_imports",
+    "hash": "8d17a03fa10cc35fa1c1bc62e5840f8e5f624026f8b1a9b094bda0aaa9234770"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_message_search",
+    "table": "orchestration_v2_message_search",
+    "hash": "245b3aa209653e2d151fa1d85bc73dbb4228ff04bc933c38a05d95b1cf20d6ba"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_message_search_config",
+    "table": "orchestration_v2_message_search_config",
+    "hash": "1a8982488732db96d75414c613b447ad3e9b6fcf0688ce704bc0c7a41a4afd12"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_message_search_data",
+    "table": "orchestration_v2_message_search_data",
+    "hash": "2b006ce1c932454d1f2fadac903690b546ead3b341461cbcff4a97336e4ecfd1"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_message_search_docsize",
+    "table": "orchestration_v2_message_search_docsize",
+    "hash": "af50756ff27dfb3761c6b871e71cbf07e19d270f98ed446d82dc2a0698951901"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_message_search_idx",
+    "table": "orchestration_v2_message_search_idx",
+    "hash": "1e0261277a9493e45c7662612c18cf670a0a827efc957f5efac16300a08363ac"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_checkpoint_scopes",
+    "table": "orchestration_v2_projection_checkpoint_scopes",
+    "hash": "3d154657331a0bf0453153c8063f1fc890257a451fe8fa1965999d2a26a38e74"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_checkpoints",
+    "table": "orchestration_v2_projection_checkpoints",
+    "hash": "52488591722405b4d1ecd0137b4325f1aae60908ef9b513f278a34efec10d80d"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_context_handoffs",
+    "table": "orchestration_v2_projection_context_handoffs",
+    "hash": "fab155d8b5436387e5ce805a68a3b6a1b832b88b590e6e534553c22f4c66d75e"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_context_transfers",
+    "table": "orchestration_v2_projection_context_transfers",
+    "hash": "1dba58dd9689000e4039a46b591add145159e21db56f0106ee0419c720275ca4"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_messages",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "81fb9846c71b1408c5d41096acc2c3edcabd6535af3055bc4794ae62b046bd85"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_metadata",
+    "table": "orchestration_v2_projection_metadata",
+    "hash": "836dc3bc42710760b5c4c8cd0f56ba2c31b265eaab9d3d44c14e83819208af10"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_nodes",
+    "table": "orchestration_v2_projection_nodes",
+    "hash": "a6e2a6489b886f942e0f7cfe3108ed79067ec7ed043b702d913052f72e0a27d0"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_plans",
+    "table": "orchestration_v2_projection_plans",
+    "hash": "5bfa169bc08bad7ac1f5ed865adf296c1f0dec234597f7a9adaffebd662e7a9e"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_provider_session_bindings",
+    "table": "orchestration_v2_projection_provider_session_bindings",
+    "hash": "0be0581213c0dd8d4596348b9319f41c00af2e059b7f8bf212809494bc5de12f"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_provider_sessions",
+    "table": "orchestration_v2_projection_provider_sessions",
+    "hash": "b6494c383fec8f91db1f1fe165c24a695c5b240aaf798db8c2816065b636928f"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_provider_threads",
+    "table": "orchestration_v2_projection_provider_threads",
+    "hash": "f9787a2dc5ba996d3c702b300ff80db58fadb5286b12ee2d91ededa442592c6f"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_provider_turns",
+    "table": "orchestration_v2_projection_provider_turns",
+    "hash": "ae611a14af630152eeb842e3522de5f2df8c6b9e0aca94a2a999fbc8120609c7"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_run_attempts",
+    "table": "orchestration_v2_projection_run_attempts",
+    "hash": "4e5dfb7125f16c69b8f87141b6915ca3f3aa5a5529774591d3d42a8a58954dda"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_runs",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "40aef0f2990fbe927643f85d53e986bf6f0ba99632dc227a281e2f9067cb194d"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_runtime_requests",
+    "table": "orchestration_v2_projection_runtime_requests",
+    "hash": "392231c7da08a913c896fb7e0479b97d9fad24aaea63f4da74a78d84006dd851"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_subagents",
+    "table": "orchestration_v2_projection_subagents",
+    "hash": "24e5ec4c167c3e5926450d601a3c21645c5be6bfe28e67fea8ee288a93e5d983"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_thread_item_counts",
+    "table": "orchestration_v2_projection_thread_item_counts",
+    "hash": "8c954297abfbdca70e797f51b36b190e9eacda6f6df485120d54e7d7a34b21fc"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_threads",
+    "table": "orchestration_v2_projection_threads",
+    "hash": "2cef43449632087c543ef8a146807f469b7f199176225068644d5f14bdd61236"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_turn_item_counts",
+    "table": "orchestration_v2_projection_turn_item_counts",
+    "hash": "0c90e66c3f359eba54325249663a67c9a3266adf68d1dec870df1d219b80ed3f"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_projection_turn_items",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "e8571a02fd8e3e41c554f9ba8779ba876aeb17e9fcd6ab312fd0e872db7e821b"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_thread_launch_workflows",
+    "table": "orchestration_v2_thread_launch_workflows",
+    "hash": "540f362c1f35c3683f7af5c41fc44cb239acdc514c49609930b4d56c96a0555c"
+  },
+  {
+    "type": "table",
+    "name": "orchestration_v2_turn_item_positions",
+    "table": "orchestration_v2_turn_item_positions",
+    "hash": "fe26220c54786d8289424d181a0c9671f9dae52b49c9fecd70b02b6bf5c2d45c"
+  },
+  {
+    "type": "table",
+    "name": "peer_environment_links",
+    "table": "peer_environment_links",
+    "hash": "8d15fdcb7855ebadc3382f719c647b4d223548b0b40f65fc6fbd74545013be73"
+  },
+  {
+    "type": "table",
+    "name": "projection_projects",
+    "table": "projection_projects",
+    "hash": "641d6ddf9c25b8811ddcb0ceba3b51d0bc9d120d2222fe36cb5c271c465ffee6",
+    "variants": [
+      {
+        "label": "installed-history",
+        "hash": "67a13ba8919af73ebb7299cf898db29df2f4c4945f33aef6ec20f520a124d0ea"
+      }
+    ]
+  },
+  {
+    "type": "table",
+    "name": "projection_thread_messages",
+    "table": "projection_thread_messages",
+    "hash": "4f3ba835b747db01ab6db350c2463f7a88ef752b62c0d76199e2f4aa6f515b02"
+  },
+  {
+    "type": "table",
+    "name": "projection_thread_pull_requests",
+    "table": "projection_thread_pull_requests",
+    "hash": "54fc70bffd26df3f2b29880308c2d4158e86ae7175bf86ddf4196c09e7faa705"
+  },
+  {
+    "type": "table",
+    "name": "projection_thread_sessions",
+    "table": "projection_thread_sessions",
+    "hash": "068825fa8bfd20f42fa21eeac8c2d404a7f00f4e79d8fa2888ab8e4f32962d37"
+  },
+  {
+    "type": "table",
+    "name": "projection_threads",
+    "table": "projection_threads",
+    "hash": "1422ce1abdf5ed3ef5aeb57c3f4e24a5c8059761faa8950a45591054768715aa",
+    "variants": [
+      {
+        "label": "installed-history",
+        "hash": "71d660988eafadf9c681f37a12c65d9707d428dec7088d27d9308e583be7371a"
+      }
+    ]
+  },
+  {
+    "type": "table",
+    "name": "provider_session_runtime",
+    "table": "provider_session_runtime",
+    "hash": "09266ef9403650eddd1506689c581f72f1e13331033d9354874d7eaeb91ffd92"
+  },
+  {
+    "type": "table",
+    "name": "pull_request_files_viewed",
+    "table": "pull_request_files_viewed",
+    "hash": "88f4db5a079e68290d04db738cf0b54cfe3b800bf4bf601e20c30e29e78d07af"
+  },
+  {
+    "type": "table",
+    "name": "pull_request_review_guides",
+    "table": "pull_request_review_guides",
+    "hash": "3da2ce22dc0b56c40588bcd21aec07ca26e24e74cfa1e6ef26ec73dfcf4611ea"
+  },
+  {
+    "type": "table",
+    "name": "scheduled_task_webhook_deliveries",
+    "table": "scheduled_task_webhook_deliveries",
+    "hash": "def1bf9a9258072615bdc8cf0b9e3a7b666b3303afc5f7482c16e0d5bf9e48fc"
+  },
+  {
+    "type": "table",
+    "name": "scheduled_task_webhook_pending",
+    "table": "scheduled_task_webhook_pending",
+    "hash": "72c9892d643cbc4d52c584995c9d3365cd60c9a374cc016e44a942502b2dd49e"
+  },
+  {
+    "type": "table",
+    "name": "scheduled_task_webhook_relay_deliveries",
+    "table": "scheduled_task_webhook_relay_deliveries",
+    "hash": "4caea0bbe8ffb7a9028fd1c19a70c5537e14af8b25a168fbd4302cb726a6268c"
+  },
+  {
+    "type": "table",
+    "name": "scheduled_task_webhook_replay_keys",
+    "table": "scheduled_task_webhook_replay_keys",
+    "hash": "47f7b938367b6ba1b564a1795365faa056c96ba62cebef1ed08b3c994523c73f"
+  },
+  {
+    "type": "table",
+    "name": "scheduled_tasks",
+    "table": "scheduled_tasks",
+    "hash": "7519532f83ff3428676f56e148b6fb42f9a43404c8ae76a061447fc17261cead"
+  },
+  {
+    "type": "table",
+    "name": "sqlite_sequence",
+    "table": "sqlite_sequence",
+    "hash": "3f401c6e63202d04f814d5b8b23cb5d1966ed2a8f1b279ee6fd1b0799efc937d"
+  },
+  {
+    "type": "table",
+    "name": "styal_legacy_v1_rederived_items",
+    "table": "styal_legacy_v1_rederived_items",
+    "hash": "b67f28c0359f4f8e393b52ae6d358afc778579bea7e79a3788b4875765a9fcc6",
+    "optional": true
+  },
+  {
+    "type": "table",
+    "name": "styal_legacy_v1_thread_activities",
+    "table": "styal_legacy_v1_thread_activities",
+    "hash": "40b0cb60a0f0a49d754a256cf07b851025b2e65b3e90cee15907b81b46d46579"
+  },
+  {
+    "type": "table",
+    "name": "styal_legacy_v1_turns",
+    "table": "styal_legacy_v1_turns",
+    "hash": "cfe7e30f61a05fcc1ecc7bcd802b822aa41bc0400c29c0420e644446e43c448d"
+  },
+  {
+    "type": "table",
+    "name": "styal_projection_legacy_turn_usage",
+    "table": "styal_projection_legacy_turn_usage",
+    "hash": "114723bbdb8568b312eb58cf43e5da8dfbf7288f1ebb25aedd9434e7114df521"
+  },
+  {
+    "type": "table",
+    "name": "task_folders",
+    "table": "task_folders",
+    "hash": "5bf8f4b5ddc98f10b433b03679ae8a29f3991d04c5671cec83ef381a72de1298"
+  },
+  {
+    "type": "table",
+    "name": "workflow_hooks",
+    "table": "workflow_hooks",
+    "hash": "f51bc49510e691df46a0dee37a74e99156b1e2fecd84ea990564643d92d75772"
+  },
+  {
+    "type": "table",
+    "name": "workflow_mail",
+    "table": "workflow_mail",
+    "hash": "8607117e050180f30eae9ae8e79f1274d74580202e53f210522043fb50353597"
+  },
+  {
+    "type": "table",
+    "name": "workflow_marks",
+    "table": "workflow_marks",
+    "hash": "3ba5ce3f60a7115d7241136ea2c8b039bef2dbffaedf7f460a5f2bfed286a4cf"
+  },
+  {
+    "type": "table",
+    "name": "workflow_run_references",
+    "table": "workflow_run_references",
+    "hash": "2f781eb10f57eb8dc55acc84f3cc07c81c964543b9d1ed8424ffdfcba9d05f93"
+  },
+  {
+    "type": "table",
+    "name": "workflow_runs",
+    "table": "workflow_runs",
+    "hash": "bdaff51eb556c90a898df41f4257bd0bd23f2acc9e6975374fbd95b21ebef77b"
+  },
+  {
+    "type": "table",
+    "name": "workflow_signals",
+    "table": "workflow_signals",
+    "hash": "22eb0e79c479146b94dbba43f0ec51edaab921676d31612cc9480ba1352dee65"
+  },
+  {
+    "type": "table",
+    "name": "workflow_steps",
+    "table": "workflow_steps",
+    "hash": "b6dab08e39ca8bde60221f0f4a5f54fb8d8c9fea821349e3c9e23bb234a3b278"
+  },
+  {
+    "type": "table",
+    "name": "workflow_store",
+    "table": "workflow_store",
+    "hash": "972001ca6132ccc19f05544bde534204a161638bc51647efba68fda02c58f208"
+  },
+  {
+    "type": "table",
+    "name": "workflow_triggers",
+    "table": "workflow_triggers",
+    "hash": "429276ad182b8b9b6f0ec92bbaae5fef9032ec76888ab668a5b691ecbeb0c6d3"
+  },
+  {
+    "type": "table",
+    "name": "workflow_waits",
+    "table": "workflow_waits",
+    "hash": "0ba1d399c492acca8dee0899520ffc6cc466e6020929f8a71c90432627acb800"
+  },
+  {
+    "type": "table",
+    "name": "workspace_port_allocations",
+    "table": "workspace_port_allocations",
+    "hash": "69ff5f991c9518b0e522e934761bd1f1ab524b049c326678490226177e26b081"
+  },
+  {
+    "type": "table",
+    "name": "worktree_stripped",
+    "table": "worktree_stripped",
+    "hash": "70694aa0380ebe5e221d2785b244ee1bf43cbf2748855e6cb847936b576c6665"
+  },
+  {
+    "type": "table",
+    "name": "yngatech_sql_migrations",
+    "table": "yngatech_sql_migrations",
+    "hash": "e383033263b7d1d159e46589367a625187a28e663ccef055fd2de6d854ed6d01"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_message_search_delete",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "25167d31d8060036bb71553b0c099ec1cfd063280669b22ca2583be645f77727",
+    "optional": true
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_message_search_insert",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "9468e22ad99c2ded86da7f624e92937e9c0354fd96d0908a51ed090c8768f7d1",
+    "optional": true
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_message_search_update",
+    "table": "orchestration_v2_projection_messages",
+    "hash": "2bbf5a2ea4f3e1782b37965d226b0e51a05d54f16e3fc8f60c8fe00c9d142185",
+    "optional": true
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_thread_item_counts_count_delete",
+    "table": "orchestration_v2_projection_turn_item_counts",
+    "hash": "c350e557a39a2f63148bc76fc8d5d4916bed43b246bb000b7e2da5e41d6554f5"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_thread_item_counts_count_insert",
+    "table": "orchestration_v2_projection_turn_item_counts",
+    "hash": "bcddcd2d03f67173dfae9c97fef6e4428fee57b952fc00fa87e268f5a3241043"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_thread_item_counts_count_update",
+    "table": "orchestration_v2_projection_turn_item_counts",
+    "hash": "dfd2ca25d61eedc5a4d513aec8e9063f237720ee375f249683cb6b48e7d4ec22"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_thread_item_counts_run_delete",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "2fb297ef8967d26132e505cb45b9853e7c1757918d67f88af353b219a74c2aeb"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_thread_item_counts_run_insert",
+    "table": "orchestration_v2_projection_runs",
+    "hash": "c9ddd500d743f13cb3533b5af65832b091bb997d0296c3fb228936f9a795df51"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_turn_item_counts_delete",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "661377d0671cb946fe6ce0083920afd89818e80a490ea588e8a7981fc9656caa"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_turn_item_counts_insert",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "1aeb6a6845765255879f2e59b42c9f84b0c1c4c76e18b8982c0f959baf852a47"
+  },
+  {
+    "type": "trigger",
+    "name": "orchestration_v2_turn_item_counts_update",
+    "table": "orchestration_v2_projection_turn_items",
+    "hash": "64f46f21904b282b37c730e0416c9c656f72b764d0529ce7a857b67ceae3e682"
+  }
+]

@@ -593,6 +593,7 @@ export const scanPreflight = Effect.fn("DataMove.scanPreflight")(function* (
   progress: (line: string) => void = () => {},
   archiveObjects: readonly ("styal_archive_raw_cells" | "styal_archive_raw_manifest")[] = [],
   schemaOnly = false,
+  moved = false,
 ) {
   const sql = yield* SqlClient.SqlClient;
   yield* sql.unsafe("PRAGMA trusted_schema=OFF");
@@ -678,7 +679,7 @@ export const scanPreflight = Effect.fn("DataMove.scanPreflight")(function* (
     );
   const globals: Record<string, number> = {};
   // Do not execute reader SQL against a schema the pinned source never supplied.
-  if (Object.keys(differences).length === 0 && !schemaOnly) {
+  if ((moved || Object.keys(differences).length === 0) && !schemaOnly) {
     const scanStarted = performance.now();
     for (const definition of source.definitions.filter((d) => d.type === "table")) {
       const table = definition.name;
@@ -1030,7 +1031,7 @@ export const scanPreflight = Effect.fn("DataMove.scanPreflight")(function* (
                 {
                   projectId: row.project_id,
                   title: row.title,
-                  hasCustomTitle: 0,
+                  hasCustomTitle: moved ? row.has_custom_title : 0,
                   workspaceRoot: row.workspace_root,
                   defaultModelSelection: row.default_model_selection_json,
                   defaultThreadEnvMode: row.default_thread_env_mode,
@@ -1038,7 +1039,7 @@ export const scanPreflight = Effect.fn("DataMove.scanPreflight")(function* (
                   faviconPath: row.favicon_path,
                   additionalInstructions: row.additional_instructions,
                   projectIcon: row.project_icon_json,
-                  trackedFolders: "[]",
+                  trackedFolders: moved ? row.tracked_folders_json : "[]",
                   pinnedAt: row.pinned_at,
                   archivedAt: row.archived_at,
                   createdAt: row.created_at,

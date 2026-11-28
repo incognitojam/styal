@@ -24,7 +24,7 @@ export class TaskFolderStore extends Context.Service<
   }
 >()("t3/workspace/TaskFolderStore") {}
 
-const TaskFolderRow = Schema.Struct({
+export const TaskFolderRow = Schema.Struct({
   root: Schema.String,
   projectId: ProjectId,
   projectRoot: Schema.String,
