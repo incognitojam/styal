@@ -197,141 +197,165 @@ it.effect.each([
   },
 );
 
-it.effect.each(["before-remove", "after-remove", "raw-remove"] as const)(
-  "resumes session cleanup across restart %s",
-  (phase) => {
-    const ends: string[] = [];
-    let interrupt = true;
-    const bindings = {
-      ...env,
-      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
-        const stub = env.ACCOUNTS.getByName(name);
-        return new Proxy(stub, {
-          get(target, method) {
-            if (method === "identity")
-              return async (request: Parameters<typeof stub.identity>[0]) => {
-                if (request.command.kind !== "revoke-session" || !interrupt)
-                  return stub.identity(request);
-                interrupt = false;
-                if (phase === "after-remove") await stub.identity(request);
-                await abortAllDurableObjects();
-                throw new Error("Synthetic interrupted session cleanup");
-              };
-            return Reflect.get(target, method, target);
-          },
-        });
-      }),
-    };
-    const queue = Layer.succeed(
-      ApnsDeliveryQueue,
-      ApnsDeliveryQueue.of({
-        enqueueLiveActivity: (input) =>
-          Effect.sync(() => {
-            ends.push(input.token);
-            return {
-              deviceId: input.deviceId,
-              kind: input.kind,
-              ok: true,
-              queued: true,
-              apnsStatus: null,
-              apnsReason: null,
-              apnsId: null,
+it.effect.each([
+  { method: "id", phase: "before-remove" },
+  { method: "id", phase: "after-remove" },
+  { method: "id", phase: "raw-remove" },
+  { method: "token", phase: "before-remove" },
+  { method: "token", phase: "after-remove" },
+  { method: "token", phase: "raw-remove" },
+] as const)("resumes session cleanup across restart: %o", ({ method, phase }) => {
+  const ends: string[] = [];
+  let interrupt = true;
+  const bindings = {
+    ...env,
+    ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+      const stub = env.ACCOUNTS.getByName(name);
+      return new Proxy(stub, {
+        get(target, method) {
+          if (method === "identity")
+            return async (request: Parameters<typeof stub.identity>[0]) => {
+              if (
+                (request.command.kind !== "revoke-session" &&
+                  !(request.command.kind === "use-session" && request.command.revoke)) ||
+                !interrupt
+              )
+                return stub.identity(request);
+              interrupt = false;
+              if (phase === "after-remove") await stub.identity(request);
+              await abortAllDurableObjects();
+              throw new Error("Synthetic interrupted session cleanup");
             };
-          }),
-        enqueuePushNotification: () => Effect.die("Unexpected notification"),
-      }),
+          return Reflect.get(target, method, target);
+        },
+      });
+    }),
+  };
+  const queue = Layer.succeed(
+    ApnsDeliveryQueue,
+    ApnsDeliveryQueue.of({
+      enqueueLiveActivity: (input) =>
+        Effect.sync(() => {
+          ends.push(input.token);
+          return {
+            deviceId: input.deviceId,
+            kind: input.kind,
+            ok: true,
+            queued: true,
+            apnsStatus: null,
+            apnsReason: null,
+            apnsId: null,
+          };
+        }),
+      enqueuePushNotification: () => Effect.die("Unexpected notification"),
+    }),
+  );
+  const layer = Layer.mergeAll(identityLayer(bindings, options), registrationLayer(bindings)).pipe(
+    Layer.provide(Layer.mergeAll(SecureRandom.layerWebCrypto, Config.layer(config), queue)),
+  );
+  return Effect.gen(function* () {
+    yield* Effect.promise(resetRegistrationObjects);
+    const account = yield* AccountPersistence;
+    const sessions = yield* SessionPersistence;
+    const devices = yield* DevicePersistence;
+    const activities = yield* LiveActivityPersistence;
+    const userId = (yield* account.findOrCreateByEmail("cleanup@example.test")).userId;
+    const session = yield* sessions.create({
+      userId,
+      clientId: "t3-mobile",
+      thumbprint: "session-key",
+    });
+    yield* devices.register({
+      userId,
+      sessionId: session.sessionId,
+      registration: registration("phone-a"),
+    });
+    yield* activities.register({
+      userId,
+      sessionId: session.sessionId,
+      registration: { deviceId: "phone-a", activityPushToken: "card-a" },
+    });
+    const remove =
+      method === "token"
+        ? sessions.revokeByToken({ token: session.token, thumbprint: "session-key" })
+        : sessions.revoke({ userId, sessionId: session.sessionId });
+    if (phase === "raw-remove") {
+      yield* Effect.promise(async () =>
+        env.ACCOUNTS.getByName(accountName(userId)).identity({
+          version,
+          userId,
+          command: { kind: "revoke-session", sessionId: session.sessionId },
+        }),
+      );
+      yield* Effect.promise(abortAllDurableObjects);
+      interrupt = false;
+    } else {
+      expect(yield* remove.pipe(Effect.flip)).toMatchObject({
+        _tag: "AuthSessionPersistenceError",
+      });
+    }
+    expect(yield* sessions.isLive({ userId, sessionId: session.sessionId })).toBe(
+      phase === "before-remove",
     );
-    const layer = Layer.mergeAll(
-      identityLayer(bindings, options),
-      registrationLayer(bindings),
-    ).pipe(Layer.provide(Layer.mergeAll(SecureRandom.layerWebCrypto, Config.layer(config), queue)));
-    return Effect.gen(function* () {
-      yield* Effect.promise(resetRegistrationObjects);
-      const account = yield* AccountPersistence;
-      const sessions = yield* SessionPersistence;
-      const devices = yield* DevicePersistence;
-      const activities = yield* LiveActivityPersistence;
-      const userId = (yield* account.findOrCreateByEmail("cleanup@example.test")).userId;
-      const session = yield* sessions.create({
-        userId,
-        clientId: "t3-mobile",
-        thumbprint: "session-key",
-      });
-      yield* devices.register({
-        userId,
-        sessionId: session.sessionId,
-        registration: registration("phone-a"),
-      });
-      yield* activities.register({
-        userId,
-        sessionId: session.sessionId,
-        registration: { deviceId: "phone-a", activityPushToken: "card-a" },
-      });
-      if (phase === "raw-remove") {
-        yield* Effect.promise(async () =>
-          env.ACCOUNTS.getByName(accountName(userId)).identity({
-            version,
-            userId,
-            command: { kind: "revoke-session", sessionId: session.sessionId },
-          }),
-        );
-        yield* Effect.promise(abortAllDurableObjects);
-        interrupt = false;
-      } else {
+    if (method === "token") {
+      const coordinator = new RegistrationCoordinator(env);
+      const before = yield* Effect.promise(() =>
+        coordinator.snapshot(userId, "1970-01-01T00:00:00.000Z"),
+      );
+      const wrongToken = session.token.slice(0, -1) + (session.token.endsWith("0") ? "1" : "0");
+      yield* sessions.revokeByToken({ token: wrongToken, thumbprint: "session-key" });
+      yield* sessions.revokeByToken({ token: session.token, thumbprint: "wrong-key" });
+      expect(
+        (yield* Effect.promise(() => coordinator.snapshot(userId, "1970-01-01T00:00:00.000Z")))
+          .retirements,
+      ).toEqual(before.retirements);
+      if (phase !== "before-remove") yield* TestClock.adjust("90 days");
+    }
+    expect(yield* remove).toBe(method === "id" ? phase === "before-remove" : undefined);
+    expect(yield* sessions.isLive({ userId, sessionId: session.sessionId })).toBe(false);
+    expect(ends).toEqual(phase === "before-remove" ? ["card-a", "card-a"] : ["card-a"]);
+    expect(yield* devices.listForUser({ userId })).toEqual([]);
+    expect(yield* activities.listTargets({ userId })).toEqual([]);
+    yield* Effect.promise(async () => {
+      for (const [kind, token] of [
+        ["push", "shared-push"],
+        ["push-to-start", "start-phone-a"],
+        ["live-activity", "card-a"],
+      ] as const) {
+        const name = pushTokenName(kind, token);
         expect(
-          yield* sessions.revoke({ userId, sessionId: session.sessionId }).pipe(Effect.flip),
-        ).toMatchObject({ _tag: "AuthSessionPersistenceError" });
-      }
-      expect(yield* sessions.isLive({ userId, sessionId: session.sessionId })).toBe(
-        phase === "before-remove",
-      );
-      expect(yield* sessions.revoke({ userId, sessionId: session.sessionId })).toBe(
-        phase === "before-remove",
-      );
-      expect(ends).toEqual(phase === "before-remove" ? ["card-a", "card-a"] : ["card-a"]);
-      expect(yield* devices.listForUser({ userId })).toEqual([]);
-      expect(yield* activities.listTargets({ userId })).toEqual([]);
-      yield* Effect.promise(async () => {
-        for (const [kind, token] of [
-          ["push", "shared-push"],
-          ["push-to-start", "start-phone-a"],
-          ["live-activity", "card-a"],
-        ] as const) {
-          const name = pushTokenName(kind, token);
-          expect(
-            await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
-              ctx.storage.sql
-                .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
-                .toArray(),
-            ),
-          ).toEqual([]);
-          expect(
-            await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
-              version,
-              kind: "push-token",
-              after: "",
-              limit: 1000,
-            }),
-          ).not.toContainEqual({ name });
-        }
-        const stored = await runInDurableObject(
-          env.ACCOUNTS.getByName(accountName(userId)),
-          (_instance, ctx) => ({
-            refs: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
-            retirements: ctx.storage.sql.exec("SELECT * FROM registration_retirements").toArray(),
-            ends: ctx.storage.sql.exec("SELECT * FROM registration_ends").toArray(),
-            outcomes: ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+          await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+            ctx.storage.sql
+              .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+              .toArray(),
+          ),
+        ).toEqual([]);
+        expect(
+          await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
+            version,
+            kind: "push-token",
+            after: "",
+            limit: 1000,
           }),
-        );
-        expect(stored.refs).toEqual([]);
-        expect(stored.retirements).toEqual([]);
-        expect(stored.ends).toEqual([]);
-        expect(JSON.stringify(stored)).not.toContain("shared-push");
-        expect(JSON.stringify(stored)).not.toContain("card-a");
-      });
-    }).pipe(Effect.provide(layer));
-  },
-);
+        ).not.toContainEqual({ name });
+      }
+      const stored = await runInDurableObject(
+        env.ACCOUNTS.getByName(accountName(userId)),
+        (_instance, ctx) => ({
+          refs: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
+          retirements: ctx.storage.sql.exec("SELECT * FROM registration_retirements").toArray(),
+          ends: ctx.storage.sql.exec("SELECT * FROM registration_ends").toArray(),
+          outcomes: ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+        }),
+      );
+      expect(stored.refs).toEqual([]);
+      expect(stored.retirements).toEqual([]);
+      expect(stored.ends).toEqual([]);
+      expect(JSON.stringify(stored)).not.toContain("shared-push");
+      expect(JSON.stringify(stored)).not.toContain("card-a");
+    });
+  }).pipe(Effect.provide(layer));
+});
 
 it.effect.each(["mark", "invalidate"] as const)(
   "uses the current authorization clock for a delayed %s callback",

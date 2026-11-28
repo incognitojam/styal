@@ -786,14 +786,12 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
   const ends = registrationEnds(storage);
   const sessionIds = sessions
     .filter((session) => {
+      const pendingCleanup =
+        retirements.some((reference) => reference.sessionId === session.sessionId) ||
+        ends.some((end) => end.sessionId === session.sessionId);
       if (command.kind === "prune-sessions") return session.expiresAt <= command.now;
       if (command.kind === "revoke-session")
-        return (
-          session.sessionId === command.sessionId &&
-          (!session.revoked ||
-            retirements.some((reference) => reference.sessionId === session.sessionId) ||
-            ends.some((end) => end.sessionId === session.sessionId))
-        );
+        return session.sessionId === command.sessionId && (!session.revoked || pendingCleanup);
       if (command.kind === "publish-session")
         return session.sessionId === command.sessionId && !session.revoked;
       return (
@@ -801,8 +799,8 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
         command.revoke &&
         session.sessionId === command.sessionId &&
         session.published &&
-        !session.revoked &&
-        session.expiresAt > command.now &&
+        ((!session.revoked && session.expiresAt > command.now) ||
+          (session.revoked && pendingCleanup)) &&
         session.tokenHash === command.tokenHash &&
         session.thumbprint === command.thumbprint
       );
