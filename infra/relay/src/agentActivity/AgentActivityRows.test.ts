@@ -1,3 +1,4 @@
+import * as PostgresAgentActivityRows from "../persistence/PostgresAgentActivityRows.ts";
 import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -41,7 +42,10 @@ describe("AgentActivityRows", () => {
       });
     }).pipe(
       Effect.provide(
-        AgentActivityRows.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, db))),
+        AgentActivityRows.layer.pipe(
+          Layer.provide(PostgresAgentActivityRows.layer),
+          Layer.provide(Layer.succeed(RelayDb.RelayDb, db)),
+        ),
       ),
     );
   });
