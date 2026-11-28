@@ -151,5 +151,10 @@
     "name": "data-move-raw-archive",
     "subject": "feat(server): archive raw copied styal records before the restart",
     "dependsOn": ["data-move-compat-readers"]
+  },
+  {
+    "name": "data-move-neutralise",
+    "subject": "feat(server): neutralise copied styal state before the restart",
+    "dependsOn": ["data-move-raw-archive"]
   }
 ]
