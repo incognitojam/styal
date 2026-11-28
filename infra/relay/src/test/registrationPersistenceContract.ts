@@ -538,6 +538,25 @@ export function registrationPersistenceContract<E>(
           expect(
             yield* f.activities.listIdleArmedTargets({ deliveredBefore: deliveredAt }),
           ).toEqual([]);
+          yield* f.activities.register({
+            ...input,
+            registration: {
+              deviceId: owner.deviceId,
+              activityPushToken: "activity-after-invalidation",
+            },
+          });
+          yield* f.activities.markDelivery({
+            ...owner,
+            kind: "push_notification",
+            aggregate: null,
+            deliveredAt,
+          });
+          expect((yield* f.activities.listTargets(owner))[0]).toMatchObject({
+            activity_push_token: null,
+            remote_started_at: deliveredAt,
+            ended_at: null,
+            last_live_activity_delivery_at: deliveredAt,
+          });
         }).pipe(Effect.provide(layer)),
     );
   });

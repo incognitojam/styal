@@ -18,11 +18,13 @@ import {
   registrationRetirements,
   registrations,
   registrationRemoval,
-  removalRecords,
+  registrationRemovalMatches,
+  confirmRegistrationEnds,
   endSessionRegistrations,
   registrationInventory,
 } from "./AccountRegistrations.ts";
 import type { RegistrationCommand } from "./AccountRegistrations.ts";
+import type { TokenReference } from "./TokenProtocol.ts";
 
 export const accountMigrations = [
   `CREATE TABLE tunnel_operations (
@@ -117,7 +119,11 @@ export class AccountObject extends DurableObject<unknown> {
     userId: string;
     command: IdentityCommand;
     registrationGuard?: { sessionIds: string[]; stamp: string };
-  }) {
+  }): Promise<
+    | (ReturnType<typeof identity> & { retirements?: TokenReference[] })
+    | { registrationPending: true }
+    | { registrationsChanged: true }
+  > {
     checkRpc(request.version);
     if (this.ctx.id.name !== accountName(request.userId))
       throw new Error("Identity account mismatch");
@@ -147,16 +153,14 @@ export class AccountObject extends DurableObject<unknown> {
       return { registrationPending: true };
     return this.ctx.storage.transactionSync(() => {
       const guard = request.registrationGuard;
-      if (
-        guard &&
-        canonicalJson(removalRecords(this.ctx.storage, guard.sessionIds)) !== guard.stamp
-      )
+      if (guard && !registrationRemovalMatches(this.ctx.storage, guard.sessionIds, guard.stamp))
         return { registrationsChanged: true };
       const removal = registrationRemoval(this.ctx.storage, request.command);
       if (removal.records.some((record) => record.pending)) return { registrationPending: true };
       const result = identity(this.ctx.storage, request);
       if (command.kind !== "publish-session" || ("session" in result && result.session?.revoked))
         endSessionRegistrations(this.ctx.storage, removal.sessionIds);
+      if (guard) confirmRegistrationEnds(this.ctx.storage, guard.sessionIds);
       return {
         ...result,
         retirements: registrationRetirements(this.ctx.storage).filter(

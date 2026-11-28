@@ -25,6 +25,44 @@ type OutcomeInput = {
   createdAt: string | null;
 };
 type Rejection = "session-revoked" | "device-not-owned" | "preflight-failed";
+export interface RegistrationEnd {
+  reference: TokenReference;
+  sessionId: string;
+  bundleId: string | null;
+  apsEnvironment: "sandbox" | "production" | null;
+}
+export const registrationEnds = (storage: DurableObjectStorage) =>
+  storage.sql
+    .exec<{ value: string }>("SELECT value FROM registration_ends ORDER BY reference_id")
+    .toArray()
+    .map((row) => JSON.parse(row.value) as RegistrationEnd);
+function forgetEnd(storage: DurableObjectStorage, reference: TokenReference) {
+  storage.sql.exec("DELETE FROM registration_ends WHERE reference_id = ?", reference.operationId);
+}
+function rememberEnd(storage: DurableObjectStorage, candidate: RegistrationCandidate) {
+  const device = candidate.device;
+  const reference = candidate.activity?.token;
+  if (!device?.sessionId || !reference) return;
+  const end: RegistrationEnd = {
+    reference,
+    sessionId: device.sessionId,
+    bundleId: device.registration.bundleId ?? null,
+    apsEnvironment: device.registration.apsEnvironment ?? null,
+  };
+  storage.sql.exec(
+    "INSERT OR IGNORE INTO registration_ends VALUES (?, ?)",
+    reference.operationId,
+    canonicalJson(end),
+  );
+}
+export function confirmRegistrationEnds(storage: DurableObjectStorage, sessionIds: string[]) {
+  for (const end of registrationEnds(storage))
+    if (sessionIds.includes(end.sessionId))
+      storage.sql.exec(
+        "DELETE FROM registration_ends WHERE reference_id = ?",
+        end.reference.operationId,
+      );
+}
 type Outcome = {
   status: "completed" | "cancelled";
   input: string;
@@ -363,6 +401,7 @@ export function registrations(
       return {
         records,
         retirements: registrationRetirements(storage),
+        ends: registrationEnds(storage),
         liveSessionIds: storage.sql
           .exec<{ value: string }>("SELECT value FROM account_sessions")
           .toArray()
@@ -586,6 +625,12 @@ export function registrations(
         if (pending.cancelling) return { status: "cancel", reason: pending.cancelling } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason !== null) {
+          if (
+            pending.candidate &&
+            pending.candidate.activity?.token?.operationId !==
+              record.active.activity?.token?.operationId
+          )
+            rememberEnd(storage, pending.candidate);
           pending.cancelling = reason;
           save(storage, record);
           return { status: "cancel", reason } as const;
@@ -668,10 +713,13 @@ export function registrations(
         return { record };
       case "remove":
         if (record.pending) return { busy: true };
+        const ends = registrationEnds(storage).filter((end) => end.reference.deviceId === deviceId);
         retireReferences(storage, [
           ...tokenReferences(record.active),
           ...historyReferences(storage, (reference) => reference.deviceId === deviceId),
+          ...ends.map((end) => end.reference),
         ]);
+        for (const end of ends) forgetEnd(storage, end.reference);
         storage.sql.exec("DELETE FROM account_registrations WHERE device_id = ?", deviceId);
         return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       case "mark": {
@@ -685,7 +733,10 @@ export function registrations(
           return { needsRegistration: true };
         storage.sql.exec("INSERT OR IGNORE INTO account_registration_owner VALUES (1, ?)", userId);
         const old = record.active.activity;
-        if (!command.keepToken && old?.token) retireReferences(storage, [old.token]);
+        if (!command.keepToken && old?.token) {
+          retireReferences(storage, [old.token]);
+          forgetEnd(storage, old.token);
+        }
         record.active.activity = {
           token: command.keepToken ? (old?.token ?? null) : null,
           createdAt: old?.createdAt ?? command.now,
@@ -732,15 +783,15 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
     .toArray()
     .map((row) => JSON.parse(row.value) as StoredSession);
   const retirements = registrationRetirements(storage);
+  const ends = registrationEnds(storage);
   const sessionIds = sessions
     .filter((session) => {
+      const pendingCleanup =
+        retirements.some((reference) => reference.sessionId === session.sessionId) ||
+        ends.some((end) => end.sessionId === session.sessionId);
       if (command.kind === "prune-sessions") return session.expiresAt <= command.now;
       if (command.kind === "revoke-session")
-        return (
-          session.sessionId === command.sessionId &&
-          (!session.revoked ||
-            retirements.some((reference) => reference.sessionId === session.sessionId))
-        );
+        return session.sessionId === command.sessionId && (!session.revoked || pendingCleanup);
       if (command.kind === "publish-session")
         return session.sessionId === command.sessionId && !session.revoked;
       return (
@@ -748,8 +799,8 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
         command.revoke &&
         session.sessionId === command.sessionId &&
         session.published &&
-        !session.revoked &&
-        session.expiresAt > command.now &&
+        ((!session.revoked && session.expiresAt > command.now) ||
+          (session.revoked && pendingCleanup)) &&
         session.tokenHash === command.tokenHash &&
         session.thumbprint === command.thumbprint
       );
@@ -762,8 +813,73 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
         ? retirements
         : retirements.filter((reference) => sessionIds.includes(reference.sessionId ?? "")),
     records: removalRecords(storage, sessionIds),
-    stamp: canonicalJson(removalRecords(storage, sessionIds)),
+    stamp: registrationRemovalStamp(storage, sessionIds),
   };
+}
+function removalAuthority(records: RegistrationRecord[], ends: RegistrationEnd[]) {
+  return {
+    tokens: [
+      ...new Set(
+        [
+          ...records.flatMap((record) => [
+            record.active.activity?.token,
+            record.pending?.candidate?.activity?.token,
+          ]),
+          ...ends.map((end) => end.reference),
+        ]
+          .filter((reference): reference is TokenReference => !!reference)
+          .map(canonicalJson),
+      ),
+    ].sort(),
+    pending: records
+      .flatMap((record) =>
+        record.pending
+          ? [
+              canonicalJson({
+                deviceId: record.deviceId,
+                id: record.pending.id,
+                ready: !!record.pending.candidate,
+                cancelling: record.pending.cancelling ?? null,
+              }),
+            ]
+          : [],
+      )
+      .sort(),
+  };
+}
+export function registrationRemovalStamp(
+  storage: DurableObjectStorage,
+  sessionIds: readonly string[],
+) {
+  return canonicalJson(
+    removalAuthority(
+      removalRecords(storage, sessionIds),
+      registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
+    ),
+  );
+}
+export function registrationRemovalMatches(
+  storage: DurableObjectStorage,
+  sessionIds: readonly string[],
+  stamp: string,
+) {
+  const previous = JSON.parse(stamp) as
+    | ReturnType<typeof removalAuthority>
+    | { records: RegistrationRecord[]; ends: RegistrationEnd[] }
+    | RegistrationRecord[];
+  const expected = Array.isArray(previous)
+    ? removalAuthority(previous, [])
+    : "records" in previous
+      ? removalAuthority(previous.records, previous.ends)
+      : previous;
+  const current = removalAuthority(
+    removalRecords(storage, sessionIds),
+    registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
+  );
+  return (
+    canonicalJson(current.pending) === canonicalJson(expected.pending) &&
+    current.tokens.every((token) => expected.tokens.includes(token))
+  );
 }
 export function removalRecords(storage: DurableObjectStorage, sessionIds: readonly string[]) {
   return registrationRecords(storage).filter(
@@ -784,6 +900,7 @@ export function endSessionRegistrations(
   for (const record of removalRecords(storage, sessionIds)) {
     if (sessionIds.includes(record.active.device?.sessionId ?? "")) {
       retireReferences(storage, tokenReferences(record.active));
+      rememberEnd(storage, record.active);
       record.active = { device: null, activity: null };
     }
     if (
@@ -801,6 +918,7 @@ export function registrationInventory(storage: DurableObjectStorage) {
   return [
     summarize("registration_retirements", registrationRetirements(storage)),
     summarize("registration_retention", storage.sql.exec("SELECT * FROM registration_retention")),
+    summarize("registration_ends", registrationEnds(storage)),
     summarize(
       "registration_outcomes",
       storage.sql.exec("SELECT * FROM registration_outcomes ORDER BY operation_id"),

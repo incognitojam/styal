@@ -1,3 +1,4 @@
+import { disabledRegistrationCleanup } from "./registrationFixtures.ts";
 import { env } from "cloudflare:workers";
 import { reset } from "cloudflare:test";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -27,6 +28,8 @@ const layer = Layer.effectContext(
       ),
     );
   }),
-).pipe(Layer.provideMerge(SecureRandom.layerWebCrypto));
+).pipe(
+  Layer.provideMerge(Layer.mergeAll(SecureRandom.layerWebCrypto, disabledRegistrationCleanup)),
+);
 
 identityPersistenceContract("SQLite object identity persistence", layer);

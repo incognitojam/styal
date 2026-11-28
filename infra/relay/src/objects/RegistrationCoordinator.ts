@@ -108,9 +108,10 @@ export class RegistrationCoordinator {
       records: result.records,
       liveSessionIds: result.liveSessionIds ?? [],
       retirements: result.retirements ?? [],
+      ends: result.ends ?? [],
     };
   }
-  async views(userId: string, now: string, includeExpired = false) {
+  async views(userId: string, now: string, includeExpired = false, includeActivity = true) {
     const snapshot = await this.snapshot(userId, now);
     const views: Array<{ deviceId: string; candidate: RegistrationCandidate }> = [];
     for (const record of snapshot.records) {
@@ -128,7 +129,9 @@ export class RegistrationCoordinator {
           !snapshot.liveSessionIds.includes(candidate.device.sessionId)
         )
           continue;
-        const resolved = await this.resolve(candidate);
+        const resolved = await this.resolve(
+          includeActivity ? candidate : { ...candidate, activity: null },
+        );
         const owned = new Set(tokenReferences(resolved).map((reference) => reference.operationId));
         if (
           candidate === record.active ||
@@ -580,7 +583,7 @@ export class RegistrationCoordinator {
         await this.drainDevice(userId, result.retirements, now);
     });
   }
-  async accountIds() {
+  async accountIds(onUnavailable?: (cause: unknown) => void) {
     const ids: string[] = [];
     // Maintenance only; request paths route to an account or immutable session route.
     for (const shard of inventoryShardNames) {
@@ -593,10 +596,15 @@ export class RegistrationCoordinator {
           limit: 1000,
         });
         for (const ref of refs) {
-          const userId = await this.bindings.ACCOUNTS.getByName(ref.name).identityOwner({
-            version,
-          });
-          if (userId) ids.push(userId);
+          try {
+            const userId = await this.bindings.ACCOUNTS.getByName(ref.name).identityOwner({
+              version,
+            });
+            if (userId) ids.push(userId);
+          } catch (cause) {
+            if (!onUnavailable) throw cause;
+            onUnavailable(cause);
+          }
         }
         if (refs.length < 1000) break;
         after = refs[refs.length - 1]!.name;
@@ -623,8 +631,9 @@ export class RegistrationCoordinator {
         : [scope.userId];
     const targets = [];
     const seen = new Set<string>();
-    for (const userId of users)
-      for (const record of (await this.snapshot(userId, now)).records)
+    for (const userId of users) {
+      const snapshot = await this.snapshot(userId, now);
+      for (const record of snapshot.records)
         for (const candidate of [
           record.active,
           ...(record.pending?.candidate && record.pending.committed && !record.pending.cancelling
@@ -647,6 +656,22 @@ export class RegistrationCoordinator {
             apsEnvironment: device.registration.apsEnvironment ?? null,
           });
         }
+      for (const end of snapshot.ends) {
+        const reference = end.reference;
+        if (seen.has(reference.operationId)) continue;
+        if (scope.kind === "session" && end.sessionId !== scope.sessionId) continue;
+        if (scope.kind === "sessions" && !scope.sessionIds.includes(end.sessionId)) continue;
+        if (!(await this.tokens.canEnd(reference, now))) continue;
+        seen.add(reference.operationId);
+        targets.push({
+          userId,
+          deviceId: reference.deviceId,
+          token: reference.token,
+          bundleId: end.bundleId,
+          apsEnvironment: end.apsEnvironment,
+        });
+      }
+    }
     return targets;
   }
 }

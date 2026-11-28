@@ -1,3 +1,4 @@
+import { disabledRegistrationCleanup } from "./registrationFixtures.ts";
 import { expect, it } from "@effect/vitest";
 import { env } from "cloudflare:workers";
 import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
@@ -288,7 +289,11 @@ it.effect(
       expect(yield* sessions.authenticate(credential)).toEqual(Option.none());
       expect(yield* sessions.isLive(input)).toBe(false);
     }).pipe(
-      Effect.provide(identityLayer(env, options).pipe(Layer.provide(SecureRandom.layerWebCrypto))),
+      Effect.provide(
+        identityLayer(env, options).pipe(
+          Layer.provide(Layer.mergeAll(SecureRandom.layerWebCrypto, disabledRegistrationCleanup)),
+        ),
+      ),
     ),
 );
 
@@ -486,5 +491,5 @@ it.effect("discards a failed delivery in its email object while inventory is una
     expect(
       yield* Effect.promise(() => c.email(email).latest({ version: 1, thumbprint: "key" })),
     ).toBeNull();
-  }).pipe(Effect.provide(SecureRandom.layerWebCrypto)),
+  }).pipe(Effect.provide(Layer.mergeAll(SecureRandom.layerWebCrypto, disabledRegistrationCleanup))),
 );
