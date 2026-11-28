@@ -1,0 +1,154 @@
+[
+  {
+    "name": "alert-sounds",
+    "subject": "feat(web): choose sounds per thread alert"
+  },
+  {
+    "name": "composer-approvals",
+    "subject": "feat(web): answer approvals above the composer"
+  },
+  {
+    "name": "outage-notices",
+    "subject": "feat(web): show local service outage notices"
+  },
+  {
+    "name": "question-answers",
+    "subject": "fix(client): retain multi-select question additions"
+  },
+  {
+    "name": "review-order",
+    "subject": "feat(client): sort diff paths in review order"
+  },
+  {
+    "name": "time-chips",
+    "subject": "feat(web): show explicit-zone times as local-time chips"
+  },
+  {
+    "name": "defaults",
+    "subject": "feat(styal): prefer Claude and completion sounds by default"
+  },
+  {
+    "name": "claude-cache-warning",
+    "subject": "feat(web): warn when Claude model changes discard cache"
+  },
+  {
+    "name": "web-refresh",
+    "subject": "feat(web): offer refresh when the served build changes"
+  },
+  {
+    "name": "shortcut-helpers",
+    "subject": "feat(web): reveal shortcut hints and keybindings help"
+  },
+  {
+    "name": "reply-usage",
+    "subject": "feat(web): show quiet reply model and usage details"
+  },
+  {
+    "name": "fleet-search",
+    "subject": "feat(server): search past work across linked machines"
+  },
+  {
+    "name": "terminal-niceties",
+    "subject": "feat(terminal): confirm closing only active work"
+  },
+  {
+    "name": "floating-previews",
+    "subject": "feat(web): float previews over chat without reflow"
+  },
+  {
+    "name": "share-into-thread",
+    "subject": "feat(mobile): share into an existing thread"
+  },
+  {
+    "name": "android-device-hold",
+    "subject": "feat(devices): keep held Android phones awake with dark screens"
+  },
+  {
+    "name": "usage-destination",
+    "subject": "feat(telemetry): require a configured usage destination"
+  },
+  {
+    "name": "error-reporter",
+    "subject": "feat(server): carry styal error reporting"
+  },
+  {
+    "name": "agent-skills",
+    "subject": "feat(server): ship styal guides and PR review as skills"
+  },
+  {
+    "name": "data-move-inventory",
+    "subject": "feat(server): inventory offline styal data for the restart"
+  },
+  {
+    "name": "data-move-importer",
+    "subject": "feat(server): import offline terminal V2 history"
+  },
+  {
+    "name": "running-work-check",
+    "subject": "feat(styal): check running work before quitting or updating"
+  },
+  {
+    "name": "link-email-sign-in",
+    "subject": "feat(link): sign in with emailed codes on web and desktop"
+  },
+  {
+    "name": "project-instructions",
+    "subject": "feat(projects): carry additional agent instructions"
+  },
+  {
+    "name": "android-in-app-update",
+    "subject": "feat(mobile): download and install Android app updates"
+  },
+  {
+    "name": "link-email-sign-in-mobile",
+    "subject": "feat(link): sign in with emailed codes on mobile"
+  },
+  {
+    "name": "link-email-sign-in-terminal",
+    "subject": "feat(link): sign in with emailed codes in the terminal",
+    "dependsOn": ["link-email-sign-in", "link-email-sign-in-mobile"]
+  },
+  {
+    "name": "phone-alert-types",
+    "subject": "feat(mobile): choose which agent events alert the phone"
+  },
+  {
+    "name": "phone-alert-delay",
+    "subject": "feat(alerts): hold phone alerts while a computer is in use",
+    "dependsOn": ["phone-alert-types"]
+  },
+  {
+    "name": "agent-activity-rows",
+    "subject": "feat(mobile): carry Android agent activity settings rows",
+    "dependsOn": ["phone-alert-types"]
+  },
+  {
+    "name": "data-move-preflight",
+    "subject": "feat(server): preflight copied styal data for the restart",
+    "dependsOn": ["data-move-inventory"]
+  },
+  {
+    "name": "welcome-android-apk-step",
+    "subject": "feat(web): explain Android APK installation during welcome"
+  },
+  {
+    "name": "phone-home-wordmark",
+    "subject": "feat(mobile): enlarge the phone home wordmark"
+  },
+  {
+    "name": "shared-actions",
+    "subject": "feat(projects): share default-branch actions with human approval",
+    "dependsOn": [
+      "fleet-search",
+      "agent-skills",
+      "data-move-inventory",
+      "project-instructions",
+      "data-move-preflight"
+    ]
+  },
+  {
+    "name": "data-move-compat-readers",
+    "subject": "feat(server): read historical styal records on the restart",
+    "dependsOn": ["shared-actions", "running-work-check"]
+  }
+]
