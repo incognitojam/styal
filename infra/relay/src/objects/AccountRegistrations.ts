@@ -7,6 +7,7 @@ import * as DateTime from "effect/DateTime";
 import type { TokenReference, TokenPreparation } from "./TokenProtocol.ts";
 import { registrationDigest, tokenClaimDigest } from "./TokenProtocol.ts";
 import { canonicalJson, summarize } from "./storage.ts";
+import { pushTokenName } from "./names.ts";
 
 export const registrationMigration =
   "CREATE TABLE account_registrations (device_id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE account_registration_owner (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), user_id TEXT NOT NULL); CREATE TABLE registration_token_references (operation_id TEXT PRIMARY KEY, reference TEXT NOT NULL)";
@@ -68,7 +69,12 @@ export interface RegistrationIntent {
   committed?: true;
   preparations?: TokenPreparation[];
   inputDigest?: string;
-  losses?: Array<{ digest: string; kind: TokenReference["kind"]; at: string | null }>;
+  losses?: Array<{
+    digest: string;
+    kind: TokenReference["kind"];
+    at: string | null;
+    name?: string;
+  }>;
 }
 export interface RegistrationRecord {
   deviceId: string;
@@ -103,7 +109,13 @@ export type RegistrationCommand =
       now: string;
     }
   | { kind: "retired"; deviceId: string; reference: TokenReference }
-  | { kind: "lose-token"; deviceId: string; reference: TokenReference; at: string | null }
+  | {
+      kind: "lose-token";
+      deviceId: string;
+      reference: TokenReference;
+      at: string | null;
+      retire?: true;
+    }
   | { kind: "finish"; deviceId: string; id: string }
   | { kind: "cancel"; deviceId: string; id: string }
   | { kind: "check" | "commit"; deviceId: string; id: string; now: string }
@@ -175,6 +187,21 @@ function sealInput(intent: RegistrationIntent) {
       registration: { ...intent.input.registration, activityPushToken: "" },
     };
 }
+function forgetInputToken(intent: RegistrationIntent, reference: TokenReference) {
+  if (intent.input.kind === "device" && reference.kind !== "live-activity") {
+    const field = reference.kind === "push" ? "pushToken" : "pushToStartToken";
+    if (intent.input.registration[field] !== reference.token) return;
+    intent.inputDigest ??= registrationDigest(intent.input);
+    delete intent.input.registration[field];
+  } else if (
+    intent.input.kind === "activity" &&
+    reference.kind === "live-activity" &&
+    intent.input.registration.activityPushToken === reference.token
+  ) {
+    intent.inputDigest ??= registrationDigest(intent.input);
+    intent.input.registration.activityPushToken = "";
+  }
+}
 function applyLoss(
   candidate: RegistrationCandidate,
   loss: NonNullable<RegistrationIntent["losses"]>[number],
@@ -184,7 +211,10 @@ function applyLoss(
     reference && tokenClaimDigest(reference) === loss.digest;
   if (candidate.device) {
     const field = loss.kind === "push" ? "push" : loss.kind === "push-to-start" ? "start" : null;
-    if (field && matches(candidate.device[field])) {
+    if (
+      field &&
+      (matches(candidate.device[field]) || (staleReady && candidate.device[field] === null))
+    ) {
       candidate.device[field] = null;
       if (loss.at && loss.at > candidate.device.updatedAt) candidate.device.updatedAt = loss.at;
     }
@@ -406,12 +436,6 @@ export function registrations(
         const pending = record.pending;
         if (pending?.id !== command.id || pending.candidate || pending.cancelling)
           return { bound: false } as const;
-        if (
-          pending.losses?.some(
-            (loss) => loss.digest === tokenClaimDigest(command.preparation.reference),
-          )
-        )
-          return { bound: false } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason) {
           pending.cancelling = reason;
@@ -422,6 +446,19 @@ export function registrations(
         const index = tickets.findIndex(
           (ticket) => ticket.reference.operationId === command.preparation.reference.operationId,
         );
+        if (
+          pending.losses?.some(
+            (loss) =>
+              loss.digest === tokenClaimDigest(command.preparation.reference) ||
+              (index < 0 &&
+                loss.name ===
+                  pushTokenName(
+                    command.preparation.reference.kind,
+                    command.preparation.reference.token,
+                  )),
+          )
+        )
+          return { lost: true } as const;
         if (index >= 0) {
           if (command.previous && canonicalJson(tickets[index]) === canonicalJson(command.previous))
             tickets[index] = command.preparation;
@@ -450,7 +487,12 @@ export function registrations(
         if (reference.userId !== userId || reference.deviceId !== deviceId)
           throw new Error("Token loss owner mismatch");
         const digest = tokenClaimDigest(reference);
-        const loss = { digest, kind: reference.kind, at: command.at };
+        const loss = {
+          digest,
+          kind: reference.kind,
+          at: command.at,
+          name: pushTokenName(reference.kind, reference.token),
+        };
         const relevant = [
           ...tokenReferences(record.active),
           ...(record.pending?.candidate ? tokenReferences(record.pending.candidate) : []),
@@ -461,6 +503,11 @@ export function registrations(
         if (record.pending) {
           const losses = (record.pending.losses ??= []);
           if (relevant && !losses.some((previous) => previous.digest === digest)) losses.push(loss);
+          const previous = losses.find((previous) => previous.digest === digest);
+          if (previous) {
+            previous.name ??= loss.name;
+            forgetInputToken(record.pending, reference);
+          }
           if (record.pending.candidate) applyLoss(record.pending.candidate, loss);
           record.pending.claims = record.pending.claims.filter(
             (claim) => tokenClaimDigest(claim.reference) !== digest,
@@ -484,6 +531,7 @@ export function registrations(
             reference.operationId,
           );
         storage.sql.exec("DELETE FROM registration_retirements WHERE reference_id = ?", digest);
+        if (command.retire) retireReferences(storage, [reference]);
         const end = storage.sql
           .exec<{ value: string }>(
             "SELECT value FROM registration_ends WHERE reference_id = ?",

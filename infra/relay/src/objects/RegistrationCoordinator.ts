@@ -188,8 +188,8 @@ export class RegistrationCoordinator {
     }
   }
   private async drainDevice(userId: string, references: TokenReference[], now: string) {
-    await this.drain(userId, references.slice(0, 3), now);
-    if (references.length > 3)
+    await this.drain(userId, references.slice(0, 6), now);
+    if (references.length > 6)
       throw new RegistrationRecoveryRequired({
         cause: "Legacy device cleanup requires another bounded retry",
       });
@@ -331,6 +331,7 @@ export class RegistrationCoordinator {
             deviceId: record.deviceId,
             reference: claim.reference,
             at: null,
+            retire: true,
           });
         settled = true;
         break;
@@ -393,6 +394,9 @@ export class RegistrationCoordinator {
       previous: TokenReference | null,
       sessionId: string | null,
     ) => {
+      if (!token)
+        token = intent.preparations?.find((ticket) => ticket.reference.kind === kind)?.reference
+          .token;
       if (!token) return previous;
       if (previous?.token === token && previous.sessionId === sessionId) return previous;
       let previousTicket: TokenPreparation | undefined;
@@ -438,6 +442,7 @@ export class RegistrationCoordinator {
           ...(previousTicket ? { previous: previousTicket } : {}),
           now,
         });
+        if ("lost" in bound && bound.lost) return null;
         if (!("preparation" in bound) || !bound.preparation)
           throw new Error("Token preparation binding changed");
         let ticket = bound.preparation;
