@@ -3,6 +3,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 
 export type ObjectKind =
+  | "allocation-route"
   | "account"
   | "email"
   | "environment"
@@ -18,6 +19,8 @@ const tuple = (kind: ObjectKind, parts: readonly string[]) =>
 const name = (kind: ObjectKind, ...parts: string[]) =>
   `${kind}:v1:${bytesToHex(sha256(tuple(kind, parts)))}`;
 
+export const allocationRouteName = (kind: "hostname" | "tunnel", value: string) =>
+  name("allocation-route", kind, value);
 export const accountName = (accountId: string) => name("account", accountId);
 export const environmentName = (environmentId: string) => name("environment", environmentId);
 export const emailName = (normalizedEmail: string, key: Uint8Array) => {

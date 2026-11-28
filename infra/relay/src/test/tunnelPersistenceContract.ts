@@ -329,6 +329,30 @@ export function managedTunnelLimitContract<E>(name: string, layer: Layer.Layer<S
         }).pipe(Effect.provide(layer)),
     );
 
+    it.effect("serializes compatible reservations for the same environment so both succeed", () =>
+      Effect.gen(function* () {
+        const allocations = yield* ManagedEndpointAllocationPersistence;
+        const limits = yield* ManagedTunnelLimitPersistence;
+        const journal = yield* TunnelOperationPersistence;
+        const reserve = Effect.gen(function* () {
+          const allocation = yield* allocations.reserve(target);
+          const operation = yield* journal.begin(intent);
+          return { allocation, operation };
+        });
+        const results = yield* Effect.all(
+          [limits.withCapacity(key, reserve), limits.withCapacity(key, reserve)],
+          { concurrency: "unbounded" },
+        );
+        expect(results[0].allocation).toEqual(results[1].allocation);
+        expect(results[0].operation?.operationId).toBe(results[1].operation?.operationId);
+        expect(results[0].operation).not.toBeNull();
+        expect(yield* allocations.getByTunnelName(target.tunnelName)).toEqual(
+          results[0].allocation,
+        );
+        expect(yield* journal.pending(10)).toHaveLength(1);
+      }).pipe(Effect.provide(layer)),
+    );
+
     it.effect(
       "expires unjournaled reservations at fifteen minutes but retains pending operations",
       () =>

@@ -8,6 +8,7 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-06-01",
         durableObjects: {
+          ALLOCATION_ROUTES: { className: "AllocationRouteObject", useSQLite: true },
           ENVIRONMENTS: { className: "EnvironmentObject", useSQLite: true },
           EMAILS: { className: "EmailObject", useSQLite: true },
           CREDENTIAL_ROUTES: { className: "CredentialRouteObject", useSQLite: true },
