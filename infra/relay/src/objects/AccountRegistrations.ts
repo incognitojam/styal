@@ -25,6 +25,41 @@ type OutcomeInput = {
   createdAt: string | null;
 };
 type Rejection = "session-revoked" | "device-not-owned" | "preflight-failed";
+export interface RegistrationEnd {
+  reference: TokenReference;
+  sessionId: string;
+  bundleId: string | null;
+  apsEnvironment: "sandbox" | "production" | null;
+}
+export const registrationEnds = (storage: DurableObjectStorage) =>
+  storage.sql
+    .exec<{ value: string }>("SELECT value FROM registration_ends ORDER BY reference_id")
+    .toArray()
+    .map((row) => JSON.parse(row.value) as RegistrationEnd);
+function rememberEnd(storage: DurableObjectStorage, candidate: RegistrationCandidate) {
+  const device = candidate.device;
+  const reference = candidate.activity?.token;
+  if (!device?.sessionId || !reference) return;
+  const end: RegistrationEnd = {
+    reference,
+    sessionId: device.sessionId,
+    bundleId: device.registration.bundleId ?? null,
+    apsEnvironment: device.registration.apsEnvironment ?? null,
+  };
+  storage.sql.exec(
+    "INSERT OR IGNORE INTO registration_ends VALUES (?, ?)",
+    reference.operationId,
+    canonicalJson(end),
+  );
+}
+export function confirmRegistrationEnds(storage: DurableObjectStorage, sessionIds: string[]) {
+  for (const end of registrationEnds(storage))
+    if (sessionIds.includes(end.sessionId))
+      storage.sql.exec(
+        "DELETE FROM registration_ends WHERE reference_id = ?",
+        end.reference.operationId,
+      );
+}
 type Outcome = {
   status: "completed" | "cancelled";
   input: string;
@@ -363,6 +398,7 @@ export function registrations(
       return {
         records,
         retirements: registrationRetirements(storage),
+        ends: registrationEnds(storage),
         liveSessionIds: storage.sql
           .exec<{ value: string }>("SELECT value FROM account_sessions")
           .toArray()
@@ -586,6 +622,9 @@ export function registrations(
         if (pending.cancelling) return { status: "cancel", reason: pending.cancelling } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason !== null) {
+          if (pending.candidate &&
+            pending.candidate.activity?.token?.operationId !== record.active.activity?.token?.operationId)
+            rememberEnd(storage, pending.candidate);
           pending.cancelling = reason;
           save(storage, record);
           return { status: "cancel", reason } as const;
@@ -732,6 +771,7 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
     .toArray()
     .map((row) => JSON.parse(row.value) as StoredSession);
   const retirements = registrationRetirements(storage);
+  const ends = registrationEnds(storage);
   const sessionIds = sessions
     .filter((session) => {
       if (command.kind === "prune-sessions") return session.expiresAt <= command.now;
@@ -739,7 +779,8 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
         return (
           session.sessionId === command.sessionId &&
           (!session.revoked ||
-            retirements.some((reference) => reference.sessionId === session.sessionId))
+            retirements.some((reference) => reference.sessionId === session.sessionId) ||
+            ends.some((end) => end.sessionId === session.sessionId))
         );
       if (command.kind === "publish-session")
         return session.sessionId === command.sessionId && !session.revoked;
@@ -762,8 +803,17 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
         ? retirements
         : retirements.filter((reference) => sessionIds.includes(reference.sessionId ?? "")),
     records: removalRecords(storage, sessionIds),
-    stamp: canonicalJson(removalRecords(storage, sessionIds)),
+    stamp: registrationRemovalStamp(storage, sessionIds),
   };
+}
+export function registrationRemovalStamp(
+  storage: DurableObjectStorage,
+  sessionIds: readonly string[],
+) {
+  return canonicalJson({
+    records: removalRecords(storage, sessionIds),
+    ends: registrationEnds(storage).filter((end) => sessionIds.includes(end.sessionId)),
+  });
 }
 export function removalRecords(storage: DurableObjectStorage, sessionIds: readonly string[]) {
   return registrationRecords(storage).filter(
@@ -784,6 +834,7 @@ export function endSessionRegistrations(
   for (const record of removalRecords(storage, sessionIds)) {
     if (sessionIds.includes(record.active.device?.sessionId ?? "")) {
       retireReferences(storage, tokenReferences(record.active));
+      rememberEnd(storage, record.active);
       record.active = { device: null, activity: null };
     }
     if (
@@ -801,6 +852,7 @@ export function registrationInventory(storage: DurableObjectStorage) {
   return [
     summarize("registration_retirements", registrationRetirements(storage)),
     summarize("registration_retention", storage.sql.exec("SELECT * FROM registration_retention")),
+    summarize("registration_ends", registrationEnds(storage)),
     summarize(
       "registration_outcomes",
       storage.sql.exec("SELECT * FROM registration_outcomes ORDER BY operation_id"),

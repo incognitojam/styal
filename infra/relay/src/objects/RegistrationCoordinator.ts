@@ -108,6 +108,7 @@ export class RegistrationCoordinator {
       records: result.records,
       liveSessionIds: result.liveSessionIds ?? [],
       retirements: result.retirements ?? [],
+      ends: result.ends ?? [],
     };
   }
   async views(userId: string, now: string, includeExpired = false) {
@@ -371,6 +372,26 @@ export class RegistrationCoordinator {
       throw error;
     }
   }
+  private async settleRecord(userId: string, record: RegistrationRecord, now: string) {
+    const pending = record.pending;
+    if (!pending) return;
+    try {
+      await this.resume(userId, record, now);
+    } catch (error) {
+      const terminal = await this.command(userId, {
+        kind: "check",
+        deviceId: record.deviceId,
+        id: pending.id,
+        now,
+      });
+      if (
+        "status" in terminal &&
+        (terminal.status === "completed" || terminal.status === "cancelled")
+      )
+        return;
+      throw error;
+    }
+  }
   async settle(userId: string, deviceId: string, now: string) {
     await this.gate(userId, deviceId, async () => {
       const record = (await this.snapshot(userId, now)).records.find(
@@ -623,8 +644,9 @@ export class RegistrationCoordinator {
         : [scope.userId];
     const targets = [];
     const seen = new Set<string>();
-    for (const userId of users)
-      for (const record of (await this.snapshot(userId, now)).records)
+    for (const userId of users) {
+      const snapshot = await this.snapshot(userId, now);
+      for (const record of snapshot.records)
         for (const candidate of [
           record.active,
           ...(record.pending?.candidate && record.pending.committed && !record.pending.cancelling
@@ -647,6 +669,22 @@ export class RegistrationCoordinator {
             apsEnvironment: device.registration.apsEnvironment ?? null,
           });
         }
+      for (const end of snapshot.ends) {
+        const reference = end.reference;
+        if (seen.has(reference.operationId)) continue;
+        if (scope.kind === "session" && end.sessionId !== scope.sessionId) continue;
+        if (scope.kind === "sessions" && !scope.sessionIds.includes(end.sessionId)) continue;
+        if (!(await this.token(reference).canEnd({ version, reference }))) continue;
+        seen.add(reference.operationId);
+        targets.push({
+          userId,
+          deviceId: reference.deviceId,
+          token: reference.token,
+          bundleId: end.bundleId,
+          apsEnvironment: end.apsEnvironment,
+        });
+      }
+    }
     return targets;
   }
 }

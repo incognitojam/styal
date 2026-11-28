@@ -447,59 +447,67 @@ it("requires recovery before revoking a registration with an unsettled claim", a
   expect((await c.views(owner.userId, now)).filter((row) => row.candidate.device)).toEqual([]);
 });
 
-it("fences an expired pending claim across lost fence responses and restart", async () => {
-  await resetRegistrationObjects();
-  const owner = await sessionOwner();
-  const c = new RegistrationCoordinator(env);
-  await c.register("old-account", deviceInput("old-phone"), "old-registration", now);
-  const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
-  await expect(
-    new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "pending", now),
-  ).rejects.toThrow("Synthetic lost ready");
-  const pending = (await c.snapshot(owner.userId, now)).records[0]!.pending!;
-  const claim = pending.claims.find((row) => row.reference.kind === "push")!;
-  await abortAllDurableObjects();
-  let lose = true;
-  const interrupted = new RegistrationCoordinator({
-    ...env,
-    PUSH_TOKENS: {
-      getByName(name: string) {
-        const stub = env.PUSH_TOKENS.getByName(name);
-        return new Proxy(stub, {
-          get(target, method) {
-            if (method === "cancel")
-              return async (request: Parameters<typeof stub.cancel>[0]) => {
-                const result = await stub.cancel(request);
-                if (lose) {
-                  lose = false;
-                  throw new Error("Synthetic lost fence response");
-                }
-                return result;
-              };
-            return Reflect.get(target, method, target);
-          },
-        });
+it.each(["settle", "unregister"] as const)(
+  "fences an expired pending claim across lost fence responses and restart: %s",
+  async (operation) => {
+    await resetRegistrationObjects();
+    const owner = await sessionOwner();
+    const c = new RegistrationCoordinator(env);
+    await c.register("old-account", deviceInput("old-phone"), "old-registration", now);
+    const input = { ...deviceInput("phone-a"), sessionId: owner.sessionId };
+    await expect(
+      new RegistrationCoordinator(loseReadyOnce()).register(owner.userId, input, "pending", now),
+    ).rejects.toThrow("Synthetic lost ready");
+    const pending = (await c.snapshot(owner.userId, now)).records[0]!.pending!;
+    const claim = pending.claims.find((row) => row.reference.kind === "push")!;
+    await abortAllDurableObjects();
+    let lose = true;
+    const interrupted = new RegistrationCoordinator({
+      ...env,
+      PUSH_TOKENS: {
+        getByName(name: string) {
+          const stub = env.PUSH_TOKENS.getByName(name);
+          return new Proxy(stub, {
+            get(target, method) {
+              if (method === "cancel")
+                return async (request: Parameters<typeof stub.cancel>[0]) => {
+                  const result = await stub.cancel(request);
+                  if (lose) {
+                    lose = false;
+                    throw new Error("Synthetic lost fence response");
+                  }
+                  return result;
+                };
+              return Reflect.get(target, method, target);
+            },
+          });
+        },
       },
-    },
-  });
-  const expired = "2026-04-01T00:00:00.000Z";
-  await expect(interrupted.settle(owner.userId, "phone-a", expired)).rejects.toThrow(
-    "Synthetic lost fence",
-  );
-  await abortAllDurableObjects();
-  await c.settle(owner.userId, "phone-a", expired);
-  expect((await c.snapshot(owner.userId, expired)).records[0]?.pending).toBeNull();
-  expect(
-    await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).transfer({
-      version,
-      ...claim,
-      now: expired,
-    }),
-  ).toEqual({ applied: false });
-  expect((await c.views("old-account", expired))[0]!.candidate.device!.push?.token).toBe(
-    "shared-push",
-  );
-});
+    });
+    const expired = "2026-04-01T00:00:00.000Z";
+    await expect(interrupted.settle(owner.userId, "phone-a", expired)).rejects.toThrow(
+      "Synthetic lost fence",
+    );
+    await abortAllDurableObjects();
+    if (operation === "settle") {
+      await c.settle(owner.userId, "phone-a", expired);
+      expect((await c.snapshot(owner.userId, expired)).records[0]?.pending).toBeNull();
+    } else {
+      await c.mutate(owner.userId, "phone-a", { kind: "remove", deviceId: "phone-a" }, expired);
+      expect((await c.snapshot(owner.userId, expired)).records).toEqual([]);
+    }
+    expect(
+      await env.PUSH_TOKENS.getByName(pushTokenName("push", "shared-push")).transfer({
+        version,
+        ...claim,
+        now: expired,
+      }),
+    ).toEqual({ applied: false });
+    expect((await c.views("old-account", expired))[0]!.candidate.device!.push?.token).toBe(
+      "shared-push",
+    );
+  },
+);
 
 it.each(["one-account", "two-accounts"])(
   "keeps one owner under concurrent token registrations in %s",

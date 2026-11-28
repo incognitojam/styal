@@ -30,6 +30,8 @@ import { IdentityCoordinator } from "./IdentityCoordinator.ts";
 import type { IdentityBindings } from "./IdentityCoordinator.ts";
 import { RPC_VERSION } from "./storage.ts";
 import { emailName } from "./names.ts";
+import { registrationLifecycle } from "./RegistrationLifecycle.ts";
+import type { RegistrationBindings } from "./RegistrationCoordinator.ts";
 
 const version = RPC_VERSION;
 const hash = (value: string) => Base64Url.encode(sha256(utf8ToBytes(value)));
@@ -47,13 +49,14 @@ const publicSession = (s: StoredSession): AuthSession => ({
 });
 
 export function identityLayer(
-  bindings: IdentityBindings,
+  bindings: IdentityBindings & RegistrationBindings,
   options: { emailKey: Uint8Array; signInCodeSecret: string },
 ) {
   return Layer.effectContext(
     Effect.gen(function* () {
       const random = yield* SecureRandom.SecureRandom;
       const coordinator = new IdentityCoordinator(bindings, options.emailKey);
+      const removeRegistrations = yield* registrationLifecycle(bindings);
       const accountCall = <A>(
         operation: AccountPersistenceError["operation"],
         body: () => Promise<A>,
@@ -131,23 +134,26 @@ export function identityLayer(
         const parsed = parseSessionToken(input.token);
         if (!parsed) return Option.none<AuthSession>();
         const now = yield* DateTime.now;
-        return yield* sessionCall(revoke ? "revoke" : "authenticate", async () => {
-          const userId = await coordinator.route(parsed.sessionId).resolve({ version });
-          if (!userId) return Option.none<AuthSession>();
-          const result = await coordinator.command(userId, {
-            kind: "use-session",
-            sessionId: parsed.sessionId,
-            tokenHash: hash(input.token),
-            thumbprint: input.thumbprint,
-            now: DateTime.formatIso(now),
-            cutoff: DateTime.formatIso(DateTime.subtract(now, { hours: 24 })),
-            expiresAt: DateTime.formatIso(DateTime.add(now, { days: AUTH_SESSION_IDLE_DAYS })),
-            revoke,
-          });
-          return "session" in result && result.session
-            ? Option.some(publicSession(result.session))
-            : Option.none<AuthSession>();
-        });
+        const userId = yield* sessionCall(revoke ? "revoke" : "authenticate", () =>
+          coordinator.route(parsed.sessionId).resolve({ version }),
+        );
+        if (!userId) return Option.none<AuthSession>();
+        const command = {
+          kind: "use-session",
+          sessionId: parsed.sessionId,
+          tokenHash: hash(input.token),
+          thumbprint: input.thumbprint,
+          now: DateTime.formatIso(now),
+          cutoff: DateTime.formatIso(DateTime.subtract(now, { hours: 24 })),
+          expiresAt: DateTime.formatIso(DateTime.add(now, { days: AUTH_SESSION_IDLE_DAYS })),
+          revoke,
+        } as const;
+        const result = yield* revoke
+          ? removeRegistrations(userId, command)
+          : sessionCall("authenticate", () => coordinator.command(userId, command));
+        return "session" in result && result.session
+          ? Option.some(publicSession(result.session))
+          : Option.none<AuthSession>();
       });
       const sessions = SessionPersistence.of({
         create: Effect.fn("relay.object_sessions.create")(function* (input) {
@@ -175,15 +181,13 @@ export function identityLayer(
         revokeByToken: Effect.fn("relay.object_sessions.revoke_by_token")((input) =>
           use(input, true).pipe(Effect.asVoid),
         ),
-        revoke: Effect.fn("relay.object_sessions.revoke")((input) =>
-          sessionCall("revoke", async () => {
-            const result = await coordinator.command(input.userId, {
-              kind: "revoke-session",
-              sessionId: input.sessionId,
-            });
-            return "revoked" in result && result.revoked === true;
-          }),
-        ),
+        revoke: Effect.fn("relay.object_sessions.revoke")(function* (input) {
+          const result = yield* removeRegistrations(input.userId, {
+            kind: "revoke-session",
+            sessionId: input.sessionId,
+          });
+          return "revoked" in result && result.revoked === true;
+        }),
         isLive: Effect.fn("relay.object_sessions.is_live")(function* (input) {
           const now = DateTime.formatIso(yield* DateTime.now);
           return yield* sessionCall("authenticate", async () => {
@@ -211,13 +215,19 @@ export function identityLayer(
         }),
         pruneExpired: Effect.gen(function* () {
           const now = DateTime.formatIso(yield* DateTime.now);
+          const owners: string[] = [];
           yield* sessionCall("prune-expired", () =>
             coordinator.forEach("account", async (name) => {
               const stub = bindings.ACCOUNTS.getByName(name);
               // Inventory stores names, so read the durable owner before issuing an account command.
               const info = await stub.identityOwner({ version });
-              if (info) await coordinator.command(info, { kind: "prune-sessions", now });
+              if (info) owners.push(info);
             }),
+          );
+          yield* Effect.forEach(
+            owners,
+            (userId) => removeRegistrations(userId, { kind: "prune-sessions", now }),
+            { concurrency: 1, discard: true },
           );
         }),
       });

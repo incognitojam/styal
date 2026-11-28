@@ -23,6 +23,7 @@ export default defineConfig({
   ],
   test: {
     name: "relay-objects",
+    setupFiles: ["./src/objects/test/setup.ts"],
     testTimeout: 60_000,
     include: ["src/objects/**/*.workers.test.ts"],
     maxWorkers: 1,
