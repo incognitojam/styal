@@ -11,6 +11,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import * as PostgresReplay from "../persistence/PostgresReplay.ts";
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 import * as DpopProofs from "./DpopProofs.ts";
@@ -79,7 +80,10 @@ function layer(
       };
     },
   } as unknown as RelayDb.RelayDb["Service"];
-  return DpopProofs.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)));
+  return DpopProofs.layer.pipe(
+    Layer.provide(PostgresReplay.layer),
+    Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+  );
 }
 
 function consumeEachProofOnce() {

@@ -3,6 +3,10 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as RelayHttpApi from "./http/Api.ts";
 import * as HookForwarder from "./hooks/HookForwarder.ts";
 import * as WebCrypto from "./WebCrypto.ts";
+import * as PostgresReplay from "./persistence/PostgresReplay.ts";
+import * as PostgresEmailSignInCodes from "./persistence/PostgresEmailSignInCodes.ts";
+import * as PostgresAuthSessions from "./persistence/PostgresAuthSessions.ts";
+import * as PostgresAccounts from "./persistence/PostgresAccounts.ts";
 import * as RelayDb from "./db.ts";
 import * as AccountAuth from "./auth/AccountAuth.ts";
 import * as AccountData from "./auth/AccountData.ts";
@@ -54,7 +58,11 @@ export const layerServices = Layer.empty.pipe(
       AccountData.layer,
       AccountAuth.layer.pipe(
         Layer.provideMerge(
-          Layer.mergeAll(ClerkDirectory.layer, AuthSessions.layer, EmailSignInCodes.layer),
+          Layer.mergeAll(
+            ClerkDirectory.layer,
+            AuthSessions.layer.pipe(Layer.provide(PostgresAuthSessions.layer)),
+            EmailSignInCodes.layer.pipe(Layer.provide(PostgresEmailSignInCodes.layer)),
+          ),
         ),
       ),
     ),
@@ -70,7 +78,7 @@ export const layerServices = Layer.empty.pipe(
     ),
   ),
   Layer.provideMerge(ManagedEndpointProvider.layer),
-  Layer.provideMerge(DpopProofs.layer),
+  Layer.provideMerge(DpopProofs.layer.pipe(Layer.provide(PostgresReplay.layer))),
   Layer.provideMerge(ApnsDeliveries.layer),
   Layer.provideMerge(
     FcmDeliveries.layer.pipe(
@@ -93,7 +101,7 @@ export const layerServices = Layer.empty.pipe(
     ),
   ),
   Layer.provideMerge(Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer)),
-  Layer.provideMerge(Accounts.layer),
+  Layer.provideMerge(Accounts.layer.pipe(Layer.provide(PostgresAccounts.layer))),
   Layer.provideMerge(DeliveryAttempts.layer),
   Layer.provideMerge(RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer))),
   Layer.provideMerge(RelayDb.RelayTransactions.layer),

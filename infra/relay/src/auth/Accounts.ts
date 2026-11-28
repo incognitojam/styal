@@ -1,15 +1,10 @@
-import { eq, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
-import * as SecureRandom from "effect/crypto/SecureRandom";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as RelayDb from "../db.ts";
-import { persistenceCause } from "./persistenceCause.ts";
-import { relayUsers } from "../persistence/schema.ts";
+import { AccountPersistence } from "../persistence/IdentityPersistence.ts";
 
 export class AccountPersistenceError extends Schema.TaggedError<AccountPersistenceError>()(
   "AccountPersistenceError",
@@ -60,141 +55,7 @@ export class Accounts extends Context.Service<
   }
 >()("t3code-relay/auth/Accounts") {}
 
-const make = Effect.gen(function* () {
-  const db = yield* RelayDb.RelayDb;
-  const random = yield* SecureRandom.SecureRandom;
-
-  const select = (userId: string) =>
-    db
-      .select({ userId: relayUsers.userId, email: relayUsers.email })
-      .from(relayUsers)
-      .where(eq(relayUsers.userId, userId))
-      .limit(1);
-
-  return Accounts.of({
-    findOrCreateByEmail: Effect.fn("relay.accounts.find_or_create_by_email")(
-      function* (input) {
-        const email = normalizeEmail(input);
-        const now = DateTime.formatIso(yield* DateTime.now);
-        const userId = `usr_${(yield* random.uuidV4()).replaceAll("-", "")}`;
-        // One statement: concurrent first sign-ins for the same email agree on
-        // one id, and an existing account keeps its id (imported Clerk ids too).
-        const rows = yield* db
-          .insert(relayUsers)
-          .values({ userId, email, lastSignInAt: now, createdAt: now, updatedAt: now })
-          .onConflictDoUpdate({
-            target: relayUsers.email,
-            set: { lastSignInAt: now, updatedAt: now },
-          })
-          .returning({ userId: relayUsers.userId, email: relayUsers.email });
-        const row = rows[0];
-        if (!row) {
-          return yield* Effect.die("relay_users upsert returned no row");
-        }
-        yield* Effect.annotateCurrentSpan({ "user.id": row.userId });
-        return row;
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({
-            operation: "find-or-create",
-            cause: persistenceCause(cause),
-          }),
-      ),
-    ),
-
-    get: Effect.fn("relay.accounts.get")(
-      function* (userId) {
-        const rows = yield* select(userId);
-        return Option.fromNullishOr(rows[0]);
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "get", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    getByEmail: Effect.fn("relay.accounts.get_by_email")(
-      function* (email) {
-        const rows = yield* db
-          .select({ userId: relayUsers.userId, email: relayUsers.email })
-          .from(relayUsers)
-          .where(eq(relayUsers.email, normalizeEmail(email)))
-          .limit(1);
-        return Option.fromNullishOr(rows[0]);
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "get", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    syncEmail: Effect.fn("relay.accounts.sync_email")(
-      function* (userId, input) {
-        const email = input === null ? null : normalizeEmail(input);
-        return yield* db.$client.withTransaction(
-          Effect.gen(function* () {
-            let availableEmail = email;
-            if (email !== null) {
-              yield* db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${email}))`);
-              const owner = yield* db
-                .select({ userId: relayUsers.userId })
-                .from(relayUsers)
-                .where(eq(relayUsers.email, email))
-                .limit(1);
-              if (owner[0] && owner[0].userId !== userId) availableEmail = null;
-            }
-            const now = DateTime.formatIso(yield* DateTime.now);
-            const rows = yield* db
-              .insert(relayUsers)
-              .values({ userId, email: availableEmail, createdAt: now, updatedAt: now })
-              .onConflictDoUpdate({
-                target: relayUsers.userId,
-                set: { email: availableEmail, updatedAt: now },
-              })
-              .returning({ userId: relayUsers.userId, email: relayUsers.email });
-            const row = rows[0];
-            if (!row) return yield* Effect.die("relay_users email sync returned no row");
-            return row;
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new AccountPersistenceError({
-                  operation: "sync-email",
-                  cause: persistenceCause(cause),
-                }),
-            ),
-          ),
-        );
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "sync-email", cause: persistenceCause(cause) }),
-      ),
-    ),
-
-    importAccount: Effect.fn("relay.accounts.import")(
-      function* (account) {
-        const now = DateTime.formatIso(yield* DateTime.now);
-        const rows = yield* db
-          .insert(relayUsers)
-          .values({
-            userId: account.userId,
-            email: normalizeEmail(account.email),
-            lastSignInAt: null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoNothing()
-          .returning({ userId: relayUsers.userId });
-        return rows.length > 0;
-      },
-      Effect.mapError(
-        (cause) =>
-          new AccountPersistenceError({ operation: "import", cause: persistenceCause(cause) }),
-      ),
-    ),
-  });
-});
-
-export const layer = Layer.effect(Accounts, make);
+export const layer = Layer.effect(
+  Accounts,
+  Effect.map(AccountPersistence, (store) => Accounts.of(store)),
+);

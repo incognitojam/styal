@@ -17,6 +17,7 @@ import * as Schedule from "effect/Schedule";
 
 import * as Devices from "../agentActivity/Devices.ts";
 import * as LiveActivities from "../agentActivity/LiveActivities.ts";
+import * as PostgresAuthSessions from "../persistence/PostgresAuthSessions.ts";
 import * as RelayDb from "../db.ts";
 import {
   relayAuthSessions,
@@ -39,7 +40,11 @@ const queuedJobs: Array<SignedApnsDeliveryJob> = [];
 const queueFailures = new Set<string>();
 // Runs inside a queue send, before the job is recorded.
 const sendHooks = new Map<string, (job: SignedApnsDeliveryJob) => Effect.Effect<void>>();
-const layer = Layer.mergeAll(AuthSessions.layer, Devices.layer, LiveActivities.layer).pipe(
+const layer = Layer.mergeAll(
+  AuthSessions.layer.pipe(Layer.provide(PostgresAuthSessions.layer)),
+  Devices.layer,
+  LiveActivities.layer,
+).pipe(
   Layer.provideMerge(ApnsDeliveryQueue.layer),
   Layer.provide(
     Layer.succeed(ApnsDeliveryQueue.ApnsDeliveryQueueSender, {
