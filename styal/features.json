@@ -161,5 +161,10 @@
     "name": "data-move-bridge",
     "subject": "feat(server): bridge archived styal copies to restart migrations",
     "dependsOn": ["data-move-neutralise"]
+  },
+  {
+    "name": "data-move-rehearsal",
+    "subject": "feat(server): isolate moved-data rehearsals",
+    "dependsOn": ["data-move-bridge"]
   }
 ]

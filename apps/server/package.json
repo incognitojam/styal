@@ -41,7 +41,8 @@
     "record:kiro-replay": "node scripts/record-kiro-acp-replay-fixture.ts",
     "record:muse-replay": "node scripts/record-muse-msp-replay-fixture.ts",
     "generate": "graphqlgen",
-    "generate:expo-schema": "node scripts/fetch-expo-schema.ts"
+    "generate:expo-schema": "node scripts/fetch-expo-schema.ts",
+    "data-move:rehearse": "node src/persistence/dataMove/rehearseCli.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.321",
