@@ -110,7 +110,7 @@ function makeLayer(input?: {
               };
             }),
           redeem: () => Effect.succeed(input?.redeem ?? "redeemed"),
-          discard: (codeId) =>
+          discard: ({ codeId }) =>
             Effect.sync(() => {
               harness.discarded.push(codeId);
             }),

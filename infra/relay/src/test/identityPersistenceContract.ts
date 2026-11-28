@@ -141,8 +141,8 @@ export function identityPersistenceContract<E>(
             retryAfterSeconds: 3600,
           });
         }
-        yield* f.email.discard(issued[0]!.codeId);
-        yield* f.email.discard(issued[0]!.codeId);
+        yield* f.email.discard({ email: f.address, codeId: issued[0]!.codeId });
+        yield* f.email.discard({ email: f.address, codeId: issued[0]!.codeId });
         yield* f.email.issue({
           email: f.address,
           thumbprint: keys === 1 ? "key-0" : "replacement",
