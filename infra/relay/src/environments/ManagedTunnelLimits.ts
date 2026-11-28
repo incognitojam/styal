@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
 import { DEFAULT_MANAGED_TUNNEL_LIMIT, T3CHAT_PLAN_TUNNEL_LIMITS } from "@t3tools/contracts/relay";
 
+import { pendingTunnelOperation } from "./ManagedEndpointAllocations.ts";
 import * as RelayDb from "../db.ts";
 import {
   relayEnvironmentLinks,
@@ -16,7 +17,7 @@ import {
 } from "../persistence/schema.ts";
 import * as T3ChatAccounts from "../t3chat/T3ChatAccounts.ts";
 
-// Reserve-to-tunnel takes two Cloudflare calls capped at 8 seconds each; a reservation older than this was abandoned.
+// Only legacy reservations without a journal may age out.
 const MANAGED_TUNNEL_PENDING_WINDOW_MINUTES = 15;
 
 export class ManagedTunnelLimitPersistenceError extends Schema.TaggedError<ManagedTunnelLimitPersistenceError>()(
@@ -80,6 +81,7 @@ export const countedAllocations = (input: {
     eq(allocation.userId, input.userId),
     input.environment(allocation.environmentId, input.environmentId),
     or(
+      pendingTunnelOperation(),
       // Reserved but not yet holding a tunnel. Release writes updatedAt = tunnelReleasedAt and
       // a relink reserves before rewriting its link, so only a newer reservation counts here.
       and(

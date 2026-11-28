@@ -7,11 +7,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as SqlError from "effect/sql/SqlError";
 
+import { TunnelOperationExecution } from "../persistence/TunnelOperationPersistence.ts";
 import * as RelayDb from "../db.ts";
 import { isManagedEndpointHostname, managedEndpointForHostname } from "../deploymentConfig.ts";
-import { relayEnvironmentLinks, relayManagedEndpointAllocations } from "../persistence/schema.ts";
+import {
+  relayEnvironmentLinks,
+  relayManagedEndpointAllocations,
+  relayTunnelOperations,
+} from "../persistence/schema.ts";
 
 export interface ManagedEndpointAllocation {
   readonly userId: string;
@@ -196,9 +200,45 @@ const whereAllocation = (input: ManagedEndpointAllocationKey) =>
     eq(relayManagedEndpointAllocations.environmentId, input.environmentId),
   );
 
+export const pendingTunnelOperation = () =>
+  exists(
+    new QueryBuilder()
+      .select({ id: relayTunnelOperations.operationId })
+      .from(relayTunnelOperations)
+      .where(
+        and(
+          eq(relayTunnelOperations.userId, relayManagedEndpointAllocations.userId),
+          eq(relayTunnelOperations.environmentId, relayManagedEndpointAllocations.environmentId),
+          sql`${relayTunnelOperations.phase} <> 'complete'`,
+        ),
+      ),
+  );
+
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
 
+  const operationGuard = Effect.fn("relay.managed_endpoint_allocations.operation_guard")(
+    function* () {
+      const operation = yield* Effect.serviceOption(TunnelOperationExecution);
+      if (Option.isNone(operation)) return sql`not (${pendingTunnelOperation()})`;
+      return exists(
+        new QueryBuilder()
+          .select({ id: relayTunnelOperations.operationId })
+          .from(relayTunnelOperations)
+          .where(
+            and(
+              eq(relayTunnelOperations.userId, relayManagedEndpointAllocations.userId),
+              eq(
+                relayTunnelOperations.environmentId,
+                relayManagedEndpointAllocations.environmentId,
+              ),
+              eq(relayTunnelOperations.operationId, operation.value.operationId),
+              sql`${relayTunnelOperations.phase} <> 'complete'`,
+            ),
+          ),
+      );
+    },
+  );
   return ManagedEndpointAllocations.of({
     get: Effect.fn("relay.managed_endpoint_allocations.get")(function* (
       input: ManagedEndpointAllocationKey,
@@ -306,6 +346,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
         )
@@ -336,6 +377,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
@@ -369,6 +411,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
@@ -471,7 +514,12 @@ const make = Effect.gen(function* () {
                   isNull(relayEnvironmentLinks.revokedAt),
                 ),
               )
-              .where(inArray(relayManagedEndpointAllocations.tunnelName, batch))
+              .where(
+                and(
+                  inArray(relayManagedEndpointAllocations.tunnelName, batch),
+                  sql`not (${pendingTunnelOperation()})`,
+                ),
+              )
               .pipe(
                 Effect.map((rows) =>
                   rows.map(
@@ -518,6 +566,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
@@ -553,30 +602,20 @@ const make = Effect.gen(function* () {
             tunnelId: input.tunnelId,
             cause,
           });
-        return yield* db.$client
-          .withTransaction(
-            db
-              .select({ generation: relayManagedEndpointAllocations.generation })
-              .from(relayManagedEndpointAllocations)
-              .where(
-                and(
-                  whereAllocation(input),
-                  eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
-                  eq(relayManagedEndpointAllocations.generation, input.generation),
-                ),
-              )
-              .limit(1)
-              .for("update")
-              .pipe(
-                Effect.mapError(lockError),
-                Effect.flatMap((rows) =>
-                  rows.length === 0 ? Effect.succeedNone : Effect.asSome(effect),
-                ),
-              ),
+        const rows = yield* db
+          .select({ generation: relayManagedEndpointAllocations.generation })
+          .from(relayManagedEndpointAllocations)
+          .where(
+            and(
+              whereAllocation(input),
+              eq(relayManagedEndpointAllocations.tunnelId, input.tunnelId),
+              eq(relayManagedEndpointAllocations.generation, input.generation),
+              yield* operationGuard(),
+            ),
           )
-          .pipe(
-            Effect.mapError((cause) => (SqlError.isSqlError(cause) ? lockError(cause) : cause)),
-          );
+          .limit(1)
+          .pipe(Effect.mapError(lockError));
+        return rows.length === 0 ? Option.none<A>() : yield* Effect.asSome(effect);
       },
     ),
     claimDeprovision: Effect.fn("relay.managed_endpoint_allocations.claim_deprovision")(function* (
@@ -589,6 +628,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
         )
@@ -616,6 +656,7 @@ const make = Effect.gen(function* () {
         .where(
           and(
             whereAllocation(input),
+            yield* operationGuard(),
             eq(relayManagedEndpointAllocations.generation, input.generation),
           ),
         )

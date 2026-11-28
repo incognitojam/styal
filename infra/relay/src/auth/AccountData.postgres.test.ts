@@ -1,3 +1,4 @@
+import * as PostgresTunnelOperations from "../persistence/PostgresTunnelOperations.ts";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as PgClient from "@effect/sql-pg/PgClient";
@@ -53,7 +54,7 @@ const fixture = Effect.gen(function* () {
     AccountData.layer,
     EnvironmentLinks.layer,
     EnvironmentCredentials.layer,
-    ManagedEndpointProvider.layer,
+    ManagedEndpointProvider.layer.pipe(Layer.provide(PostgresTunnelOperations.layer)),
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(ManagedEndpointAllocations.layer, ManagedTunnelLimits.layer)),
     Layer.provide(Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false })),

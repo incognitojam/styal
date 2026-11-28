@@ -15,6 +15,7 @@ import {
   relayLiveActivities,
   relayManagedEndpointAllocations,
   relayManagedTunnelLimits,
+  relayTunnelOperations,
   relayMobileDevices,
   relayUsers,
 } from "../persistence/schema.ts";
@@ -128,6 +129,9 @@ const make = Effect.gen(function* () {
               yield* db
                 .delete(relayEnvironmentLinks)
                 .where(eq(relayEnvironmentLinks.userId, input.userId));
+              yield* db
+                .delete(relayTunnelOperations)
+                .where(eq(relayTunnelOperations.userId, input.userId));
               yield* db
                 .delete(relayManagedTunnelLimits)
                 .where(eq(relayManagedTunnelLimits.userId, input.userId));

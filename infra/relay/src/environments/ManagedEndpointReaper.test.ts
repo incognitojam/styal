@@ -1,3 +1,9 @@
+import {
+  TunnelOperationPersistence,
+  TunnelOperationPersistenceError,
+  type TunnelOperation,
+} from "../persistence/TunnelOperationPersistence.ts";
+import * as Logger from "effect/Logger";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -78,6 +84,8 @@ function harness(input?: {
   readonly legacyTunnelGraceMinutes?: number;
   readonly releaseDelayMs?: number;
   readonly listDelayMs?: number;
+  readonly pending?: ReadonlyArray<TunnelOperation>;
+  readonly failPendingRead?: boolean;
 }) {
   const listRequests: ManagedEndpointProvider.ManagedEndpointTunnelListRequest[] = [];
   const deleted: string[] = [];
@@ -251,6 +259,17 @@ function harness(input?: {
     releases,
     layer: ManagedEndpointReaper.layer.pipe(
       Layer.provide(
+        Layer.mock(TunnelOperationPersistence, {
+          pending: () =>
+            input?.failPendingRead
+              ? Effect.fail(
+                  new TunnelOperationPersistenceError({ cause: "synthetic journal outage" }),
+                )
+              : Effect.succeed(input?.pending ?? []),
+          complete: () => Effect.succeed(true),
+        }),
+      ),
+      Layer.provide(
         Layer.mergeAll(
           RelayConfiguration.layer(config),
           ManagedEndpointProvider.layerTunnelClient(tunnelClient),
@@ -263,6 +282,66 @@ function harness(input?: {
 }
 
 describe("ManagedEndpointReaper", () => {
+  it.effect(
+    "limits replay starts and still reaps idle tunnels, passing only release options",
+    () => {
+      const expired = tunnel({
+        id: "idle-a",
+        suffix: "aaaaaaaaaaaaaaaa",
+        status: "down",
+        timestamp: "2026-08-25T11:00:00.000Z",
+      });
+      const pending: TunnelOperation[] = ["operation-a", "operation-b"].map((operationId) => ({
+        userId: "user-a",
+        environmentId: operationId,
+        hostname: `${operationId}.example.test`,
+        tunnelName: operationId,
+        operationId,
+        phase: "intent",
+        resources: {},
+        desired: { kind: "release", markReleased: true },
+      }));
+      const state = harness({
+        tunnels: [expired],
+        allocations: recoverableOwners([expired]),
+        pending,
+        releaseDelayMs: 15_000,
+      });
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MILLIS);
+        yield* (yield* ManagedEndpointReaper.ManagedEndpointReaper).sweep;
+        expect(state.releases).toHaveLength(2);
+        expect(state.releases[0]).toEqual({
+          userId: "user-a",
+          environmentId: "operation-a",
+          markReleased: true,
+        });
+        expect(state.deleted).toEqual(["idle-a"]);
+      }).pipe(Effect.provide(state.layer));
+    },
+  );
+
+  it.effect("logs journal read failures and continues idle cleanup", () => {
+    const state = harness({ failPendingRead: true });
+    const messages: unknown[] = [];
+    const logger = Logger.make(({ message }) => {
+      messages.push(message);
+    });
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MILLIS);
+      yield* (yield* ManagedEndpointReaper.ManagedEndpointReaper).sweep;
+      expect(messages).toContainEqual([
+        "Failed to read pending tunnel operations",
+        { cause: expect.any(TunnelOperationPersistenceError) },
+      ]);
+      expect(state.listRequests).not.toHaveLength(0);
+    }).pipe(
+      Effect.provide(
+        Layer.merge(state.layer, Logger.layer([logger], { mergeWithExisting: false })),
+      ),
+    );
+  });
+
   it.effect("removes expired down and inactive tunnels from recoverable environments", () => {
     const state = harness({
       tunnels: [

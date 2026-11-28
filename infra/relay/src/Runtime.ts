@@ -1,3 +1,4 @@
+import * as PostgresTunnelOperations from "./persistence/PostgresTunnelOperations.ts";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as RelayHttpApi from "./http/Api.ts";
@@ -78,6 +79,7 @@ export const layerServices = Layer.empty.pipe(
     ),
   ),
   Layer.provideMerge(ManagedEndpointProvider.layer),
+  Layer.provideMerge(PostgresTunnelOperations.layer),
   Layer.provideMerge(DpopProofs.layer.pipe(Layer.provide(PostgresReplay.layer))),
   Layer.provideMerge(ApnsDeliveries.layer),
   Layer.provideMerge(
