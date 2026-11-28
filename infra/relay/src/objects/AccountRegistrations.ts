@@ -3,14 +3,27 @@ import type {
   RelayAgentActivityAggregateState,
 } from "@t3tools/contracts/relay";
 import type { IdentityCommand, StoredSession } from "./AccountIdentity.ts";
-import type { TokenReference } from "./PushTokenObject.ts";
+import * as DateTime from "effect/DateTime";
+import type { TokenReference, TokenPreparation } from "./TokenProtocol.ts";
+import { registrationDigest, tokenClaimDigest } from "./TokenProtocol.ts";
 import { canonicalJson, summarize } from "./storage.ts";
 
 export const registrationMigration =
   "CREATE TABLE account_registrations (device_id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE account_registration_owner (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), user_id TEXT NOT NULL); CREATE TABLE registration_token_references (operation_id TEXT PRIMARY KEY, reference TEXT NOT NULL)";
 export const registrationOutcomeMigration =
   "CREATE TABLE registration_outcomes (operation_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('completed', 'cancelled')), input TEXT NOT NULL, reason TEXT)";
-type Rejection = "session-revoked" | "device-not-owned";
+export const registrationEndMigration =
+  "CREATE TABLE registration_ends (reference_id TEXT PRIMARY KEY, value TEXT NOT NULL)";
+export const registrationHistoryMigration =
+  "CREATE TABLE registration_retention (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), cutoff TEXT NOT NULL, codec INTEGER NOT NULL); INSERT INTO registration_retention VALUES (1, '', 0); CREATE TABLE registration_retirements (reference_id TEXT PRIMARY KEY, reference TEXT NOT NULL)";
+export const REGISTRATION_HISTORY_DAYS = 7;
+type OutcomeInput = {
+  version: 1;
+  digest: string;
+  issuedAt: string | null;
+  createdAt: string | null;
+};
+type Rejection = "session-revoked" | "device-not-owned" | "preflight-failed";
 type Outcome = {
   status: "completed" | "cancelled";
   input: string;
@@ -53,6 +66,7 @@ export interface RegistrationIntent {
   claims: Array<{ reference: TokenReference; expected: number }>;
   cancelling?: Rejection;
   committed?: true;
+  preparations?: TokenPreparation[];
 }
 export interface RegistrationRecord {
   deviceId: string;
@@ -70,6 +84,23 @@ export type RegistrationCommand =
       claims: RegistrationIntent["claims"];
       now: string;
     }
+  | {
+      kind: "bind-token";
+      deviceId: string;
+      id: string;
+      preparation: TokenPreparation;
+      previous?: TokenPreparation;
+      now: string;
+    }
+  | {
+      kind: "authorize-token";
+      deviceId: string;
+      id: string;
+      preparation: TokenPreparation;
+      cleanup?: true;
+      now: string;
+    }
+  | { kind: "retired"; deviceId: string; reference: TokenReference }
   | { kind: "finish"; deviceId: string; id: string }
   | { kind: "cancel"; deviceId: string; id: string }
   | { kind: "check" | "commit"; deviceId: string; id: string; now: string }
@@ -118,9 +149,100 @@ const settleOutcome = (
     "INSERT INTO registration_outcomes VALUES (?, ?, ?, ?)",
     intent.id,
     status,
-    canonicalJson(intent.input),
+    canonicalJson({
+      version: 1,
+      digest: registrationDigest(intent.input),
+      issuedAt: intent.now,
+      createdAt: intent.now,
+    } satisfies OutcomeInput),
     reason,
   );
+export function prepareRegistrationStorage(storage: DurableObjectStorage) {
+  if (storage.sql.exec<{ codec: number }>("SELECT codec FROM registration_retention").one().codec)
+    return;
+  storage.transactionSync(() => {
+    for (const row of storage.sql
+      .exec<{ operation_id: string; input: string }>(
+        "SELECT operation_id, input FROM registration_outcomes",
+      )
+      .toArray()) {
+      const input: unknown = JSON.parse(row.input);
+      storage.sql.exec(
+        "UPDATE registration_outcomes SET input = ? WHERE operation_id = ?",
+        canonicalJson({
+          version: 1,
+          digest: registrationDigest(input),
+          issuedAt: null,
+          createdAt: null,
+        } satisfies OutcomeInput),
+        row.operation_id,
+      );
+    }
+    for (const record of registrationRecords(storage)) {
+      let changed = false;
+      for (const candidate of [
+        record.active,
+        ...(record.pending?.candidate ? [record.pending.candidate] : []),
+      ]) {
+        if (candidate.device) {
+          const {
+            pushToken: _push,
+            pushToStartToken: _start,
+            ...registration
+          } = candidate.device.registration;
+          changed ||= _push !== undefined || _start !== undefined;
+          candidate.device.registration = registration;
+        }
+      }
+      if (changed) save(storage, record);
+    }
+    storage.sql.exec("UPDATE registration_retention SET codec = 1");
+  });
+}
+export function pruneRegistrationOutcomes(storage: DurableObjectStorage, now: string) {
+  const before = DateTime.formatIso(
+    DateTime.subtract(DateTime.makeUnsafe(now), { days: REGISTRATION_HISTORY_DAYS }),
+  );
+  storage.transactionSync(() => {
+    storage.sql.exec(
+      "UPDATE registration_outcomes SET input = json_set(input, '$.createdAt', ?) WHERE json_extract(input, '$.createdAt') IS NULL",
+      now,
+    );
+    storage.sql.exec("UPDATE registration_retention SET cutoff = max(cutoff, ?)", before);
+    storage.sql.exec(
+      "DELETE FROM registration_outcomes WHERE json_extract(input, '$.createdAt') < ?",
+      before,
+    );
+  });
+}
+export const registrationRetirements = (storage: DurableObjectStorage) =>
+  storage.sql
+    .exec<{ reference: string }>(
+      "SELECT reference FROM registration_retirements ORDER BY reference_id",
+    )
+    .toArray()
+    .map((row) => JSON.parse(row.reference) as TokenReference);
+function retireReferences(storage: DurableObjectStorage, references: TokenReference[]) {
+  for (const reference of references)
+    storage.sql.exec(
+      "INSERT OR IGNORE INTO registration_retirements VALUES (?, ?)",
+      tokenClaimDigest(reference),
+      canonicalJson(reference),
+    );
+}
+function historyReferences(
+  storage: DurableObjectStorage,
+  matches: (reference: TokenReference) => boolean,
+) {
+  return storage.sql
+    .exec<{ reference: string }>("SELECT reference FROM registration_token_references")
+    .toArray()
+    .map((row) => JSON.parse(row.reference) as TokenReference)
+    .filter(matches);
+}
+function deviceRetirements(storage: DurableObjectStorage, deviceId: string) {
+  return registrationRetirements(storage).filter((reference) => reference.deviceId === deviceId);
+}
 export function liveRegistrationSession(
   storage: DurableObjectStorage,
   sessionId: string,
@@ -156,6 +278,7 @@ export function registrations(
     if (command.kind === "read")
       return {
         records,
+        retirements: registrationRetirements(storage),
         liveSessionIds: storage.sql
           .exec<{ value: string }>("SELECT value FROM account_sessions")
           .toArray()
@@ -175,7 +298,11 @@ export function registrations(
     if (command.kind === "begin") {
       const previous = outcome(storage, command.id);
       if (previous) {
-        if (previous.input !== canonicalJson(command.input))
+        const input = JSON.parse(previous.input) as OutcomeInput;
+        if (
+          input.digest !== registrationDigest(command.input) ||
+          (input.issuedAt !== null && input.issuedAt !== command.now)
+        )
           throw new Error("Registration operation intent mismatch");
         return previous.status === "completed"
           ? { completed: true }
@@ -184,11 +311,16 @@ export function registrations(
       if (record.pending) {
         if (
           record.pending.id === command.id &&
-          canonicalJson(record.pending.input) !== canonicalJson(command.input)
+          (canonicalJson(record.pending.input) !== canonicalJson(command.input) ||
+            record.pending.now !== command.now)
         )
           throw new Error("Registration operation intent mismatch");
         return { record };
       }
+      const cutoff = storage.sql
+        .exec<{ cutoff: string }>("SELECT cutoff FROM registration_retention")
+        .one().cutoff;
+      if (command.now <= cutoff) return { error: "operation-expired" } as const;
       const error = validate(storage, command.input, record.active, command.now);
       if (error) return { error };
       if (
@@ -206,16 +338,79 @@ export function registrations(
           now: command.now,
           candidate: null,
           claims: [],
+          preparations: [],
         };
         save(storage, record);
       }
       return { record };
     }
     switch (command.kind) {
+      case "bind-token": {
+        const pending = record.pending;
+        if (pending?.id !== command.id || pending.candidate || pending.cancelling)
+          return { bound: false } as const;
+        const reason = validate(storage, pending.input, record.active, command.now);
+        if (reason) {
+          pending.cancelling = reason;
+          save(storage, record);
+          return { bound: false } as const;
+        }
+        const tickets = (pending.preparations ??= []);
+        const index = tickets.findIndex(
+          (ticket) => ticket.reference.operationId === command.preparation.reference.operationId,
+        );
+        if (index >= 0) {
+          if (command.previous && canonicalJson(tickets[index]) === canonicalJson(command.previous))
+            tickets[index] = command.preparation;
+        } else tickets.push(command.preparation);
+        save(storage, record);
+        return { preparation: tickets[index >= 0 ? index : tickets.length - 1] };
+      }
+      case "authorize-token": {
+        const pending = record.pending;
+        const bound =
+          pending?.id === command.id &&
+          pending.preparations?.some(
+            (ticket) => canonicalJson(ticket) === canonicalJson(command.preparation),
+          );
+        return {
+          allowed:
+            !!bound &&
+            (command.cleanup ||
+              (!pending?.cancelling &&
+                !pending?.candidate &&
+                validate(storage, pending.input, record.active, command.now) === null)),
+        };
+      }
+      case "retired": {
+        const reference = command.reference;
+        if (reference.userId !== userId || reference.deviceId !== deviceId)
+          throw new Error("Token cleanup owner mismatch");
+        storage.sql.exec(
+          "DELETE FROM registration_retirements WHERE reference_id = ?",
+          tokenClaimDigest(reference),
+        );
+        const old = storage.sql
+          .exec<{ reference: string }>(
+            "SELECT reference FROM registration_token_references WHERE operation_id = ?",
+            reference.operationId,
+          )
+          .toArray()[0];
+        if (
+          old &&
+          tokenClaimDigest(JSON.parse(old.reference) as TokenReference) ===
+            tokenClaimDigest(reference)
+        )
+          storage.sql.exec(
+            "DELETE FROM registration_token_references WHERE operation_id = ?",
+            reference.operationId,
+          );
+        return { applied: true };
+      }
       case "check":
       case "commit": {
         const pending = record.pending;
-        if (pending?.id !== command.id || !pending.candidate) {
+        if (pending?.id !== command.id) {
           const previous = outcome(storage, command.id);
           return { status: previous?.status ?? "stale", reason: previous?.reason ?? null };
         }
@@ -227,6 +422,8 @@ export function registrations(
           save(storage, record);
           return { status: "cancel", reason } as const;
         }
+        if (command.kind === "commit" && !pending.candidate)
+          return { status: "preparing" } as const;
         if (command.kind === "commit") {
           pending.committed = true;
           save(storage, record);
@@ -242,14 +439,14 @@ export function registrations(
         }
         return { applied: true };
       case "ready": {
-        if (record.pending?.id !== command.id) return { applied: false };
+        if (record.pending?.id !== command.id || record.pending.cancelling)
+          return { applied: false, record };
         if (record.pending.candidate) return { applied: true, record };
         const error = validate(storage, record.pending.input, record.active, command.now);
         if (error) {
-          settleOutcome(storage, record.pending, "cancelled", error);
-          record.pending = null;
+          record.pending.cancelling = error;
           save(storage, record);
-          return { error };
+          return { applied: false };
         }
         record.pending.candidate = command.candidate;
         record.pending.claims = command.claims;
@@ -270,22 +467,38 @@ export function registrations(
           record.pending.cancelling
         )
           return { applied: false };
+        retireReferences(
+          storage,
+          tokenReferences(record.active).filter(
+            (old) =>
+              !tokenReferences(record.pending!.candidate!).some(
+                (next) => tokenClaimDigest(old) === tokenClaimDigest(next),
+              ),
+          ),
+        );
         record.active = record.pending.candidate;
         settleOutcome(storage, record.pending, "completed");
         record.pending = null;
         save(storage, record);
-        return { applied: true };
+        return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       case "cancel":
-        if (record.pending?.id === command.id && !record.pending.candidate) {
-          settleOutcome(storage, record.pending, "cancelled");
-          record.pending = null;
+        if (
+          record.pending?.id === command.id &&
+          !record.pending.committed &&
+          !record.pending.candidate
+        ) {
+          record.pending.cancelling ??= "preflight-failed";
           save(storage, record);
         }
-        return { applied: true };
+        return { record };
       case "remove":
         if (record.pending) return { busy: true };
+        retireReferences(storage, [
+          ...tokenReferences(record.active),
+          ...historyReferences(storage, (reference) => reference.deviceId === deviceId),
+        ]);
         storage.sql.exec("DELETE FROM account_registrations WHERE device_id = ?", deviceId);
-        return { applied: true };
+        return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       case "mark": {
         if (record.pending) return { busy: true };
         if (
@@ -297,6 +510,7 @@ export function registrations(
           return { needsRegistration: true };
         storage.sql.exec("INSERT OR IGNORE INTO account_registration_owner VALUES (1, ?)", userId);
         const old = record.active.activity;
+        if (!command.keepToken && old?.token) retireReferences(storage, [old.token]);
         record.active.activity = {
           token: command.keepToken ? (old?.token ?? null) : null,
           createdAt: old?.createdAt ?? command.now,
@@ -308,7 +522,7 @@ export function registrations(
           updatedAt: command.now,
         };
         save(storage, record);
-        return { applied: true };
+        return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       }
       case "invalidate": {
         if (record.pending) return { busy: true };
@@ -317,10 +531,13 @@ export function registrations(
             record.active.device &&
             (command.token === undefined || record.active.device.push?.token === command.token)
           ) {
+            if (record.active.device.push) retireReferences(storage, [record.active.device.push]);
             record.active.device.push = null;
             if (command.now) record.active.device.updatedAt = command.now;
           }
         } else if (record.active.activity) {
+          if (record.active.activity.token)
+            retireReferences(storage, [record.active.activity.token]);
           record.active.activity.token = null;
           record.active.activity.remoteStartQueuedAt = null;
           record.active.activity.remoteStartedAt = null;
@@ -328,7 +545,7 @@ export function registrations(
           if (command.now) record.active.activity.updatedAt = command.now;
         }
         if (records.some((row) => row.deviceId === deviceId)) save(storage, record);
-        return { applied: true };
+        return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       }
     }
   });
@@ -339,11 +556,16 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
     .exec<{ value: string }>("SELECT value FROM account_sessions")
     .toArray()
     .map((row) => JSON.parse(row.value) as StoredSession);
+  const retirements = registrationRetirements(storage);
   const sessionIds = sessions
     .filter((session) => {
       if (command.kind === "prune-sessions") return session.expiresAt <= command.now;
       if (command.kind === "revoke-session")
-        return session.sessionId === command.sessionId && !session.revoked;
+        return (
+          session.sessionId === command.sessionId &&
+          (!session.revoked ||
+            retirements.some((reference) => reference.sessionId === session.sessionId))
+        );
       if (command.kind === "publish-session")
         return session.sessionId === command.sessionId && !session.revoked;
       return (
@@ -360,6 +582,10 @@ export function registrationRemoval(storage: DurableObjectStorage, command: Iden
     .map((session) => session.sessionId);
   return {
     sessionIds,
+    retirements:
+      command.kind === "prune-sessions"
+        ? retirements
+        : retirements.filter((reference) => sessionIds.includes(reference.sessionId ?? "")),
     records: removalRecords(storage, sessionIds),
     stamp: canonicalJson(removalRecords(storage, sessionIds)),
   };
@@ -376,9 +602,15 @@ export function endSessionRegistrations(
   storage: DurableObjectStorage,
   sessionIds: readonly string[],
 ) {
+  retireReferences(
+    storage,
+    historyReferences(storage, (reference) => sessionIds.includes(reference.sessionId ?? "")),
+  );
   for (const record of removalRecords(storage, sessionIds)) {
-    if (sessionIds.includes(record.active.device?.sessionId ?? ""))
+    if (sessionIds.includes(record.active.device?.sessionId ?? "")) {
+      retireReferences(storage, tokenReferences(record.active));
       record.active = { device: null, activity: null };
+    }
     if (
       sessionIds.includes(record.pending?.input.sessionId ?? "") ||
       sessionIds.includes(record.pending?.candidate?.device?.sessionId ?? "")
@@ -392,6 +624,8 @@ export function endSessionRegistrations(
 export function registrationInventory(storage: DurableObjectStorage) {
   const records = registrationRecords(storage);
   return [
+    summarize("registration_retirements", registrationRetirements(storage)),
+    summarize("registration_retention", storage.sql.exec("SELECT * FROM registration_retention")),
     summarize(
       "registration_outcomes",
       storage.sql.exec("SELECT * FROM registration_outcomes ORDER BY operation_id"),

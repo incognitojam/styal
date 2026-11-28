@@ -1,6 +1,7 @@
-import * as Schema from "effect/Schema";
 import type { IdentityBindings } from "./IdentityCoordinator.ts";
 import type { PushTokenObject, TokenReference, TokenKind } from "./PushTokenObject.ts";
+import type { TokenPreparation } from "./TokenProtocol.ts";
+import { TokenCoordinator } from "./TokenCoordinator.ts";
 import type {
   RegistrationCandidate,
   RegistrationCommand,
@@ -26,12 +27,13 @@ export interface RegistrationBindings extends Pick<
 > {
   PUSH_TOKENS: Pick<DurableObjectNamespace<PushTokenObject>, "getByName">;
 }
-const isSessionRevoked = Schema.is(DeviceSessionRevoked);
 
 export class RegistrationCoordinator {
   readonly bindings: RegistrationBindings;
+  readonly tokens: TokenCoordinator;
   constructor(bindings: RegistrationBindings) {
     this.bindings = bindings;
+    this.tokens = new TokenCoordinator(bindings);
   }
   private async gate(userId: string, deviceId: string, callback: () => Promise<void>) {
     let failure: unknown;
@@ -101,7 +103,11 @@ export class RegistrationCoordinator {
     const result = await this.command(userId, { kind: "read", now });
     if (!("records" in result) || !result.records || !("liveSessionIds" in result))
       throw new Error("Missing registration snapshot");
-    return { records: result.records, liveSessionIds: result.liveSessionIds ?? [] };
+    return {
+      records: result.records,
+      liveSessionIds: result.liveSessionIds ?? [],
+      retirements: result.retirements ?? [],
+    };
   }
   async views(userId: string, now: string, includeExpired = false) {
     const snapshot = await this.snapshot(userId, now);
@@ -144,7 +150,10 @@ export class RegistrationCoordinator {
           await this.registerReference("account", accountName(userId));
           result = await this.command(userId, { kind: "begin", input, id, now, registered: true });
         }
-        if ("completed" in result && result.completed) return;
+        if ("completed" in result && result.completed) {
+          await this.recoverRetirements(userId, deviceId, now);
+          return;
+        }
         if (!("record" in result) || !result.record?.pending)
           throw new Error("Registration intent unavailable");
         const pending = result.record.pending;
@@ -167,6 +176,48 @@ export class RegistrationCoordinator {
     });
   }
 
+  async drain(userId: string, references: TokenReference[], now: string) {
+    for (const reference of references) {
+      await this.tokens.release(reference, now);
+      await this.command(userId, { kind: "retired", deviceId: reference.deviceId, reference });
+    }
+  }
+  private async recoverRetirements(userId: string, deviceId: string, now: string) {
+    await this.drain(
+      userId,
+      (await this.snapshot(userId, now)).retirements.filter(
+        (reference) => reference.deviceId === deviceId,
+      ),
+      now,
+    );
+  }
+  private async cancelIntent(
+    userId: string,
+    record: RegistrationRecord,
+    pending: RegistrationIntent,
+    now: string,
+  ) {
+    for (const preparation of pending.preparations ??
+      pending.claims.map((claim) => ({
+        ...claim,
+        initialization: null,
+        epoch: null,
+        admittedAt: pending.now,
+      }))) {
+      await this.tokens.release(preparation.reference, now, preparation.initialization);
+      await this.command(userId, {
+        kind: "retired",
+        deviceId: record.deviceId,
+        reference: preparation.reference,
+      });
+    }
+    await this.command(userId, { kind: "abort", deviceId: record.deviceId, id: pending.id });
+  }
+  private rejected(reason: RegistrationIntent["cancelling"], cause?: unknown): never {
+    if (reason === "device-not-owned") throw new DeviceNotOwnedBySession({});
+    if (reason === "session-revoked") throw new DeviceSessionRevoked({});
+    throw cause ?? new Error("Registration operation was cancelled");
+  }
   async resume(userId: string, record: RegistrationRecord, now: string) {
     let intent = record.pending;
     if (!intent) return;
@@ -177,40 +228,75 @@ export class RegistrationCoordinator {
         id: pending.id,
         now,
       });
-      if ("status" in current && current.status === "completed") return "completed" as const;
+      if ("status" in current && current.status === "completed") {
+        await this.recoverRetirements(userId, record.deviceId, now);
+        return "completed" as const;
+      }
       if ("status" in current && current.status === "committed") return "ready" as const;
       if ("status" in current && current.status === "cancel") {
-        for (const claim of pending.claims)
-          await this.token(claim.reference).fence({ version, ...claim, now, registered: true });
-        await this.command(userId, { kind: "abort", deviceId: record.deviceId, id: pending.id });
+        const cancelled = await this.command(userId, {
+          kind: "cancel",
+          deviceId: record.deviceId,
+          id: pending.id,
+        });
+        if ("record" in cancelled && cancelled.record?.pending?.id === pending.id)
+          await this.cancelIntent(userId, cancelled.record, cancelled.record.pending, now);
       }
-      if ("status" in current && (current.status === "cancel" || current.status === "cancelled")) {
-        if (current.reason === "device-not-owned") throw new DeviceNotOwnedBySession({});
-        if (current.reason === "session-revoked") throw new DeviceSessionRevoked({});
-        throw new Error("Registration operation was cancelled");
-      }
+      if ("status" in current && (current.status === "cancel" || current.status === "cancelled"))
+        this.rejected(current.reason ?? undefined);
       throw new Error("Registration operation changed");
     };
+    if (intent.cancelling) {
+      await this.cancelIntent(userId, record, intent, now);
+      this.rejected(intent.cancelling);
+    }
     if (!intent.candidate) {
-      let prepared: { candidate: RegistrationCandidate; claims: RegistrationIntent["claims"] };
+      let prepared:
+        | { candidate: RegistrationCandidate; claims: RegistrationIntent["claims"] }
+        | undefined;
       try {
-        prepared = await this.prepare(userId, record, intent);
+        prepared = await this.prepare(userId, record, intent, now);
       } catch (error) {
-        await this.command(userId, { kind: "cancel", deviceId: record.deviceId, id: intent.id });
-        throw error;
+        const cancelled = await this.command(userId, {
+          kind: "cancel",
+          deviceId: record.deviceId,
+          id: intent.id,
+        });
+        if ("record" in cancelled && cancelled.record?.pending?.id === intent.id) {
+          const pending = cancelled.record.pending;
+          if (pending.candidate && !pending.cancelling) intent = pending;
+          else {
+            await this.cancelIntent(userId, cancelled.record, pending, now);
+            this.rejected(pending.cancelling, error);
+          }
+        } else {
+          const previous = await this.command(userId, {
+            kind: "check",
+            deviceId: record.deviceId,
+            id: intent.id,
+            now,
+          });
+          if ("status" in previous && previous.status === "completed") {
+            await this.recoverRetirements(userId, record.deviceId, now);
+            return;
+          }
+          throw error;
+        }
       }
-      const ready = await this.command(userId, {
-        kind: "ready",
-        deviceId: record.deviceId,
-        id: intent.id,
-        ...prepared,
-        now,
-      });
-      if (!("record" in ready) || !ready.record?.pending) {
-        if ((await commit(intent)) === "completed") return;
-        throw new Error("Registration readiness changed");
+      if (prepared) {
+        const ready = await this.command(userId, {
+          kind: "ready",
+          deviceId: record.deviceId,
+          id: intent.id,
+          ...prepared,
+          now,
+        });
+        if (!("record" in ready) || !ready.record?.pending) {
+          if ((await commit(intent)) === "completed") return;
+          throw new Error("Registration readiness changed");
+        }
+        intent = ready.record.pending;
       }
-      intent = ready.record.pending;
     }
     if ((await commit(intent)) === "completed") return;
     for (const claim of intent.claims) {
@@ -218,9 +304,8 @@ export class RegistrationCoordinator {
         version,
         ...claim,
         now: intent.now,
-        registered: true,
       });
-      if ("needsRegistration" in result) throw new Error("Push token initialization changed");
+      if (!("applied" in result)) throw new Error("Push token transfer is not ready");
     }
     const finished = await this.command(userId, {
       kind: "finish",
@@ -230,6 +315,26 @@ export class RegistrationCoordinator {
     if (!("applied" in finished) || !finished.applied) {
       if ((await commit(intent)) !== "completed")
         throw new Error("Registration completion changed");
+    } else if ("retirements" in finished && finished.retirements)
+      await this.drain(userId, finished.retirements, now);
+  }
+  private async settleRecord(userId: string, record: RegistrationRecord, now: string) {
+    if (!record.pending) return;
+    try {
+      await this.resume(userId, record, now);
+    } catch (error) {
+      const terminal = await this.command(userId, {
+        kind: "check",
+        deviceId: record.deviceId,
+        id: record.pending.id,
+        now,
+      });
+      if (
+        "status" in terminal &&
+        (terminal.status === "completed" || terminal.status === "cancelled")
+      )
+        return;
+      throw error;
     }
   }
   async settle(userId: string, deviceId: string, now: string) {
@@ -237,21 +342,15 @@ export class RegistrationCoordinator {
       const record = (await this.snapshot(userId, now)).records.find(
         (row) => row.deviceId === deviceId,
       );
-      if (!record?.pending) return;
-      try {
-        await this.resume(userId, record, now);
-      } catch (error) {
-        if (
-          isSessionRevoked(error) &&
-          !(await this.snapshot(userId, now)).records.find((row) => row.deviceId === deviceId)
-            ?.pending
-        )
-          return;
-        throw error;
-      }
+      if (record) await this.settleRecord(userId, record, now);
     });
   }
-  private async prepare(userId: string, record: RegistrationRecord, intent: RegistrationIntent) {
+  private async prepare(
+    userId: string,
+    record: RegistrationRecord,
+    intent: RegistrationIntent,
+    now: string,
+  ) {
     const old = await this.resolve(record.active);
     const candidate = structuredClone(old);
     const claims: RegistrationIntent["claims"] = [];
@@ -263,27 +362,127 @@ export class RegistrationCoordinator {
     ) => {
       if (!token) return previous;
       if (previous?.token === token && previous.sessionId === sessionId) return previous;
-      const state = await this.token({ kind, token }).read({ version });
-      if (!state.initialized)
-        await this.registerReference("push-token", pushTokenName(kind, token));
-      const reference: TokenReference = {
-        kind,
-        token,
-        userId,
-        deviceId: record.deviceId,
-        sessionId,
-        operationId: `${intent.id}:${kind}`,
-        generation: state.generation + 1,
-      };
-      claims.push({ reference, expected: state.generation });
-      return reference;
+      let previousTicket: TokenPreparation | undefined;
+      for (let retry = 0; retry < 3; retry++) {
+        const state = await this.token({ kind, token }).read({ version });
+        if (state.retirement) {
+          await this.tokens.finishRetirement(
+            {
+              kind,
+              token,
+              userId,
+              deviceId: record.deviceId,
+              sessionId,
+              operationId: intent.id + ":" + kind,
+              generation: state.generation + 1,
+              incarnation: state.incarnation,
+            },
+            state.retirement,
+          );
+          continue;
+        }
+        const proposed: TokenPreparation = {
+          reference: {
+            kind,
+            token,
+            userId,
+            deviceId: record.deviceId,
+            sessionId,
+            operationId: intent.id + ":" + kind,
+            generation: state.generation + 1,
+            incarnation: state.incarnation,
+          },
+          expected: state.generation,
+          initialization: state.initialization,
+          epoch: state.epoch,
+          admittedAt: now,
+        };
+        let bound = await this.command(userId, {
+          kind: "bind-token",
+          deviceId: record.deviceId,
+          id: intent.id,
+          preparation: proposed,
+          ...(previousTicket ? { previous: previousTicket } : {}),
+          now,
+        });
+        if (!("preparation" in bound) || !bound.preparation)
+          throw new Error("Token preparation binding changed");
+        let ticket = bound.preparation;
+        if (ticket.epoch === null || ticket.epoch === 0) {
+          const allocated = await this.tokens.ticket(ticket);
+          if (!allocated) {
+            await this.tokens.release(ticket.reference, now, ticket.initialization);
+            previousTicket = ticket;
+            continue;
+          }
+          bound = await this.command(userId, {
+            kind: "bind-token",
+            deviceId: record.deviceId,
+            id: intent.id,
+            preparation: allocated,
+            previous: ticket,
+            now,
+          });
+          if (!("preparation" in bound) || !bound.preparation)
+            throw new Error("Token epoch binding changed");
+          ticket = bound.preparation;
+        }
+        const authorized = await this.command(userId, {
+          kind: "authorize-token",
+          deviceId: record.deviceId,
+          id: intent.id,
+          preparation: ticket,
+          now,
+        });
+        if (!("allowed" in authorized) || !authorized.allowed)
+          throw new Error("Token preparation authorization changed");
+        const prepared = await this.token(ticket.reference).prepare({
+          version,
+          preparation: ticket,
+        });
+        if (prepared.state === "retiring") {
+          await this.tokens.finishRetirement(ticket.reference, prepared.retirement);
+          previousTicket = ticket;
+          continue;
+        }
+        if (prepared.state === "stale") {
+          await this.tokens.release(ticket.reference, now, ticket.initialization);
+          previousTicket = ticket;
+          continue;
+        }
+        if (prepared.state === "rejected") throw new Error("Token preparation was cancelled");
+        if (
+          !state.published ||
+          state.incarnation !== ticket.reference.incarnation ||
+          state.epoch !== ticket.epoch
+        ) {
+          const publication = await this.command(userId, {
+            kind: "authorize-token",
+            deviceId: record.deviceId,
+            id: intent.id,
+            preparation: ticket,
+            now,
+          });
+          if (
+            !("allowed" in publication) ||
+            !publication.allowed ||
+            ticket.epoch === null ||
+            !(await this.tokens.publish(ticket.reference, ticket.epoch))
+          )
+            throw new Error("Token publication authorization changed");
+        }
+        claims.push({ reference: ticket.reference, expected: ticket.expected });
+        return ticket.reference;
+      }
+      throw new Error("Token preparation repeatedly changed");
     };
     if (intent.input.kind === "device") {
       const registration = intent.input.registration;
+      const { pushToken: _push, pushToStartToken: _start, ...metadata } = registration;
       const sessionId = intent.input.sessionId ?? null;
       candidate.device = {
         registration: {
-          ...registration,
+          ...metadata,
           bundleId: registration.bundleId ?? old.device?.registration.bundleId,
           apsEnvironment: registration.apsEnvironment ?? old.device?.registration.apsEnvironment,
         },
@@ -332,13 +531,15 @@ export class RegistrationCoordinator {
       const record = (await this.snapshot(userId, now)).records.find(
         (row) => row.deviceId === deviceId,
       );
-      if (record?.pending) await this.resume(userId, record, now);
+      if (record) await this.settleRecord(userId, record, now);
       let result = await this.command(userId, command);
       if ("needsRegistration" in result && command.kind === "mark") {
         await this.registerReference("account", accountName(userId));
         result = await this.command(userId, { ...command, registered: true });
       }
       if ("busy" in result) throw new Error("Concurrent registration mutation");
+      if ("retirements" in result && result.retirements)
+        await this.drain(userId, result.retirements, now);
     });
   }
   async accountIds() {

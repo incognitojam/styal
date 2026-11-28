@@ -11,6 +11,11 @@ import { canonicalJson, checkLimit, checkRpc, migrate, summarize } from "./stora
 import {
   registrationMigration,
   registrationOutcomeMigration,
+  registrationEndMigration,
+  registrationHistoryMigration,
+  prepareRegistrationStorage,
+  pruneRegistrationOutcomes,
+  registrationRetirements,
   registrations,
   registrationRemoval,
   removalRecords,
@@ -30,6 +35,8 @@ export const accountMigrations = [
   tunnelMigration,
   registrationMigration,
   registrationOutcomeMigration,
+  registrationEndMigration,
+  registrationHistoryMigration,
 ];
 
 export type { JournalResult } from "./AccountJournal.ts";
@@ -93,6 +100,7 @@ export class AccountObject extends DurableObject<unknown> {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage, accountMigrations);
+      prepareRegistrationStorage(ctx.storage);
       ctx.storage.sql.exec("DELETE FROM account_capacity_claims");
     });
   }
@@ -123,6 +131,7 @@ export class AccountObject extends DurableObject<unknown> {
     if (request.command.kind === "begin-email" && request.command.userId !== request.userId)
       throw new Error("Email owner mismatch");
     const command = request.command;
+    if (command.kind === "prune-sessions") pruneRegistrationOutcomes(this.ctx.storage, command.now);
     if (
       command.kind !== "revoke-session" &&
       command.kind !== "prune-sessions" &&
@@ -148,7 +157,14 @@ export class AccountObject extends DurableObject<unknown> {
       const result = identity(this.ctx.storage, request);
       if (command.kind !== "publish-session" || ("session" in result && result.session?.revoked))
         endSessionRegistrations(this.ctx.storage, removal.sessionIds);
-      return result;
+      return {
+        ...result,
+        retirements: registrationRetirements(this.ctx.storage).filter(
+          (reference) =>
+            command.kind === "prune-sessions" ||
+            removal.sessionIds.includes(reference.sessionId ?? ""),
+        ),
+      };
     });
   }
 
