@@ -114,6 +114,13 @@ const backgroundCapableTurnItemTypes: ReadonlySet<OrchestrationV2TurnItem["type"
   "subagent",
 ]);
 
+const toolTurnItemTypes: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
+  ...backgroundCapableTurnItemTypes,
+  "file_change",
+  "file_search",
+  "web_search",
+]);
+
 function isSettledTurnItemStatus(status: OrchestrationV2TurnItem["status"]): boolean {
   return !isOrchestrationV2WorkActive(status);
 }
@@ -1462,6 +1469,7 @@ export const layer: Layer.Layer<
         const ingestDelivered = Effect.fnUntraced(function* (
           event: ProviderAdapter.ProviderAdapterV2Event,
           deliveredEvent: ProviderAdapter.ProviderAdapterV2Event,
+          heldText = false,
         ) {
           const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
           const isRootProviderThreadUpdate =
@@ -1494,7 +1502,7 @@ export const layer: Layer.Layer<
             runId: input.run.id,
             nodeId: input.rootNode.id,
             event: deliveredEvent,
-            ...(isRootProviderThreadUpdate
+            ...(isRootProviderThreadUpdate || heldText
               ? rootTerminalAlreadySeen
                 ? {
                     writeIfProviderThreadOwner: {
@@ -1552,27 +1560,29 @@ export const layer: Layer.Layer<
           idleFlushWake = undefined;
           return wake === undefined ? Effect.void : Fiber.interrupt(wake.fiber);
         });
-        // Per-tick ingestion avoids adding a span for every idle wake.
-        const flushIdleAssistantText = Effect.fnUntraced(function* (wokeAt: number) {
-          // A tick means its timer slept until `wokeAt`, but the wall clock can still read up
-          // to a millisecond earlier; trusting it would keep the finished wake and never re-arm.
-          const now = Math.max(DateTime.toEpochMillis(yield* DateTime.now), wokeAt);
-          // A wake due by now has fired; a later deadline needs a new one.
-          if (idleFlushWake !== undefined && idleFlushWake.at <= now) idleFlushWake = undefined;
-          if (idleFlushClosed) return;
+        // Timer and boundary drains share serialized ingestion; guards also cover shutdown drains.
+        const flushAssistantText = Effect.fnUntraced(function* (
+          now: number,
+          drain?: (event: ProviderAdapter.ProviderAdapterV2Event) => boolean,
+        ) {
           const rootSettled = yield* Ref.get(rootRunFinalized);
-          for (const event of assistantStreaming.takeIdleFlushes(now)) {
-            // Settling the root run closed its messages; only children may still stream.
+          for (const event of assistantStreaming.takeIdleFlushes(now, drain)) {
             if (rootSettled && streamedThreadId(event) === input.run.threadId) continue;
-            // The held text's child may have been handed to another run since it arrived.
             if (!routeProviderEvent(event, routeIdentity, yield* Ref.get(eventRouting))[0])
               continue;
-            // A failed write fails ingestion like any provider write.
-            yield* ingestDelivered(event, event);
+            yield* ingestDelivered(event, event, true);
             yield* trackChildLifecycle(event, true);
           }
+        });
+        // Per-tick ingestion avoids adding a span for every timer wake.
+        const flushIdleAssistantText = Effect.fnUntraced(function* (wokeAt: number) {
+          const now = Math.max(DateTime.toEpochMillis(yield* DateTime.now), wokeAt);
+          if (idleFlushWake !== undefined && idleFlushWake.at <= now) idleFlushWake = undefined;
+          if (idleFlushClosed) return;
+          yield* flushAssistantText(now);
           yield* scheduleIdleFlush;
         });
+        const startedToolItems = new Set<TurnItemId>();
         const ingestEvent = Effect.fnUntraced(function* ({
           event,
           accepted,
@@ -1587,6 +1597,36 @@ export const layer: Layer.Layer<
             event.providerTurn.providerThreadId === input.providerThread.id
           ) {
             yield* Ref.set(latestRootProviderTurn, event.providerTurn);
+          }
+          const boundary =
+            event.type === "turn.terminal"
+              ? { turnId: event.providerTurnId, threadId: input.run.threadId }
+              : event.type === "provider_turn.updated" &&
+                  isTerminalProviderTurnStatus(event.providerTurn.status)
+                ? { turnId: event.providerTurn.id, threadId: event.threadId ?? input.run.threadId }
+                : event.type === "runtime_request.updated" &&
+                    event.runtimeRequest.status === "pending"
+                  ? {
+                      turnId: event.runtimeRequest.providerTurnId,
+                      threadId: event.threadId ?? input.run.threadId,
+                    }
+                  : event.type === "turn_item.updated" &&
+                      toolTurnItemTypes.has(event.turnItem.type) &&
+                      !startedToolItems.has(event.turnItem.id)
+                    ? { turnId: event.turnItem.providerTurnId, threadId: event.turnItem.threadId }
+                    : null;
+          if (event.type === "turn_item.updated" && toolTurnItemTypes.has(event.turnItem.type))
+            startedToolItems.add(event.turnItem.id);
+          if (boundary !== null) {
+            yield* flushAssistantText(DateTime.toEpochMillis(yield* DateTime.now), (held) =>
+              event.type === "turn.terminal" &&
+              event.status !== "completed" &&
+              !childTurnsContinue(event)
+                ? true
+                : held.type === "turn_item.updated" && boundary.turnId !== null
+                  ? held.turnItem.providerTurnId === boundary.turnId
+                  : streamedThreadId(held) === boundary.threadId,
+            );
           }
           let storedEventCount = 0;
           const deliveredEvent = assistantStreaming.filter(
@@ -1695,7 +1735,17 @@ export const layer: Layer.Layer<
             Ref.get(rootTerminalSeen).pipe(Effect.map((seen) => !seen)),
           )
           .pipe(
-            Effect.ensuring(closeIdleFlush),
+            Effect.ensuring(
+              closeIdleFlush.pipe(
+                Effect.andThen(flushAssistantText(0, () => true)),
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("orchestration V2 could not drain held text", {
+                    runId: input.run.id,
+                    cause,
+                  }),
+                ),
+              ),
+            ),
             Effect.mapError((cause) => new RunExecutionIngestError({ runId: input.run.id, cause })),
             Effect.flatMap(() =>
               Effect.gen(function* () {
@@ -1833,7 +1883,7 @@ export const layer: Layer.Layer<
             ),
             Effect.ensuring(endPreviewActivity),
             Effect.ensuring(eventSubscription.close),
-            Effect.forkDetach,
+            Effect.forkIn(scope),
           );
 
         // A provider turn is a sign that the session is still alive. Keep
