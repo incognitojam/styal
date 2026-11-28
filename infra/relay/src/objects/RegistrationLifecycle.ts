@@ -78,6 +78,11 @@ export const registrationLifecycle = Effect.fn("relay.object_sessions.lifecycle"
       });
       if ("registrationsChanged" in result || "registrationPending" in result)
         return yield* new LiveActivityRegistrationsChanged({});
+      if ("retirements" in result)
+        yield* Effect.tryPromise({
+          try: () => coordinator.drain(userId, result.retirements ?? [], now),
+          catch: (cause) => new AuthSessionPersistenceError({ operation, cause }),
+        });
       return result;
     });
     return yield* attempt.pipe(

@@ -36,6 +36,9 @@ export const registrationEnds = (storage: DurableObjectStorage) =>
     .exec<{ value: string }>("SELECT value FROM registration_ends ORDER BY reference_id")
     .toArray()
     .map((row) => JSON.parse(row.value) as RegistrationEnd);
+function forgetEnd(storage: DurableObjectStorage, reference: TokenReference) {
+  storage.sql.exec("DELETE FROM registration_ends WHERE reference_id = ?", reference.operationId);
+}
 function rememberEnd(storage: DurableObjectStorage, candidate: RegistrationCandidate) {
   const device = candidate.device;
   const reference = candidate.activity?.token;
@@ -622,8 +625,11 @@ export function registrations(
         if (pending.cancelling) return { status: "cancel", reason: pending.cancelling } as const;
         const reason = validate(storage, pending.input, record.active, command.now);
         if (reason !== null) {
-          if (pending.candidate &&
-            pending.candidate.activity?.token?.operationId !== record.active.activity?.token?.operationId)
+          if (
+            pending.candidate &&
+            pending.candidate.activity?.token?.operationId !==
+              record.active.activity?.token?.operationId
+          )
             rememberEnd(storage, pending.candidate);
           pending.cancelling = reason;
           save(storage, record);
@@ -707,10 +713,13 @@ export function registrations(
         return { record };
       case "remove":
         if (record.pending) return { busy: true };
+        const ends = registrationEnds(storage).filter((end) => end.reference.deviceId === deviceId);
         retireReferences(storage, [
           ...tokenReferences(record.active),
           ...historyReferences(storage, (reference) => reference.deviceId === deviceId),
+          ...ends.map((end) => end.reference),
         ]);
+        for (const end of ends) forgetEnd(storage, end.reference);
         storage.sql.exec("DELETE FROM account_registrations WHERE device_id = ?", deviceId);
         return { applied: true, retirements: deviceRetirements(storage, deviceId) };
       case "mark": {
@@ -724,7 +733,10 @@ export function registrations(
           return { needsRegistration: true };
         storage.sql.exec("INSERT OR IGNORE INTO account_registration_owner VALUES (1, ?)", userId);
         const old = record.active.activity;
-        if (!command.keepToken && old?.token) retireReferences(storage, [old.token]);
+        if (!command.keepToken && old?.token) {
+          retireReferences(storage, [old.token]);
+          forgetEnd(storage, old.token);
+        }
         record.active.activity = {
           token: command.keepToken ? (old?.token ?? null) : null,
           createdAt: old?.createdAt ?? command.now,

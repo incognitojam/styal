@@ -87,7 +87,7 @@ export const registrationLayer = (bindings: RegistrationBindings) =>
         listForUser: Effect.fn("relay.object_devices.list")(function* (input) {
           const now = DateTime.formatIso(yield* DateTime.now);
           const rows = yield* Effect.tryPromise({
-            try: () => coordinator.views(input.userId, now, true),
+            try: () => coordinator.views(input.userId, now, true, false),
             catch: (cause) => new DeviceListPersistenceError({ ...input, cause }),
           });
           return rows.flatMap(({ deviceId, candidate }) => {
@@ -178,22 +178,36 @@ export const registrationLayer = (bindings: RegistrationBindings) =>
         listIdleArmedTargets: Effect.fn("relay.object_live_activities.list_idle_armed")(
           function* (input) {
             const now = DateTime.formatIso(yield* DateTime.now);
-            return yield* Effect.tryPromise({
+            const result = yield* Effect.tryPromise({
               try: async () => {
                 const targets = [];
-                for (const userId of await coordinator.accountIds())
-                  for (const row of await coordinator.views(userId, now, true)) {
-                    const a = row.candidate.activity;
-                    if (
-                      a?.token &&
-                      (a.deliveredAt ?? a.remoteStartedAt ?? a.updatedAt) < input.deliveredBefore
-                    )
-                      targets.push({ user_id: userId, device_id: row.deviceId });
+                let unavailable = 0;
+                for (const userId of await coordinator.accountIds(() => {
+                  unavailable++;
+                })) {
+                  try {
+                    for (const row of await coordinator.views(userId, now, true)) {
+                      const a = row.candidate.activity;
+                      if (
+                        a?.token &&
+                        (a.deliveredAt ?? a.remoteStartedAt ?? a.updatedAt) < input.deliveredBefore
+                      )
+                        targets.push({ user_id: userId, device_id: row.deviceId });
+                    }
+                  } catch {
+                    unavailable++;
                   }
-                return targets;
+                }
+                return { targets, unavailable };
               },
               catch: (cause) => new LiveActivityIdleTargetListPersistenceError({ ...input, cause }),
             });
+            if (result.unavailable)
+              yield* Effect.logWarning(
+                "Idle Live Activity maintenance skipped unavailable accounts",
+                { count: result.unavailable },
+              );
+            return result.targets;
           },
         ),
         markDelivery: Effect.fn("relay.object_live_activities.mark_delivery")(function* (input) {

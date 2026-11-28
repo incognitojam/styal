@@ -186,18 +186,6 @@ export class PushTokenObject extends DurableObject<unknown> {
           : null,
     };
   }
-  async canEnd(request: { version: number; reference: TokenReference }) {
-    checkRpc(request.version);
-    this.check(request.reference);
-    if (!this.initialized()) return false;
-    const current = this.owner();
-    const last = this.metadata()!.lastClaim;
-    return (
-      last?.digest === tokenClaimDigest(request.reference) &&
-      (this.matches(current.owner, request.reference) ||
-        (!current.owner && current.generation === request.reference.generation + 1))
-    );
-  }
   async prepare(request: { version: number; preparation: TokenPreparation }) {
     checkRpc(request.version);
     const ticket = request.preparation;

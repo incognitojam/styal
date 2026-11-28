@@ -31,6 +31,7 @@ import type { IdentityBindings } from "./IdentityCoordinator.ts";
 import { RPC_VERSION } from "./storage.ts";
 import { emailName } from "./names.ts";
 import { registrationLifecycle } from "./RegistrationLifecycle.ts";
+import { TokenCoordinator } from "./TokenCoordinator.ts";
 import type { RegistrationBindings } from "./RegistrationCoordinator.ts";
 
 const version = RPC_VERSION;
@@ -228,6 +229,9 @@ export function identityLayer(
             owners,
             (userId) => removeRegistrations(userId, { kind: "prune-sessions", now }),
             { concurrency: 1, discard: true },
+          );
+          yield* sessionCall("prune-expired", () =>
+            new TokenCoordinator(bindings).pruneHistory(now),
           );
         }),
       });

@@ -24,6 +24,7 @@ import {
   registrationInventory,
 } from "./AccountRegistrations.ts";
 import type { RegistrationCommand } from "./AccountRegistrations.ts";
+import type { TokenReference } from "./TokenProtocol.ts";
 
 export const accountMigrations = [
   `CREATE TABLE tunnel_operations (
@@ -118,7 +119,11 @@ export class AccountObject extends DurableObject<unknown> {
     userId: string;
     command: IdentityCommand;
     registrationGuard?: { sessionIds: string[]; stamp: string };
-  }) {
+  }): Promise<
+    | (ReturnType<typeof identity> & { retirements?: TokenReference[] })
+    | { registrationPending: true }
+    | { registrationsChanged: true }
+  > {
     checkRpc(request.version);
     if (this.ctx.id.name !== accountName(request.userId))
       throw new Error("Identity account mismatch");

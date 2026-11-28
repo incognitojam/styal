@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { env } from "cloudflare:workers";
-import { abortAllDurableObjects } from "cloudflare:test";
+import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
@@ -10,7 +10,7 @@ import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
 import { identityLayer } from "../IdentityPersistence.ts";
 import { RegistrationCoordinator } from "../RegistrationCoordinator.ts";
 import { registrationLayer } from "../RegistrationPersistence.ts";
-import { accountName, pushTokenName } from "../names.ts";
+import { accountName, pushTokenName, inventoryShardName } from "../names.ts";
 import { RPC_VERSION as version } from "../storage.ts";
 import { AccountPersistence, SessionPersistence } from "../../persistence/IdentityPersistence.ts";
 import {
@@ -175,10 +175,13 @@ it.effect.each([
           _tag: "AuthSessionPersistenceError",
         });
         yield* Effect.promise(abortAllDurableObjects);
-        const snapshot = yield* Effect.promise(() =>
-          new RegistrationCoordinator(env).snapshot(userId, "1970-01-01T00:00:00.000Z"),
+        const targets = yield* Effect.promise(() =>
+          new RegistrationCoordinator(env).cleanup(
+            { kind: "session", userId, sessionId: session.sessionId },
+            "1970-01-01T00:00:00.000Z",
+          ),
         );
-        expect(snapshot.ends.map((end) => end.reference.token)).toEqual(["outage-card"]);
+        expect(targets.map((target) => target.token)).toEqual(["outage-card"]);
       }
       yield* remove;
       expect(ends).toEqual(
@@ -288,6 +291,44 @@ it.effect.each(["before-remove", "after-remove", "raw-remove"] as const)(
       expect(ends).toEqual(phase === "before-remove" ? ["card-a", "card-a"] : ["card-a"]);
       expect(yield* devices.listForUser({ userId })).toEqual([]);
       expect(yield* activities.listTargets({ userId })).toEqual([]);
+      yield* Effect.promise(async () => {
+        for (const [kind, token] of [
+          ["push", "shared-push"],
+          ["push-to-start", "start-phone-a"],
+          ["live-activity", "card-a"],
+        ] as const) {
+          const name = pushTokenName(kind, token);
+          expect(
+            await runInDurableObject(env.PUSH_TOKENS.getByName(name), (_instance, ctx) =>
+              ctx.storage.sql
+                .exec("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+                .toArray(),
+            ),
+          ).toEqual([]);
+          expect(
+            await env.INVENTORY.getByName(inventoryShardName("push-token", name)).list({
+              version,
+              kind: "push-token",
+              after: "",
+              limit: 1000,
+            }),
+          ).not.toContainEqual({ name });
+        }
+        const stored = await runInDurableObject(
+          env.ACCOUNTS.getByName(accountName(userId)),
+          (_instance, ctx) => ({
+            refs: ctx.storage.sql.exec("SELECT * FROM registration_token_references").toArray(),
+            retirements: ctx.storage.sql.exec("SELECT * FROM registration_retirements").toArray(),
+            ends: ctx.storage.sql.exec("SELECT * FROM registration_ends").toArray(),
+            outcomes: ctx.storage.sql.exec("SELECT * FROM registration_outcomes").toArray(),
+          }),
+        );
+        expect(stored.refs).toEqual([]);
+        expect(stored.retirements).toEqual([]);
+        expect(stored.ends).toEqual([]);
+        expect(JSON.stringify(stored)).not.toContain("shared-push");
+        expect(JSON.stringify(stored)).not.toContain("card-a");
+      });
     }).pipe(Effect.provide(layer));
   },
 );
@@ -475,5 +516,111 @@ it.effect.each([
       expect(sent).toBe(1);
       expect(yield* devices.listForUser({ userId })).toEqual([]);
     }).pipe(Effect.provide(layer));
+  },
+);
+
+it.effect(
+  "reports unavailable token status as typed failure without replacing the working activity",
+  () => {
+    let unavailable = false;
+    const bindings = {
+      ...env,
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        if (unavailable && name === pushTokenName("live-activity", "working-card"))
+          throw new Error("Synthetic token status outage");
+        return env.PUSH_TOKENS.getByName(name);
+      }),
+    };
+    return Effect.gen(function* () {
+      yield* Effect.promise(resetRegistrationObjects);
+      const devices = yield* DevicePersistence;
+      const activities = yield* LiveActivityPersistence;
+      yield* devices.register({ userId: "account-a", registration: registration("phone-a") });
+      yield* activities.register({
+        userId: "account-a",
+        registration: { deviceId: "phone-a", activityPushToken: "working-card" },
+      });
+      unavailable = true;
+      expect(
+        yield* activities.listTargets({ userId: "account-a" }).pipe(Effect.flip),
+      ).toMatchObject({ _tag: "LiveActivityTargetListPersistenceError" });
+      expect(
+        yield* activities
+          .register({
+            userId: "account-a",
+            registration: { deviceId: "phone-a", activityPushToken: "replacement-card" },
+          })
+          .pipe(Effect.flip),
+      ).toMatchObject({ _tag: "LiveActivityRegistrationPersistenceError" });
+      expect(yield* devices.listForUser({ userId: "account-a" })).toHaveLength(1);
+      unavailable = false;
+      expect((yield* activities.listTargets({ userId: "account-a" }))[0]?.activity_push_token).toBe(
+        "working-card",
+      );
+      expect(
+        yield* Effect.promise(async () =>
+          env.PUSH_TOKENS.getByName(pushTokenName("live-activity", "replacement-card")).read({
+            version,
+          }),
+        ),
+      ).toMatchObject({ initialized: false });
+    }).pipe(
+      Effect.provide(registrationLayer(bindings).pipe(Layer.provide(SecureRandom.layerWebCrypto))),
+    );
+  },
+);
+
+it.effect.each(["owner", "activity"] as const)(
+  "continues idle maintenance when one account's %s call fails",
+  (failure) => {
+    let unavailable = false;
+    const bindings = {
+      ...env,
+      ACCOUNTS: namespaceWith(env.ACCOUNTS, (name: string) => {
+        const stub = env.ACCOUNTS.getByName(name);
+        return new Proxy(stub, {
+          get(target, method) {
+            if (
+              method === "identityOwner" &&
+              failure === "owner" &&
+              name === accountName("idle-broken")
+            )
+              return (...request: Parameters<typeof stub.identityOwner>) => {
+                if (unavailable) throw new Error("Synthetic account outage");
+                return stub.identityOwner(...request);
+              };
+            return Reflect.get(target, method, target);
+          },
+        });
+      }),
+      PUSH_TOKENS: namespaceWith(env.PUSH_TOKENS, (name: string) => {
+        if (
+          unavailable &&
+          failure === "activity" &&
+          name === pushTokenName("live-activity", "card-idle-broken")
+        )
+          throw new Error("Synthetic activity outage");
+        return env.PUSH_TOKENS.getByName(name);
+      }),
+    };
+    return Effect.gen(function* () {
+      yield* Effect.promise(resetRegistrationObjects);
+      const devices = yield* DevicePersistence;
+      const activities = yield* LiveActivityPersistence;
+      for (const userId of ["idle-broken", "idle-healthy"]) {
+        yield* devices.register({ userId, registration: registration(userId, `push-${userId}`) });
+        yield* activities.register({
+          userId,
+          registration: { deviceId: userId, activityPushToken: `card-${userId}` },
+        });
+      }
+      yield* TestClock.adjust("10 minutes");
+      unavailable = true;
+      expect(
+        yield* activities.listIdleArmedTargets({ deliveredBefore: "1970-01-01T00:05:00.000Z" }),
+      ).toEqual([{ user_id: "idle-healthy", device_id: "idle-healthy" }]);
+    }).pipe(
+      Effect.provide(registrationLayer(bindings).pipe(Layer.provide(SecureRandom.layerWebCrypto))),
+    );
   },
 );
